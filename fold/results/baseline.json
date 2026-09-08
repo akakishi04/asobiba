@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "scope": "quadratic-memory algebra only; no learned architecture or LLM comparison",
+  "environment": {
+    "python": "3.13.5",
+    "numpy": "2.3.5"
+  },
+  "seed": 20260909,
+  "trials": 100,
+  "chain": {
+    "initial_full": {
+      "A": 1.000000000000001,
+      "B": 3.0000000000000027,
+      "C": 6.000000000000003
+    },
+    "initial_folded": {
+      "A": 0.9999999999999991,
+      "C": 5.999999999999998
+    },
+    "replacement_full": {
+      "A": 4.000000000000001,
+      "B": 6.0000000000000036,
+      "C": 9.000000000000004
+    },
+    "replacement_folded": {
+      "A": 3.999999999999999,
+      "C": 8.999999999999998
+    },
+    "relations_folded_J": [
+      [
+        0.5000000000000001,
+        -0.4999999999999999
+      ],
+      [
+        -0.4999999999999999,
+        0.5000000000000001
+      ]
+    ],
+    "relations_folded_eta": [
+      -2.5,
+      2.5
+    ],
+    "relations_folded_c": 6.25,
+    "full_storage": {
+      "variables": 3,
+      "dense_numeric_scalars": 13,
+      "numeric_payload_bytes": 104,
+      "J_nonzeros_exact": 7
+    },
+    "folded_storage": {
+      "variables": 2,
+      "dense_numeric_scalars": 7,
+      "numeric_payload_bytes": 56,
+      "J_nonzeros_exact": 4
+    }
+  },
+  "randomized": {
+    "max_boundary_solution_abs_error": 6.661338147750939e-16,
+    "max_profile_energy_abs_error": 2.842170943040401e-14
+  },
+  "interior_update_counterexample": {
+    "updated_full_boundary": [
+      7.799999999999999,
+      19.600000000000005
+    ],
+    "stale_folded_boundary": [
+      0.9999999999999991,
+      5.999999999999998
+    ],
+    "max_abs_gap": 13.600000000000007,
+    "folded_update_raises_key_error": true
+  },
+  "fill_in_counterexample": {
+    "full_storage": {
+      "variables": 9,
+      "dense_numeric_scalars": 91,
+      "numeric_payload_bytes": 728,
+      "J_nonzeros_exact": 25
+    },
+    "folded_storage": {
+      "variables": 8,
+      "dense_numeric_scalars": 73,
+      "numeric_payload_bytes": 584,
+      "J_nonzeros_exact": 64
+    },
+    "note": "Dense payload shrinks here, but nonzero J entries increase."
+  },
+  "checks": {
+    "chain_initial": true,
+    "chain_anchor_replacement": true,
+    "random_boundary_error_below_1e-10": true,
+    "random_energy_error_below_1e-10": true,
+    "removed_variable_update_rejected": true,
+    "stale_summary_counterexample_detected": true,
+    "star_fill_in_detected": true
+  },
+  "passed": true
+}
