@@ -1,0 +1,4 @@
+# Install a CPU/CUDA build of torch first; see docs/local-training.md.
+# Versions actually exercised by the CPU validation; GPU runtime is separate.
+numpy==2.3.5
+torch==2.10.0

@@ -1,0 +1,13 @@
+{
+  "model": {
+    "width": 32, "layers": 1, "heads": 2, "window": 16, "chunk": 8,
+    "ff_mult": 2, "capsules": 1, "latent": 8, "rank": 4, "reads": 4,
+    "memory": true
+  },
+  "train": {
+    "seq_len": 64, "batch_size": 4, "grad_accum": 1, "max_steps": 40,
+    "learning_rate": 0.003, "weight_decay": 0.01, "grad_clip": 1.0,
+    "eval_every": 20, "eval_batches": 4, "save_every": 20, "log_every": 10,
+    "seed": 20260909, "cpu_threads": 2
+  }
+}
