@@ -1,4 +1,28 @@
-.venv/
 __pycache__/
 *.py[cod]
+.venv/
 .pytest_cache/
+.env
+.env.*
+
+# All user corpora and generated runtime outputs are local-only.
+/data/
+/datasets/
+/runs/
+/checkpoints/
+/outputs/
+/logs/
+/.cache/
+/wandb/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Keep the deliberately published v0.1 baseline; not ordinary local runs.
+/results/local-run*.json
+
+# Generated structural indexes and successful-program caches.
+/indices/
+/program_cache/
+/artifacts/

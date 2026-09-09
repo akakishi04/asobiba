@@ -1,0 +1,118 @@
+{
+  "kind": "synthetic_microbenchmark",
+  "trials": 30,
+  "environment": {
+    "python": "3.13.5",
+    "torch": "2.10.0+cpu",
+    "numpy": "2.3.5",
+    "device": "cpu",
+    "cpu_threads": 1
+  },
+  "batch": {
+    "median_seconds": 0.0001833995000026789,
+    "p95_seconds": 0.000217818199979547
+  },
+  "serial": {
+    "median_seconds": 0.0014939409999783493,
+    "p95_seconds": 0.0016118293499715719
+  },
+  "max_abs_error": 0.0,
+  "branch_count": 16,
+  "search": {
+    "status": "SOLVED",
+    "route": "search",
+    "program": [
+      "alter_second",
+      "delay_origin"
+    ],
+    "value": [
+      6.000000000000002,
+      7.000000000000002
+    ],
+    "best_error": 0.0,
+    "best_program": [
+      "alter_second",
+      "delay_origin"
+    ],
+    "metrics": {
+      "expansions": 12,
+      "verified_candidates": 9,
+      "solve_batches": 3,
+      "cheap_rejected": 0,
+      "duplicates": 4,
+      "cache_rejected": 0,
+      "max_frontier": 3,
+      "depth_reached": 2,
+      "cache_entries": 1,
+      "index": {
+        "mode": "bounded_lsh",
+        "bucket_entries_visited": 12,
+        "vectors_scored": 3,
+        "records": 4
+      },
+      "retrieved": [
+        "rhythm-phase",
+        "factory-line"
+      ],
+      "seconds": 0.001115604999995412
+    }
+  },
+  "reused": {
+    "status": "SOLVED",
+    "route": "validated_program",
+    "program": [
+      "alter_second",
+      "delay_origin"
+    ],
+    "value": [
+      6.000000000000002,
+      7.000000000000002
+    ],
+    "best_error": 0.0,
+    "best_program": [
+      "alter_second",
+      "delay_origin"
+    ],
+    "metrics": {
+      "expansions": 2,
+      "verified_candidates": 2,
+      "solve_batches": 2,
+      "cheap_rejected": 0,
+      "duplicates": 0,
+      "cache_rejected": 0,
+      "max_frontier": 1,
+      "depth_reached": 0,
+      "cache_entries": 1,
+      "index": null,
+      "retrieved": [],
+      "seconds": 0.0003885209999907602
+    }
+  },
+  "retrieval": {
+    "approximate": {
+      "mode": "bounded_lsh",
+      "bucket_entries_visited": 12,
+      "vectors_scored": 3,
+      "records": 4
+    },
+    "exact": {
+      "mode": "exact",
+      "bucket_entries_visited": 4,
+      "vectors_scored": 4,
+      "records": 4
+    },
+    "recall_on_four_records": 1.0
+  },
+  "numeric_payload": {
+    "shared_capsule_bytes": 96,
+    "branch_delta_bytes": 768,
+    "index_array_bytes": 960
+  },
+  "limitations": [
+    "Not an LLM creativity/latency benchmark.",
+    "Tiny supplied signatures do not establish ANN recall at scale.",
+    "Timing excludes one-time capsule/index compilation; demo includes setup separately.",
+    "Numeric payload excludes retained base matrices, validation factorization, candidate tensors, Python and allocator overhead.",
+    "Program replay is not neural distillation or automatic program abstraction."
+  ]
+}
