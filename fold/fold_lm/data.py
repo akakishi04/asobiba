@@ -218,7 +218,7 @@ class Corpus:
             raise ValueError("Invalid document index")
         if schema == CURRENT_SCHEMA:
             loss_start = self.rows[:, 2]
-            if np.any(loss_start < 1) or np.any(loss_start >= self.rows[:, 1] - 1):
+            if np.any(loss_start < 1) or np.any(loss_start > self.rows[:, 1] - 2):
                 raise ValueError("Invalid loss_start in document index")
             targeted = loss_start > 1
             # Current trainer resets model state at every sequence block. A targeted
