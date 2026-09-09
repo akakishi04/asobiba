@@ -164,7 +164,10 @@ class DataTests(unittest.TestCase):
                 live = row[row != -100]
                 self.assertEqual(live[-1], EOS)
                 self.assertNotIn(BOS, live)
-            sets.append({bytes(corpus.data[int(a)+1:int(a+b)-1].astype(np.uint8)) for a, b in corpus.rows})
+            sets.append({
+                bytes(corpus.data[int(row[0]) + 1:int(row[0] + row[1]) - 1].astype(np.uint8))
+                for row in corpus.rows
+            })
         self.assertFalse(sets[0] & sets[1])
 
     def test_txt_utf8_and_explicit_validation(self):
