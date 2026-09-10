@@ -124,13 +124,39 @@ This yielded 1,905 counterfactual examples.
 
 The memory-enabled model followed every distant fact rewrite and never predicted the original owner. The local-only control stayed near chance.
 
+## Reproducibility check
+
+The repository now includes `fold_lm.long_memory_benchmark`, which deterministically regenerates the raw prompt/target dataset and evaluates both standard and counterfactual owner retrieval.
+
+A fresh regeneration on 2026-09-10 matched the original experiment data byte-for-byte:
+
+- train SHA-256: `a60e37a8d9deb3f7fd3f21e3bb12802b3d13ff6248b6246c152c335bd75a5f4a`
+- validation SHA-256: `0f4615a802a10b883e6bf7c7adef5baca81cf904840ba944c3ed0a8d59c39256`
+- train rows: 20,000; train unique: 18,010
+- validation rows: 2,000; validation unique: 2,000
+- validation generation attempts: 2,498
+- cross-split overlap: 0
+- fact-to-answer distance: 125-134 bytes
+- example size: 168-182 bytes
+
+Running the committed `compare` command on the regenerated validation set exactly reproduced the previously observed accuracies:
+
+- standard memory ON: 1.0 (2000 / 2000)
+- standard memory OFF: 0.128 (256 / 2000)
+- counterfactual memory ON: 1.0 (1905 / 1905)
+- counterfactual memory OFF: 0.10551181102362205 (201 / 1905)
+- counterfactual memory ON original-owner prediction rate: 0.0
+- counterfactual memory OFF original-owner prediction rate: 0.11338582677165354
+
+The benchmark harness is covered by deterministic-generation, overlap, counterfactual-suffix, overwrite-safety, parser, and CPU-evaluation tests. The full LM test suite passed 34/34 after adding the harness.
+
 ## Supported conclusion
 
 For this synthetic task and this prototype configuration, the current FOLD-R memory path can carry information beyond a 64-byte local-attention window and use it approximately 125-134 bytes later at the answer position.
 
 The counterfactual control strengthens this result: changing only the distant fact, while keeping the local answer-visible suffix and absolute answer position unchanged, changes the memory-enabled model's answer with 100% accuracy. The memory-disabled control does not reliably track the changed fact.
 
-This is a successful proof of concept for long-range information transport in the current FOLD-R prototype.
+This is a successful proof of concept for long-range information transport in the current FOLD-R prototype. The data generation and evaluation portions of this experiment are now reproducible from the repository; trained checkpoints remain local run artifacts.
 
 ## What this result does not establish
 
@@ -142,13 +168,12 @@ This experiment does **not** yet establish:
 - performance at much longer distances
 - resistance to multiple competing facts, corrections, interference, or noisy distractors
 - parameter-efficiency superiority, because ON and OFF parameter counts are not matched
-- reproducibility from the repository alone until the synthetic dataset generator and evaluation harness are committed as first-class experiment tools
+- independently reproducible trained weights from the repository alone, because checkpoints are intentionally excluded from Git
 
 ## Next experimental priorities
 
-1. Commit a deterministic dataset generator and owner-retrieval/counterfactual evaluator.
-2. Add a parameter-matched local-only control.
-3. Sweep fact-to-answer distance well beyond 128 bytes.
-4. Test multiple facts and interference.
-5. Test overwrite/correction cases where the later fact should supersede the earlier one.
-6. Add at least one non-FOLD long-context baseline before making architecture-level comparative claims.
+1. Add a parameter-matched local-only control.
+2. Sweep fact-to-answer distance well beyond 128 bytes.
+3. Test multiple facts and interference.
+4. Test overwrite/correction cases where the later fact should supersede the earlier one.
+5. Add at least one non-FOLD long-context baseline before making architecture-level comparative claims.
