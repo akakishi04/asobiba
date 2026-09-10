@@ -99,6 +99,46 @@ At this point the model remained close to chance and did not reliably use the di
 
 Conclusion for this condition: 512 bytes is not an observed representational capacity limit for this prototype. The same model that was near chance at 2,000 steps reached perfect standard and counterfactual owner retrieval after additional optimization to 5,000 steps.
 
+## 1024-byte condition
+
+Dataset:
+
+- target fact-to-answer distance: exactly 1024 bytes
+- example size: 1067-1072 bytes
+- train rows: 20,000
+- train unique after prepare: 18,010
+- validation unique: 2,000
+- train/validation exact overlap: 0
+- prepared-data fingerprint: `27559ad4a738c27c1342e2a185dc6d4d0026a0771dee4bf1fd8a1b5c255f6439`
+- sequence length used for training: 1088
+
+### At 5,000 optimizer steps
+
+- best validation NLL: 0.13691584715145624
+- byte perplexity: 1.1467316437255437
+- standard accuracy: 0.6495 = 1299 / 2000
+- standard mean top-1 margin: 0.96516227388382
+- counterfactual accuracy: 0.645669291338583 = 1230 / 1905
+- counterfactual original-owner prediction rate: 0.0283464566929134
+- counterfactual mean top-1 margin: 0.955965711344571
+
+The nearly equal standard and counterfactual accuracies show that the model was already tracking the distant rewritten fact substantially at 5,000 steps, but had not yet reached reliable retrieval.
+
+### After resuming to 7,500 optimizer steps
+
+- best validation NLL: 0.0013520829304903446
+- byte perplexity: 1.0013529974067186
+- CUDA peak allocated: 163,488,768 bytes
+- standard accuracy: 1.0 = 2000 / 2000
+- counterfactual accuracy: 1.0 = 1905 / 1905
+- counterfactual original-owner prediction rate: 0.0
+- standard mean top-1 margin: 5.73802565264702
+- counterfactual mean top-1 margin: 5.74949707021238
+
+The resumed validation curve fell rapidly after step 5,000: 0.13584 at 5,100, 0.06218 at 5,500, 0.01465 at 6,000, 0.00510 at 6,500, 0.00234 at 7,000, and 0.00135 at 7,500. This suggests the 5,000-step result was an optimization-budget boundary rather than a representational capacity boundary. A checkpoint around 6,000-6,500 steps would have been a useful earlier evaluation point.
+
+Conclusion for this condition: 1024 bytes is also not an observed representational capacity limit for this prototype. With additional optimization, the same 383,796-parameter model reached perfect standard and counterfactual owner retrieval at sixteen times the 64-byte local-attention window.
+
 ## Current interpretation
 
 The observed pattern is:
@@ -109,12 +149,14 @@ The observed pattern is:
 | 256 bytes | 2,000 | 100% | 100% | 0.0230336699 |
 | 512 bytes | 2,000 | 15.35% | 11.7585% | 0.3690288999 |
 | 512 bytes | 5,000 | 100% | 100% | 0.0008226921 |
+| 1024 bytes | 5,000 | 64.95% | 64.5669% | 0.1369158472 |
+| 1024 bytes | 7,500 | 100% | 100% | 0.0013520829 |
 
-This shows that a failed result at a fixed optimizer-step budget cannot by itself be interpreted as a hard memory-capacity limit. At least between 256 and 512 bytes, optimization difficulty increases sharply before successful retrieval emerges.
+This shows that a failed or partial result at a fixed optimizer-step budget cannot by itself be interpreted as a hard memory-capacity limit. Between 256 and 1024 bytes, optimization difficulty increases materially before successful retrieval emerges.
 
 The stronger supported statement is therefore:
 
-> On this synthetic single-fact task, the current 383,796-parameter FOLD-R prototype can learn to carry and use information at least 512 bytes across a fixed 64-byte local-attention window. The 512-byte condition requires materially more optimization than the 256-byte condition under the tested setup.
+> On this synthetic single-fact task, the current 383,796-parameter FOLD-R prototype can learn to carry and use information at least 1024 bytes across a fixed 64-byte local-attention window. Longer distances require more optimization under the tested setup, but no representational failure has yet been observed through 1024 bytes.
 
 ## What this does not establish
 
@@ -125,9 +167,9 @@ The stronger supported statement is therefore:
 - correction / overwrite behavior at long distance
 - natural-language long-context competence
 - superiority over Transformer or other recurrent/state-space baselines
-- that 5,000 steps is the minimal budget required at 512 bytes
+- the minimal optimizer-step budget required at 512 or 1024 bytes
 - a scaling law between distance and required optimizer steps
 
 ## Next experimental priority
 
-Continue the exact-distance sweep with FOLD-R ON while avoiding a matched-OFF run at every point. The next useful target is 1,024 bytes. If learning is weak at the initial budget, resume the same checkpoint before classifying the distance as a capacity limit. Key control comparisons should be repeated only at selected milestones or when architecture/data conditions change.
+Continue the exact-distance sweep with FOLD-R ON while avoiding a matched-OFF run at every point. The next useful target is 2048 bytes. For longer distances, use staged checkpoints rather than committing to a large fixed budget: run an initial budget, evaluate owner accuracy, and extend in roughly 1,000-step increments only when needed. Key control comparisons should be repeated only at selected milestones or when architecture/data conditions change.
