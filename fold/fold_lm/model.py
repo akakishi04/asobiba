@@ -27,19 +27,90 @@ class ModelConfig:
     rank: int = 8
     reads: int = 8
     memory: bool = True
+    local_control: bool = False
 
     def __post_init__(self):
         for key, value in vars(self).items():
-            if key != "memory" and (type(value) is not int or value < 1):
+            if key in {"memory", "local_control"}:
+                if type(value) is not bool:
+                    raise ValueError(f"model.{key} must be boolean")
+            elif type(value) is not int or value < 1:
                 raise ValueError(f"model.{key} must be a positive integer")
-        if type(self.memory) is not bool:
-            raise ValueError("model.memory must be boolean")
+        if self.memory and self.local_control:
+            raise ValueError("memory and local_control are mutually exclusive")
         if self.width % self.heads or self.width % 2:
             raise ValueError("width must be even and divisible by heads")
         if self.window < 2 or self.chunk > self.window:
             raise ValueError("require 2 <= window and chunk <= window")
         if max(self.rank, self.reads) >= self.latent:
             raise ValueError("rank and reads must be smaller than latent")
+
+
+def memory_parameter_budget(c: ModelConfig) -> int:
+    """Trainable parameters used by the FOLD-R branch for this configuration."""
+    writer_out = c.capsules * (c.rank + 2)
+    return (
+        c.capsules * c.latent * c.latent  # base_A
+        + c.capsules * c.latent           # base_eta
+        + c.width * writer_out + writer_out  # writer weight + bias
+        + c.capsules * c.reads * c.width     # reader, bias=False
+        + c.width * c.width + c.width         # read_gate weight + bias
+    )
+
+
+class LocalCapacityAdapter(nn.Module):
+    """Active token-local control with exactly the FOLD-R branch parameter budget.
+
+    The adapter only transforms each token's already-local representation, so it
+    cannot extend the attention receptive field.  Its trainable parameter count
+    is constructed to equal ``memory_parameter_budget(config)`` exactly.  This is
+    a capacity/parameter-count control, not a compute-matched control.
+    """
+    def __init__(self, c: ModelConfig):
+        super().__init__()
+        budget = memory_parameter_budget(c)
+        # Two biasless projections plus one hidden gain consume (2*width+1)
+        # parameters per bottleneck unit.  At most 2*width parameters remain and
+        # are used as active feature-wise input/output gains.
+        hidden = budget // (2 * c.width + 1)
+        if hidden < 1:
+            raise ValueError("memory parameter budget is too small for local_control")
+        remainder = budget - hidden * (2 * c.width + 1)
+        output_gain = min(remainder, c.width)
+        input_gain = remainder - output_gain
+        if input_gain > c.width:
+            raise AssertionError("local-control parameter packing failed")
+
+        self.input_gain_len = input_gain
+        self.output_gain_len = output_gain
+        self.in_proj = nn.Linear(c.width, hidden, bias=False)
+        self.out_proj = nn.Linear(hidden, c.width, bias=False)
+        self.hidden_gain = nn.Parameter(torch.ones(hidden))
+        if input_gain:
+            self.input_gain = nn.Parameter(torch.ones(input_gain))
+        else:
+            self.register_parameter("input_gain", None)
+        if output_gain:
+            self.output_gain = nn.Parameter(torch.ones(output_gain))
+        else:
+            self.register_parameter("output_gain", None)
+
+        # Start as the plain local-only baseline while retaining trainable extra
+        # capacity.  Gradients reach out_proj immediately and the upstream adapter
+        # parameters become active once out_proj moves away from zero.
+        nn.init.zeros_(self.out_proj.weight)
+
+    def forward(self, x: Tensor) -> Tensor:
+        source = x
+        if self.input_gain is not None:
+            n = self.input_gain_len
+            source = torch.cat((source[..., :n] * self.input_gain, source[..., n:]), dim=-1)
+        hidden = F.silu(self.in_proj(source)) * self.hidden_gain
+        delta = self.out_proj(hidden)
+        if self.output_gain is not None:
+            n = self.output_gain_len
+            delta = torch.cat((delta[..., :n] * self.output_gain, delta[..., n:]), dim=-1)
+        return x + delta
 
 
 class LocalBlock(nn.Module):
@@ -89,6 +160,8 @@ class FoldLanguageModel(nn.Module):
             self.writer = nn.Linear(c.width, c.capsules * (c.rank + 2))
             self.reader = nn.Linear(c.capsules * c.reads, c.width, bias=False)
             self.read_gate = nn.Linear(c.width, c.width)
+        elif c.local_control:
+            self.local_control = LocalCapacityAdapter(c)
 
     def forward(self, tokens: Tensor, state: dict | None = None):
         if tokens.ndim != 2 or tokens.shape[1] == 0:
@@ -127,6 +200,8 @@ class FoldLanguageModel(nn.Module):
                 read = capsule.response(Ws, bs, check=False)
                 h = h + torch.sigmoid(self.read_gate(h)) * self.reader(read.flatten(-2))
                 W, b = Ws[:, -1].clone(), bs[:, -1].clone()
+            elif c.local_control:
+                h = self.local_control(h)
             outputs.append(F.linear(self.norm(h), self.embedding.weight))
             position += T
         result = {"position": position, "kv": kv}
