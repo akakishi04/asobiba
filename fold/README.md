@@ -1,8 +1,10 @@
 # FOLD-R + Structural Reasoning
 
-**研究用プロジェクト。現在の目標設計はv0.3。学習済みの創造的LLMではありません。**
+**研究用プロジェクト。現在の設計決定はv0.4。LMコアでは Shared Core + Layer Modulation を Gate 1 の第一候補とし、v0.3 の構造推論設計は維持します。学習済みの創造的LLMではありません。**
 
-FOLD-Rの訂正可能な応答記憶に、複数視点の抽象化・遠い分野の構造照合・仮説探索を組み合わせる設計です。全知識を毎回比較せず、候補検索、固定予算、仮説の差分保持、検証付きプログラム再利用で費用を抑えます。
+Gate 1 では、軽量・高速・高精度な小型LMを目標に、層ごとに大きなDense重みを複製する代わりに、少数の共有コアと小さな層別調整値を使います。必要箇所だけ例外重みを許可し、保存容量・resident weight bytes・peak VRAM・実速度・品質をDense baselineと分離比較します。
+
+FOLD-Rの訂正可能な応答記憶に、複数視点の抽象化・遠い分野の構造照合・仮説探索を組み合わせるv0.3設計も継続します。ただし Gate 1 のLMコア評価では外部推論器で品質不足を隠さず、コア単体の容量・速度・品質を先に検証します。
 
 ## 実装と配布の区別
 
@@ -13,6 +15,7 @@ FOLD-Rの訂正可能な応答記憶に、複数視点の抽象化・遠い分�
 | FOLD v0.1のSchur補完参照カーネル | 既存実装を維持 |
 | 微分可能FOLD-R response capsule | `fold_lm/capsule.py` |
 | 二系統署名・bounded LSH候補検索 | `fold_reasoning/index.py` |
+| Shared Core + Layer Modulation | v0.4で設計固定。Gate 1比較実装は未完了 |
 | 部品デモ・13テスト | 実行可能 |
 | 完全な予算付き探索・cache・batch評価デモ | 会話配布のローカルZIPのみ |
 | 小型LMの学習・再開・生成 | 会話配布のローカルZIPのみ |
@@ -26,7 +29,7 @@ Windows PowerShell、`asobiba/fold`から:
 
 ```powershell
 py -m venv .venv
-$python = ".\.venv\Scripts\python.exe"
+$python = ".\\.venv\\Scripts\\python.exe"
 & $python -m pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cpu
 & $python -m pip install -r requirements-reasoning.txt
 & $python -m fold_reasoning.components_demo
@@ -39,7 +42,8 @@ CPU用の例です。Python 3.13.5 / PyTorch 2.10.0+cpu / NumPy 2.3.5で検証�
 
 | 文書 | 役割 |
 |---|---|
-| [architecture-v0.3.md](docs/architecture-v0.3.md) | 現在の上位設計。抽象化・検索・仮説・予算・再利用 |
+| [architecture-v0.4.md](docs/architecture-v0.4.md) | 現在のGate 1 LMコア設計。共有コア、層別modulation、容量・速度・品質の判定 |
+| [architecture-v0.3.md](docs/architecture-v0.3.md) | 構造推論設計。抽象化・検索・仮説・予算・再利用 |
 | [reasoning-guide.md](docs/reasoning-guide.md) | 部品デモとローカル版全体デモの実行 |
 | [reasoning-plan.md](docs/reasoning-plan.md) | 推論系R0〜R8と学習・評価の境界 |
 | [distribution-status.md](docs/distribution-status.md) | GitHubにあるもの／ローカルZIPのみのもの |
