@@ -2,9 +2,12 @@
 
 この指針は`fold/`以下だけに適用する。
 
-- 入口はREADME。最終構想は`docs/architecture-v0.5.md`、不足情報の判断・取得は`docs/information-acquisition.md`。v0.4はGate 1の層別共有比較候補、v0.3は構造推論の詳細、記憶の数値意味論はv0.2と`theory.md`。所在は`docs/distribution-status.md`と対象refの実ファイルで確認する。過去のローカルZIP配布記録と現在の実装を混同しない。
+- 入口はREADME。最終構想は`docs/architecture-v0.5.md`、v0.5の数理・学習境界は`docs/theory-v0.5.md`、実装順序と各Gateは`docs/development-roadmap-v0.5.md`、不足情報の判断・取得は`docs/information-acquisition.md`。v0.4はGate 1の層別共有比較候補、v0.3は構造推論の詳細、記憶の数値意味論はv0.2と`theory.md`。所在は`docs/distribution-status.md`と対象refの実ファイルで確認する。
+- v0.5関連を実装するときは、開始時に対象の`V5-A`〜`V5-I`段階を明記し、その段階のGateと比較対象を確認する。後段の機構を「ついでに」混ぜず、高精度reference pathを最適化版との一致確認前に削除しない。
 - 最終構想と直近ゲート、v0.2のP系列とv0.3のR系列を分け、段階の合格を捏造しない。ゼロからの共同学習・既存重みとの内部互換性を最終形の必須条件にしない。蒸留・変換・部分学習も比較できるが、設計文書だけを根拠にスコープ外の大規模学習・課金API・外部データ大量取得・CI追加を開始しない。
-- 既存v0.1カーネルはfloat64、定数項・境界順序を保持する。数理的事実、設計仮説、コード、学習済み機能、実測を分ける。Schur補完・低ランク更新・LSH・beam search・batchingを新発明と呼ばない。
+- v0.5の内部反復ではevidence timeとinternal stepを分離する。内部仮説を新しい観測事実として`X`や長期記憶へcommitしない。外部取得結果には出典・対象・時点を保持し、検索0件・取得失敗・`OUT_OF_SCOPE`を不存在へ変換しない。
+- 圧縮部品では、共有重みの反復回数を独立パラメータ数へ加算しない。辞書・code・scale・補正・metadata・復号bufferを含めて容量を報告する。decoded要素数、独立continuous scalar、discrete code bits、serialized bytesを分離する。
+- codebook/direct kernelを実装するときは、materialized referenceとのforward一致を先に固定し、固定code条件でautogradとfloat64 finite differenceを比較する。圧縮品質は1-stepだけでなく複数反復後のtask loss、routing/stop/acquisitionの行動flipも測る。
 - 関係の応答だけを保存する記憶と、転用可能な仕組みを保存する構造記憶は別。新しい概念を既存Q/Uへ無言で押し込まない。`OUT_OF_SCOPE`を不存在や0として扱わない。
 - 仮説はscope別にし、共有baseと兄弟枝を変更しない。推論結果を無検証で確定事実へ昇格しない。追加観測と撤回・置換を区別する。
 - 検索のscan上限、候補数、frontier幅、深さ、検証候補数、cache容量を明示する。検証予算はbatch数でなく候補数。cacheのreplay・再検証も含める。予算切れを不可能証明にしない。
@@ -18,4 +21,5 @@
 - 未来のquery・正解操作・正解グラフは教師信号に限る。正解を検索対象やモデル入力に漏らさない。評価では候補数・計算予算・データ分割をそろえる。
 - 学習・生成・外部通信をimport時に開始しない。既存のデータ・成果物を一括削除しない。ツールが拒否した書き込みは反映済みと扱わない。
 - 不足情報の判断も推定である。情報不足と推論未完了を混同せず、分かる部分は答える。既知情報の聞き直し・無限取得を避け、情報取得後の品質改善と不要質問率を測る。モデルの取得提案と実行基盤の権限・予算を分離する。
-- 共有重みの反復回数を独立パラメータ数へ加算しない。辞書・コード・scale・補正・復号buffer・実行状態を含め、実保存容量と推論/学習費用を別報告する。入出力単位が異なるモデル間でtokens/sだけを比較しない。
+- 異なるTokenizer/入力単位でtokens/sだけを比較しない。同じ元文章・課題のwall-clock、byte当たりloss、state/KV量を併記する。
+- v0.5実験は`experiment_id / commit_sha / data split hashes / seed / precision / serialized bytes / peak RAM-VRAM / active modules / internal steps / wall-clock / quality / coverage / acquisition metrics / known deviations`をmanifestに残す。Gate未達は未達として記録し、後からbaselineや閾値を有利に動かさない。
