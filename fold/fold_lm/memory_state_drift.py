@@ -1,9 +1,10 @@
 """Measure how exact-distance filler changes the FOLD-R recurrent memory state.
 
 The diagnostic compares same-length original/counterfactual prompt pairs that differ
-only in the distant owner.  It snapshots the recurrent FOLD-R state before filler
-and at fixed fractions through filler.  This separates common state drift from
-changes to the owner-specific state difference.
+only in the distant owner. It snapshots the recurrent FOLD-R state before filler
+and at fixed fractions through filler. This separates common state drift from
+changes to the owner-specific state difference, and also checks whether shared
+state drift changes the owner signal after the nonlinear capsule response.
 
 Example::
 
@@ -22,6 +23,7 @@ from pathlib import Path
 
 import torch
 
+from .capsule import compile_capsule
 from .data import json_text
 from .long_memory_benchmark import (
     DEFAULT_COUNTERFACTUAL_SEED,
@@ -98,37 +100,61 @@ def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
 
 
+def _pair_signal_metrics(
+    current: torch.Tensor,
+    baseline: torch.Tensor,
+    *,
+    prefix: str,
+) -> dict[str, float | None]:
+    signal = current[0] - current[1]
+    base_signal = baseline[0] - baseline[1]
+    signal_norm = _norm(signal)
+    base_signal_norm = _norm(base_signal)
+    common = 0.5 * (current[0] + current[1])
+    base_common = 0.5 * (baseline[0] + baseline[1])
+    return {
+        f"{prefix}_signal_norm": signal_norm,
+        f"{prefix}_signal_ratio": signal_norm / base_signal_norm if base_signal_norm > 1e-12 else None,
+        f"{prefix}_signal_cosine_to_start": _cosine(signal, base_signal),
+        f"{prefix}_signal_change_norm": _norm(signal - base_signal),
+        f"{prefix}_common_drift_norm": _norm(common - base_common),
+    }
+
+
 def _snapshot_metrics(
     current: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
     baseline: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    current_response: torch.Tensor,
+    baseline_response: torch.Tensor,
 ) -> dict[str, float | None]:
     cur_W, cur_b, cur = current
     base_W, base_b, base = baseline
-    signal = cur[0] - cur[1]
-    base_signal = base[0] - base[1]
-    signal_norm = _norm(signal)
-    base_signal_norm = _norm(base_signal)
+    metrics = _pair_signal_metrics(cur, base, prefix="owner")
+    response_metrics = _pair_signal_metrics(
+        current_response,
+        baseline_response,
+        prefix="response_owner",
+    )
+    metrics.update(response_metrics)
+
     common = 0.5 * (cur[0] + cur[1])
     base_common = 0.5 * (base[0] + base[1])
-
     w_signal = cur_W[0] - cur_W[1]
     base_w_signal = base_W[0] - base_W[1]
     b_signal = cur_b[0] - cur_b[1]
     base_b_signal = base_b[0] - base_b[1]
 
-    return {
-        "owner_signal_norm": signal_norm,
-        "owner_signal_ratio": signal_norm / base_signal_norm if base_signal_norm > 1e-12 else None,
-        "owner_signal_cosine_to_start": _cosine(signal, base_signal),
-        "owner_signal_change_norm": _norm(signal - base_signal),
-        "common_state_drift_norm": _norm(common - base_common),
+    # Preserve the original public key name used by the first diagnostic run.
+    metrics["common_state_drift_norm"] = _norm(common - base_common)
+    metrics.update({
         "original_state_drift_norm": _norm(cur[0] - base[0]),
         "counterfactual_state_drift_norm": _norm(cur[1] - base[1]),
         "w_owner_signal_norm": _norm(w_signal),
         "w_owner_signal_ratio": _norm(w_signal) / _norm(base_w_signal) if _norm(base_w_signal) > 1e-12 else None,
         "b_owner_signal_norm": _norm(b_signal),
         "b_owner_signal_ratio": _norm(b_signal) / _norm(base_b_signal) if _norm(base_b_signal) > 1e-12 else None,
-    }
+    })
+    return metrics
 
 
 @torch.inference_mode()
@@ -155,6 +181,12 @@ def measure_filler_state_drift(
     torch.set_num_threads(ckpt["config"]["train"]["cpu_threads"])
     model = FoldLanguageModel(config).to(device).eval()
     model.load_state_dict(ckpt["model"])
+
+    J = (
+        torch.eye(config.latent, device=device, dtype=model.base_A.dtype)
+        + model.base_A @ model.base_A.mT
+    )
+    capsule = compile_capsule(J, model.base_eta, model.Q, model.U, check=False)
 
     source = load_validation(validation)
     changed, _ = make_counterfactuals(
@@ -195,6 +227,7 @@ def measure_filler_state_drift(
         )
         _, state = model(prefix_batch)
         baseline = tuple(part.clone() for part in _state_parts(state))
+        baseline_response = capsule.response(state["W"], state["b"], check=False).float().flatten(1).clone()
 
         offsets = {fraction: int(round(len(filler) * fraction)) for fraction in fractions}
         previous = 0
@@ -209,13 +242,37 @@ def measure_filler_state_drift(
                 _, state = model(piece, state)
                 previous = offset
 
-            metrics = _snapshot_metrics(_state_parts(state), baseline)
+            current_response = capsule.response(state["W"], state["b"], check=False).float().flatten(1)
+            metrics = _snapshot_metrics(
+                _state_parts(state),
+                baseline,
+                current_response,
+                baseline_response,
+            )
             bytes_at_fraction[fraction].append(float(offset))
             bucket = aggregates[fraction]
             for key, value in metrics.items():
                 if value is not None and math.isfinite(value):
                     bucket.setdefault(key, []).append(float(value))
 
+    metric_keys = (
+        "owner_signal_norm",
+        "owner_signal_ratio",
+        "owner_signal_cosine_to_start",
+        "owner_signal_change_norm",
+        "common_state_drift_norm",
+        "original_state_drift_norm",
+        "counterfactual_state_drift_norm",
+        "w_owner_signal_norm",
+        "w_owner_signal_ratio",
+        "b_owner_signal_norm",
+        "b_owner_signal_ratio",
+        "response_owner_signal_norm",
+        "response_owner_signal_ratio",
+        "response_owner_signal_cosine_to_start",
+        "response_owner_signal_change_norm",
+        "response_owner_common_drift_norm",
+    )
     points = []
     for fraction in fractions:
         bucket = aggregates[fraction]
@@ -223,24 +280,12 @@ def measure_filler_state_drift(
             "fraction": fraction,
             "mean_filler_bytes_processed": _mean(bytes_at_fraction[fraction]),
         }
-        for key in (
-            "owner_signal_norm",
-            "owner_signal_ratio",
-            "owner_signal_cosine_to_start",
-            "owner_signal_change_norm",
-            "common_state_drift_norm",
-            "original_state_drift_norm",
-            "counterfactual_state_drift_norm",
-            "w_owner_signal_norm",
-            "w_owner_signal_ratio",
-            "b_owner_signal_norm",
-            "b_owner_signal_ratio",
-        ):
+        for key in metric_keys:
             point[f"mean_{key}"] = _mean(bucket.get(key, []))
         points.append(point)
 
     return {
-        "benchmark": "fold-r-filler-state-drift-v1",
+        "benchmark": "fold-r-filler-state-drift-v2",
         "checkpoint": str(checkpoint),
         "checkpoint_step": ckpt["step"],
         "validation": str(validation),
@@ -249,9 +294,11 @@ def measure_filler_state_drift(
         "local_attention_window": config.window,
         "filler_bytes": {"min": min(filler_lengths), "max": max(filler_lengths)},
         "interpretation": {
-            "owner_signal_ratio": "1 means owner-specific state separation kept the same norm as at filler start; >1 amplification; <1 attenuation",
-            "owner_signal_cosine_to_start": "1 means the owner-specific state-difference direction was preserved; lower values indicate rotation",
-            "common_state_drift_norm": "owner-independent/shared movement of the recurrent state during filler",
+            "owner_signal_ratio": "1 means raw owner-specific state separation kept the same norm as at filler start; >1 amplification; <1 attenuation",
+            "owner_signal_cosine_to_start": "1 means the raw owner-specific state-difference direction was preserved; lower values indicate rotation",
+            "common_state_drift_norm": "owner-independent/shared movement of the recurrent W/b state during filler",
+            "response_owner_signal_ratio": "1 means owner-specific separation after nonlinear capsule response kept the same norm; >1 means shared filler drift amplified the readable response difference; <1 means attenuation",
+            "response_owner_signal_cosine_to_start": "1 means the owner-specific capsule-response direction was preserved through filler",
         },
         "points": points,
     }
