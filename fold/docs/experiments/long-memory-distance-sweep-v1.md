@@ -139,6 +139,36 @@ The resumed validation curve fell rapidly after step 5,000: 0.13584 at 5,100, 0.
 
 Conclusion for this condition: 1024 bytes is also not an observed representational capacity limit for this prototype. With additional optimization, the same 383,796-parameter model reached perfect standard and counterfactual owner retrieval at sixteen times the 64-byte local-attention window.
 
+## 2048-byte condition
+
+Dataset:
+
+- target fact-to-answer distance: exactly 2048 bytes
+- example size: 2091-2096 bytes
+- train rows: 20,000
+- train unique after prepare: 18,010
+- validation unique: 2,000
+- train/validation exact overlap: 0
+- prepared-data fingerprint: `aabfe0ea182911fe5d81e5078e3bf7d122cdc357443662af20d78641da1af543`
+- sequence length used for training: 2112
+
+Training result at 5,000 optimizer steps:
+
+- best validation NLL: 0.05325264694217689
+- byte perplexity: 1.054696077200144
+- elapsed training time: 1609.244 s
+- CUDA peak allocated: 296,494,080 bytes
+
+Owner retrieval:
+
+- standard accuracy: 1.0 = 2000 / 2000
+- standard mean top-1 margin: 2.36040964430571
+- counterfactual accuracy: 1.0 = 1905 / 1905
+- counterfactual original-owner prediction rate: 0.0
+- counterfactual mean top-1 margin: 2.34759567950967
+
+Conclusion for this condition: the current FOLD-R prototype reaches perfect standard and counterfactual owner retrieval at exactly 2048 bytes, thirty-two times the 64-byte local-attention window, after 5,000 optimizer steps. The answer NLL and margins are weaker than the fully converged 512/1024 runs, but the owner decision itself is correct on every evaluated example and tracks every distant counterfactual rewrite.
+
 ## Current interpretation
 
 The observed pattern is:
@@ -151,12 +181,13 @@ The observed pattern is:
 | 512 bytes | 5,000 | 100% | 100% | 0.0008226921 |
 | 1024 bytes | 5,000 | 64.95% | 64.5669% | 0.1369158472 |
 | 1024 bytes | 7,500 | 100% | 100% | 0.0013520829 |
+| 2048 bytes | 5,000 | 100% | 100% | 0.0532526469 |
 
-This shows that a failed or partial result at a fixed optimizer-step budget cannot by itself be interpreted as a hard memory-capacity limit. Between 256 and 1024 bytes, optimization difficulty increases materially before successful retrieval emerges.
+This shows that a failed or partial result at a fixed optimizer-step budget cannot by itself be interpreted as a hard memory-capacity limit. Optimization difficulty is not monotonic in the currently observed runs: 1024 bytes required additional optimization beyond 5,000 steps, while the 2048-byte run already achieved perfect owner decisions at 5,000 steps. Therefore these points are not sufficient to infer a scaling law between distance and training budget.
 
 The stronger supported statement is therefore:
 
-> On this synthetic single-fact task, the current 383,796-parameter FOLD-R prototype can learn to carry and use information at least 1024 bytes across a fixed 64-byte local-attention window. Longer distances require more optimization under the tested setup, but no representational failure has yet been observed through 1024 bytes.
+> On this synthetic single-fact task, the current 383,796-parameter FOLD-R prototype can learn to carry and use information at least 2048 bytes across a fixed 64-byte local-attention window. Perfect standard and counterfactual owner retrieval has now been observed at thirty-two times the local window, with no representational capacity failure yet demonstrated.
 
 ## What this does not establish
 
@@ -167,9 +198,9 @@ The stronger supported statement is therefore:
 - correction / overwrite behavior at long distance
 - natural-language long-context competence
 - superiority over Transformer or other recurrent/state-space baselines
-- the minimal optimizer-step budget required at 512 or 1024 bytes
+- the minimal optimizer-step budget required at 512, 1024, or 2048 bytes
 - a scaling law between distance and required optimizer steps
 
 ## Next experimental priority
 
-Continue the exact-distance sweep with FOLD-R ON while avoiding a matched-OFF run at every point. The next useful target is 2048 bytes. For longer distances, use staged checkpoints rather than committing to a large fixed budget: run an initial budget, evaluate owner accuracy, and extend in roughly 1,000-step increments only when needed. Key control comparisons should be repeated only at selected milestones or when architecture/data conditions change.
+Continue the exact-distance sweep with FOLD-R ON while avoiding a matched-OFF run at every point. The next useful target is 4096 bytes. For longer distances, use staged checkpoints rather than committing to a large fixed budget: run an initial budget, evaluate owner accuracy, and extend in roughly 1,000-step increments only when needed. The simple single-fact distance sweep should stop around 16 KiB if no capacity failure appears, after which multiple facts, interference, correction, and overwrite behavior become higher-value tests than merely increasing empty distance.
