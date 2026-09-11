@@ -1,10 +1,17 @@
 """V5-B short English/Japanese byte-level language smoke task.
 
 This stage reuses the repository's existing UTF-8 byte vocabulary instead of
-introducing a new tokenizer or variable-length runtime.  Prompts are padded to a
-fixed slot count and teacher-routed as NEXT-BYTE or INSTRUCTION-RESPONSE.
+introducing a new tokenizer or variable-length runtime. Prompts are padded to a
+fixed slot count, passed through a small causal local byte encoder, and
+teacher-routed as NEXT-BYTE or INSTRUCTION-RESPONSE.
 
-The task is intentionally small.  It demonstrates that the uncompressed V5-B
+The local encoder is deliberate: architecture v0.5 places local byte
+grouping/encoding before the shared state-update core. Earlier V5-B synthetic
+tasks could be solved without cross-slot byte aggregation, but language input
+cannot be treated as independent slots. The GRU here is only a small causal
+reference front-end, not the final V5-G variable-length I/O design.
+
+The task is intentionally small. It demonstrates that the uncompressed V5-B
 core can train through raw English/Japanese UTF-8 byte inputs; it is not evidence
 of general language understanding.
 """
@@ -168,7 +175,9 @@ class ShortByteLanguageModel(nn.Module):
             raise TypeError("config must be LanguageTaskConfig")
         self.config = config
         self.byte_embedding = nn.Embedding(BYTE_VOCAB_SIZE, config.width, padding_idx=PAD)
-        self.position_embedding = nn.Embedding(config.max_tokens, config.width)
+        # Causal local grouping before the heavy shared core. The hidden output
+        # at slot i depends only on bytes <= i.
+        self.local_encoder = nn.GRU(config.width, config.width, batch_first=True)
         self.core = HighPrecisionFixedRoutingCore(
             LearnedCoreConfig(
                 width=config.width,
@@ -180,7 +189,7 @@ class ShortByteLanguageModel(nn.Module):
         self.readout_norm = nn.LayerNorm(config.width)
         self.decoder = nn.Linear(config.width, OUTPUT_BYTE_CLASSES)
 
-    def forward(self, tokens: torch.Tensor, tasks: torch.Tensor) -> torch.Tensor:
+    def _validate(self, tokens: torch.Tensor, tasks: torch.Tensor) -> None:
         if not isinstance(tokens, torch.Tensor) or not isinstance(tasks, torch.Tensor):
             raise TypeError("tokens and tasks must be torch.Tensor")
         if tokens.dtype != torch.int64 or tasks.dtype != torch.int64:
@@ -196,11 +205,25 @@ class ShortByteLanguageModel(nn.Module):
         if torch.any((tasks != TASK_NEXT) & (tasks != TASK_INSTRUCTION)):
             raise ValueError("tasks must be NEXT(0) or INSTRUCTION(1)")
 
-        parameter = next(self.parameters())
-        positions = torch.arange(self.config.max_tokens, device=tokens.device)
+    def encode_local(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Return causal local byte representations for every fixed slot."""
+        if not isinstance(tokens, torch.Tensor):
+            raise TypeError("tokens must be torch.Tensor")
+        if tokens.dtype != torch.int64:
+            raise TypeError("tokens must use torch.int64")
+        if tokens.ndim != 2 or tuple(tokens.shape[1:]) != (self.config.max_tokens,):
+            raise ValueError("tokens must have shape [batch, max_tokens]")
+        if torch.any(tokens < 0) or torch.any(tokens >= BYTE_VOCAB_SIZE):
+            raise ValueError("byte token id out of range")
         valid = (tokens != PAD).unsqueeze(-1)
-        context = self.byte_embedding(tokens) + self.position_embedding(positions).unsqueeze(0)
-        context = context * valid.to(dtype=context.dtype)
+        encoded, _ = self.local_encoder(self.byte_embedding(tokens))
+        return encoded * valid.to(dtype=encoded.dtype)
+
+    def forward(self, tokens: torch.Tensor, tasks: torch.Tensor) -> torch.Tensor:
+        self._validate(tokens, tasks)
+        parameter = next(self.parameters())
+        valid = tokens != PAD
+        context = self.encode_local(tokens)
         working = self.core.initial_working_state(
             tokens.shape[0], device=tokens.device, dtype=parameter.dtype
         )
@@ -212,8 +235,11 @@ class ShortByteLanguageModel(nn.Module):
             instruction_mask = tasks.bool().view(-1, 1, 1)
             working = torch.where(instruction_mask, instruction_state, next_state)
 
-        valid_float = valid.to(dtype=working.dtype)
-        pooled = (working * valid_float).sum(dim=1) / valid_float.sum(dim=1).clamp_min(1.0)
+        # EOS is the last authoritative prompt slot. Because the local encoder is
+        # causal, this representation summarizes the observed prefix without
+        # reading future PAD slots.
+        eos_index = valid.sum(dim=1) - 1
+        pooled = working[torch.arange(tokens.shape[0], device=tokens.device), eos_index]
         return self.decoder(self.readout_norm(pooled))
 
 
