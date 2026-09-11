@@ -58,6 +58,13 @@ class V05CompressionTuningTests(unittest.TestCase):
             accounting=self.initial.accounting,
         )
 
+    def _mse(self, initialization: CompressionInitialization) -> float:
+        reconstructed = np.stack(
+            [encoded.materialize() for encoded in initialization.encoded_weights], axis=0
+        )
+        error = reconstructed - self.weights
+        return float(np.mean(error * error))
+
     def test_codes_and_correction_coordinates_are_fixed_buffers(self):
         model = FixedCodeContinuousCompression(self.initial)
         parameter_names = {name for name, _ in model.named_parameters()}
@@ -85,8 +92,9 @@ class V05CompressionTuningTests(unittest.TestCase):
         self.assertGreater(correction_grad, 0.0)
         self.assertIsNone(model.codes.grad)
 
-    def test_fixed_code_tuning_reduces_reconstruction_error(self):
+    def test_fixed_code_tuning_removes_added_error_down_to_representation_floor(self):
         perturbed = self._perturbed_initialization()
+        reference_floor = self._mse(self.initial)
         result = fit_fixed_codes_to_dense(
             self.weights,
             perturbed,
@@ -95,8 +103,17 @@ class V05CompressionTuningTests(unittest.TestCase):
             device="cpu",
         )
         self.assertIsInstance(result, ContinuousTuningResult)
+        self.assertGreater(result.initial_mse, reference_floor)
         self.assertGreater(result.initial_mse, result.final_mse)
-        self.assertLess(result.final_mse, result.initial_mse * 0.5)
+
+        # Fixed codes and fixed correction coordinates impose a non-zero
+        # representational floor.  Continuous tuning should remove the error
+        # introduced by perturbing the continuous values; it is not expected to
+        # halve the irreducible code-assignment error itself.
+        added_error = result.initial_mse - reference_floor
+        residual_added_error = max(result.final_mse - reference_floor, 0.0)
+        self.assertLess(residual_added_error, added_error * 0.10)
+        self.assertLessEqual(result.final_mse, reference_floor * 1.01 + 1e-8)
 
     def test_tuning_preserves_codes_coordinates_bounds_and_payload(self):
         perturbed = self._perturbed_initialization()
