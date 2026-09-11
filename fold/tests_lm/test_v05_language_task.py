@@ -57,6 +57,23 @@ class V05LanguageTaskTests(unittest.TestCase):
             self.assertEqual(set(examples.tasks.tolist()), {TASK_NEXT, TASK_INSTRUCTION})
         self.assertTrue(any(any(byte >= 0x80 for byte in prompt.encode("utf-8")) for prompt in validation_a.prompts))
 
+    def test_local_encoder_is_causal(self):
+        torch.manual_seed(5)
+        model = ShortByteLanguageModel(self.config)
+        left = encode_fixed_prompt("reply:1", max_tokens=self.config.max_tokens).unsqueeze(0)
+        right = left.clone()
+        # Change a byte strictly after the observed prefix position being checked.
+        check_position = 3
+        right[0, check_position + 2] = ord("x")
+        encoded_left = model.encode_local(left)
+        encoded_right = model.encode_local(right)
+        torch.testing.assert_close(
+            encoded_left[:, : check_position + 1],
+            encoded_right[:, : check_position + 1],
+            rtol=0.0,
+            atol=0.0,
+        )
+
     def test_forward_validation_and_gradients_reach_both_routes(self):
         torch.manual_seed(7)
         train, _ = make_language_splits(self.config)
@@ -74,6 +91,8 @@ class V05LanguageTaskTests(unittest.TestCase):
         loss = F.cross_entropy(logits, targets)
         loss.backward()
         self.assertGreater(float(model.byte_embedding.weight.grad.abs().sum()), 0.0)
+        self.assertGreater(float(model.local_encoder.weight_ih_l0.grad.abs().sum()), 0.0)
+        self.assertGreater(float(model.local_encoder.weight_hh_l0.grad.abs().sum()), 0.0)
         self.assertGreater(float(model.core.shared.up.weight.grad.abs().sum()), 0.0)
         self.assertGreater(float(model.core.module_set[self.config.next_route].up.weight.grad.abs().sum()), 0.0)
         self.assertGreater(float(model.core.module_set[self.config.instruction_route].up.weight.grad.abs().sum()), 0.0)
