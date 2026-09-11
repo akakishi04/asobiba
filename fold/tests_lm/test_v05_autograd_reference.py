@@ -33,12 +33,16 @@ class V05AutogradReferenceTests(unittest.TestCase):
 
     def _finite_difference(self, tensor: torch.Tensor, index: tuple[int, ...], eps: float = 1e-6) -> float:
         with torch.no_grad():
-            original = float(tensor[index])
+            original = tensor[index].item()
             tensor[index] = original + eps
-        plus = float(fixed_code_loss(self.base, self.codebook, self.codes, self.inputs, self.target))
+        plus = fixed_code_loss(
+            self.base, self.codebook, self.codes, self.inputs, self.target
+        ).detach().item()
         with torch.no_grad():
             tensor[index] = original - eps
-        minus = float(fixed_code_loss(self.base, self.codebook, self.codes, self.inputs, self.target))
+        minus = fixed_code_loss(
+            self.base, self.codebook, self.codes, self.inputs, self.target
+        ).detach().item()
         with torch.no_grad():
             tensor[index] = original
         return (plus - minus) / (2.0 * eps)
@@ -51,22 +55,22 @@ class V05AutogradReferenceTests(unittest.TestCase):
     def test_autograd_matches_finite_difference_for_base(self):
         loss = fixed_code_loss(self.base, self.codebook, self.codes, self.inputs, self.target)
         loss.backward()
-        analytic = float(self.base.grad[0, 1])
+        analytic = self.base.grad[0, 1].item()
         numeric = self._finite_difference(self.base, (0, 1))
         self.assertAlmostEqual(analytic, numeric, places=8)
 
     def test_autograd_matches_finite_difference_for_selected_codebook_entry(self):
         loss = fixed_code_loss(self.base, self.codebook, self.codes, self.inputs, self.target)
         loss.backward()
-        analytic = float(self.codebook.grad[1, 0, 1, 1])
+        analytic = self.codebook.grad[1, 0, 1, 1].item()
         numeric = self._finite_difference(self.codebook, (1, 0, 1, 1))
         self.assertAlmostEqual(analytic, numeric, places=8)
 
     def test_unselected_codebook_entry_has_zero_gradient(self):
         loss = fixed_code_loss(self.base, self.codebook, self.codes, self.inputs, self.target)
         loss.backward()
-        self.assertEqual(float(self.codebook.grad[0, 0].abs().max()), 0.0)
-        self.assertEqual(float(self.codebook.grad[1, 1].abs().max()), 0.0)
+        self.assertEqual(self.codebook.grad[0, 0].abs().max().item(), 0.0)
+        self.assertEqual(self.codebook.grad[1, 1].abs().max().item(), 0.0)
 
     def test_rejects_invalid_dtype_shape_code_and_nonfinite(self):
         with self.assertRaises(TypeError):
