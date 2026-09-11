@@ -8,12 +8,15 @@
 
 制御器は部品や反復を選ぶだけでなく、「答える・追加計算する・調べる・観測する・質問する」を選ぶ設計です。分かる範囲を答え、不明点と有用な追加情報を具体化し、不要な聞き返しを抑える能力を目指します。
 
+長文実行では、**初回入力は新規部分を一度処理し、継続turnではcommit済みhistoryをraw promptとして再prefillしない**persistent sessionを正規形にします。decode時は固定local contextとbounded memory readsだけをactive working setにし、履歴総長に比例するfull replay/full scanを標準経路から外します。
+
 ## 設計を読む
 
 | 文書 | 役割 |
 |---|---|
 | [architecture-v0.5.md](docs/architecture-v0.5.md) | 最終構想。状態更新コア、圧縮部品、可変長入出力、記憶、柔軟な学習方法、総費用での評価 |
 | [theory-v0.5.md](docs/theory-v0.5.md) | v0.5を実装へ落とす理論仕様。二重時間軸、状態更新式、圧縮表現、反復誤差、行動価値、学習対象 |
+| [long-context-runtime-v0.5.md](docs/long-context-runtime-v0.5.md) | 長文速度の正規契約。persistent session、prefix再処理禁止、bounded memory read、TTFT/decode scaling |
 | [development-roadmap-v0.5.md](docs/development-roadmap-v0.5.md) | V5-A〜Iの実装順序、各Gate、比較対象、manifest、Codex作業規約 |
 | [information-acquisition.md](docs/information-acquisition.md) | 不確実性、不足情報、部分回答、検索・観測・質問、権限境界、学習と評価 |
 | [architecture-v0.4.md](docs/architecture-v0.4.md) | Gate 1の層別共有比較候補。最終形そのものではない |
@@ -26,7 +29,7 @@
 | [reasoning-plan.md](docs/reasoning-plan.md) / [research-plan.md](docs/research-plan.md) | 推論系R系列と記憶系P系列。最終構想の一括完了を示さない |
 | [reasoning-validation.md](results/reasoning-validation.md) | 過去の検証範囲。今回の再実行結果ではない |
 
-最終方針はv0.5を優先します。v0.5を実装する場合は、`theory-v0.5.md`で数理境界を確認し、`development-roadmap-v0.5.md`で対象段階とGateを決めてから作業します。v0.4の比較条件を、全方式をゼロから共同学習する義務や、最終構造を固定する規則として再適用しません。FOLD-Rの数値保証・scope・訂正の意味論は維持します。
+最終方針はv0.5を優先します。v0.5を実装する場合は、`theory-v0.5.md`で数理境界、`long-context-runtime-v0.5.md`で長文sessionの実行境界を確認し、`development-roadmap-v0.5.md`で対象段階とGateを決めてから作業します。v0.4の比較条件を、全方式をゼロから共同学習する義務や、最終構造を固定する規則として再適用しません。FOLD-Rの数値保証・scope・訂正の意味論は維持します。
 
 ## 設計とコードの区別
 
@@ -39,7 +42,7 @@
 | 既存LM関連 | `fold_lm/model.py`, `data.py`, `runner.py`, `cli.py`。所在確認のみ |
 | 既存構造推論関連 | `fold_reasoning/index.py`, `core.py`, `demo.py`。所在確認のみ |
 | v0.4の共有比較 | 設計文書。今回の更新で比較実装は追加していない |
-| v0.5 / 理論 / ロードマップ / 不足情報取得 | 設計文書。モデル本体の実装・学習・性能検証とは別 |
+| v0.5 / 理論 / 長文runtime / ロードマップ / 不足情報取得 | 設計文書。モデル本体の実装・学習・性能検証とは別 |
 
 ファイルがあることだけで、完成・正常動作・学習済みとは扱いません。設計文書の更新だけではコード・データ・重み・過去の実験結果は変更されません。
 
