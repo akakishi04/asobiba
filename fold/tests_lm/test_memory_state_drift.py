@@ -83,6 +83,7 @@ class MemoryStateDriftTests(unittest.TestCase):
             examples=3,
             fractions=(0.0, 0.5, 1.0),
         )
+        self.assertEqual(result["benchmark"], "fold-r-filler-state-drift-v2")
         self.assertEqual(result["examples"], 3)
         self.assertEqual(result["checkpoint_step"], 7)
         self.assertEqual(result["local_attention_window"], 64)
@@ -94,12 +95,23 @@ class MemoryStateDriftTests(unittest.TestCase):
         self.assertAlmostEqual(baseline["mean_counterfactual_state_drift_norm"], 0.0, places=7)
         self.assertAlmostEqual(baseline["mean_owner_signal_ratio"], 1.0, places=6)
         self.assertAlmostEqual(baseline["mean_owner_signal_cosine_to_start"], 1.0, places=6)
+        if baseline["mean_response_owner_signal_ratio"] is not None:
+            self.assertAlmostEqual(baseline["mean_response_owner_signal_ratio"], 1.0, places=6)
+            self.assertAlmostEqual(
+                baseline["mean_response_owner_signal_cosine_to_start"],
+                1.0,
+                places=6,
+            )
+        self.assertAlmostEqual(baseline["mean_response_owner_common_drift_norm"], 0.0, places=7)
 
         endpoint = result["points"][-1]
         self.assertGreater(endpoint["mean_filler_bytes_processed"], 0)
         self.assertGreater(endpoint["mean_common_state_drift_norm"], 0)
         self.assertIsNotNone(endpoint["mean_owner_signal_ratio"])
         self.assertIsNotNone(endpoint["mean_owner_signal_cosine_to_start"])
+        self.assertIn("mean_response_owner_signal_ratio", endpoint)
+        self.assertIn("mean_response_owner_signal_cosine_to_start", endpoint)
+        self.assertIn("mean_response_owner_common_drift_norm", endpoint)
 
     def test_local_only_checkpoint_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "memory=true"):
