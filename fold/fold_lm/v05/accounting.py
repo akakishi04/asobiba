@@ -1,19 +1,24 @@
-"""V5-A storage accounting and deterministic serialization reference.
+"""V5-A storage and execution accounting references.
 
 The reference deliberately distinguishes independent continuous scalars,
-theoretical discrete-code bits, and actual serialized bytes.  It is not a V5-C
-production format; it exists so later formats cannot hide code, metadata, or
-float payload costs.
+theoretical discrete-code bits, actual serialized bytes, active computation,
+internal-step count, and measured wall-clock.  It is not a V5-C production
+format or profiler; it exists so later implementations cannot hide storage or
+execution costs behind decoded/effective parameter counts.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 import math
 import struct
+import time
+from typing import Callable, Iterable
 
 import numpy as np
 
 from .compression import AdditiveCodebookWeight
+from .core import ReferenceLinearCore, reference_internal_step
+from .state import BudgetState, EvidenceState, WorkingState
 
 
 _MAGIC = b"F05A"
@@ -46,6 +51,40 @@ class StorageAccounting:
             self.continuous_payload_bytes + self.discrete_code_bytes + self.metadata_bytes
         ):
             raise ValueError("serialized byte accounting does not sum exactly")
+
+
+@dataclass(frozen=True)
+class ExecutionAccounting:
+    """Measured execution costs for one V5-A reference sequence."""
+
+    internal_steps: int
+    active_module_invocations: int
+    max_active_modules_per_step: int
+    wall_clock_seconds: float
+
+    def __post_init__(self) -> None:
+        for name in (
+            "internal_steps",
+            "active_module_invocations",
+            "max_active_modules_per_step",
+        ):
+            value = getattr(self, name)
+            if type(value) is not int or value < 0:
+                raise ValueError(f"{name} must be a nonnegative integer")
+        if not isinstance(self.wall_clock_seconds, (int, float)):
+            raise TypeError("wall_clock_seconds must be numeric")
+        wall = float(self.wall_clock_seconds)
+        if not math.isfinite(wall) or wall < 0.0:
+            raise ValueError("wall_clock_seconds must be finite and nonnegative")
+        if self.internal_steps == 0:
+            if self.active_module_invocations != 0 or self.max_active_modules_per_step != 0:
+                raise ValueError("zero steps cannot report active modules")
+        else:
+            if self.active_module_invocations < self.internal_steps:
+                raise ValueError("each V5-A reference step must invoke at least one active module")
+            if self.max_active_modules_per_step <= 0:
+                raise ValueError("nonzero steps require an active module")
+        object.__setattr__(self, "wall_clock_seconds", wall)
 
 
 def code_bits_per_index(entries_per_codebook: int) -> int:
@@ -113,3 +152,51 @@ def serialize_additive_codebook(weight: AdditiveCodebookWeight) -> bytes:
     if len(blob) != expected:
         raise RuntimeError("serializer/accounting byte count mismatch")
     return blob
+
+
+def measure_reference_steps(
+    evidence: EvidenceState,
+    working: WorkingState,
+    budget: BudgetState,
+    core: ReferenceLinearCore,
+    contexts: Iterable[np.ndarray],
+    *,
+    clock: Callable[[], float] = time.perf_counter,
+) -> tuple[EvidenceState, WorkingState, BudgetState, ExecutionAccounting]:
+    """Run and account a sequence of V5-A reference internal steps.
+
+    The single V5-A reference core counts as one active module invocation per
+    internal step.  Later routing stages may report more or fewer active modules,
+    but they must not reinterpret this baseline accounting retroactively.
+    """
+
+    if not callable(clock):
+        raise TypeError("clock must be callable")
+    context_list = list(contexts)
+    started = float(clock())
+    if not math.isfinite(started):
+        raise ValueError("clock returned a non-finite start time")
+
+    current_evidence = evidence
+    current_working = working
+    current_budget = budget
+    for context in context_list:
+        current_evidence, current_working, current_budget = reference_internal_step(
+            current_evidence,
+            current_working,
+            current_budget,
+            core,
+            context,
+        )
+
+    ended = float(clock())
+    if not math.isfinite(ended) or ended < started:
+        raise ValueError("clock must return finite monotonic values")
+    steps = len(context_list)
+    accounting = ExecutionAccounting(
+        internal_steps=steps,
+        active_module_invocations=steps,
+        max_active_modules_per_step=1 if steps else 0,
+        wall_clock_seconds=ended - started,
+    )
+    return current_evidence, current_working, current_budget, accounting
