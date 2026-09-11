@@ -5,6 +5,10 @@ teacher-routed ADD / SUB operations.  Each operation supplies only its operand;
 the authoritative intermediate and final values are never fed back as input.
 Trajectory supervision verifies that the uncompressed shared core can compose
 multiple state transitions rather than merely solve a one-step target.
+
+Feature 0 of the working state is the explicit scalar state channel.  Reading
+that channel directly avoids adding a separate learned readout that could hide
+whether recurrent state updates themselves are accurate.
 """
 from __future__ import annotations
 
@@ -88,8 +92,6 @@ class CompositionModel(nn.Module):
                 hidden_mult=config.hidden_mult,
             )
         )
-        self.readout_norm = nn.LayerNorm(config.width)
-        self.decoder = nn.Linear(config.width, 1)
 
     def _validate(
         self,
@@ -120,8 +122,8 @@ class CompositionModel(nn.Module):
         if torch.any((operations != ADD) & (operations != SUB)):
             raise ValueError("operations must be ADD(0) or SUB(1)")
 
-    def _decode(self, working: torch.Tensor) -> torch.Tensor:
-        return self.decoder(self.readout_norm(working[:, 0, :])).squeeze(-1)
+    def _read_state(self, working: torch.Tensor) -> torch.Tensor:
+        return working[:, 0, 0]
 
     def forward(
         self,
@@ -135,12 +137,12 @@ class CompositionModel(nn.Module):
         working = self.core.initial_working_state(
             batch, device=initial_values.device, dtype=parameter.dtype
         )
-        # Feature 0 is the initial state only.  Operation operands arrive on
-        # feature 1, so H + C does not alias current state with the new operand.
+        # Feature 0 is the authoritative learned state channel.  Operation
+        # operands arrive on feature 1, so H + C does not alias state and input.
         working = working.clone()
         working[:, 0, 0] = initial_values.to(dtype=parameter.dtype) / float(self.config.state_scale)
 
-        outputs = [self._decode(working)]
+        outputs = [self._read_state(working)]
         for step in range(self.config.operation_steps):
             context = torch.zeros_like(working)
             context[:, 0, 1] = operands[:, step].to(dtype=parameter.dtype) / float(self.config.state_scale)
@@ -149,7 +151,7 @@ class CompositionModel(nn.Module):
             sub_state = self.core(working, context, route_index=self.config.sub_route)
             sub_mask = operations[:, step].bool().view(-1, 1, 1)
             working = torch.where(sub_mask, sub_state, add_state)
-            outputs.append(self._decode(working))
+            outputs.append(self._read_state(working))
         return torch.stack(outputs, dim=1)
 
 
@@ -194,7 +196,10 @@ def make_composition_splits(
     for initial in range(config.max_initial + 1):
         for operations in op_space:
             for operands in operand_space:
-                checksum = initial + sum((index + 1) * (op + 2 * operand) for index, (op, operand) in enumerate(zip(operations, operands)))
+                checksum = initial + sum(
+                    (index + 1) * (op + 2 * operand)
+                    for index, (op, operand) in enumerate(zip(operations, operands))
+                )
                 row = (initial, operations, operands)
                 if checksum % 5 == 0:
                     validation_rows.append(row)
@@ -241,11 +246,15 @@ def evaluate_composition(model: CompositionModel, examples: CompositionExamples)
         trajectory_exact_accuracy = float((rounded == targets).all(dim=1).float().mean().item())
         final_accuracy = float((rounded[:, -1] == targets[:, -1]).float().mean().item())
         mae = float((predicted_values - targets.to(dtype=predicted_values.dtype)).abs().mean().item())
+        max_abs_error = float(
+            (predicted_values - targets.to(dtype=predicted_values.dtype)).abs().max().item()
+        )
     finally:
         model.train(training)
     return {
         "mse": mse,
         "mae": mae,
+        "max_abs_error": max_abs_error,
         "point_accuracy": point_accuracy,
         "trajectory_exact_accuracy": trajectory_exact_accuracy,
         "final_accuracy": final_accuracy,
@@ -256,7 +265,7 @@ def train_composition_task(
     *,
     config: CompositionTaskConfig | None = None,
     seed: int = 20260911,
-    steps: int = 500,
+    steps: int = 300,
     learning_rate: float = 0.005,
     batch_size: int = 64,
     device: str | torch.device = "cpu",
