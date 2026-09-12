@@ -182,7 +182,7 @@ def run_compile_fixture_benchmark(
         raise ValueError("repeats must be positive")
     device = _validated_device(device)
     started = time.perf_counter()
-    total = 6  # load, two eager timings, two compile+parity steps, two compiled timings folded into six units.
+    total = 7  # load + two eager timings + two compile/parity steps + two compiled timings.
     completed = 0
 
     print(
@@ -273,8 +273,6 @@ def run_compile_fixture_benchmark(
             flush=True,
         )
 
-    # Two compiled timings are the final logical unit pair.  Because total=6 and
-    # four units have already completed, each timing advances once.
     for base_name in ("dense", "compact"):
         variant = f"compiled_{base_name}"
         timings[variant] = _measure_forward(
