@@ -8,14 +8,14 @@ from torch.nn import functional as F
 
 from fold_lm.v05.triton_tiled_ablation_runtime import TiledBaseOnlyLinearBank
 from fold_lm.v05.triton_tiled_runtime import TiledNoECompressedLinearBank
-from fold_lm.v05.benchmarks.gate_c_triton_correction_ablation import without_correction
-from fold_lm.v05.benchmarks.gate_c_triton_tiled_decode_ablation import (
+from fold_lm.v05_benchmarks.gate_c_triton_correction_ablation import without_correction
+from fold_lm.v05_benchmarks.gate_c_triton_tiled_decode_ablation import (
     DEFAULT_ROWS,
     VARIANTS,
     order_for_round,
     summarize_records,
 )
-from fold_lm.v05.benchmarks.gate_c_triton_width_scale import build_synthetic_initialization
+from fold_lm.v05_benchmarks.gate_c_triton_width_scale import build_synthetic_initialization
 
 
 class V05GateCTritonTiledDecodeAblationTests(unittest.TestCase):
