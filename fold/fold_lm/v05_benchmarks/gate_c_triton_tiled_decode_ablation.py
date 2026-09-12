@@ -27,8 +27,8 @@ from torch.nn import functional as F
 
 from fold_lm.v05.triton_tiled_runtime import TiledNoECompressedLinearBank
 from fold_lm.v05.triton_tiled_ablation_runtime import TiledBaseOnlyLinearBank
-from fold_lm.v05.benchmarks.gate_c_triton_correction_ablation import without_correction
-from fold_lm.v05.benchmarks.gate_c_triton_width_scale import (
+from fold_lm.v05_benchmarks.gate_c_triton_correction_ablation import without_correction
+from fold_lm.v05_benchmarks.gate_c_triton_width_scale import (
     ROLES,
     build_synthetic_initialization,
     role_shape,
