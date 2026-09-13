@@ -12,19 +12,14 @@
 - Python 3.13.15
 - PyTorch `2.10.0+cu130`
 - CUDA 13.0
-- GPU: NVIDIA GeForce RTX 4070 Ti SUPER
+- GPU: RTX 4070 Ti SUPER
 - VS2022 Developer PowerShell 17.14.27
 
 ## 2. Protected artifacts
 
-### C37 protected result
-
-- Path: `M:\asobiba\fold\runs\chatgpt-last-result.json`
+- C37 result: `M:\asobiba\fold\runs\chatgpt-last-result.json`
 - SHA256: `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`
-
-### Runtime fixture
-
-- Path: `M:\asobiba\fold\runs\fixtures\v05-c-composition-20260921.pt`
+- runtime fixture: `M:\asobiba\fold\runs\fixtures\v05-c-composition-20260921.pt`
 - SHA256: `A52F8209703149407580F7E2965B61B78653030EE992AF6D759865736741CA9E`
 
 Diagnostics must preserve both.
@@ -33,15 +28,15 @@ Diagnostics must preserve both.
 
 1. One experiment / verification question per C number.
 2. Full output overwrites `M:\asobiba\fold\runs\chatgpt-last.log`.
-3. User pastes the full log back into ChatGPT.
+3. User pastes the complete log back into ChatGPT.
 4. ChatGPT judges the result.
 5. Increment only after a valid successful run.
 6. Failed / invalid retries keep the same C number.
-7. `status=PASS` means the experiment executed correctly, not that Gate C passed.
-8. Invalid import / parser / hash / experiment-ID runs are not evidence.
-9. Prefer tracked benchmark files.
-10. Long-running experiments must print useful progress.
-11. When a scientific acceptance margin is needed, define it before running the new data.
+7. `status=PASS` means execution succeeded, not that Gate C passed.
+8. Invalid import/parser/hash/experiment-ID runs are not evidence.
+9. Prefer tracked benchmark files and short tracked runners over large pasted scripts.
+10. Long runs print useful progress.
+11. If a scientific acceptance margin is needed, define it before collecting the deciding data.
 
 PC clipboard:
 
@@ -69,348 +64,228 @@ Lead routed-weight family:
 W_module = W_base + A_module @ B_shared
 ```
 
-Current conclusions:
+Current selected task points:
+
+- Condition: **rank3**
+- Composition: rank2
+- Language: rank4
+- native joint-training rule on current tasks: `factor_lr = common_lr`
+
+Important conclusions:
 
 - direct fine-grained codebook execution is storage/reference only;
-- Shared Basis remains the lead representation family;
 - one universal rank rule is rejected;
 - rank/capacity is adaptive by functional need;
-- native joint-training default on current tasks is `factor_lr = common_lr`;
-- intended inference form is GEMM-native `[W_base; B_shared]` projection + coefficient `addmm`;
+- runtime cost is a first-class rank-allocation cost;
+- intended inference form is GEMM-native shared projection + coefficient `addmm`;
 - effective-weight materialization is reference-only;
-- rank allocation must account for runtime cost as well as quality/storage;
-- Condition rank4 remains the accepted safe point until C76 decides whether rank3 can be declared prospectively non-inferior;
-- production integration waits until rank policy and representative runtime practicality are sufficiently resolved.
+- Condition rank3 replaced rank4 only after a prospective independent-seed non-inferiority gate passed;
+- production runtime is still unmodified;
+- selected-rank recurrence/equivalence refresh is next before production integration.
 
-Do not claim that fixture success proves broad language quality or that FOLD beats Transformers / existing LLMs.
+Do not claim fixture success proves broad language quality or that FOLD beats Transformers / existing LLMs.
 
 ## 5. Key accepted history
 
 ### C41-C57 — codebook path
 
-Storage reduction exists, but direct codebook GPU decode/gather becomes the runtime blocker. C57 width1024 compact/dense = `12.88719`; compact/predecoded = `2.18005`. Decision: stop primary optimization of direct fine-grained codebook execution.
+Storage reduction existed, but direct codebook GPU decode/gather became the runtime blocker. C57 width1024 compact/dense = `12.88719`. Decision: stop primary optimization of direct fine-grained codebook execution.
 
-### C58 — Shared Basis runtime scale
+### C58 — Shared Basis scale
 
-Synthetic `rank=width/16` diagnostic:
+Synthetic `rank=width/16` Shared/Dense latency:
 
-- width256: `1.63577x`
-- width512: `1.29614x`
-- width1024: `1.19407x`
+- width256: 1.63577x
+- width512: 1.29614x
+- width1024: 1.19407x
 
-Large widths trend toward Dense. Runtime feasibility only.
+Large width trends toward Dense.
 
-### C59-C64 — quality/capacity
+### C59-C67 — quality / native training
 
-- post-hoc SVD alone is not a useful task objective;
-- task-aware factor learning recovers Composition;
-- Composition rank2 / routed ratio `0.5703125` reproduces 3/3 seeds at Dense score;
-- Condition rank1 insufficient;
-- C63: Condition rank4 is first tested robust recovery point, routed ratio `0.78125`;
-- C64: Language rank2 has functional capacity but can overtrain; rank4 is stable under the fixed final checkpoint, routed ratio `0.640625`.
-
-### C65-C67 — native direct joint training
-
-C65 showed native Shared Basis training is feasible but Language was unstable with factor lr0.002 vs common lr0.01.
-
-C66 Language rank4 factor-LR sweep:
-
-- 0.002 -> fail
-- 0.005 -> one seed fail
-- 0.010 -> 3/3 Dense match
-
-C67 established the current native rule:
-
-```text
-factor_lr = common_lr
-```
-
-Composition and Language match Dense 3/3; Condition had only tiny validation residuals.
+- post-hoc SVD alone is not an adequate task objective;
+- Composition rank2 recovers and reproduces 3/3 seeds;
+- Condition rank1 insufficient; rank4 was first robust tested point before rank3 was later examined;
+- Language rank2 has capacity but unstable final checkpoint; rank4 stable;
+- aligned native rule `factor_lr = common_lr` succeeds across current task families.
 
 ### C68-C69 — Condition rank4 exhaustive robustness
 
-C69 extended Condition rank4 aligned training to 12 seeds with exhaustive 32,512 held-out trajectories per seed:
+C69, 12 seeds x 32,512 exhaustive held-out trajectories:
 
-- Direct wins: 6
-- Dense wins: 6
-- two-sided sign-test p: 1.0
-- mean exact delta: `-0.00025117894`
-- median delta: `-0.00006151199`
-- pooled net Direct advantage: `-98` over 390,144 held-out examples
+- rank4 wins 6 / Dense wins 6
+- sign-test p = 1.0
+- mean exact delta = -0.00025117894
+- pooled net Direct advantage = -98 / 390,144
 
-Decision: no evidence of a systematic rank4 Condition quality deficit large enough to justify more rank. Treat remaining difference primarily as seed / optimizer variance on this tiny task.
+No systematic rank4 deficit was established.
 
 ### C70 — GEMM-native recurrence equivalence
 
-Accepted run commit: `cd18de18a8d167a1bbdf5eb0cbb863d8737e77f3`.
+Selected then: Condition4 / Composition2 / Language4, 3 seeds each.
 
-3 tasks x 3 seeds, selected ranks, aligned native training. Materialized effective-weight execution vs GEMM-native Shared Basis:
+- all validation scores equal
+- all semantics equal
+- all validation outputs allclose
+- recurrence depths 1/2/4/8/16/32/64 allclose
+- max validation abs gap = `5.245208740234375e-06`
+- max recurrence abs gap = `7.62939453125e-05`
 
-- validation scores equal: true
-- validation semantics equal: true
-- validation outputs allclose: true
-- recurrence depths 1/2/4/8/16/32/64 allclose: true
-- max validation abs gap: `5.245208740234375e-06`
-- max recurrence abs gap: `7.62939453125e-05`
-- max recurrence relative-L2 gap: `5.212819324264913e-07`
-
-Decision: GEMM-native arithmetic is numerically safe in the tested float32 regime through 64 updates.
+GEMM-native arithmetic is numerically safe in the tested float32 regime.
 
 ### C71-C72 — selected-shape runtime
 
-C71 selected small task shapes saved persistent bytes but paid eager latency. Across batches 1/8/32, median Shared/Dense latency ratio = `1.3765237679`; forward peak-delta ratio median = `1.1212121212`.
+C71 eager small-shape median Shared/Dense latency = `1.3765237679`; full-core persistent savings remained material.
 
-C72 CUDA Graph replay did not remove the penalty:
+C72 CUDA Graph median = `1.4057762261`; Graph did not remove the small-shape penalty. Extra arithmetic / shape efficiency / memory traffic dominate more than Python/launch overhead.
 
-- graph median latency ratio: `1.4057762261`
-- C71 eager median: `1.3765237679`
-- graph better than eager at only 3/9 points
+### C73 — extended full-core width/rank scaling
 
-Decision: small-shape runtime tax is not primarily Python / launch overhead; extra arithmetic, shape efficiency, and memory traffic dominate.
+Widths 32..5120, slots20, batches1/8.
 
-## 6. C73 — extended full-core width / rank scaling
+| profile | rank fraction | width5120 full-core ratio | b1 latency | b8 latency |
+|---|---:|---:|---:|---:|
+| lean | 1/16 | ~0.7136 | 1.05725 | 1.06427 |
+| medium | 1/8 | ~0.7605 | 1.07800 | 1.11564 |
+| high | 1/4 | ~0.8542 | 1.23527 | 1.21851 |
 
-Accepted run commit: `136690b027ebc4ef512e0766d947cd18e77d59f0`.
+Rank fraction materially controls runtime/storage Pareto behavior.
 
-Widths:
+### C74 — Condition rank3 retrospective exhaustive check
 
-```text
-32, 64, 128, 256, 512, 1024, 1536, 2048, 3072, 4096, 5120
-```
+12 seeds x 32,512 held-out trajectories.
 
-Fixed full-core shape: slots20, modules2, hidden_mult2, eager CUDA, batches1/8.
+- rank3 routed ratio = 0.7109375
+- rank4 routed ratio = 0.78125
+- rank3 vs Dense mean = -0.00117391348
+- rank3 wins 4 / Dense wins 8
+- rank3 vs rank4 mean = -0.00092273454
+- rank3 vs rank4 seed direction = 6 / 6
 
-Rank profiles:
+Because no equivalence margin had been predeclared, rank3 was not adopted from C74 alone.
 
-```text
-lean   = width / 16   routed ratio 0.5703125
-medium = width / 8    routed ratio 0.640625
-high   = width / 4    routed ratio 0.78125
-```
+### C75 — Condition rank3/rank4 runtime bridge
 
 At width5120:
 
-| profile | full-core persistent ratio | batch1 latency | batch8 latency |
-|---|---:|---:|---:|
-| lean | ~0.7136 | 1.05725 | 1.06427 |
-| medium | ~0.7605 | 1.07800 | 1.11564 |
-| high | ~0.8542 | 1.23527 | 1.21851 |
+- rank3-equivalent 3/16 full-core ratio vs Dense = 0.80734184
+- rank4-equivalent 1/4 full-core ratio vs Dense = 0.85420463
+- rank3 / rank4 persistent bytes = 0.94513868 (~5.5% smaller)
+- batch1 Shared/Dense: rank3 1.13681493 vs rank4 1.20286584
+- batch8 Shared/Dense: rank3 1.17189873 vs rank4 1.20927834
 
-Decision:
+Rank3 offered a real but moderate ~3-5.5% endpoint runtime benefit and ~5.5% full-core byte benefit, enough to justify one prospective quality decision.
 
-1. lean is strongly runtime-viable at large width;
-2. medium is plausible and approaches ~1.1x;
-3. high retains a material ~20%+ runtime penalty at large width;
-4. rank allocation must include runtime cost in the objective.
+## 6. C76 — prospective independent-seed Condition rank3 non-inferiority
 
-## 7. C74 — Condition rank3 12-seed exhaustive viability
+Accepted run commit: `8fd6c3a600d7da91eb1c15e9f768c30988b8b2d4`.
 
-Accepted run commit: `15d380a59f8a0940272b6ff95c229567fdf9d309`.
+Benchmark: `fold_lm/v05_benchmarks/gate_c_shared_basis_condition_rank3_prospective_noninferiority.py`
 
-Experiment ID:
+Decision rule was fixed before observing the new seeds:
 
-`C74-shared-basis-condition-rank3-12seed-exhaustive`
+- seeds: `20260923..20260946` (24), disjoint from C74;
+- primary delta: rank3 exhaustive exact - rank4 exhaustive exact;
+- margin: `-0.002` absolute accuracy;
+- paired bootstrap unit: seed;
+- 100,000 deterministic bootstrap resamples;
+- one-sided 95% lower bound;
+- pass iff lower bound > -0.002.
 
-Setup: rank3 candidate vs accepted rank4 and Dense, aligned lr0.01, 260 steps, batch32, train256, seeds `20260911..20260922`, exhaustive held-out 32,512/seed.
+Accepted result:
 
-Storage:
+- experiment status: PASS
+- seed independence: true
+- mean delta: **-0.0000794604421**
+- median: **-0.000199943781**
+- min: -0.00353717804
+- max: +0.00301426649
+- bootstrap lower 95%: **-0.000512627388**
+- non-inferiority gate: **PASS**
+- rank3 wins 10 / rank4 wins 13 / tie 1
+- sign-test p = `0.6776394844`
+- pooled net rank3 advantage = **-62** across 780,288 held-out trajectories
 
-- rank3 routed-weight ratio: `0.7109375`
-- rank4 routed-weight ratio: `0.78125`
-- rank3 uses 91% of rank4 routed-weight bytes
+### C76 decision
 
-Rank3 vs Dense:
+Condition rank3 is now the **selected Condition capacity point** for subsequent integration work on the current synthetic-domain evidence.
 
-- mean: `-0.00117391348`
-- median: `-0.00072279572`
-- min: `-0.00922733545`
-- max: `+0.00661295652`
-- rank3 wins 4, Dense wins 8
-- sign-test p = `0.3876953125`
-- pooled net rank3 advantage = `-458`
+This does not mean rank3 is universally superior or broad-task equivalent. It means the predeclared engineering non-inferiority contract was satisfied while C75 established a measurable runtime/storage benefit.
 
-Rank3 vs rank4:
-
-- mean delta: `-0.00092273454`
-- median delta: `-0.00016915798`
-- rank3 better 6, rank4 better 6
-
-Decision after C74:
-
-- retain rank4 as accepted safe Condition point;
-- keep rank3 as optimization candidate;
-- do not call rank3 equivalent because C74 had no predeclared equivalence margin;
-- measure runtime benefit before spending more quality experiments.
-
-## 8. C75 — Condition rank3-vs-rank4 runtime/storage bridge
-
-Accepted run commit: `cc78d3462788efd43772a4e2d53794ed987b846a`.
-
-Experiment ID:
-
-`C75-shared-basis-condition-rank3-rank4-runtime-bridge`
-
-Profiles:
+Current selected ranks are therefore:
 
 ```text
-rank3_bridge = 3 * width / 16
-rank4_high   = width / 4
+Condition   rank3
+Composition rank2
+Language    rank4
 ```
-
-Widths `16..5120`; width16 includes real Condition-like slots1 plus slots20; larger widths use slots20; batches1/8; eager CUDA.
-
-### Actual Condition-like width16 / slots1
-
-- batch1 rank3 Shared/Dense median: `1.49920723`
-- batch1 rank4 Shared/Dense median: `1.49294089`
-- rank3 is essentially unchanged/slightly worse at batch1 (`~1.0042x` rank3/rank4 tax ratio)
-- batch8 rank3: `1.37943576`
-- batch8 rank4: `1.49792140`
-- batch8 rank3/rank4 tax ratio: `0.92090`
-
-Small-shape results remain noisy and are not the primary scaling decision.
-
-### Width5120 endpoint
-
-- batch1 rank3 Shared/Dense: **1.13681493**
-- batch1 rank4 Shared/Dense: **1.20286584**
-- rank3/rank4 latency-tax ratio: **0.94509** (~5.5% relative improvement)
-- batch8 rank3 Shared/Dense: **1.17189873**
-- batch8 rank4 Shared/Dense: **1.20927834**
-- rank3/rank4 latency-tax ratio: **0.96909** (~3.1% relative improvement)
-
-Persistent full-core bytes at width5120:
-
-- rank3 full-core ratio vs Dense: `0.80734184`
-- rank4 full-core ratio vs Dense: `0.85420463`
-- rank3 / rank4 persistent bytes: **0.94513868** (~5.5% smaller)
-
-### C75 interpretation
-
-Rank3 provides a real but moderate operational benefit over rank4 at large width:
-
-- about 5.5% lower full-core persistent bytes;
-- about 3-5.5% lower endpoint latency tax in the tested large-width points.
-
-This benefit is large enough to justify one final prospective quality decision, but not large enough to ignore the C74 quality-risk signal.
-
-Therefore:
-
-- rank4 remains the accepted safe Condition point;
-- rank3 remains a candidate only;
-- the next test must use independent seeds and a quality margin fixed before observing them;
-- if rank3 fails that prospective gate, stop rank3 pursuit and retain rank4.
 
 Gate C remains **NOT PASSED**.
 
-## 9. Auto-Partition / adaptive-capacity consequence
+## 7. Auto-Partition / adaptive-capacity consequence
 
-Main living document:
+See:
 
-`fold/docs/shared-basis-auto-module-partition-report.md`
+- `fold/docs/shared-basis-auto-module-partition-report.md`
+- `fold/docs/shared-basis-auto-module-partition-addendum-c73-c76.md`
 
-Current rules from C71-C75:
+Current rules:
 
-- runtime cost is a first-class rank-allocation cost;
-- lower rank is preferred only when its quality margin is established prospectively;
-- high-rank groups carry measurable runtime tax at large width;
-- do not call two ranks equivalent from mixed-sign retrospective data alone;
-- a modest runtime/storage gain must not justify moving the quality goalposts;
-- if two capacities pass the same quality gate, prefer the lower-rank Pareto point.
+1. diagnose co-adaptation and seed direction before increasing rank;
+2. runtime cost is a first-class capacity cost;
+3. when considering a lower rank, estimate operational benefit first;
+4. if benefit is material, fix a prospective quality tolerance before the deciding data;
+5. adopt the lower rank only if that gate passes;
+6. after selected-rank structural change, refresh execution/recurrence equivalence before production integration;
+7. among capacities passing the same quality contract, prefer the lower-rank Pareto point unless another measured constraint dominates.
 
-## 10. Next experiment — C76
+## 8. Next experiment — C77
 
-**Prospective independent-seed Condition rank3 non-inferiority.**
+**Final selected-rank GEMM-native recurrence equivalence refresh.**
 
 Tracked benchmark:
 
-`fold/fold_lm/v05_benchmarks/gate_c_shared_basis_condition_rank3_prospective_noninferiority.py`
+`fold/fold_lm/v05_benchmarks/gate_c_shared_basis_final_selected_rank_recurrence_equivalence.py`
 
 Benchmark creation commit:
 
-`e0e248a4f2a9395bbbed73b9b404c236ed5635d8`
+`27e18052bc85291394ca9de55e79e41d73a8732a`
 
-### Scientific question
-
-Does rank3 remain within a predeclared acceptable average exhaustive-quality loss relative to rank4 on data/initialization seeds not used by C69/C74?
-
-### Fixed before execution
-
-New independent seeds:
+Selected ranks:
 
 ```text
-20260923..20260946   (24 seeds)
+Condition   rank3
+Composition rank2
+Language    rank4
 ```
 
-No overlap with C74.
-
-Both candidates use:
-
-- same untrained initialization provenance per seed;
-- same training data;
-- same batch sequence;
-- aligned lr0.01;
-- 260 steps;
-- batch32;
-- train size256;
-- exhaustive held-out 32,512 per seed.
-
-Primary paired quantity:
+Fresh refresh seeds:
 
 ```text
-rank3 exhaustive trajectory_exact_accuracy
--
-rank4 exhaustive trajectory_exact_accuracy
+20261001, 20261002, 20261003
 ```
 
-### Prospectively declared non-inferiority rule
+No overlap with C76.
 
-Engineering margin:
+C77 repeats the C70 pre-integration semantic/output/recurrence comparison using the final selected rank set:
 
-```text
--0.002 absolute accuracy
-= -0.20 percentage point
-```
+- trained factorized reference vs GEMM-native inference form;
+- validation score equality;
+- semantic equality;
+- validation tensor allclose;
+- recurrence depths 1/2/4/8/16/32/64;
+- rtol 5e-4, atol 1e-4;
+- no production runtime modification.
 
-Deterministic paired bootstrap:
+If all equivalence flags pass, the next step is an opt-in production `modules.py` integration and regression gate. If any equivalence flag fails, diagnose C77 under the same number before production mutation.
 
-- 100,000 resamples;
-- resample unit = seed, not individual trajectories;
-- bootstrap seed = 20260914;
-- one-sided 95% lower percentile bound on the mean paired delta.
-
-Scientific gate:
-
-```text
-noninferiority_gate_passed =
-    lower_95_bound(mean(rank3-rank4)) > -0.002
-```
-
-This margin is recorded before C76 runs. It is an engineering tolerance chosen in light of C75's ~3-5.5% latency and ~5.5% persistent-byte benefit; it is not a universal statistical standard and must not be changed after seeing C76 outcomes.
-
-Supporting diagnostics:
-
-- mean / median / min / max paired delta;
-- rank3/rank4 seed win counts;
-- sign-test diagnostic;
-- pooled paired rank3-only / rank4-only counts;
-- storage ratios.
-
-Interpretation:
-
-- if the prospective gate passes, rank3 may replace rank4 as the selected Condition candidate for subsequent integration work, with the result limited to this tiny synthetic domain;
-- if the gate fails, retain rank4 and stop rank3 optimization on the current evidence;
-- C76 `status=PASS` only means execution succeeded; it does not imply the non-inferiority gate passed;
-- C76 cannot establish Gate C passage by itself.
-
-## 11. Handoff
+## 9. Handoff
 
 On a new session:
 
 1. read this ledger;
 2. confirm branch/HEAD and protected hashes;
-3. continue at C76;
+3. continue at C77;
 4. keep one experiment per C number;
-5. retry invalid/failing execution under the same number;
-6. do not alter the C76 non-inferiority margin after seeing results;
-7. update this file after every accepted result or Gate decision change.
+5. retry failures under the same number;
+6. do not modify production runtime until C77 is accepted.
