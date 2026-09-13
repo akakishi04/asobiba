@@ -1,6 +1,7 @@
 """Helpers for C83 fresh-process operational VRAM/headroom measurement."""
 from __future__ import annotations
 
+import argparse
 import gc
 import json
 from pathlib import Path
@@ -124,3 +125,24 @@ def run_child(*, variant: str, profile: str, batch: int, output_path: Path) -> d
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(record, indent=2, allow_nan=False), encoding="utf-8")
     return record
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--variant", choices=("dense", "shared"), required=True)
+    parser.add_argument("--profile", choices=tuple(PROFILES), required=True)
+    parser.add_argument("--batch", type=int, choices=BATCHES, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args(argv)
+    result = run_child(
+        variant=args.variant,
+        profile=args.profile,
+        batch=args.batch,
+        output_path=args.output,
+    )
+    print(json.dumps(result, allow_nan=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
