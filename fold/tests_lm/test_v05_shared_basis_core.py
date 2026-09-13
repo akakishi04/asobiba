@@ -62,21 +62,27 @@ class SharedBasisFixedRoutingCoreTests(unittest.TestCase):
         context = torch.randn_like(working) * 0.05
         target = torch.randn_like(working) * 0.05
 
-        native_out = native_core(working, context, route_index=1)
-        native_loss = F.mse_loss(native_out, target)
-        native_loss.backward()
+        # Exercise every routed normalization before comparing the full parameter
+        # gradient set. A single explicit route legitimately leaves the other
+        # route's LayerNorm parameters unused with grad=None.
+        native_loss = torch.zeros((), dtype=working.dtype)
+        reference_loss = torch.zeros((), dtype=working.dtype)
+        for route in range(self.config.modules):
+            native_out = native_core(working, context, route_index=route)
+            reference_out = _materialized_forward(reference_core, working, context, route)
+            self.assertTrue(torch.allclose(native_out, reference_out, rtol=5e-4, atol=1e-4))
+            native_loss = native_loss + F.mse_loss(native_out, target)
+            reference_loss = reference_loss + F.mse_loss(reference_out, target)
 
-        reference_out = _materialized_forward(reference_core, working, context, 1)
-        reference_loss = F.mse_loss(reference_out, target)
+        native_loss.backward()
         reference_loss.backward()
 
-        self.assertTrue(torch.allclose(native_out, reference_out, rtol=5e-4, atol=1e-4))
-        native_grads = dict(native_core.named_parameters())
-        reference_grads = dict(reference_core.named_parameters())
-        self.assertEqual(set(native_grads), set(reference_grads))
-        for name in native_grads:
-            left = native_grads[name].grad
-            right = reference_grads[name].grad
+        native_parameters = dict(native_core.named_parameters())
+        reference_parameters = dict(reference_core.named_parameters())
+        self.assertEqual(set(native_parameters), set(reference_parameters))
+        for name in native_parameters:
+            left = native_parameters[name].grad
+            right = reference_parameters[name].grad
             self.assertIsNotNone(left, name)
             self.assertIsNotNone(right, name)
             self.assertTrue(
