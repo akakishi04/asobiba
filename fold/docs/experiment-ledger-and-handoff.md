@@ -80,13 +80,13 @@ Current lead routed-weight family:
 W_module = W_base + A_module @ B_shared
 ```
 
-The initial rank rule under test was:
+The initial universal rank rule:
 
 ```text
 rank = max(1, width // 16)
 ```
 
-For modules=2, hidden_mult=2 this gives routed Up+Down weight ratio `0.5703125` at widths 16/32.
+is **not sufficient as a task-independent rule**. C63 showed that condition width16 needs rank4 rather than rank1 under the bounded recovery schedule. Rank/capacity is now treated as a module/task-dependent design variable.
 
 ## 5. Scientific discipline
 
@@ -129,7 +129,7 @@ Vendor-GEMM execution:
 1. `F.linear(x, [W_base; B_shared])`
 2. module-specific `addmm` from latent to output
 
-Rank = width/16. Persistent routed-weight ratio exactly `0.578125` in the scale diagnostic.
+Rank = width/16 in this scale diagnostic. Persistent routed-weight ratio exactly `0.578125`.
 
 `shared_basis / dense` median:
 
@@ -193,17 +193,15 @@ Composition robustness reproduced 3/3.
 
 Accepted commit: `514f1a4d6ef4f455af586f195de3add4b372ad15`.
 
-Tasks / ranks from the original rule:
+Initial rule:
 
 - condition width16 -> rank1
 - composition width32 -> rank2
 - language width32 -> rank2
 
-All use routed-weight ratio `0.5703125`.
+All had routed-weight ratio `0.5703125`.
 
 ### Condition
-
-Dense vs final recovered:
 
 | seed | dense | pre | post |
 |---:|---:|---:|---:|
@@ -211,15 +209,11 @@ Dense vs final recovered:
 | 20260912 | 1.000000 | 0.492188 | 0.945312 |
 | 20260913 | 0.984375 | 0.468750 | 0.921875 |
 
-All three improve strongly but all remain below their dense reference.
-
-Conclusion: width16/rank1 is not sufficient under the bounded C62 recovery schedule. This is a systematic failure, so rank capacity must be tested before changing representation.
+All three improve strongly but remain below dense. Rank1 is systematically insufficient under the bounded schedule.
 
 ### Composition
 
 All three seeds again recover exactly to dense score 1.0 at rank2.
-
-Conclusion: C61 reproduced inside the cross-task experiment.
 
 ### Language
 
@@ -229,34 +223,74 @@ Conclusion: C61 reproduced inside the cross-task experiment.
 | 20260912 | 1.000000 | 1.000000 | 1.000000 |
 | 20260913 | 1.000000 | 1.000000 | 1.000000 |
 
-One seed degrades during task-aware factor tuning even though training loss decreases. Two seeds need no recovery at all after SVD initialization.
+One seed degrades during factor tuning even while training loss decreases. Two seeds need no recovery after SVD initialization.
 
-Conclusion: language failure is not clean evidence of rank2 capacity failure. It may reflect checkpoint/overfitting/schedule behavior. Diagnose separately from condition.
+Decision field: `all_tasks_all_seeds_match_dense = false`.
 
-Primary C62 decision field:
+## 12. C63 — condition sub-dense rank/checkpoint frontier
 
-`all_tasks_all_seeds_match_dense = false`
+Accepted valid retry commit: `76011ee9108408d2275e39f3cab45518ea0a3b7b`.
 
-Therefore Gate C remains NOT PASSED.
+First attempt at commit `a01cff8e1e9751546ec5da77c13221cf28580b51` was invalid before experiment execution because the benchmark imported `fold_lm.v05.benchmarks` instead of `fold_lm.v05_benchmarks`. Protected artifacts remained unchanged. Retry retained C63.
 
-## 12. Decision after C62
+Condition, 3 seeds, fixed 260-step factor schedule, lr 0.002:
 
-Shared-basis remains the leading candidate. Do not discard it and do not broaden the representation yet.
+| rank | routed-weight ratio | all final meet dense | all best checkpoints meet dense |
+|---:|---:|:---:|:---:|
+| 1 | 0.5703125 | false | false |
+| 2 | 0.6406250 | false | false |
+| 4 | 0.7812500 | **true** | **true** |
+| 6 | 0.9218750 | true | true |
+| 7 | 0.9921875 | true | true |
 
-The failures separate into two questions:
+Rank2 details:
 
-1. **Condition capacity frontier:** does a slightly larger but still sub-dense rank recover all three condition seeds?
-2. **Language optimization/checkpoint behavior:** did the failing seed ever match dense during tuning, and does a bounded rank/schedule adjustment solve it?
+- seed 20260911: final 1.000000 vs dense 1.000000
+- seed 20260912: final 0.992188 vs dense 1.000000
+- seed 20260913: final 0.984375 vs dense 0.984375
 
-Keep these as separate numbered experiments.
+Rank4 final scores are 1.0 for all three seeds; the third seed exceeds its dense reference 0.984375.
 
-## 13. Next experiment — C63
+Primary result:
 
-**Condition shared-basis sub-dense rank/checkpoint frontier.**
+- `minimum_rank_all_final_meet_dense = 4`
+- `minimum_rank_all_best_checkpoints_meet_dense = 4`
+
+Interpretation:
+
+- condition failure in C62 was primarily a capacity/rank issue, not a final-checkpoint artifact;
+- rank2 is close but does not robustly match all dense references under the bounded schedule;
+- rank4 is the first tested robust condition point, with routed-weight ratio **0.78125**, still 21.875% below independent dense routed weights;
+- a universal rank=width/16 rule is therefore rejected as the primary design rule;
+- shared-basis remains viable, but rank/capacity should be allocated according to module/task needs rather than width alone.
+
+## 13. Current design decision after C63
+
+Shared-basis remains the leading Gate-C representation family.
+
+Current evidence supports:
+
+```text
+shared base + shared basis + module-specific coefficients
+```
+
+with **adaptive / task-dependent rank** rather than one global fixed ratio.
+
+Known quality points:
+
+- composition width32: rank2 / ratio 0.5703125 is robust across 3 seeds;
+- condition width16: rank4 / ratio 0.78125 is the first tested robust point across 3 seeds;
+- language width32: rank2 succeeds for 2/3 seeds but one seed degrades during tuning; capacity vs checkpoint behavior remains unresolved.
+
+Do not integrate production runtime yet. Resolve the language anomaly first, then choose candidate rank policy and move to real factorized full-model runtime/memory + recurrence validation.
+
+## 14. Next experiment — C64
+
+**Language shared-basis rank/checkpoint frontier.**
 
 Tracked benchmark:
 
-`fold/fold_lm/v05_benchmarks/gate_c_shared_basis_condition_rank_frontier.py`
+`fold/fold_lm/v05_benchmarks/gate_c_shared_basis_language_rank_checkpoint_frontier.py`
 
 Seeds:
 
@@ -266,35 +300,34 @@ Seeds:
 
 Ranks:
 
-- 1 -> ratio 0.5703125
-- 2 -> ratio 0.640625
-- 4 -> ratio 0.78125
-- 6 -> ratio 0.921875
-- 7 -> ratio 0.9921875
+- 2 -> ratio 0.5703125
+- 4 -> ratio 0.640625
+- 8 -> ratio 0.78125
 
 For each seed:
 
-1. reproduce the C62 dense condition model with the original 260-step schedule;
+1. reproduce the C62 dense language model with the original 600-step schedule;
 2. verify its dense validation score matches the accepted C62 reference;
 3. initialize each shared-basis rank from that dense model;
 4. freeze every non-factor parameter;
-5. tune factors for 260 steps, lr 0.002, batch 32;
-6. record validation at step 0 and steps 65/130/195/260.
+5. tune factors for 600 steps, lr 0.002, batch 24;
+6. record validation every 50 steps from step 0 through 600.
 
 Primary outputs:
 
 - `summary.minimum_rank_all_final_meet_dense`
 - `summary.minimum_rank_all_best_checkpoints_meet_dense`
+- `summary.seed_20260911_rank2_best_score`
+- `summary.seed_20260911_rank2_best_step`
+- `summary.seed_20260911_rank2_final_score`
 
 Interpretation:
 
-- if rank2/4/... recovers all seeds, condition needs more capacity than the initial width/16 rule but the family remains viable;
-- if only intermediate checkpoints recover, optimization/checkpoint policy is implicated;
-- if even rank7 (< dense bytes) cannot recover, simple shared-basis is inadequate for condition under this bounded schedule.
+- rank2 best reaches dense but final falls -> checkpoint/optimization policy is implicated;
+- rank2 never reaches dense but rank4/8 does -> capacity is implicated;
+- even rank8 fails -> simple shared-basis or the recovery schedule is inadequate for this language smoke task and requires another bounded diagnosis.
 
-Language checkpoint/rank diagnosis is deferred to C64 so each C number answers one question.
-
-## 14. Handoff
+## 15. Handoff
 
 On a new session:
 
