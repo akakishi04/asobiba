@@ -1,13 +1,15 @@
 """V5-D adaptive-compute controller primitives.
 
-The first production-facing controller is intentionally small.  It predicts one
-of two actions for an observed event:
+The production-facing controller stays intentionally small.  C85 used the
+minimal two-action space::
 
     ANSWER
     COMPUTE(update, 1)
 
+Later V5-D experiments may register a larger finite action vocabulary through
+``ActionRouterConfig.action_count`` while keeping the same observable inputs.
 The caller must provide the observable operation token explicitly.  The router
-never receives the target value or oracle action as an input.
+never receives a target value or oracle action as an input.
 """
 from __future__ import annotations
 
@@ -27,6 +29,7 @@ class ActionRouterConfig:
     width: int
     operation_vocab_size: int = 2
     hidden_width: int | None = None
+    action_count: int = ACTION_COUNT
 
     def __post_init__(self) -> None:
         if type(self.width) is not int or self.width <= 0:
@@ -37,6 +40,8 @@ class ActionRouterConfig:
             type(self.hidden_width) is not int or self.hidden_width <= 0
         ):
             raise ValueError("hidden_width must be a positive integer when provided")
+        if type(self.action_count) is not int or self.action_count <= 0:
+            raise ValueError("action_count must be a positive integer")
 
 
 class SupervisedActionRouter(nn.Module):
@@ -52,7 +57,7 @@ class SupervisedActionRouter(nn.Module):
         self.norm = nn.LayerNorm(config.width * 3)
         self.hidden = nn.Linear(config.width * 3, hidden)
         self.activation = nn.GELU()
-        self.action_head = nn.Linear(hidden, ACTION_COUNT)
+        self.action_head = nn.Linear(hidden, config.action_count)
 
     def forward(
         self,
