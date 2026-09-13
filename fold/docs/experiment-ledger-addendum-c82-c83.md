@@ -2,7 +2,7 @@
 
 Date: 2026-09-14
 
-## C82 accepted serialized-artifact gate
+## C82 — accepted serialized-artifact gate
 
 Experiment: `C82-shared-basis-production-serialized-artifact`
 
@@ -23,11 +23,11 @@ C82 is accepted as the storage-artifact result.
 
 ## Model-weight priority clarification
 
-The primary practical objective is now explicit:
+The primary practical objective is explicit:
 
 > Minimize operational VRAM occupied by FOLD so other applications retain usable GPU-memory headroom.
 
-Therefore future references to model "lightness" should prioritize operational VRAM/headroom over checkpoint file size. Serialized artifact size remains a supporting deployment/storage metric.
+Therefore references to model "lightness" should prioritize operational VRAM/headroom over checkpoint file size. Serialized artifact size remains a supporting deployment/storage metric.
 
 Primary operational measurements:
 
@@ -38,15 +38,11 @@ Primary operational measurements:
 5. resident model allocation;
 6. latency as a secondary practicality constraint.
 
-## C83 active VRAM/headroom gate
+## C83 — accepted VRAM/headroom priority gate
 
 Experiment: `C83-shared-basis-production-vram-headroom`
 
-Tracked files:
-
-- `fold/fold_lm/v05_benchmarks/gate_c_shared_basis_c83_vram_helpers.py`
-- `fold/fold_lm/v05_benchmarks/gate_c_shared_basis_production_vram_headroom.py`
-- `fold/scripts/run_c83.ps1`
+Status: **PASS**.
 
 Shape:
 
@@ -57,7 +53,7 @@ Shape:
 - batches `1, 8`;
 - profiles `1/16`, `1/8`, `3/16`.
 
-Each Dense/Shared point runs in a fresh Python process. CUDA context is initialized before the baseline is captured.
+Each Dense/Shared point ran in a fresh Python process. CUDA context was initialized before the baseline was captured. Each point used 3 repeats and median comparison.
 
 Primary metric:
 
@@ -67,16 +63,57 @@ incremental_device_vram_consumed
 - inference_ready_free_vram
 ```
 
-This measures how much additional device VRAM the model/runtime removes from the pool available to other applications.
+Predeclared gate for every Shared profile and both batches:
 
-Each point is repeated three times; medians are used for comparison.
+- output finite;
+- median incremental device VRAM consumption lower than Dense;
+- median headroom gain versus Dense at least `0.15 GiB`;
+- median peak allocated VRAM lower than Dense;
+- median peak reserved VRAM lower than Dense.
 
-Predeclared C83 gate for every Shared profile and both batches:
+Accepted results:
 
-- output remains finite;
-- median incremental device VRAM consumption is lower than Dense;
-- median headroom gain versus Dense is at least `0.15 GiB`;
-- median peak allocated VRAM is lower than Dense;
-- median peak reserved VRAM is lower than Dense.
+| profile | batch | Dense ready VRAM | Shared ready VRAM | headroom gain |
+|---|---:|---:|---:|---:|
+| lean 1/16 | 1 | 1.2421875 GiB | 0.9140625 GiB | **0.328125 GiB** |
+| medium 1/8 | 1 | 1.2421875 GiB | 0.966796875 GiB | **0.275390625 GiB** |
+| 3/16 | 1 | 1.2421875 GiB | 1.021484375 GiB | **0.220703125 GiB** |
+| lean 1/16 | 8 | 1.26171875 GiB | 0.951171875 GiB | **0.310546875 GiB** |
+| medium 1/8 | 8 | 1.26171875 GiB | 1.00390625 GiB | **0.2578125 GiB** |
+| 3/16 | 8 | 1.26171875 GiB | 1.05859375 GiB | **0.203125 GiB** |
 
-C83 is the new authoritative lightness gate because VRAM headroom is the primary product objective. Gate C remains not formally passed until C83 is judged together with the accepted quality/runtime/storage evidence.
+Additional accepted facts:
+
+- all outputs finite;
+- all Shared headroom gains exceeded the `0.15 GiB` threshold;
+- all Shared peak allocated values were below Dense;
+- all Shared peak reserved values were below Dense;
+- protected C37 result preserved;
+- runtime fixture preserved;
+- tracked repository clean;
+- `production_vram_headroom_gate_passed = true`.
+
+Inference-ready VRAM reduction relative to Dense is approximately 16% to 26% over the tested profiles/batches.
+
+## Gate C decision
+
+After C83, the cumulative accepted evidence satisfies the V5-C roadmap gate for the registered synthetic scope:
+
+- quality/capacity evidence accepted;
+- final selected-rank recurrence and numerical equivalence accepted;
+- production training/inference execution policy accepted;
+- production large-shape runtime practical;
+- resident and serialized storage clearly lower;
+- operational VRAM/headroom clearly improved under the project's primary lightness objective.
+
+**Gate C: PASSED, scoped to the registered V5 synthetic task/runtime regime.**
+
+Formal decision record:
+
+`fold/docs/gate-c-decision-2026-09-14.md`
+
+This is not a claim of broad LLM or Transformer superiority.
+
+## Next stage
+
+Proceed to **V5-D — adaptive computation and routing**.
