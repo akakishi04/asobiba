@@ -7,12 +7,17 @@ alone is not the explanation.
 
 C73 isolates model scale. It keeps the same two-route, hidden_mult=2 full-core
 structure and compares semantically identical inference cores across widths
-32..1024. Three rank fractions reproduce the routed-weight capacity bands that
+32..5120. Three rank fractions reproduce the routed-weight capacity bands that
 matter in the accepted quality experiments:
 
 - lean:   rank = width/16  -> routed ratio 0.5703125 asymptotically/exactly here;
 - medium: rank = width/8   -> routed ratio 0.640625;
 - high:   rank = width/4   -> routed ratio 0.78125.
+
+The extended sweep includes 1536/2048/3072/4096/5120 so the transition from
+small launch/shape-dominated cores to substantially larger GEMM workloads is
+measured directly. 5120 is used rather than 5096 because every width must be
+divisible by 16/8/4 for the three rank profiles.
 
 Each point measures eager CUDA core latency at slots=20 and batch sizes 1/8,
 plus persistent full-core bytes and allocator-observed forward peak delta.
@@ -48,7 +53,7 @@ from fold_lm.v05_benchmarks.gate_c_shared_basis_selected_shape_runtime_memory im
 
 EXPERIMENT_ID = "C73-shared-basis-full-core-width-rank-scaling"
 DEFAULT_PROTECTED_RESULT = Path("runs/chatgpt-last-result.json")
-WIDTHS = (32, 64, 128, 256, 512, 1024)
+WIDTHS = (32, 64, 128, 256, 512, 1024, 1536, 2048, 3072, 4096, 5120)
 RANK_PROFILES = {
     "lean": 16,
     "medium": 8,
@@ -349,6 +354,7 @@ def run(*, protected_result_path: Path, c72_summary_path: Path, output_dir: Path
             "slots are fixed to 20 and batches to 1/8 rather than covering all deployment shapes",
             "only float32 eager CUDA is measured",
             "rank fractions are representative accepted capacity bands, not newly quality-validated at large widths",
+            "the extended sweep reaches width5120 but still does not establish production LLM scale",
             "C73 does not by itself establish Gate C passage",
         ],
         "records": records,
