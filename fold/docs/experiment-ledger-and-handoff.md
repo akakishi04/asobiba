@@ -223,17 +223,39 @@ However, current tiny eager shapes pay a material runtime cost:
 - roughly 30-42% median latency overhead;
 - roughly 0-14% extra forward temporary allocation depending on point.
 
-This does not yet reject Shared Basis because:
+This does not yet reject Shared Basis because C58 showed latency overhead falling with width, but it blocks immediate production integration.
 
-1. C58 already showed latency overhead falling strongly with width;
-2. C71 is eager CUDA and the candidate introduces extra GEMM-family launches;
-3. the current task shapes are intentionally tiny compared with intended model scale.
+## 7. C72 — selected-shape CUDA Graph replay
 
-Do **not** production-integrate yet. First isolate launch overhead with CUDA Graph at the exact same selected shapes. If Graph materially closes the gap, integration becomes more plausible; if not, run a full-core width/rank scaling frontier before deciding runtime viability.
+Accepted run commit: `028f406747bf585d6778852355138c4901df535f`.
+
+Experiment ID:
+
+`C72-shared-basis-selected-shape-cuda-graph`
+
+Fixed setup: same C71 task shapes, ranks, batches 1/8/32, both routes, semantically identical dense-materialized vs shared-basis GEMM cores. Each route/variant was captured as a separate CUDA Graph and replayed for timing.
+
+Accepted results:
+
+- all graph outputs allclose: **true**;
+- graph median latency ratio across 9 task/batch points: **1.4057762261**;
+- C71 eager median across same points: **1.3765237679**;
+- graph/eager ratio-of-ratios median: **1.0329804375**;
+- graph better than eager ratio at only **3/9** points;
+- best graph point median: **1.2115913159**;
+- worst graph point median: **1.4713372809**.
+
+### C72 interpretation
+
+CUDA Graph does **not** explain away the small-shape latency penalty. Overall, graph replay is not faster relative to Dense than eager execution and is slightly worse at the median.
+
+Therefore the current ~1.3-1.4x overhead is not primarily Python/launch overhead. Extra GEMM arithmetic, shape efficiency, and memory traffic remain the leading runtime explanation at these tiny widths.
+
+Do not spend another C-number on selected-shape Graph tuning. Do not production-integrate yet. The next question is whether full-core scaling reproduces the favorable large-width trend previously seen in the simpler C58 synthetic linear diagnostic.
 
 Gate C remains **NOT PASSED**.
 
-## 7. Auto-Partition living spec
+## 8. Auto-Partition living spec
 
 Main document:
 
@@ -248,58 +270,73 @@ Relevant current rules:
 - C69's mixed-sign 6/6 result is KEEP / no rank-grow evidence;
 - runtime reuse is secondary to quality and training stability;
 - C70 supports GEMM-native recurrence safety in the tested regime;
-- C71 shows grouping/runtime reuse must account for extra-launch and temporary-memory costs on small shapes.
+- C71-C72 show that shared grouping/runtime reuse must charge extra arithmetic/memory cost; CUDA Graph does not remove the current small-shape penalty.
 
-The connector rejected one earlier large-file maintenance write; if direct update remains blocked, keep the scientific decision here until the living spec can be safely refreshed without losing its detailed content.
+The connector rejected one earlier large-file maintenance write; keep these accepted runtime conclusions here until the living spec can be refreshed safely without losing its detailed content.
 
-## 8. Next experiment — C72
+## 9. Next experiment — C73
 
-**Selected-shape CUDA Graph replay latency diagnostic.**
+**Full-core width/rank scaling diagnostic.**
 
 Tracked benchmark:
 
-`fold/fold_lm/v05_benchmarks/gate_c_shared_basis_selected_shape_cuda_graph.py`
+`fold/fold_lm/v05_benchmarks/gate_c_shared_basis_full_core_width_rank_scaling.py`
 
 Benchmark creation commit:
 
-`66b09ed3d08d3076e106635a5e71359a80063099`
+`7327aa1d256d2b91e8c85ea89246c9912444daa2`
 
-Question: how much of C71's ~1.38x eager penalty is fixed launch/shape overhead that CUDA Graph replay can remove?
+Question: does the full recurrent core, not just an isolated linear layer, recover toward Dense latency as width increases, and how does that frontier depend on the capacity/rank fraction?
 
-Fixed setup:
+Widths:
 
-- same tasks: condition / composition / language;
-- same ranks: 4 / 2 / 4;
-- same batches: 1 / 8 / 32;
-- same semantically identical materialized vs GEMM-native cores;
+- 32 / 64 / 128 / 256 / 512 / 1024.
+
+Rank profiles:
+
+- `lean`: rank = width/16, routed ratio 0.5703125;
+- `medium`: rank = width/8, routed ratio 0.640625;
+- `high`: rank = width/4, routed ratio 0.78125.
+
+These correspond to the routed-capacity bands relevant to accepted Composition, Language, and Condition evidence. Large-width ranks are runtime/storage probes, not new quality claims.
+
+Fixed execution shape:
+
+- slots = 20;
+- modules = 2;
+- hidden_mult = 2;
+- batches = 1 / 8;
 - both routes;
-- one CUDA Graph per variant/route with static inputs;
-- 20 paired rounds;
-- 500 graph replays per latency sample;
-- C71 eager median for the same `(task,batch)` point is carried into the result.
+- eager CUDA;
+- 10 paired rounds;
+- 50 CUDA-event iterations per sample;
+- allocator-observed forward peak delta;
+- full-core persistent bytes.
 
-Primary outputs:
+Primary outputs per profile/batch:
 
-- `summary.graph_latency_median_ratio_across_task_batch_points`
-- `summary.graph_over_eager_ratio_of_ratios`
-- `summary.points_graph_ratio_below_eager_ratio`
-- `summary.all_graph_outputs_allclose`
+- latency ratio curve vs width;
+- first width with median <= 1.25x;
+- first width with median <= 1.15x;
+- first width with median <= 1.10x;
+- full-core persistent ratio;
+- forward peak-delta ratio.
 
 Interpretation:
 
-- Graph ratio much closer to 1 than eager -> launch overhead is a major part of C71 penalty; proceed toward integration / graph residency accounting;
-- Graph ratio remains near ~1.3-1.4 -> extra arithmetic/memory traffic dominates at these shapes; next run full-core width/rank scale before integration;
-- semantic/allclose failure -> C72 invalidates Graph execution for this candidate until diagnosed.
+- if latency converges strongly toward Dense with width, Shared Basis remains a runtime-viable production candidate and the next gate should move toward production integration at a representative larger shape;
+- if even width1024 remains near the C71/C72 ~1.3-1.4x band, the GEMM-native representation has a structural runtime tax and requires a different execution formulation before integration;
+- if only lean ranks scale acceptably while high ranks remain costly, runtime cost must become an explicit rank-allocation term in Auto-Partition / adaptive-capacity policy.
 
-C72 does not modify production runtime and cannot establish Gate C passage alone.
+C73 is runtime/storage scaling only and cannot establish Gate C passage by itself.
 
-## 9. Handoff
+## 10. Handoff
 
 On a new session:
 
 1. read this ledger;
 2. confirm branch/HEAD and protected hashes;
-3. continue at C72;
+3. continue at C73;
 4. keep one experiment per C number;
 5. retry failures under the same number;
 6. update this file after every accepted result or Gate decision change.
