@@ -79,6 +79,7 @@ def run(*, protected_result_path: Path, c84_summary_path: Path, output_dir: Path
         for parameter in model.parameters():
             parameter.requires_grad_(False)
 
+        torch.manual_seed(seed + 90000)
         router = SupervisedActionRouter(ActionRouterConfig(width=config.width)).to(device)
         states, contexts, labels = build_examples(model, train, device)
         final_router_loss = train_router(router, states, contexts, labels, seed=seed)
@@ -87,6 +88,7 @@ def run(*, protected_result_path: Path, c84_summary_path: Path, output_dir: Path
         metrics = evaluate(model, router, exhaustive)
         metrics.update({
             "seed": seed,
+            "router_initialization_seed": seed + 90000,
             "final_model_loss": final_model_loss,
             "final_router_loss": final_router_loss,
         })
@@ -112,6 +114,7 @@ def run(*, protected_result_path: Path, c84_summary_path: Path, output_dir: Path
         "action_space": ["ANSWER", "COMPUTE(update,1)"],
         "controller_observations": ["working_state", "candidate_context", "operation_token"],
         "target_or_oracle_action_is_not_controller_input": True,
+        "router_initialization_seed_offset": 90000,
         "action_accuracy": _stats(action),
         "hold_answer_recall": _stats(hold),
         "update_compute_recall": _stats(update),
