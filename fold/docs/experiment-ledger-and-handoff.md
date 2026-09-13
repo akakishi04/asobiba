@@ -1,71 +1,51 @@
 # FOLD Experiment Ledger and Handoff
 
-> Project-wide experiment ledger and handoff checkpoint for FOLD. Update this after every accepted Cxx result, invalid retry that matters, gate decision change, or change to the next experiment.
+> Project-wide experiment ledger and handoff checkpoint for FOLD. Read this file first when continuing in a new chat/session. Update it after every accepted Cxx experiment, retry decision, or Gate decision change.
 
-## 1. Purpose
-
-This file is the minimum state needed to resume FOLD in a new ChatGPT/Codex session without reconstructing the full conversation.
-
-It records:
-
-- repository/environment identity;
-- gate progression;
-- Cxx execution protocol;
-- accepted experiment results and invalid retries;
-- protected artifacts and hashes;
-- current scientific conclusions;
-- explicit stop/pivot conditions;
-- next experiment.
-
-This is project-wide and continues through Gate A-I and later architecture work.
-
----
-
-## 2. Repository / environment
+## 1. Project / environment identity
 
 - Repository: `akakishi04/asobiba`
 - FOLD path: `fold/`
-- Branch: `feat/sft-target-loss`
-- HEAD through accepted C56: `69e43996b567f7e0a9ce0998749f19853a76231f`
-- Local repo: `M:\asobiba\fold`
+- Active branch: `feat/sft-target-loss`
+- Local repository: `M:\asobiba\fold`
 - Python: `M:\asobiba\fold\.venv-py31315\Scripts\python.exe`
 - Python: 3.13.15
 - PyTorch: `2.10.0+cu130`
 - CUDA: 13.0
 - GPU: NVIDIA GeForce RTX 4070 Ti SUPER
-- VS2022 Community Developer PowerShell: 17.14.27
+- Visual Studio: VS2022 Community Developer PowerShell 17.14.27
 
-If hardware, driver/toolchain, branch, or timing-critical runtime changes, record it before comparing latency with older runs.
+Timing comparisons must record the exact commit used. C57 executed at:
 
----
+`c4c5e96980b5671d3d1fbac20cb23dd467e31b78`
 
-## 3. Protected artifacts
+## 2. Protected artifacts
 
 ### C37 protected result
 
-- `M:\asobiba\fold\runs\chatgpt-last-result.json`
+- Path: `M:\asobiba\fold\runs\chatgpt-last-result.json`
 - SHA256: `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`
 
 ### Runtime fixture
 
-- `M:\asobiba\fold\runs\fixtures\v05-c-composition-20260921.pt`
+- Path: `M:\asobiba\fold\runs\fixtures\v05-c-composition-20260921.pt`
 - SHA256: `A52F8209703149407580F7E2965B61B78653030EE992AF6D759865736741CA9E`
 
-Diagnostics must not overwrite these.
+Diagnostics must not overwrite either artifact.
 
----
+## 3. Experiment protocol
 
-## 4. Cxx execution protocol
+Experiment/work IDs are `Cxx`.
 
-1. Exactly one experiment / verification step per C number.
-2. Full output overwrites `M:\asobiba\fold\runs\chatgpt-last.log`.
-3. User copies the whole log and pastes it back to ChatGPT.
+1. Run exactly one experiment / verification step per C number.
+2. Full console output overwrites `M:\asobiba\fold\runs\chatgpt-last.log`.
+3. User pastes the full log back into ChatGPT.
 4. ChatGPT judges the result.
-5. Increment C number only after successful completion of that work item.
+5. Increment only after successful completion.
 6. Failed retries keep the same C number.
-7. Script `status=PASS` means the experiment executed successfully; it does not mean a Gate passed.
-8. Wrong runner, parser failure, wrong experiment ID, missing summary, protected-hash mismatch, or similar invalid execution does not count.
-9. Experiment source should live in the repository when practical; avoid transporting large Python payloads through chat.
+7. `status=PASS` means the experiment executed successfully, not that a Gate passed.
+8. Wrong runner, wrong experiment ID, parser failure, protected-hash mismatch, etc. are invalid runs, not evidence.
+9. Prefer tracked benchmark files in the repository over giant chat-pasted Python payloads.
 
 ### PC clipboard
 
@@ -75,7 +55,7 @@ Get-Content -LiteralPath $log -Raw -Encoding UTF8 -ErrorAction Stop |
     Set-Clipboard
 ```
 
-### Smartphone clipboard (OSC 52)
+### Smartphone clipboard (OSC 52 / Termius)
 
 ```powershell
 $log = "M:\asobiba\fold\runs\chatgpt-last.log"
@@ -84,467 +64,422 @@ $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text))
 [Console]::Write("$([char]27)]52;c;$b64$([char]7)")
 ```
 
----
-
-## 5. FOLD v0.5 gates
+## 4. FOLD v0.5 gates
 
 ### Gate A — reference computation / accounting
 
-Foundation established. Current work is beyond Gate A.
+Foundation exists. Current work is beyond Gate A.
 
 ### Gate B — high-precision core
 
-Foundation established. Current work is beyond Gate B.
+Foundation exists. Current work is beyond Gate B.
 
 ### Gate C — compression components + recurrence stability
 
-Keep candidates satisfying either:
+Gate C keeps a candidate only if either:
 
-- same quality with clearly lower serialized/resident bytes; or
-- same capacity with higher task quality than high-precision/simple-quantization baseline.
+- quality is preserved with clearly lower serialized/resident bytes; or
+- at equal capacity, task quality beats high-precision/simple-quantization baselines.
 
-Also require:
+Additionally:
 
-- recurrence error remains bounded/explainable;
-- correction `E` remains bounded;
-- lower storage must not simply be bought with worse real runtime.
+- recurrence error must remain bounded/explainable;
+- correction `E` must remain bounded;
+- storage savings that worsen real runtime because of decode overhead do not satisfy Gate C.
 
-**Current status: NOT PASSED.**
+**Current Gate C status: NOT PASSED.**
 
-Storage advantage and checked fixture parity exist, but compact runtime decode/gather overhead remains unresolved.
+Storage savings and fixture parity are established for the current block-codebook candidate, but its direct GPU consumption path does not scale acceptably. Gate C now moves into an alternative module-delta representation comparison rather than continuing unbounded codebook kernel tuning.
 
-### Gate D — adaptive compute / routing
-
-Not active yet.
-
-### Gate E — unknown / information acquisition
+### Gate D-I
 
 Not active yet.
 
-### Gate F — FOLD-R / memory integration
+## 5. Current lead architecture
 
-Not active yet.
-
-### Gate G — variable-length I/O
-
-Not active yet.
-
-### Gate H — vision
-
-Not active yet.
-
-### Gate I — scaling / practical comparison
-
-Not active yet as a formal gate, but C57 will perform a bounded runtime scale sweep because scale behavior is now necessary to decide whether the Gate-C codebook representation is worth further optimization.
-
----
-
-## 6. Current Gate-C representation
-
-Lead architecture:
+FOLD v0.5 lead design:
 
 - shared state-update core;
-- compressed processing modules;
-- controller;
-- correctable memory later.
+- small / compressed module-specific processing deltas;
+- controller / routing;
+- correctable memory later in the roadmap.
 
-Current compressed module representation:
+The original Gate-C representation under test was:
 
 ```text
-W_module = W_base + codebook_delta(module_codes) + bounded sparse E
+W_module = W_base + codebook_delta(module) + sparse bounded E
 ```
 
-Current real fixture Up structure:
+Positive property: compact persistent representation.
 
-- activation `[216, 8, 32]`;
-- flattened rows 1728;
-- input width 32;
-- output width 64;
-- block rows/cols: 2 x 2;
-- grid: 32 x 16;
-- codebook count: 3;
-- entries/codebook: 8;
-- modules: 2.
+Current problem: the fine-grained block-codebook delta is expensive to reconstruct/consume directly on GPU.
 
-Important discipline:
+## 6. Scientific discipline
 
-- fixture score 1.0 is not broad language-quality proof;
-- Cxx PASS is not Gate C PASS;
-- no claim that FOLD beats Transformers/LLMs is established by these diagnostics.
+Do not claim:
 
----
+- Cxx PASS == Gate C PASS;
+- fixture score 1.0 == broad language quality;
+- synthetic scale diagnostics prove production LLM behavior;
+- FOLD beats Transformers / existing LLMs from these tests.
 
-## 7. Strongest current storage / quality / speed facts
+Current strongest claims are architectural/runtime localization claims only.
 
-### Storage — C41
-
-- Dense registered model storage: 51,200 B
-- Compact registered model storage: 44,800 B
-- reduction: **12.5%**
-- model-only CUDA allocated: 55,808 B vs 49,664 B
-- Graph-ready allocated: 9,641,984 B vs 9,635,840 B
-- Graph-ready reserved: identical at 27,262,976 B
-
-Interpretation: model payload is smaller, while tiny-test total VRAM is dominated by runtime/framework/Graph allocations.
-
-### Quality on current fixture
-
-Checked compressed outputs remain equal/near-equal to reference and current synthetic task score remains 1.0. This is fixture parity only.
-
-### Full-model/request speed
-
-The optimized request/Graph path is close to dense, but compact GPU compute is still slower. Later experiments localized the remaining issue primarily to the Up codebook delta/decode execution.
-
----
-
-## 8. Experiment ledger — accepted/relevant results
+## 7. Accepted experiment history
 
 ### C33 — sync-clean tiled base tuning
 
-- best tested `tf32_32x64x32`
-- Down ratio ~1.3788
-- Up ratio ~1.3420
-- Triton slower.
+- best tested tiled config still slower than dense;
+- Down paired ratio ~1.3788;
+- Up ~1.3420.
 
-### C35 — full-model validation boundary
+### C35 — Graph-safe validation boundary
 
-Established Graph-safe structural validation boundary.
+Established structural validation path so finite-value checks do not break CUDA Graph capture.
 
 ### C37 — serial CPU-ready request + CUDA Graph
 
 Protected result.
 
-- dense eager ~1.6531 ms
-- compact eager ~2.0269 ms
-- dense Graph ~0.4395 ms
-- compact Graph ~0.4630 ms
-- Graph compact/dense ~1.069
+Approximate initial timings:
+
+- dense eager: 1.6531 ms
+- Triton eager: 2.0269 ms
+- dense Graph: 0.4395 ms
+- Triton Graph: 0.4630 ms
+- paired Graph ratio ~1.069
+
+CUDA Graph removes a large amount of dispatch overhead but compressed remains slower.
 
 ### C38 — regression
 
 - 415 tests PASS
 - compileall PASS
-- C37 hash preserved.
+- C37 protected hash preserved.
 
-### C40
+### C41 — clean fresh-process Graph memory
 
-Allocator diagnostic superseded for clean memory conclusions by C41.
-
-### C41 — reference-isolated memory
-
-- registered model storage 51,200 B -> 44,800 B
-- **12.5% reduction**
-- Graph allocated saving only 6,144 B in tiny fixture.
+- Dense registered model: 51,200 B
+- compact registered model: 44,800 B
+- registered reduction: **12.5%**
+- model-only allocation: 55,808 B vs 49,664 B
+- Graph-ready allocated saving only 6,144 B because tiny-test runtime overhead dominates
+- reserved memory identical.
 
 ### C42 — repeated request benchmark
 
-- dense eager median 1.75512 ms
-- compact eager 2.09557 ms
-- dense Graph 0.440668 ms
-- compact Graph 0.447404 ms
-- paired Graph ratio **1.028879**
+- dense Graph median: 0.4406675 ms
+- Triton Graph median: 0.4474035 ms
+- paired ratio: **1.028879**
 
 ### C43 — request phase breakdown
 
-End-to-end request time is strongly diluted by H2D/Graph/D2H/common overhead; use this diagnostically only.
+GPU/request path dominates; phase instrumentation is diagnostic only.
 
 ### C44 — non-blocking H2D
 
-- queued compact/dense ~1.0172
-- common runtime path improved substantially.
+Common runtime improvement. Queued Triton/dense ~1.0172.
 
-### C45 — GPU-only CUDA Graph replay
+### C45 — GPU-only Graph replay
 
-- dense 0.289680 ms
-- compact 0.306309 ms
-- compact/dense **1.05546**
+- dense: 0.289680 ms
+- Triton: 0.306309 ms
+- paired ratio: **1.05546**
 
-The remaining gap is genuinely GPU compute/Graph-side.
+Remaining gap is genuinely GPU compute / Graph path.
 
-### C46 — Up/Down isolation
+### C46 — Up / Down isolation
 
-- Up/dense **1.03479**
-- Down/dense **1.00629**
-- Full/dense **1.03246**
+- Up Triton / dense: **1.03479**
+- Down Triton / dense: **1.00629**
+- Full Triton / dense: **1.03246**
 
-Remaining slowdown is overwhelmingly Up-side.
+Remaining full-model slowdown localized overwhelmingly to Up.
 
 ### C47 — Up BLOCK_M sweep
 
-Real Up 32 -> 64.
+For real Up 32->64, `BLOCK_M=64` was the clear best tested mapping.
 
-- BM64/current **0.97698**
-- BM64/dense **1.00942**
+- BM64/current ~0.97698
+- BM64/dense ~1.00942
 
-Retain BM64 as best row-wise geometry found.
-
-### C48 — warps sweep
+### C48 — num_warps sweep
 
 At BM64:
 
-- w1/dense 1.01096
-- w4/dense **1.00696**
-- w2/w8 clearly worse
+- w1 and w4 effectively tied;
+- w2 and w8 worse;
+- retain w4 as robust reference.
 
-Retain w4 as robust reference.
+### C49 — sparse correction E isolation
 
-### C49 — correction E isolation
+- full-E/no-E only ~1.01-1.03
+- no-E/dense still ~2.18-2.38x at bank level.
 
-- full-E/no-E ~1.013-1.03
-- no-E/dense materialized ~2.18-2.38x bank-level
+`E` is not the primary runtime problem.
 
-`E` is not the main runtime problem.
+### C50 — existing row-reuse tiled kernel
 
-### C50 — existing row-reuse tiled path
+Existing 16x16 tiled mapping did not beat row-wise:
 
-- tiled/rowwise **1.02009**
-- tiled/dense **2.09932**
+- tiled/row-wise ~1.02009
 
-Existing 16x16 tiled mapping is not an improvement.
+This rejected that mapping, not row reuse as a concept.
 
-### C51 — base/codebook isolation
+### C51 — base / codebook isolation
 
-- base/dense **1.00944**
-- rowwise/dense **2.11740**
-- hybrid/dense **3.40778**
-- hybrid/rowwise **1.62845**
+- base/dense: **1.00944**
+- row-wise/dense: **2.11740**
+- hybrid/dense: **3.40778**
+- hybrid/row-wise: **1.62845**
 
-Shared base GEMM is basically fine. Separate cuBLAS-base + Triton-delta hybrid is rejected.
+Shared-base GEMM is fine. The expensive component is codebook delta/decode. Separate cuBLAS-base + Triton-delta hybrid is rejected.
 
 ### C52 — decode-to-dense workspace
 
-- workspace: 8,192 B dense scratch
-- rowwise/dense **2.17013**
-- decode-workspace/dense **2.96321**
-- decode-workspace/rowwise **1.36082**
-- decode-only/dense **0.98747**
+- workspace: 8,192 B extra resident dense scratch
+- decode-workspace/dense: **2.96321**
+- decode-workspace/row-wise: **1.36082**
+- slower in 80/80 paired samples.
 
-Rejected: slower and consumes extra resident scratch larger than the current model-storage saving.
+Rejected: worse runtime and additional resident scratch.
 
 ### C53 — row-wise component ablation
 
-Real Up 1728 x 32 -> 64, BM64/W4.
+Real Up 1728x32->64, BM64/W4:
 
-Device medians:
-
-- dense 0.0118864 ms
-- rowwise base-only 0.0120516 ms
-- rowwise delta-only 0.0213311 ms
-- rowwise full 0.0182702 ms
+- dense no-E median: 0.0118864 ms
+- base-only: 0.0120516 ms
+- delta-only: 0.0213311 ms
+- full no-E: 0.0182702 ms
 
 Paired:
 
-- base/dense **1.04502**
-- delta/dense **1.68804**
-- full/dense **1.43449**
-- delta/base **1.71970**
+- base/dense: **1.04502**
+- delta/dense: **1.68804**
+- full/dense: **1.43449**
+- delta/base: **1.71970**
 
-Conclusion: codebook delta/decode is the dominant expensive component. Base computation is near dense.
+Codebook delta/decode is dominant.
 
-### C54 — full-M row-tile mapping
+### C54 — full-M row-tile
 
-Accepted output:
-`M:\asobiba\fold\runs\c54-fullm-row-tile-d0905230c4d94bbcb6154139299240ce`
+One program owns all 64 output channels and reuses decoded weight across rows.
 
-Compared rowwise BM64 with full-M kernels that decode the entire 64x32 Up weight once and reuse it across activation rows.
+- full-M N16 / row-wise median: **0.82873** (~17.1% faster)
+- full-M N32 / row-wise: **0.88681**
+- N16 won 57/80 samples
+- outputs exact in checked cases.
 
-Paired medians:
-
-- fullM N16 / rowwise: **0.82873** (~17.1% faster)
-- fullM N32 / rowwise: **0.88681**
-- fullM N16 / dense: **1.98064**
-- fullM N32 / dense: **2.04591**
-
-Conclusion:
-
-- decode reuse across rows is real and useful;
-- N16 is the best tested full-M mapping;
-- this does not solve the full dense gap.
+Conclusion: decode/reconstruction reuse across activation rows is valid. Best C54 mapping: N16.
 
 ### C55 — compact address metadata
 
-Accepted output:
-`M:\asobiba\fold\runs\c55-compact-offset-146f0044ade74363a1468ceee8a2f088`
+Full-M/N16 fixed. Compared original codes vs equal-byte precomputed entry index / block offset.
 
-Full-M/N16 fixed. Original codes vs equal-byte uint8 precomputed entry index / block offset.
+- entry/codes median: **0.98361**
+- block-offset/codes: **0.98733**
+- metadata bytes unchanged at 3,072 B.
 
-- entry/codes median **0.98361**
-- block-offset/codes median **0.98733**
-- metadata stays 3,072 B in every variant
-- block-offset/dense median **1.89537**
-
-Conclusion:
-
-- address/index arithmetic is not the main remaining cost;
-- precomputing offsets yields only marginal/noisy improvement;
-- remaining issue is deeper in gather/reconstruction and/or custom matmul execution.
+Address arithmetic is not the main remaining cost.
 
 ### C56 — predecoded matmul isolation
 
-Accepted output:
-`M:\asobiba\fold\runs\c56-predecoded-matmul-706dc3b70e204bc29ac90092e29f10ed`
+Real Up full-M/N16:
 
-Same full-M/N16 shape, comparing:
+- dense median: 0.0116416 ms
+- same Triton matmul on predecoded weight: 0.0134215 ms
+- compact full-M: 0.0225791 ms
 
-- dense `F.linear`;
-- diagnostic predecoded dense weight through the same Triton full-M matmul mapping;
-- compact full-M/N16 decode+matmul.
-
-Device medians:
-
-- dense: **0.0116416 ms**
-- predecoded Triton: **0.0134215 ms**
-- compact full-M/N16: **0.0225791 ms**
-
-Paired medians:
+Paired:
 
 - predecoded/dense: **1.13357**
 - compact/predecoded: **1.65877**
 - compact/dense: **1.91422**
 
-All compact/predecoded samples: compact slower 80/80.
+Interpretation:
 
-Conclusion:
+- custom Triton matmul has ~13% disadvantage at width32;
+- the larger residual is codebook gather/decode/reconstruction;
+- the compact extra cost cannot be explained by address arithmetic alone.
 
-1. The custom full-M Triton matmul itself carries a real but much smaller penalty (~13% median vs dense/cuBLAS).
-2. The dominant remaining cost is the compact codebook gather/decode/reconstruction path (~66% over the same predecoded Triton mapping).
-3. The current problem is structural, not mostly index arithmetic.
+### C57 — 32 -> 1024 runtime scale sweep
 
----
+Accepted run:
 
-## 9. Invalid / retry history
+- commit: `c4c5e96980b5671d3d1fbac20cb23dd467e31b78`
+- widths: 32, 64, 128, 256, 512, 1024
+- rows: 1728
+- Up-like shape: `K=width`, `M=2*width`
+- fixed tile: N16 / M64 / K32, w4
+- no-E synthetic runtime diagnostic
 
-Do not treat these as scientific evidence:
+#### Storage curve
 
-- C46 first failure: diagnostic core missing `initial_working_state`.
+Serialized estimated payload ratio:
+
+- 32: 0.59375
+- 64: 0.57617
+- 128: 0.57178
+- 256: 0.57068
+- 512: 0.57040
+- 1024: 0.57034
+
+Compact runtime resident ratio:
+
+- 32: 0.71094
+- 64: 0.69336
+- 128: 0.68896
+- 256: 0.68787
+- 512: 0.68759
+- 1024: 0.68752
+
+Storage therefore scales well and converges to roughly **57.0% serialized** and **68.75% runtime resident** versus two dense module weights.
+
+#### Runtime curve
+
+`compact / dense` paired median:
+
+- 32: **1.34919**
+- 64: **1.50403**
+- 128: **3.27688**
+- 256: **8.88606**
+- 512: **11.35949**
+- 1024: **12.88719**
+
+`predecoded Triton / dense` paired median:
+
+- 32: 1.10433
+- 64: 1.16912
+- 128: 1.93274
+- 256: 3.85293
+- 512: 4.82387
+- 1024: 5.88088
+
+`compact / predecoded Triton` paired median:
+
+- 32: 1.22805
+- 64: 1.26849
+- 128: 1.81908
+- 256: 2.29477
+- 512: 2.34078
+- 1024: 2.18005
+
+#### C57 interpretation
+
+Do **not** interpret the 12.89x width-1024 number as intrinsic codebook cost. The fixed Triton tile itself becomes badly noncompetitive with vendor dense as width grows: predecoded Triton is already 5.88x dense at width1024.
+
+However, the codebook layer is also not being amortized by scale: adding compact gather/decode on top of the same custom matmul still costs roughly **2.18x** at width1024 and >2.29x at widths256-512.
+
+Therefore both are true:
+
+1. the fixed custom Triton matmul is non-scalable and would need retuning/replacement at large widths;
+2. the fine-grained 2x2 codebook gather/decode also fails the pivot condition because its relative cost does not trend toward 1.0.
+
+### C57 pivot decision
+
+**Primary optimization of direct fine-grained block-codebook GPU execution stops here.**
+
+The codebook representation is not deleted. It remains useful as:
+
+- a compact storage/reference representation;
+- a baseline for future alternative layouts;
+- a possible representation to revisit if a fundamentally different decode strategy appears.
+
+But the main Gate-C execution candidate now pivots to GPU-native module-delta forms.
+
+## 8. Invalid / retry history
+
+- C46 first failure: diagnostic core construction issue.
 - C46 second failure: finite-value validation broke CUDA Graph capture.
-- C49 first command: PowerShell block did not actually start.
+- C49 first command did not actually start.
 - C51 first attempt accidentally ran C49 payload.
 - C52 first attempt detected wrong runner hash before Python executed.
 - C53 first attempt had PowerShell parser error before experiment start.
-- C53 retry was valid.
+- valid retries retain the same C number.
 
-Retries do not consume new C numbers.
+## 9. Current design decision after C57
 
----
+The desired Gate-C representation should satisfy all three:
 
-## 10. Scientific conclusion after C56
+1. compact persistent storage;
+2. enough module-specific capacity to preserve task quality;
+3. GPU-native execution with no fine-grained runtime decode/gather.
 
-### Established positives
-
-- compact registered model storage is 12.5% lower in the current small fixture;
-- checked fixture quality is preserved;
-- Down is essentially near dense;
-- full-model Graph/request path is already close to dense;
-- block-aware/full-M row reuse is a valid optimization direction.
-
-### Remaining blocker
-
-The current block-codebook representation is expensive to consume directly on GPU.
-
-The measured hierarchy is now:
+The first alternative to test is a **shared-input low-rank basis**:
 
 ```text
-shared base GEMM                      ~ near dense
-custom predecoded full-M Triton GEMM  ~ 1.13x dense
-compact decode/gather + same matmul    ~ 1.66x predecoded
-compact total                          ~ 1.91x dense (bank-level Up)
+W_module = W_base + A_module @ B_shared
 ```
 
-The main remaining cost is therefore **codebook gather / delta reconstruction**, not sparse correction E, index arithmetic, shared base GEMM, or CPU submission.
-
----
-
-## 11. Design interpretation / stop conditions
-
-The codebook representation has succeeded as a storage representation but is not yet proven as a GPU-native execution representation.
-
-Do not continue unbounded Triton micro-tuning.
-
-The remaining bounded questions are:
-
-1. Does the compact/dense runtime ratio improve materially as width/model scale grows, allowing decode cost to amortize?
-2. If it does not, pivot the module-delta representation toward GPU-native forms such as low-rank/shared-basis deltas.
-
-### Pivot condition
-
-After a width/scale sweep using the best current compact execution family:
-
-- if compact/dense ratio trends clearly toward 1.0 as width grows, keep codebook as a viable candidate and optimize the scalable block mapping;
-- if the ratio stays roughly flat well above 1.0 or worsens, stop primary optimization of this direct codebook execution path and begin low-rank/shared-basis comparison;
-- do not claim Gate C from a microbenchmark alone.
-
-### Candidate alternative representations after pivot
-
-Examples to evaluate without committing yet:
+For Up-like `M=2W`, `K=W`, two modules, choose:
 
 ```text
-W_module = W_base + A_module @ B_module
+rank = W / 16
 ```
 
-or a shared-basis form:
+Store shared `[W_base ; B_shared]` as one projection matrix. Runtime:
 
 ```text
-W_module = W_base + sum_i alpha[module,i] * B_i
+projected = F.linear(x, [W_base ; B_shared])
+base_output = projected[:M]
+latent      = projected[M:]
+out = addmm(base_output, latent, A_module.T)
 ```
 
-These trade some compression structure for GPU-native GEMM execution and no runtime codebook decode.
+This gives:
 
----
+- two GEMM-family operations;
+- no codebook decode/gather;
+- module-specific state only in small `A_module` matrices;
+- exact persistent weight-storage ratio **0.578125** versus two independent dense module weights;
+- theoretical matmul FLOP overhead ~9.375% versus one dense module GEMM.
 
-## 12. Scale warning
+This storage ratio is close to C57 codebook serialized ratio (~0.5703) and better than its current runtime-resident ratio (~0.6875).
 
-Current absolute ratios come from a very small real fixture (width 32, Up 32 -> 64, only two modules). They must not be extrapolated directly to LLM scale.
+## 10. Next experiment
 
-Scaling can change:
+### Next ID: C58
 
-- cuBLAS/Tensor Core efficiency;
-- codebook decode amortization;
-- row reuse;
-- register pressure;
-- best tile geometry;
-- shared-storage amortization across modules;
-- relative framework overhead.
+**Matched-storage shared-basis runtime scale sweep.**
 
-Therefore the next experiment measures the **curve**, not just another point at width 32.
+Widths:
 
----
+- 32
+- 64
+- 128
+- 256
+- 512
+- 1024
 
-## 13. Next experiment
+Ranks:
 
-### Next ID: C57
+- 2
+- 4
+- 8
+- 16
+- 32
+- 64
 
-**Runtime scale sweep for the current best compact family.**
+Rows: 1728.
 
-Goal:
+Compare exact materialized dense reference against factorized shared-basis execution using vendor PyTorch/cuBLAS operations.
 
-Determine whether direct block-codebook execution becomes relatively better, stays flat, or gets worse as the Linear width grows.
+C58 answers runtime/storage feasibility only. It does not answer task quality.
 
-Minimum sweep:
+Decision after C58:
 
-- widths: 32, 64, 128, 256;
-- Up-like shape: `K = width`, `M = 2 * width`;
-- keep a fixed rows workload appropriate for comparable utilization;
-- preserve 2x2 blocks, Q=3, entries=8, no-E for runtime isolation;
-- compare vendor dense baseline, predecoded Triton execution, and direct compact execution;
-- report bytes and runtime ratio at every width;
-- do not modify production runtime;
-- do not claim quality from synthetic scale fixtures.
+- if shared-basis runtime stays near dense while preserving ~57.8% storage, proceed to real-fixture approximation/task-quality work;
+- if runtime is also badly noncompetitive, test a different GPU-native delta representation before any task-quality investment;
+- Gate C remains NOT PASSED either way.
 
-Decision after C57:
-
-- improving compact/dense trend -> continue scalable codebook execution research;
-- flat/worsening trend -> pivot to low-rank/shared-basis module-delta experiments.
-
----
-
-## 14. Handoff instructions
+## 11. Handoff instructions
 
 On a new chat/session:
 
 1. Read this file first.
 2. Confirm branch/HEAD and protected hashes.
-3. Read only files needed for the next experiment.
+3. Read only files needed for the next C number.
 4. Continue at the Next ID above.
 5. Keep one experiment per C number.
 6. Retry failures under the same C number.
