@@ -25,8 +25,8 @@ from torch.nn import functional as F
 
 from fold_lm.v05.condition_task import evaluate_condition
 from fold_lm.v05.modules import HighPrecisionFixedRoutingCore
-from fold_lm.v05.benchmarks.gate_b_baseline_comparison import DEFAULT_SEEDS, _build_condition
-from fold_lm.v05.benchmarks.gate_c_shared_basis_task_aware_recovery import (
+from fold_lm.v05_benchmarks.gate_b_baseline_comparison import DEFAULT_SEEDS, _build_condition
+from fold_lm.v05_benchmarks.gate_c_shared_basis_task_aware_recovery import (
     TaskTunableSharedBasisCore,
     _freeze_except_factors,
     _score,
