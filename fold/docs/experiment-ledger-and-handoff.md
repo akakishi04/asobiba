@@ -262,6 +262,36 @@ Current evidence supports:
 
 Gate C remains **NOT PASSED**. Production runtime integration and recurrence validation are still pending.
 
+### Auto-Partition living spec
+
+The implementation-preparation document is:
+
+`fold/docs/shared-basis-auto-module-partition-report.md`
+
+This is a **living design document**, not a frozen hypothesis report. Accepted experiments that materially affect any of the following must also update that document:
+
+```text
+rank / capacity allocation
+native shared-basis training
+factor/common co-adaptation
+seed / validation robustness
+shared grouping compatibility
+residual / gradient diagnostics
+runtime reuse
+recurrence / structure-change safety
+```
+
+At minimum, update its:
+
+```text
+Evidence Ledger
+Current Decision / Decision Table
+Implementation Defaults
+Open Questions / Next Validation
+```
+
+Invalid Cxx runs must not be used to revise its scientific conclusions.
+
 ## 13. Next experiment — C69
 
 **Condition rank4 aligned-lr 12-seed exhaustive robustness.**
@@ -312,4 +342,5 @@ On a new session:
 3. continue at C69;
 4. keep one experiment per C number;
 5. retry failures under the same number;
-6. update this file after every accepted result or Gate decision change.
+6. update this file after every accepted result or Gate decision change;
+7. if an accepted result affects Auto-Partition assumptions or implementation defaults, also update `fold/docs/shared-basis-auto-module-partition-report.md` in the same repo-maintenance step.
