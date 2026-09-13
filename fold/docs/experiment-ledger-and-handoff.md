@@ -178,8 +178,6 @@ Decision: split condition capacity and language optimization/checkpoint question
 
 Accepted valid retry commit: `76011ee9108408d2275e39f3cab45518ea0a3b7b`.
 
-First attempt at `a01cff8e1e9751546ec5da77c13221cf28580b51` was invalid before experiment execution due an import path typo. Retry retained C63.
-
 Condition, 3 seeds, factor lr0.002:
 
 | rank | ratio | all final meet dense | all best checkpoints meet dense |
@@ -190,174 +188,145 @@ Condition, 3 seeds, factor lr0.002:
 | 6 | 0.9218750 | true | true |
 | 7 | 0.9921875 | true | true |
 
-Primary result: minimum robust tested rank = **4**.
+Primary result: minimum robust tested rank = **4** for post-hoc factor recovery.
 
 ## 11. C64 — language rank/checkpoint frontier
 
 Accepted commit: `cd7de1cf7724e25526cba88eced89cc7cf4f4c43`.
 
-Language, 3 seeds, ranks2/4/8, factor lr0.002, validation every50 steps.
-
-Rank2 ratio 0.5703125:
-
-- all best checkpoints meet dense;
-- final checkpoints do not all meet dense;
-- seed20260911: 0.909091 at step0 -> **1.0 at step50** -> 0.909091 at step100 -> 0.818182 from step200 onward.
-
-Therefore rank2 has sufficient functional capacity; failure is optimization/checkpoint policy.
-
-Rank4 ratio 0.640625 and rank8 ratio 0.78125 both finish at 1.0 for all three seeds.
+Language rank2 has sufficient functional capacity but one seed overtrains under fixed factor lr0.002. Rank4/rank8 finish at 1.0 for all three seeds. Capacity and optimizer/checkpoint policy are therefore distinct dimensions.
 
 ## 12. C65 — direct joint training from initialization
 
 Accepted commit: `1196cb369eb90d0d15394aa1ffce0c31a7e950a7`.
 
-Purpose: test native factorized training instead of training a dense routed bank first.
+Native shared-basis training from untrained initialization:
 
-Candidate uses selected stable-final ranks:
+- condition rank4 ratio0.78125: nearly matches dense, one one-example validation miss;
+- composition rank2 ratio0.5703125: 3/3 exactly matches dense;
+- language rank4 ratio0.640625: unstable when factor lr0.002 while common lr0.01.
 
-- condition: rank4, ratio **0.78125**;
-- composition: rank2, ratio **0.5703125**;
-- language: rank4, ratio **0.640625**.
-
-All ordinary/shared/core/surrounding parameters train. Factors use lr0.002; ordinary/common parameters use each task's original LR.
-
-Results:
-
-### Condition
-
-- seed20260911: dense1.0, direct0.992188
-- seed20260912: dense1.0, direct1.0
-- seed20260913: dense0.984375, direct1.0
-
-### Composition
-
-3/3 direct score 1.0, exactly matching dense. Direct trainable parameter ratio = **0.725**.
-
-### Language
-
-- seed20260911: dense1.0, direct0.818182
-- seed20260912: dense1.0, direct0.545455
-- seed20260913: dense1.0, direct1.0
-
-Primary field: `all_tasks_all_seeds_direct_match_or_exceed_dense = false`.
-
-Interpretation: native shared-basis training is possible, but language co-adaptation is unstable under the lr split. Do not change representation before testing optimizer balance.
+Decision: diagnose co-adaptation before changing representation.
 
 ## 13. C66 — direct-joint language factor-LR frontier
 
 Accepted commit: `ab84b6c15d0b959c120904898e35d0ce89950698`.
 
-Fixed:
+Fixed language rank4/common lr0.01. Factor LR sweep:
 
-- language rank4;
-- common/non-factor lr = **0.01**;
-- 3 seeds;
-- 600 steps;
-- same initialization and batch sequence as C65.
+| factor LR | final mean | min final | all final meet dense |
+|---:|---:|---:|:---:|
+| 0.002 | 0.787879 | 0.545455 | false |
+| 0.005 | 0.939394 | 0.818182 | false |
+| **0.010** | **1.000000** | **1.000000** | **true** |
 
-Only factor LR changed:
+Conclusion: C65 language instability was primarily a factor/common co-adaptation-rate problem. A post-hoc-recovery factor LR is not automatically valid for from-scratch joint training.
 
-- 0.002
-- 0.005
-- 0.01
+## 14. C67 — aligned factor/common LR cross-task joint training
+
+Accepted commit: `c5bda0b605837903a29dbe2b7ae08820bee80a69`.
+
+Rule under test:
+
+```text
+factor_lr = common_lr
+```
+
+Task setup:
+
+- condition: rank4, lr0.01, routed-weight ratio **0.78125**;
+- composition: rank2, lr0.005, ratio **0.5703125**;
+- language: rank4, lr0.01, ratio **0.640625**.
 
 ### Results
 
-| factor LR | final score mean | min final | all final meet dense | all best meet dense |
-|---:|---:|---:|:---:|:---:|
-| 0.002 | 0.787879 | 0.545455 | false | false |
-| 0.005 | 0.939394 | 0.818182 | false | false |
-| **0.010** | **1.000000** | **1.000000** | **true** | **true** |
+Composition:
 
-Critical seed20260912 progression at factor_lr0.01:
+- 3/3 direct = dense = **1.0**.
 
-- step50: 0.818182
-- step100: 0.909091
-- step400: **1.0**
-- step600: **1.0**
+Language:
 
-Primary results:
+- 3/3 direct = dense = **1.0**.
+- C66 result reproduces inside the cross-task run.
 
-- `minimum_tested_factor_lr_all_final_meet_dense = 0.01`
-- `minimum_tested_factor_lr_all_best_checkpoints_meet_dense = 0.01`
+Condition:
 
-### C66 interpretation
-
-C65 language instability was primarily caused by **factor/common co-adaptation imbalance**, not rank4 capacity. When factors use the same lr as the common/shared parameters, all 3 seeds reach and retain dense validation quality.
-
-This materially strengthens the training hypothesis:
-
-```text
-native shared-basis training needs coordinated adaptation rates
-```
-
-A factor LR inherited from post-hoc recovery (`0.002`) is not automatically appropriate for from-scratch joint training. At least on the current language task, the factor side must move at roughly the same rate as the surrounding/shared side.
-
-## 14. Current design decision after C66
-
-Shared-basis remains the leading Gate-C representation family.
-
-Current evidence supports two separate adaptive dimensions:
-
-1. **capacity allocation** — rank depends on functional/task need;
-2. **training-rate allocation** — factor/shared learning rates must permit co-adaptation.
-
-The next bounded question is whether one simple rule works across the three existing task families:
-
-```text
-factor_lr = common_lr
-```
-
-Do not move to production runtime integration until this direct-training rule is checked cross-task. Condition's C65 one-sample miss may also disappear under aligned lr.
-
-## 15. Next experiment — C67
-
-**Aligned factor/common LR direct joint training across all Gate-B task families.**
-
-Tracked benchmark:
-
-`fold/fold_lm/v05_benchmarks/gate_c_shared_basis_aligned_joint_training.py`
-
-Tasks / ranks / aligned learning rates:
-
-- condition: rank4, common=factor lr **0.01**;
-- composition: rank2, common=factor lr **0.005**;
-- language: rank4, common=factor lr **0.01**.
-
-Seeds:
-
-- 20260911
-- 20260912
-- 20260913
-
-Everything else matches C65:
-
-1. build one seeded untrained dense model;
-2. clone to dense reference and shared-basis candidate;
-3. factorize candidate before any task training;
-4. train both from initialization with the same task-native batch schedule;
-5. compare final validation score and parameter/storage accounting.
-
-Only changed training rule relative to C65:
-
-```text
-factor_lr = common_lr
-```
+| seed | dense | direct | delta |
+|---:|---:|---:|---:|
+| 20260911 | 1.000000 | 1.000000 | 0 |
+| 20260912 | 1.000000 | 0.992188 | -0.0078125 |
+| 20260913 | 0.984375 | 0.976562 | -0.0078125 |
 
 Primary field:
 
-`summary.all_tasks_all_seeds_direct_match_or_exceed_dense`
+`all_tasks_all_seeds_direct_match_or_exceed_dense = false`.
+
+### C67 interpretation
+
+- aligned learning rates are a strong native-training rule for composition and language;
+- they are not a universal guarantee because condition retains tiny residuals;
+- the remaining condition deltas are exactly **1/128**, i.e. one validation trajectory each;
+- therefore the next step should not immediately spend routed capacity or change optimizer policy. First determine whether the residual persists when condition is evaluated over its full held-out domain.
+
+The ordinary condition validation set has only 128 trajectories, while the complete condition input domain contains 32,768 unique signatures. With 256 training examples, 32,512 signatures remain available for deterministic exhaustive evaluation.
+
+## 15. Current design decision after C67
+
+Shared-basis remains the leading Gate-C representation family.
+
+Evidence currently supports:
+
+1. **adaptive rank/capacity** by functional need;
+2. **co-adaptation-aware optimizer policy** for native training;
+3. `factor_lr = common_lr` as a strong simple default, but not yet a universal law;
+4. do not interpret a one-example validation delta as a structural deficit until larger/full-domain evaluation confirms it.
+
+Gate C remains NOT PASSED. Production runtime integration and recurrence validation are still pending.
+
+## 16. Next experiment — C68
+
+**Exhaustive held-out condition generalization after C67.**
+
+Tracked benchmark:
+
+`fold/fold_lm/v05_benchmarks/gate_c_shared_basis_condition_exhaustive_generalization.py`
+
+Accepted benchmark creation commit: `13b7ce8d51e995570950deb606555217ce803105`.
+
+Fixed training conditions, exactly reproducing C67 condition:
+
+- rank4;
+- dense/shared-basis both lr0.01;
+- 260 steps;
+- batch32;
+- seeds 20260911/20260912/20260913;
+- same initializations and batch sequence.
+
+Per seed:
+
+1. retrain dense and direct shared-basis candidates;
+2. assert the original 128-example validation scores reproduce C67 exactly;
+3. enumerate the entire condition input domain;
+4. exclude the 256 training signatures;
+5. evaluate both models on all remaining **32,512** trajectories in batches;
+6. report exact trajectory accuracy plus paired dense-only/direct-only correctness counts.
+
+Primary outputs:
+
+- `summary.all_exhaustive_direct_match_or_exceed_dense`;
+- `summary.exhaustive_exact_delta`;
+- total paired dense-only correct / direct-only correct counts;
+- paired net direct advantage.
 
 Interpretation:
 
-- if true, native shared-basis training has a simple cross-task co-adaptation rule on the current benchmark family, and the project can move toward real factorized runtime/memory integration plus recurrence validation;
-- if only condition or composition regresses, diagnose task-specific optimizer ratio rather than changing the representation;
-- if language regresses despite C66, C67 is invalid or non-equivalent and must be investigated before proceeding.
+- if exhaustive scores match or direct exceeds dense, C67's 1/128 residual was a small-validation artifact and condition does not justify extra rank on this task;
+- if dense retains a consistent exhaustive advantage, the residual is real and the next bounded diagnosis should test native condition capacity/rank rather than assuming optimizer noise;
+- if results differ by seed without a consistent direction, treat condition as optimizer/initialization-sensitive and quantify that before production integration.
 
-C67 cannot establish Gate C pass by itself.
+C68 is exhaustive only for this tiny synthetic condition task and cannot establish broad model equivalence or Gate-C passage.
 
-## 16. Handoff
+## 17. Handoff
 
 On a new session:
 
