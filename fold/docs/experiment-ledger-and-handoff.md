@@ -276,21 +276,27 @@ The connector rejected one earlier large-file maintenance write; keep these acce
 
 ## 9. Next experiment — C73
 
-**Full-core width/rank scaling diagnostic.**
+**Extended full-core width/rank scaling diagnostic.**
 
 Tracked benchmark:
 
 `fold/fold_lm/v05_benchmarks/gate_c_shared_basis_full_core_width_rank_scaling.py`
 
-Benchmark creation commit:
+Original benchmark creation commit:
 
 `7327aa1d256d2b91e8c85ea89246c9912444daa2`
+
+Extended-width benchmark update commit:
+
+`b62e7038caa5c2751d650773abd50d012d651de4`
 
 Question: does the full recurrent core, not just an isolated linear layer, recover toward Dense latency as width increases, and how does that frontier depend on the capacity/rank fraction?
 
 Widths:
 
-- 32 / 64 / 128 / 256 / 512 / 1024.
+- 32 / 64 / 128 / 256 / 512 / 1024 / 1536 / 2048 / 3072 / 4096 / 5120.
+
+`5120` is used as the approximately-5k endpoint instead of `5096`, because all widths must be divisible by 16/8/4 for the three rank profiles and 5120 is a cleaner GEMM shape.
 
 Rank profiles:
 
@@ -320,12 +326,13 @@ Primary outputs per profile/batch:
 - first width with median <= 1.15x;
 - first width with median <= 1.10x;
 - full-core persistent ratio;
-- forward peak-delta ratio.
+- forward peak-delta ratio;
+- explicit 4096 and 5120 endpoint behavior.
 
 Interpretation:
 
 - if latency converges strongly toward Dense with width, Shared Basis remains a runtime-viable production candidate and the next gate should move toward production integration at a representative larger shape;
-- if even width1024 remains near the C71/C72 ~1.3-1.4x band, the GEMM-native representation has a structural runtime tax and requires a different execution formulation before integration;
+- if the curve remains near the C71/C72 ~1.3-1.4x band even into 4096/5120, the GEMM-native representation has a structural runtime tax and requires a different execution formulation before integration;
 - if only lean ranks scale acceptably while high ranks remain costly, runtime cost must become an explicit rank-allocation term in Auto-Partition / adaptive-capacity policy.
 
 C73 is runtime/storage scaling only and cannot establish Gate C passage by itself.
