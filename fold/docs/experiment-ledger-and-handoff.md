@@ -78,6 +78,14 @@ W_module = W_base + A_module @ B_shared
 
 The original universal rule `rank=max(1,width//16)` is rejected as a task-independent policy. Rank/capacity is adaptive by functional need.
 
+Current training default supported by C66-C69:
+
+```text
+factor_lr = common_lr
+```
+
+for native shared-basis joint training on the present Gate-B tasks.
+
 ## 5. Scientific discipline
 
 Do not claim:
@@ -116,9 +124,12 @@ Representation:
 W_module = W_base + A_module @ B_shared
 ```
 
-Vendor-GEMM execution uses shared `F.linear` plus module-specific `addmm`.
+Vendor-GEMM execution uses:
 
-At the scale diagnostic rank rule, persistent routed-weight ratio = 0.578125.
+1. shared `F.linear(x, [W_base; B_shared])`;
+2. module-specific `addmm` from shared latent through `A_module.T`.
+
+At the C58 matched-storage rank rule, persistent routed-weight ratio = 0.578125.
 
 `shared_basis / dense` paired median:
 
@@ -129,7 +140,7 @@ At the scale diagnostic rank rule, persistent routed-weight ratio = 0.578125.
 - width512 1.29614
 - width1024 1.19407
 
-Large widths scale in the desired direction.
+Large widths scale in the desired direction. C58 is synthetic runtime/storage evidence only.
 
 ## 8. C59-C61 — quality recovery
 
@@ -167,7 +178,7 @@ Minimum robust tested condition rank = 4.
 
 Accepted commit: `cd7de1cf7724e25526cba88eced89cc7cf4f4c43`.
 
-Language rank2 reaches dense at the best checkpoint but can overtrain; rank4 and rank8 finish at 1.0 for all three seeds. Capacity and optimizer/checkpoint policy are distinct dimensions.
+Language rank2 reaches dense at its best checkpoint but can overtrain. Rank4/8 finish at 1.0 for all three seeds. Capacity and optimizer/checkpoint policy are distinct dimensions.
 
 ## 10. C65-C67 — native joint training
 
@@ -209,17 +220,13 @@ factor_lr = common_lr
 - language rank4/lr0.01: 3/3 dense match;
 - condition rank4/lr0.01: validation deltas 0, -1/128, -1/128.
 
-The condition residual was too small to justify changing capacity before a full-domain check.
+The remaining condition difference required larger evaluation before any capacity change.
 
 ## 11. C68 — exhaustive condition generalization
 
 Accepted run commit: `8f2ee6c0df66f2d7a81072a5b51432ba175e17e5`.
 
-Experiment ID: `C68-shared-basis-condition-exhaustive-generalization`.
-
-C67 condition training is reproduced exactly, then each model is evaluated on every condition trajectory not used for training. Domain size = 32,768; training = 256; exhaustive held-out = **32,512 per seed**.
-
-Results:
+C67 condition training was reproduced and evaluated over all 32,512 held-out trajectories per seed.
 
 | seed | dense exact | direct exact | delta | dense-only | direct-only | net direct |
 |---:|---:|---:|---:|---:|---:|---:|
@@ -229,38 +236,74 @@ Results:
 
 Summary:
 
-- mean exact delta = **+0.00089198**;
-- median exact delta = **+0.00249135**;
-- min = -0.00639760;
-- max = +0.00658220;
-- direct-only correct total = **620**;
-- dense-only correct total = **533**;
-- pooled net direct advantage = **+87**;
-- `all_exhaustive_direct_match_or_exceed_dense = false` because seed20260912 favors dense.
-
-### C68 interpretation
-
-The 128-example residual was not purely sampling noise: seed20260912 retains a real full-domain dense advantage. However, there is **no consistent directional deficit** for rank4 shared-basis condition training:
-
+- mean delta +0.00089198;
 - direct wins 2/3 seeds;
-- dense wins 1/3 seeds;
-- the three-seed mean and pooled paired count favor direct.
+- pooled net direct advantage +87.
 
-Therefore the current evidence points more strongly to **initialization/optimizer seed variance** than to a systematic rank4 capacity deficit. Do not increase rank yet. First quantify seed robustness under the exact same training rule.
+Interpretation: rank4 condition is not consistently worse than dense; seed/optimization variance remained the leading explanation.
 
-## 12. Current design decision after C68
+## 12. C69 — condition 12-seed exhaustive robustness
+
+Accepted run commit: `632469b400e1cf325882d8c7aaf0d8f509357aab`.
+
+Experiment ID:
+
+`C69-shared-basis-condition-12seed-exhaustive-robustness`
+
+Fixed setup:
+
+- condition only;
+- rank4;
+- dense/direct aligned lr0.01;
+- 260 steps, batch32, train size256;
+- seeds `20260911..20260922`;
+- exhaustive held-out = 32,512 per seed.
+
+C68's first three seeds reproduced exactly.
+
+Primary results:
+
+- direct-win seeds = **6**;
+- dense-win seeds = **6**;
+- ties = 0;
+- two-sided seed sign-test p = **1.0**;
+- mean exhaustive exact delta = **-0.00025117894**;
+- median delta = **-0.00006151199**;
+- min = -0.00639760494;
+- max = +0.00658220053;
+- pooled dense-only correct = **1,446**;
+- pooled direct-only correct = **1,348**;
+- pooled net direct advantage = **-98** across 390,144 held-out trajectories.
+
+### C69 interpretation
+
+The sign pattern is exactly balanced and the center is extremely close to zero. The small pooled direct disadvantage is not accompanied by a consistent seed-level direction.
+
+Therefore, on the existing complete synthetic condition domain:
+
+1. there is **no evidence of a systematic rank4 shared-basis quality deficit** large enough to justify increasing rank;
+2. the remaining dense/direct difference is best treated primarily as initialization/optimizer variance at this stage;
+3. condition rank4 remains the selected point, with routed-weight ratio 0.78125;
+4. further rank tuning is lower priority than validating the intended runtime form and recurrence behavior.
+
+This is not broad model equivalence: C69 covers one tiny synthetic task family.
+
+## 13. Current design decision after C69
 
 Shared-basis remains the leading Gate-C representation family.
 
-Current evidence supports:
+Current quality/training defaults for the existing tasks:
 
-1. **adaptive capacity/rank** by functional need;
-2. **co-adaptation-aware training**, with `factor_lr = common_lr` a strong default for current tasks;
-3. composition and language native training are robust across the accepted 3 seeds at materially lower routed-weight storage;
-4. condition rank4 is not consistently worse than dense, but has material seed-to-seed variance even under exhaustive evaluation;
-5. increasing rank before quantifying this variance would confound capacity with optimization robustness.
+- composition: rank2, routed ratio0.5703125, aligned native LR;
+- language: rank4 for stable fixed-schedule native training, ratio0.640625;
+- condition: rank4, ratio0.78125; 12-seed exhaustive evidence is centered near dense with mixed signs;
+- native joint training default: `factor_lr = common_lr` unless later evidence overrides it.
 
-Gate C remains **NOT PASSED**. Production runtime integration and recurrence validation are still pending.
+Do **not** spend another C-number increasing condition rank on current evidence.
+
+The next Gate-C gap is that quality experiments use a factorized representation whose reference forward materializes effective routed weights, while the intended fast runtime is the C58 GEMM-native form. Before production integration or timing, establish numerical/semantic equivalence under repeated state updates.
+
+Gate C remains **NOT PASSED** because production-like factorized runtime, resident/serialized accounting for the selected task-dependent ranks, and recurrence/runtime validation are not complete.
 
 ### Auto-Partition living spec
 
@@ -268,79 +311,62 @@ The implementation-preparation document is:
 
 `fold/docs/shared-basis-auto-module-partition-report.md`
 
-This is a **living design document**, not a frozen hypothesis report. Accepted experiments that materially affect any of the following must also update that document:
+Accepted experiments affecting rank/capacity, co-adaptation, seed robustness, grouping assumptions, runtime reuse, or recurrence must update it. C69 specifically strengthens the multi-seed persistence requirement and argues against structure changes on tiny mean deltas with mixed signs.
 
-```text
-rank / capacity allocation
-native shared-basis training
-factor/common co-adaptation
-seed / validation robustness
-shared grouping compatibility
-residual / gradient diagnostics
-runtime reuse
-recurrence / structure-change safety
-```
+## 14. Next experiment — C70
 
-At minimum, update its:
-
-```text
-Evidence Ledger
-Current Decision / Decision Table
-Implementation Defaults
-Open Questions / Next Validation
-```
-
-Invalid Cxx runs must not be used to revise its scientific conclusions.
-
-## 13. Next experiment — C69
-
-**Condition rank4 aligned-lr 12-seed exhaustive robustness.**
+**GEMM-native shared-basis execution equivalence under recurrence.**
 
 Tracked benchmark:
 
-`fold/fold_lm/v05_benchmarks/gate_c_shared_basis_condition_12seed_exhaustive_robustness.py`
+`fold/fold_lm/v05_benchmarks/gate_c_shared_basis_runtime_recurrence_equivalence.py`
 
-Benchmark creation commit: `691df35bd768f2c24932168d3c1ac5fd8ec07cfe`.
+Benchmark creation commit:
 
-Question: does C68's mixed sign persist across more initializations, or is there a systematic dense/direct bias?
+`9010b62d892f701f3e34c6a0e6db56c60cff8848`
 
-Fixed setup:
+Question: can the C58-style GEMM-native formula replace effective-weight materialization without changing the trained model's observable behavior as recurrent state updates accumulate?
 
-- condition only;
-- rank4;
-- dense and direct lr0.01;
-- 260 steps;
-- batch32;
-- training size256;
-- exhaustive held-out size32,512;
-- seeds `20260911..20260922` (12 total).
+Setup:
 
-The first three seeds must exactly reproduce accepted C68 metrics. No rank, optimizer, architecture, or initialization rule is changed.
+- tasks: condition / composition / language;
+- seeds: 20260911 / 20260912 / 20260913;
+- selected ranks: condition4 / composition2 / language4;
+- direct training uses accepted aligned rule `factor_lr = common_lr`;
+- reference execution materializes `W_base + A_module @ B_shared`;
+- candidate execution stores `[W_base; B_shared]`, runs one shared projection, then coefficient `addmm`; no effective routed weight is materialized;
+- complete validation outputs are compared;
+- independent core stress uses deterministic contexts and alternating routes for recurrence depths 1,2,4,8,16,32,64;
+- declared numerical comparison uses `rtol=5e-4`, `atol=1e-4`.
 
-Primary outputs:
+Primary output:
 
-- mean/median/min/max exhaustive exact delta;
-- direct-win / dense-win / tie seed counts;
-- simple two-sided seed sign-test diagnostic;
-- pooled dense-only / direct-only correct counts and net advantage;
-- first-three-seed C68 reproduction assertion.
+`summary.all_runtime_formula_equivalent`
+
+Supporting outputs:
+
+- validation output max-abs gap;
+- exact validation score equality;
+- semantic prediction equality;
+- recurrence max-abs and relative-L2 gaps;
+- all-depth recurrence allclose.
 
 Interpretation:
 
-- if deltas center near zero with mixed signs, treat remaining condition difference primarily as seed/optimization variance and proceed to runtime/recurrence work without spending extra rank yet;
-- if dense wins most seeds with negative mean/median and pooled disadvantage, then direct condition training has a real robustness deficit and C70 should diagnose rank or training schedule;
-- if direct wins most seeds, rank4 native shared-basis is at least competitive on this complete synthetic condition domain despite individual seed reversals.
+- if true, proceed to C71 production-like latency/resident-memory benchmark and then integration;
+- if validation is equal but recurrence drift exceeds tolerance, diagnose arithmetic ordering / recurrent numerical stability before production integration;
+- if task semantics change immediately, the GEMM-native implementation is incorrect and C70 must be fixed/diagnosed before any timing comparison.
 
-C69 does not define a formal equivalence margin and cannot establish Gate C passage alone.
+C70 intentionally does **not** modify `fold_lm/v05/modules.py`; it is a pre-integration correctness gate.
 
-## 14. Handoff
+## 15. Handoff
 
 On a new session:
 
 1. read this ledger;
 2. confirm branch/HEAD and protected hashes;
-3. continue at C69;
+3. continue at C70;
 4. keep one experiment per C number;
 5. retry failures under the same number;
 6. update this file after every accepted result or Gate decision change;
-7. if an accepted result affects Auto-Partition assumptions or implementation defaults, also update `fold/docs/shared-basis-auto-module-partition-report.md` in the same repo-maintenance step.
+7. if an accepted result affects Auto-Partition assumptions or implementation defaults, update `fold/docs/shared-basis-auto-module-partition-report.md` in the same maintenance step.
