@@ -33,9 +33,15 @@ TRAIN_STEPS = 240
 TRAIN_BATCH = 256
 
 
-def build_objects(width: int, device: torch.device):
+def build_objects(width: int, device: torch.device, seed: int):
     config = LearnedCoreConfig(width=width, slots=1, modules=2, hidden_mult=2)
     core = _allocate_shared(config, rank_for_width(width), device).eval()
+    torch.cuda.synchronize()
+    free_after_core, _total = torch.cuda.mem_get_info()
+    allocated_after_core = int(torch.cuda.memory_allocated())
+    reserved_after_core = int(torch.cuda.memory_reserved())
+
+    torch.manual_seed(seed)
     router = SupervisedActionRouter(
         ActionRouterConfig(
             width=width,
@@ -44,31 +50,16 @@ def build_objects(width: int, device: torch.device):
             action_count=ACTION_COUNT,
         )
     ).to(device)
-    return core, router
-
-
-def build_router_examples(width: int, device: torch.device):
-    working, operations, operands = make_runtime_inputs(width, device)
-    states = []
-    contexts = []
-    ops = []
-    labels = []
-    current = working.clone()
-    for event in range(EVENTS):
-        op = operations[:, event]
-        operand = operands[:, event]
-        context = _event_context(width, operand, current.dtype)
-        action = oracle_actions(op, operand)
-        states.append(current.clone())
-        contexts.append(context)
-        ops.append(op.clone())
-        labels.append(action.clone())
-        current = _apply_oracle_actions(
-            # only state evolution semantics are needed here; caller supplies core later
-            # placeholder handled by train_and_validate_router
-            None, current, action
-        )
-    raise RuntimeError("build_router_examples requires core-aware wrapper")
+    torch.cuda.synchronize()
+    free_after_router, _total = torch.cuda.mem_get_info()
+    allocated_after_router = int(torch.cuda.memory_allocated())
+    reserved_after_router = int(torch.cuda.memory_reserved())
+    memory = {
+        "router_device_free_vram_cost_bytes": int(free_after_core - free_after_router),
+        "router_allocated_delta_bytes": allocated_after_router - allocated_after_core,
+        "router_reserved_delta_bytes": reserved_after_router - reserved_after_core,
+    }
+    return core, router, memory
 
 
 def train_and_validate_router(core, router, width: int, device: torch.device, seed: int):
@@ -94,10 +85,10 @@ def train_and_validate_router(core, router, width: int, device: torch.device, se
     ops = torch.cat(ops, dim=0)
     labels = torch.cat(labels, dim=0)
 
-    torch.manual_seed(seed)
     optimizer = torch.optim.AdamW(router.parameters(), lr=0.01, weight_decay=0.0)
     generator = torch.Generator(device="cpu").manual_seed(seed + 400)
     router.train()
+    loss = None
     for _ in range(TRAIN_STEPS):
         index = torch.randint(states.shape[0], (TRAIN_BATCH,), generator=generator).to(device)
         optimizer.zero_grad(set_to_none=True)
@@ -120,7 +111,7 @@ def train_and_validate_router(core, router, width: int, device: torch.device, se
     for action in range(ACTION_COUNT):
         mask = labels == action
         recalls.append(float((predicted[mask] == action).float().mean().item()))
-    return accuracy, min(recalls)
+    return accuracy, min(recalls), float(loss.detach())
 
 
 def learned_sparse_forward(core, router, working, operations, operands):
@@ -169,8 +160,10 @@ def _stats(values):
 
 
 def measure(width: int, device: torch.device, seed: int) -> dict:
-    core, router = build_objects(width, device)
-    action_accuracy, min_recall = train_and_validate_router(core, router, width, device, seed)
+    core, router, memory = build_objects(width, device, seed)
+    action_accuracy, min_recall, final_router_loss = train_and_validate_router(
+        core, router, width, device, seed
+    )
     working, operations, operands = make_runtime_inputs(width, device)
     fixed_fn = lambda: fixed_max_forward(core, working, operations, operands)
     learned_fn = lambda: learned_sparse_forward(core, router, working, operations, operands)
@@ -207,10 +200,6 @@ def measure(width: int, device: torch.device, seed: int) -> dict:
 
     core_bytes = _storage_bytes(core)
     router_bytes = _storage_bytes(router)
-    torch.cuda.reset_peak_memory_stats()
-    with torch.inference_mode():
-        learned_fn()
-    torch.cuda.synchronize()
     return {
         "width": width,
         "rank": rank_for_width(width),
@@ -218,17 +207,17 @@ def measure(width: int, device: torch.device, seed: int) -> dict:
         "router_hidden_width": HIDDEN_WIDTH,
         "action_accuracy": action_accuracy,
         "minimum_class_recall": min_recall,
+        "final_router_loss": final_router_loss,
         "output_allclose": allclose,
         "output_max_abs_gap": max_abs,
         "core_persistent_bytes": core_bytes,
         "router_persistent_bytes": router_bytes,
         "router_over_core_persistent_ratio": router_bytes / core_bytes,
+        **memory,
         "fixed_device_ms": _stats(fixed_device),
         "learned_device_ms": _stats(learned_device),
         "learned_over_fixed_device": _stats(device_ratio),
         "fixed_wall_ms": _stats(fixed_wall),
         "learned_wall_ms": _stats(learned_wall),
         "learned_over_fixed_wall": _stats(wall_ratio),
-        "peak_allocated_bytes": int(torch.cuda.max_memory_allocated()),
-        "peak_reserved_bytes": int(torch.cuda.max_memory_reserved()),
     }
