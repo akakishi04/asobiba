@@ -78,13 +78,13 @@ W_module = W_base + A_module @ B_shared
 
 The original universal rule `rank=max(1,width//16)` is rejected as a task-independent policy. Rank/capacity is adaptive by functional need.
 
-Current training default supported by C66-C69:
+Current native-training default supported by C66-C70:
 
 ```text
 factor_lr = common_lr
 ```
 
-for native shared-basis joint training on the present Gate-B tasks.
+for the present Gate-B tasks.
 
 ## 5. Scientific discipline
 
@@ -246,18 +246,7 @@ Interpretation: rank4 condition is not consistently worse than dense; seed/optim
 
 Accepted run commit: `632469b400e1cf325882d8c7aaf0d8f509357aab`.
 
-Experiment ID:
-
-`C69-shared-basis-condition-12seed-exhaustive-robustness`
-
-Fixed setup:
-
-- condition only;
-- rank4;
-- dense/direct aligned lr0.01;
-- 260 steps, batch32, train size256;
-- seeds `20260911..20260922`;
-- exhaustive held-out = 32,512 per seed.
+Fixed setup: condition rank4, aligned lr0.01, 260 steps, batch32, train size256, seeds `20260911..20260922`, exhaustive held-out 32,512 per seed.
 
 C68's first three seeds reproduced exactly.
 
@@ -275,35 +264,67 @@ Primary results:
 - pooled direct-only correct = **1,348**;
 - pooled net direct advantage = **-98** across 390,144 held-out trajectories.
 
-### C69 interpretation
+Interpretation: the sign pattern is exactly balanced and the center is extremely close to zero. There is no evidence of a systematic rank4 shared-basis quality deficit large enough to justify increasing rank. Treat the remaining difference primarily as initialization/optimizer variance on this tiny synthetic task.
 
-The sign pattern is exactly balanced and the center is extremely close to zero. The small pooled direct disadvantage is not accompanied by a consistent seed-level direction.
+## 13. C70 — GEMM-native runtime recurrence equivalence
 
-Therefore, on the existing complete synthetic condition domain:
+Accepted run commit: `cd18de18a8d167a1bbdf5eb0cbb863d8737e77f3`.
 
-1. there is **no evidence of a systematic rank4 shared-basis quality deficit** large enough to justify increasing rank;
-2. the remaining dense/direct difference is best treated primarily as initialization/optimizer variance at this stage;
-3. condition rank4 remains the selected point, with routed-weight ratio 0.78125;
-4. further rank tuning is lower priority than validating the intended runtime form and recurrence behavior.
+Experiment ID:
 
-This is not broad model equivalence: C69 covers one tiny synthetic task family.
+`C70-shared-basis-runtime-recurrence-equivalence`
 
-## 13. Current design decision after C69
+Setup:
+
+- tasks: condition / composition / language;
+- seeds: 20260911 / 20260912 / 20260913;
+- selected ranks: condition4 / composition2 / language4;
+- aligned native training rule `factor_lr = common_lr`;
+- reference execution materializes `W_base + A_module @ B_shared` and uses `F.linear`;
+- candidate execution uses concatenated `[W_base; B_shared]` projection plus module coefficient `addmm`, with no effective-weight materialization;
+- validation outputs and semantics are compared;
+- recurrence stress depths: 1,2,4,8,16,32,64;
+- tolerance: rtol5e-4, atol1e-4.
+
+Primary accepted results across all 9 task/seed runs:
+
+- `all_validation_scores_equal = true`;
+- `all_validation_semantic_equal = true`;
+- `all_validation_outputs_allclose = true`;
+- `all_recurrence_allclose = true`;
+- `all_runtime_formula_equivalent = true`.
+
+Numerical gaps:
+
+- max validation absolute gap = **5.245208740234375e-06**;
+- max recurrence absolute gap through depth64 = **7.62939453125e-05**;
+- max recurrence relative-L2 gap = **5.212819324264913e-07**.
+
+### C70 interpretation
+
+The C58/C70 GEMM-native arithmetic is a valid numerical replacement for per-call effective-weight materialization on the current selected task shapes. No semantic divergence or recurrence-drift failure was observed through 64 repeated updates.
+
+This removes numerical/recurrence equivalence as the immediate blocker to runtime work. C70 does **not** establish latency or memory benefit and does not yet modify production `modules.py`.
+
+## 14. Current design decision after C70
 
 Shared-basis remains the leading Gate-C representation family.
 
-Current quality/training defaults for the existing tasks:
+Current selected quality/training points:
 
 - composition: rank2, routed ratio0.5703125, aligned native LR;
-- language: rank4 for stable fixed-schedule native training, ratio0.640625;
-- condition: rank4, ratio0.78125; 12-seed exhaustive evidence is centered near dense with mixed signs;
+- language: rank4 for stable fixed-schedule native training, routed ratio0.640625;
+- condition: rank4, routed ratio0.78125; 12-seed exhaustive evidence centered near dense with mixed signs;
 - native joint training default: `factor_lr = common_lr` unless later evidence overrides it.
 
-Do **not** spend another C-number increasing condition rank on current evidence.
+Runtime decision:
 
-The next Gate-C gap is that quality experiments use a factorized representation whose reference forward materializes effective routed weights, while the intended fast runtime is the C58 GEMM-native form. Before production integration or timing, establish numerical/semantic equivalence under repeated state updates.
+- preferred execution candidate is the GEMM-native shared-basis formula from C58/C70;
+- per-call effective-weight materialization is reference-only;
+- recurrence correctness is no longer the current blocker at depths <=64 under the tested float32 setup;
+- do not integrate into production yet until actual selected-shape latency and memory are measured.
 
-Gate C remains **NOT PASSED** because production-like factorized runtime, resident/serialized accounting for the selected task-dependent ranks, and recurrence/runtime validation are not complete.
+Gate C remains **NOT PASSED** because selected-rank real-shape runtime practicality, resident/serialized accounting, and production integration remain incomplete.
 
 ### Auto-Partition living spec
 
@@ -311,61 +332,66 @@ The implementation-preparation document is:
 
 `fold/docs/shared-basis-auto-module-partition-report.md`
 
-Accepted experiments affecting rank/capacity, co-adaptation, seed robustness, grouping assumptions, runtime reuse, or recurrence must update it. C69 specifically strengthens the multi-seed persistence requirement and argues against structure changes on tiny mean deltas with mixed signs.
+Accepted experiments affecting rank/capacity, co-adaptation, seed robustness, grouping assumptions, runtime reuse, or recurrence must update it. C69 strengthened directional persistence requirements; C70 supports treating GEMM-native execution as semantically safe for later grouping/runtime experiments within the tested recurrence regime.
 
-## 14. Next experiment — C70
+## 15. Next experiment — C71
 
-**GEMM-native shared-basis execution equivalence under recurrence.**
+**Selected-rank real-shape core latency and memory diagnostic.**
 
 Tracked benchmark:
 
-`fold/fold_lm/v05_benchmarks/gate_c_shared_basis_runtime_recurrence_equivalence.py`
+`fold/fold_lm/v05_benchmarks/gate_c_shared_basis_selected_shape_runtime_memory.py`
 
 Benchmark creation commit:
 
-`9010b62d892f701f3e34c6a0e6db56c60cff8848`
+`7cf43a13a74544488918883ffe04464e29241185`
 
-Question: can the C58-style GEMM-native formula replace effective-weight materialization without changing the trained model's observable behavior as recurrent state updates accumulate?
+Question: after C70 established equivalence, what are the actual latency and persistent/temporary-memory tradeoffs of the GEMM-native representation at the selected ranks and current real core shapes?
 
-Setup:
+Comparison uses exactly equivalent routed weights:
 
-- tasks: condition / composition / language;
-- seeds: 20260911 / 20260912 / 20260913;
-- selected ranks: condition4 / composition2 / language4;
-- direct training uses accepted aligned rule `factor_lr = common_lr`;
-- reference execution materializes `W_base + A_module @ B_shared`;
-- candidate execution stores `[W_base; B_shared]`, runs one shared projection, then coefficient `addmm`; no effective routed weight is materialized;
-- complete validation outputs are compared;
-- independent core stress uses deterministic contexts and alternating routes for recurrence depths 1,2,4,8,16,32,64;
-- declared numerical comparison uses `rtol=5e-4`, `atol=1e-4`.
+1. `dense_materialized`: independent effective Up/Down matrices for both routes, ordinary `F.linear`;
+2. `shared_basis_gemm`: shared `[base; basis]` projection plus route-specific coefficient `addmm`.
 
-Primary output:
+Task shapes / ranks:
 
-`summary.all_runtime_formula_equivalent`
+- condition: width16, slots1, rank4;
+- composition: width32, slots1, rank2;
+- language: width32, slots20, rank4.
 
-Supporting outputs:
+Measurement:
 
-- validation output max-abs gap;
-- exact validation score equality;
-- semantic prediction equality;
-- recurrence max-abs and relative-L2 gaps;
-- all-depth recurrence allclose.
+- batches 1 / 8 / 32;
+- both routes;
+- 20 paired rounds;
+- 200 CUDA-event iterations per latency sample;
+- persistent routed-weight bytes;
+- full-core persistent parameter/buffer bytes;
+- allocator-observed forward peak-delta bytes;
+- eager CUDA only; CUDA Graph accounting is deferred.
+
+Primary outputs:
+
+- per-task routed-weight and full-core persistent ratios;
+- per-task/batch paired median `shared_basis_gemm / dense_materialized` latency ratio;
+- per-task/batch forward peak-delta ratio;
+- worst/best selected-shape latency median ratio.
 
 Interpretation:
 
-- if true, proceed to C71 production-like latency/resident-memory benchmark and then integration;
-- if validation is equal but recurrence drift exceeds tolerance, diagnose arithmetic ordering / recurrent numerical stability before production integration;
-- if task semantics change immediately, the GEMM-native implementation is incorrect and C70 must be fixed/diagnosed before any timing comparison.
+- if persistent savings remain material and eager latency overhead is acceptable, proceed to graph/full-model integration accounting;
+- if tiny current shapes are strongly launch-overhead dominated but larger-row points remain consistent with C58 scaling, do not reject the family solely on tiny-shape eager latency;
+- if selected ranks erase storage savings or introduce unexpectedly large activation memory, diagnose before production integration.
 
-C70 intentionally does **not** modify `fold_lm/v05/modules.py`; it is a pre-integration correctness gate.
+C71 is runtime/memory measurement only. It does not modify production runtime and cannot by itself establish Gate C passage.
 
-## 15. Handoff
+## 16. Handoff
 
 On a new session:
 
 1. read this ledger;
 2. confirm branch/HEAD and protected hashes;
-3. continue at C70;
+3. continue at C71;
 4. keep one experiment per C number;
 5. retry failures under the same number;
 6. update this file after every accepted result or Gate decision change;
