@@ -2,11 +2,21 @@
 
 ``HighPrecisionFixedRoutingCore`` remains the uncompressed V5-B default.
 ``SharedBasisFixedRoutingCore`` is an opt-in V5-C production candidate whose
-routed Up/Down banks use a shared low-rank basis and GEMM-native execution.
+routed Up/Down banks use a shared low-rank basis.
+
+The shared-basis core supports two explicit arithmetic modes over the same
+persistent parameters:
+
+- ``gemm_native``: concatenated ``[W_base; B_shared]`` projection plus ``addmm``;
+- ``materialized``: form the effective routed weights and use ordinary linear ops.
+
+The mode is an execution policy, not checkpoint state.  Gate-C diagnostics use
+``materialized`` for training semantics and ``gemm_native`` for deployed
+inference.  The mode never changes implicitly with ``train()`` / ``eval()``.
 
 The shared-basis core intentionally does not add controller routing, FOLD-R
 memory, information acquisition, or vision.  It only changes the routed-weight
-representation/execution path that was isolated by Gate C.
+representation/execution path isolated by Gate C.
 """
 from __future__ import annotations
 
@@ -126,13 +136,7 @@ class HighPrecisionFixedRoutingCore(nn.Module):
 
 
 def _fit_shared_basis_role(weights: torch.Tensor, rank: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Fit ``W_module ~= W_base + A_module @ B_shared`` for one routed role.
-
-    The helper is deterministic for a fixed PyTorch backend/input and is used
-    only when converting an existing high-precision routed bank into the opt-in
-    shared-basis parameterization.  Forward execution never materializes the
-    effective routed weights.
-    """
+    """Fit ``W_module ~= W_base + A_module @ B_shared`` for one routed role."""
 
     if not isinstance(weights, torch.Tensor) or weights.ndim != 3:
         raise ValueError("weights must have shape [modules, output, input]")
@@ -166,28 +170,31 @@ def _fit_shared_basis_role(weights: torch.Tensor, rank: int) -> tuple[torch.Tens
 class SharedBasisFixedRoutingCore(nn.Module):
     """Opt-in production Shared-Basis routed core.
 
-    The routed Up/Down banks are initialized from an existing
-    :class:`HighPrecisionFixedRoutingCore` as::
-
-        W_module ~= W_base + A_module @ B_shared
-
-    and are executed without materializing ``W_module``.  Each role stores one
-    concatenated projection ``[W_base; B_shared]`` plus module coefficients.
-    This is the GEMM-native form validated by Gate-C recurrence experiments.
-
-    The ordinary ``HighPrecisionFixedRoutingCore`` remains the default.  Callers
-    must explicitly construct this class to opt in.
+    ``execution_mode`` is explicit and does not follow ``train()`` / ``eval()``.
+    Accepted Gate-C policy candidates can therefore train with ``materialized``
+    arithmetic and switch the same persistent parameters to ``gemm_native`` for
+    inference without checkpoint conversion.
     """
 
-    def __init__(self, source: HighPrecisionFixedRoutingCore, rank: int) -> None:
+    EXECUTION_MODES = ("gemm_native", "materialized")
+
+    def __init__(
+        self,
+        source: HighPrecisionFixedRoutingCore,
+        rank: int,
+        *,
+        execution_mode: str = "gemm_native",
+    ) -> None:
         super().__init__()
         if not isinstance(source, HighPrecisionFixedRoutingCore):
             raise TypeError("source must be HighPrecisionFixedRoutingCore")
         if type(rank) is not int or rank <= 0:
             raise ValueError("rank must be a positive integer")
+        self._validate_execution_mode(execution_mode)
 
         self.config: LearnedCoreConfig = source.config
         self.rank = rank
+        self.execution_mode = execution_mode
         self.shared = copy.deepcopy(source.shared)
         self.norms = nn.ModuleList([copy.deepcopy(module.norm) for module in source.module_set])
         self.gate_logits = nn.Parameter(source.gate_logits.detach().clone())
@@ -212,13 +219,24 @@ class SharedBasisFixedRoutingCore(nn.Module):
         self.up_coeff = nn.Parameter(up_coeff.contiguous())
         self.down_coeff = nn.Parameter(down_coeff.contiguous())
 
+    @staticmethod
+    def _validate_execution_mode(execution_mode: str) -> None:
+        if execution_mode not in SharedBasisFixedRoutingCore.EXECUTION_MODES:
+            raise ValueError(
+                f"execution_mode must be one of {SharedBasisFixedRoutingCore.EXECUTION_MODES}"
+            )
+
+    def set_execution_mode(self, execution_mode: str) -> None:
+        """Select arithmetic policy without changing persistent parameters."""
+
+        self._validate_execution_mode(execution_mode)
+        self.execution_mode = execution_mode
+
     @property
     def hidden_width(self) -> int:
         return self.config.width * self.config.hidden_mult
 
     def factor_parameters(self) -> tuple[nn.Parameter, ...]:
-        """Return routed representation parameters for optimizer grouping."""
-
         return (
             self.up_projection,
             self.up_coeff,
@@ -227,11 +245,6 @@ class SharedBasisFixedRoutingCore(nn.Module):
         )
 
     def materialized_role_weights(self, route_index: int) -> tuple[torch.Tensor, torch.Tensor]:
-        """Materialize effective Up/Down weights for diagnostics/checkpoint tooling.
-
-        Production forward does not call this method.
-        """
-
         self._validate_route_index(route_index)
         hidden = self.hidden_width
         up_base = self.up_projection[:hidden]
@@ -283,7 +296,7 @@ class SharedBasisFixedRoutingCore(nn.Module):
             raise ValueError("working and context must contain only finite values")
 
     @staticmethod
-    def _role_forward(
+    def _role_forward_gemm_native(
         value: torch.Tensor,
         projection: torch.Tensor,
         coeff: torch.Tensor,
@@ -300,6 +313,39 @@ class SharedBasisFixedRoutingCore(nn.Module):
         output = output + bias
         return output.reshape(*original_shape, output_width)
 
+    def _routed_forward_materialized(
+        self,
+        normalized: torch.Tensor,
+        *,
+        route_index: int,
+    ) -> torch.Tensor:
+        up_weight, down_weight = self.materialized_role_weights(route_index)
+        hidden = F.linear(normalized, up_weight, self.up_biases[route_index])
+        hidden = F.gelu(hidden)
+        return F.linear(hidden, down_weight, self.down_biases[route_index])
+
+    def _routed_forward_gemm_native(
+        self,
+        normalized: torch.Tensor,
+        *,
+        route_index: int,
+    ) -> torch.Tensor:
+        hidden = self._role_forward_gemm_native(
+            normalized,
+            self.up_projection,
+            self.up_coeff[route_index],
+            self.up_biases[route_index],
+            output_width=self.hidden_width,
+        )
+        hidden = F.gelu(hidden)
+        return self._role_forward_gemm_native(
+            hidden,
+            self.down_projection,
+            self.down_coeff[route_index],
+            self.down_biases[route_index],
+            output_width=self.config.width,
+        )
+
     def forward(
         self,
         working: torch.Tensor,
@@ -313,21 +359,10 @@ class SharedBasisFixedRoutingCore(nn.Module):
         z = working + context
         shared_delta = self.shared(z)
         normalized = self.norms[route_index](z)
-        hidden = self._role_forward(
-            normalized,
-            self.up_projection,
-            self.up_coeff[route_index],
-            self.up_biases[route_index],
-            output_width=self.hidden_width,
-        )
-        hidden = F.gelu(hidden)
-        routed_delta = self._role_forward(
-            hidden,
-            self.down_projection,
-            self.down_coeff[route_index],
-            self.down_biases[route_index],
-            output_width=self.config.width,
-        )
+        if self.execution_mode == "materialized":
+            routed_delta = self._routed_forward_materialized(normalized, route_index=route_index)
+        else:
+            routed_delta = self._routed_forward_gemm_native(normalized, route_index=route_index)
         gate = torch.sigmoid(self.gate_logits).to(dtype=working.dtype, device=working.device)
         updated = working + gate * (shared_delta + routed_delta)
         if not torch.isfinite(updated).all():
