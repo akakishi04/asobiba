@@ -36,11 +36,11 @@ Diagnostics must preserve both.
 3. User pastes the full log back into ChatGPT.
 4. ChatGPT judges the result.
 5. Increment only after a valid successful run.
-6. Failed/invalid retries keep the same C number.
+6. Failed / invalid retries keep the same C number.
 7. `status=PASS` means the experiment executed correctly, not that Gate C passed.
-8. Invalid import/parser/hash/experiment-ID runs are not evidence.
+8. Invalid import / parser / hash / experiment-ID runs are not evidence.
 9. Prefer tracked benchmark files.
-10. Long runs print useful progress.
+10. Long-running experiments must print useful progress.
 
 PC clipboard:
 
@@ -68,7 +68,7 @@ Lead routed-weight family:
 W_module = W_base + A_module @ B_shared
 ```
 
-Current design conclusions:
+Current conclusions:
 
 - direct fine-grained codebook execution is storage/reference only;
 - Shared Basis is the lead representation family;
@@ -77,52 +77,51 @@ Current design conclusions:
 - native joint-training default on current tasks is `factor_lr = common_lr`;
 - intended inference form is GEMM-native `[W_base; B_shared]` projection + coefficient `addmm`;
 - effective-weight materialization is reference-only;
-- Gate C still requires practical runtime/memory and production integration.
+- rank allocation must now account for **runtime cost as well as quality/storage**;
+- production integration waits until selected rank policy and runtime practicality are sufficiently resolved.
 
-Do not claim that fixture success proves broad language quality or that FOLD beats Transformers/LLMs.
+Do not claim that fixture success proves broad language quality or that FOLD beats Transformers / existing LLMs.
 
 ## 5. Key accepted history
 
 ### C41-C57 — codebook path
 
-- storage reduction exists, but direct codebook GPU decode/gather becomes the blocker;
-- C57 width1024 compact/dense `12.88719`, compact/predecoded `2.18005`;
-- decision: stop primary optimization of direct fine-grained codebook execution.
+Storage reduction exists, but direct codebook GPU decode/gather becomes the runtime blocker. C57 width1024 compact/dense = `12.88719`; compact/predecoded = `2.18005`. Decision: stop primary optimization of direct fine-grained codebook execution.
 
 ### C58 — Shared Basis runtime scale
 
-Synthetic matched-storage diagnostic with `rank=width/16`:
+Synthetic `rank=width/16` diagnostic:
 
-- width256: shared/dense `1.63577`
-- width512: `1.29614`
-- width1024: `1.19407`
+- width256: `1.63577x`
+- width512: `1.29614x`
+- width1024: `1.19407x`
 
-Large widths scale toward Dense. This was runtime feasibility only.
+Large widths trend toward Dense. Runtime feasibility only.
 
 ### C59-C61 — task-aware capacity
 
-- post-hoc SVD objective alone is poor;
+- post-hoc SVD alone is not a useful task objective;
 - task-aware factor learning recovers Composition;
-- Composition rank2 / routed ratio `0.5703125` reproduces 3/3 seeds at dense score.
+- Composition rank2 / routed ratio `0.5703125` reproduces 3/3 seeds at Dense score.
 
-### C62-C64 — task-dependent rank / checkpoint behavior
+### C62-C64 — task-dependent rank and checkpoint behavior
 
 - Composition rank2 robust;
 - Condition rank1 insufficient;
 - C63: Condition rank4 is first tested robust recovery point, routed ratio `0.78125`;
-- C64: Language rank2 has sufficient capacity but can overtrain; rank4 is stable at fixed final checkpoint, routed ratio `0.640625`.
+- C64: Language rank2 has sufficient functional capacity but can overtrain; rank4 is stable under the fixed final checkpoint, routed ratio `0.640625`.
 
 ### C65-C67 — native direct joint training
 
-C65 showed native Shared Basis training works, but Language was unstable with factor lr0.002 vs common lr0.01.
+C65 established that native factorized training is feasible but showed Language instability with factor lr0.002 vs common lr0.01.
 
 C66 Language rank4 factor-LR sweep:
 
 - 0.002 -> fail
 - 0.005 -> one seed fail
-- 0.010 -> 3/3 dense match
+- 0.010 -> 3/3 Dense match
 
-C67 established the current rule:
+C67 established the current native rule:
 
 ```text
 factor_lr = common_lr
@@ -132,9 +131,7 @@ Composition and Language match Dense 3/3; Condition had only tiny validation res
 
 ### C68-C69 — Condition exhaustive robustness
 
-C68 exhaustive 32,512 held-out examples over 3 seeds gave mixed signs.
-
-C69 extended to 12 seeds with exact C68 reproduction:
+C69 extended Condition rank4 aligned training to 12 seeds with exhaustive 32,512 held-out trajectories per seed:
 
 - Direct wins: 6
 - Dense wins: 6
@@ -143,41 +140,29 @@ C69 extended to 12 seeds with exact C68 reproduction:
 - median delta: `-0.00006151199`
 - pooled net Direct advantage: `-98` over 390,144 held-out examples
 
-Decision: no evidence of systematic Condition rank4 deficit large enough to justify more rank. Treat remaining differences primarily as seed/optimizer variance on this tiny task.
+Decision: no evidence of a systematic rank4 Condition quality deficit large enough to justify more rank. Treat remaining difference primarily as seed / optimizer variance on this tiny task.
 
 ### C70 — GEMM-native recurrence equivalence
 
 Accepted run commit: `cd18de18a8d167a1bbdf5eb0cbb863d8737e77f3`.
 
-3 tasks x 3 seeds, selected ranks, aligned native training. Compared materialized effective-weight execution to GEMM-native Shared Basis.
+3 tasks x 3 seeds, selected ranks, aligned native training. Materialized effective-weight execution vs GEMM-native Shared Basis:
 
-Accepted results:
-
-- all validation scores equal: true
-- all validation semantics equal: true
-- all validation outputs allclose: true
-- all recurrence depths 1/2/4/8/16/32/64 allclose: true
-- all runtime formula equivalent: true
+- validation scores equal: true
+- validation semantics equal: true
+- validation outputs allclose: true
+- recurrence depths 1/2/4/8/16/32/64 allclose: true
 - max validation abs gap: `5.245208740234375e-06`
 - max recurrence abs gap: `7.62939453125e-05`
 - max recurrence relative-L2 gap: `5.212819324264913e-07`
 
-Decision: GEMM-native arithmetic is numerically safe for the tested float32 regime through 64 updates.
+Decision: GEMM-native arithmetic is numerically safe in the tested float32 regime through 64 updates.
 
-## 6. C71 — selected-shape eager runtime / memory
+### C71 — selected-shape eager runtime / memory
 
 Accepted run commit: `c75ff30fce256ec5795fb922c27bce5e61977282`.
 
-Experiment ID:
-
-`C71-shared-basis-selected-shape-runtime-memory`
-
-Compared semantically identical cores:
-
-1. `dense_materialized`: independent effective Up/Down routed matrices;
-2. `shared_basis_gemm`: GEMM-native shared projection + coefficient addmm.
-
-Current selected shapes:
+Selected shapes:
 
 | task | width | slots | rank | routed ratio | full-core persistent ratio |
 |---|---:|---:|---:|---:|---:|
@@ -185,165 +170,177 @@ Current selected shapes:
 | composition | 32 | 1 | 2 | 0.5703125 | 0.725 |
 | language | 32 | 20 | 4 | 0.640625 | 0.77 |
 
-Batches 1/8/32, both routes, 20 paired rounds, 200 CUDA-event iterations/sample.
+Across batches 1/8/32, median eager latency ratio = `1.3765237679`; best = `1.2975680667`; worst = `1.4211179436`. Forward peak-delta ratio median = `1.1212121212`.
 
-Eager latency `shared_basis_gemm / dense_materialized` median by point:
+Storage savings survive at full-core level, but current tiny shapes pay ~30-42% latency overhead.
 
-- condition b1: `1.41907`
-- condition b8: `1.33537`
-- condition b32: `1.34775`
-- composition b1: `1.41822`
-- composition b8: `1.41989`
-- composition b32: `1.36129`
-- language b1: `1.37652`
-- language b8: `1.42112`
-- language b32: `1.29757`
-
-Aggregate selected-shape latency ratio:
-
-- median: **1.3765237679**
-- best point: **1.2975680667**
-- worst point: **1.4211179436**
-
-Allocator-observed forward peak-delta ratio:
-
-- aggregate median: **1.1212121212**
-- maximum point: about **1.1397**
-
-### C71 interpretation
-
-Storage savings survive at full-core level:
-
-- Condition ~13.5% persistent-core reduction;
-- Composition ~27.5% reduction;
-- Language ~23.0% reduction.
-
-However, current tiny eager shapes pay a material runtime cost:
-
-- roughly 30-42% median latency overhead;
-- roughly 0-14% extra forward temporary allocation depending on point.
-
-This does not yet reject Shared Basis because C58 showed latency overhead falling with width, but it blocks immediate production integration.
-
-## 7. C72 — selected-shape CUDA Graph replay
+### C72 — selected-shape CUDA Graph replay
 
 Accepted run commit: `028f406747bf585d6778852355138c4901df535f`.
 
+- all graph outputs allclose: true
+- graph median latency ratio: `1.4057762261`
+- C71 eager median: `1.3765237679`
+- graph better than eager at only 3/9 points
+
+Decision: CUDA Graph does not remove the small-shape penalty. Extra arithmetic / shape efficiency / memory traffic dominate more than Python or launch overhead.
+
+## 6. C73 — extended full-core width / rank scaling
+
+Accepted run commit: `136690b027ebc4ef512e0766d947cd18e77d59f0`.
+
 Experiment ID:
 
-`C72-shared-basis-selected-shape-cuda-graph`
-
-Fixed setup: same C71 task shapes, ranks, batches 1/8/32, both routes, semantically identical dense-materialized vs shared-basis GEMM cores. Each route/variant was captured as a separate CUDA Graph and replayed for timing.
-
-Accepted results:
-
-- all graph outputs allclose: **true**;
-- graph median latency ratio across 9 task/batch points: **1.4057762261**;
-- C71 eager median across same points: **1.3765237679**;
-- graph/eager ratio-of-ratios median: **1.0329804375**;
-- graph better than eager ratio at only **3/9** points;
-- best graph point median: **1.2115913159**;
-- worst graph point median: **1.4713372809**.
-
-### C72 interpretation
-
-CUDA Graph does **not** explain away the small-shape latency penalty. Overall, graph replay is not faster relative to Dense than eager execution and is slightly worse at the median.
-
-Therefore the current ~1.3-1.4x overhead is not primarily Python/launch overhead. Extra GEMM arithmetic, shape efficiency, and memory traffic remain the leading runtime explanation at these tiny widths.
-
-Do not spend another C-number on selected-shape Graph tuning. Do not production-integrate yet. The next question is whether full-core scaling reproduces the favorable large-width trend previously seen in the simpler C58 synthetic linear diagnostic.
-
-Gate C remains **NOT PASSED**.
-
-## 8. Auto-Partition living spec
-
-Main document:
-
-`fold/docs/shared-basis-auto-module-partition-report.md`
-
-Relevant current rules:
-
-- max-share inside hard bucket;
-- diagnose optimizer/co-adaptation before Split;
-- diagnose rank insufficiency before Split;
-- require directional multi-seed persistence, not merely multiple nonzero differences;
-- C69's mixed-sign 6/6 result is KEEP / no rank-grow evidence;
-- runtime reuse is secondary to quality and training stability;
-- C70 supports GEMM-native recurrence safety in the tested regime;
-- C71-C72 show that shared grouping/runtime reuse must charge extra arithmetic/memory cost; CUDA Graph does not remove the current small-shape penalty.
-
-The connector rejected one earlier large-file maintenance write; keep these accepted runtime conclusions here until the living spec can be refreshed safely without losing its detailed content.
-
-## 9. Next experiment — C73
-
-**Extended full-core width/rank scaling diagnostic.**
-
-Tracked benchmark:
-
-`fold/fold_lm/v05_benchmarks/gate_c_shared_basis_full_core_width_rank_scaling.py`
-
-Original benchmark creation commit:
-
-`7327aa1d256d2b91e8c85ea89246c9912444daa2`
-
-Extended-width benchmark update commit:
-
-`b62e7038caa5c2751d650773abd50d012d651de4`
-
-Question: does the full recurrent core, not just an isolated linear layer, recover toward Dense latency as width increases, and how does that frontier depend on the capacity/rank fraction?
+`C73-shared-basis-full-core-width-rank-scaling`
 
 Widths:
 
-- 32 / 64 / 128 / 256 / 512 / 1024 / 1536 / 2048 / 3072 / 4096 / 5120.
+```text
+32, 64, 128, 256, 512, 1024, 1536, 2048, 3072, 4096, 5120
+```
 
-`5120` is used as the approximately-5k endpoint instead of `5096`, because all widths must be divisible by 16/8/4 for the three rank profiles and 5120 is a cleaner GEMM shape.
+Fixed full-core shape:
+
+- slots=20
+- modules=2
+- hidden_mult=2
+- eager CUDA
+- batches 1 / 8
 
 Rank profiles:
 
-- `lean`: rank = width/16, routed ratio 0.5703125;
-- `medium`: rank = width/8, routed ratio 0.640625;
-- `high`: rank = width/4, routed ratio 0.78125.
+```text
+lean   = width / 16   routed ratio 0.5703125
+medium = width / 8    routed ratio 0.640625
+high   = width / 4    routed ratio 0.78125
+```
 
-These correspond to the routed-capacity bands relevant to accepted Composition, Language, and Condition evidence. Large-width ranks are runtime/storage probes, not new quality claims.
+### C73 large-width endpoint results
 
-Fixed execution shape:
+#### Lean — rank fraction 1/16
 
-- slots = 20;
-- modules = 2;
-- hidden_mult = 2;
-- batches = 1 / 8;
-- both routes;
-- eager CUDA;
-- 10 paired rounds;
-- 50 CUDA-event iterations per sample;
-- allocator-observed forward peak delta;
-- full-core persistent bytes.
+Full-core persistent ratio converges near `0.7136`.
 
-Primary outputs per profile/batch:
+At width5120:
 
-- latency ratio curve vs width;
-- first width with median <= 1.25x;
-- first width with median <= 1.15x;
-- first width with median <= 1.10x;
-- full-core persistent ratio;
-- forward peak-delta ratio;
-- explicit 4096 and 5120 endpoint behavior.
+- batch1 latency ratio: **1.05725**
+- batch8 latency ratio: **1.06427**
+
+Thresholds:
+
+- batch1 <=1.10 first at width3072
+- batch8 <=1.10 first at width1536
+
+Interpretation: lean Shared Basis becomes close to Dense runtime while retaining ~28.6% full-core persistent-byte reduction.
+
+#### Medium — rank fraction 1/8
+
+Full-core persistent ratio converges near `0.7605`.
+
+At width5120:
+
+- batch1: **1.07800**
+- batch8: **1.11564**
+
+Thresholds:
+
+- batch1 <=1.15 first at width3072; <=1.10 at width5120
+- batch8 <=1.15 first at width3072; <=1.10 not reached by width5120
+
+Interpretation: medium rank remains operationally plausible at large width, with ~24.0% full-core persistent-byte reduction and roughly 8-12% endpoint latency tax.
+
+#### High — rank fraction 1/4
+
+Full-core persistent ratio converges near `0.8542`.
+
+At width5120:
+
+- batch1: **1.23527**
+- batch8: **1.21851**
+
+At widths3072-5120 the high profile remains roughly in the `1.18-1.24x` range. Low-width threshold crossings are noisy/non-monotonic and must not be interpreted as stable large-width convergence.
+
+Interpretation: the high rank fraction carries a persistent runtime tax even at width5120, while saving only ~14.6% full-core persistent bytes.
+
+### C73 design decision
+
+C73 confirms that Shared Basis runtime viability is **rank-dependent**:
+
+1. lean is strongly runtime-viable at large width;
+2. medium is plausible and approaches ~1.1x;
+3. high retains a material ~20%+ runtime penalty at large width.
+
+Therefore rank cannot be selected from quality/storage alone. Adaptive capacity / Auto-Partition must include runtime cost in the objective.
+
+This also changes the priority for Condition. Condition currently uses width16/rank4 = rank fraction 1/4, but C63 skipped rank3. Because C73 shows that reducing rank fraction has material runtime value, the next quality question is whether rank3 can replace rank4 under the already accepted 12-seed exhaustive Condition protocol.
+
+Gate C remains **NOT PASSED**. Do not production-integrate the high-rank policy before resolving whether Condition can use a smaller rank and before final representative-shape integration checks.
+
+## 7. Auto-Partition / adaptive-capacity consequence
+
+Main living document:
+
+`fold/docs/shared-basis-auto-module-partition-report.md`
+
+Current rule additions from C71-C73:
+
+- runtime reuse is secondary to quality, but runtime cost is now a first-class rank-allocation cost;
+- do not interpret high rank as free merely because persistent storage remains below Dense;
+- when two ranks both satisfy quality, prefer the lower rank if the runtime/storage Pareto point is materially better;
+- high-rank groups may justify Split / private capacity / alternate execution only after lower-rank quality is ruled out;
+- C73 gives evidence that large-width lean/medium profiles are substantially more attractive than high rank.
+
+The connector previously rejected one large living-spec rewrite; preserve these accepted conclusions here until that document can be safely refreshed without truncation.
+
+## 8. Next experiment — C74
+
+**Condition rank3 12-seed exhaustive viability.**
+
+Tracked benchmark:
+
+`fold/fold_lm/v05_benchmarks/gate_c_shared_basis_condition_rank3_12seed_exhaustive.py`
+
+Benchmark creation commit:
+
+`6ffe2793621281c4635e491f523c7345d77f337f`
+
+Question: can Condition rank3 replace accepted rank4 under the same aligned native-training and exhaustive robustness protocol, motivated by C73's rank-dependent runtime tax?
+
+Fixed setup:
+
+- Condition only;
+- rank3 candidate;
+- accepted rank4 C69 as comparison;
+- dense and factor lr0.01;
+- 260 steps;
+- batch32;
+- train size256;
+- seeds `20260911..20260922`;
+- exhaustive held-out 32,512 per seed;
+- Dense references must reproduce C69 exactly;
+- rank3 direct score is compared both to Dense and accepted rank4 for each seed.
+
+Primary outputs:
+
+- rank3 routed-weight storage ratio vs rank4;
+- rank3 - Dense exhaustive exact delta distribution;
+- rank3 / Dense seed win counts and sign-test diagnostic;
+- pooled paired Dense-only / rank3-only counts;
+- rank3 - rank4 exhaustive exact delta distribution and seed win counts.
 
 Interpretation:
 
-- if latency converges strongly toward Dense with width, Shared Basis remains a runtime-viable production candidate and the next gate should move toward production integration at a representative larger shape;
-- if the curve remains near the C71/C72 ~1.3-1.4x band even into 4096/5120, the GEMM-native representation has a structural runtime tax and requires a different execution formulation before integration;
-- if only lean ranks scale acceptably while high ranks remain costly, runtime cost must become an explicit rank-allocation term in Auto-Partition / adaptive-capacity policy.
+- if rank3 is again mixed-sign and centered near Dense/rank4, adopt rank3 as the new Condition candidate and benchmark its runtime profile next;
+- if Dense/rank4 consistently beat rank3, retain rank4 despite its runtime tax and investigate alternate execution / structure instead;
+- no formal equivalence margin is declared inside C74, so final adoption remains evidence-based rather than a predeclared statistical equivalence test.
 
-C73 is runtime/storage scaling only and cannot establish Gate C passage by itself.
-
-## 10. Handoff
+## 9. Handoff
 
 On a new session:
 
 1. read this ledger;
 2. confirm branch/HEAD and protected hashes;
-3. continue at C73;
+3. continue at C74;
 4. keep one experiment per C number;
 5. retry failures under the same number;
 6. update this file after every accepted result or Gate decision change.
