@@ -15,9 +15,12 @@
 - GPU: NVIDIA GeForce RTX 4070 Ti SUPER
 - Visual Studio: VS2022 Community Developer PowerShell 17.14.27
 
-Timing comparisons must record the exact commit used. C57 executed at:
+Recent accepted experiment commits:
 
-`c4c5e96980b5671d3d1fbac20cb23dd467e31b78`
+- C57: `c4c5e96980b5671d3d1fbac20cb23dd467e31b78`
+- C58: `27077cdda37ca344da8ea5e6f8e491f613dbe1fa`
+
+C59 benchmark was added after C58; always confirm current branch HEAD before execution.
 
 ## 2. Protected artifacts
 
@@ -46,6 +49,7 @@ Experiment/work IDs are `Cxx`.
 7. `status=PASS` means the experiment executed successfully, not that a Gate passed.
 8. Wrong runner, wrong experiment ID, parser failure, protected-hash mismatch, etc. are invalid runs, not evidence.
 9. Prefer tracked benchmark files in the repository over giant chat-pasted Python payloads.
+10. Long-running benchmarks should print progress so the user can see current width/rank/round and total completion.
 
 ### PC clipboard
 
@@ -89,7 +93,7 @@ Additionally:
 
 **Current Gate C status: NOT PASSED.**
 
-Storage savings and fixture parity are established for the current block-codebook candidate, but its direct GPU consumption path does not scale acceptably. Gate C now moves into an alternative module-delta representation comparison rather than continuing unbounded codebook kernel tuning.
+The fine-grained block-codebook candidate demonstrated storage savings and fixture parity, but direct GPU execution does not scale acceptably. Primary Gate-C work has pivoted to GPU-native shared-basis / low-rank module deltas.
 
 ### Gate D-I
 
@@ -104,15 +108,24 @@ FOLD v0.5 lead design:
 - controller / routing;
 - correctable memory later in the roadmap.
 
-The original Gate-C representation under test was:
+Original Gate-C module representation:
 
 ```text
 W_module = W_base + codebook_delta(module) + sparse bounded E
 ```
 
-Positive property: compact persistent representation.
+Current alternative under evaluation:
 
-Current problem: the fine-grained block-codebook delta is expensive to reconstruct/consume directly on GPU.
+```text
+W_module = W_base + A_module @ B_shared
+```
+
+Intent:
+
+- preserve a shared base;
+- keep module-specific state small;
+- use GEMM-native execution rather than per-weight codebook decode/gather;
+- retain a storage ratio comparable to the codebook candidate.
 
 ## 6. Scientific discipline
 
@@ -123,19 +136,17 @@ Do not claim:
 - synthetic scale diagnostics prove production LLM behavior;
 - FOLD beats Transformers / existing LLMs from these tests.
 
-Current strongest claims are architectural/runtime localization claims only.
+Keep runtime feasibility, representation capacity, task quality, recurrence stability, and final Gate decisions separate.
 
 ## 7. Accepted experiment history
 
 ### C33 — sync-clean tiled base tuning
 
-- best tested tiled config still slower than dense;
-- Down paired ratio ~1.3788;
-- Up ~1.3420.
+Best tested custom tiled base path remained slower than dense.
 
 ### C35 — Graph-safe validation boundary
 
-Established structural validation path so finite-value checks do not break CUDA Graph capture.
+Established structural validation so finite-value reductions do not break CUDA Graph capture.
 
 ### C37 — serial CPU-ready request + CUDA Graph
 
@@ -149,8 +160,6 @@ Approximate initial timings:
 - Triton Graph: 0.4630 ms
 - paired Graph ratio ~1.069
 
-CUDA Graph removes a large amount of dispatch overhead but compressed remains slower.
-
 ### C38 — regression
 
 - 415 tests PASS
@@ -163,8 +172,7 @@ CUDA Graph removes a large amount of dispatch overhead but compressed remains sl
 - compact registered model: 44,800 B
 - registered reduction: **12.5%**
 - model-only allocation: 55,808 B vs 49,664 B
-- Graph-ready allocated saving only 6,144 B because tiny-test runtime overhead dominates
-- reserved memory identical.
+- Graph-ready saving only 6,144 B because tiny-test runtime overhead dominates.
 
 ### C42 — repeated request benchmark
 
@@ -172,13 +180,9 @@ CUDA Graph removes a large amount of dispatch overhead but compressed remains sl
 - Triton Graph median: 0.4474035 ms
 - paired ratio: **1.028879**
 
-### C43 — request phase breakdown
-
-GPU/request path dominates; phase instrumentation is diagnostic only.
-
 ### C44 — non-blocking H2D
 
-Common runtime improvement. Queued Triton/dense ~1.0172.
+Common runtime improvement; queued Triton/dense ~1.0172.
 
 ### C45 — GPU-only Graph replay
 
@@ -186,7 +190,7 @@ Common runtime improvement. Queued Triton/dense ~1.0172.
 - Triton: 0.306309 ms
 - paired ratio: **1.05546**
 
-Remaining gap is genuinely GPU compute / Graph path.
+Remaining gap is genuinely in GPU compute / Graph path.
 
 ### C46 — Up / Down isolation
 
@@ -198,33 +202,22 @@ Remaining full-model slowdown localized overwhelmingly to Up.
 
 ### C47 — Up BLOCK_M sweep
 
-For real Up 32->64, `BLOCK_M=64` was the clear best tested mapping.
-
-- BM64/current ~0.97698
-- BM64/dense ~1.00942
+For real Up 32->64, `BLOCK_M=64` was the best tested row-wise mapping.
 
 ### C48 — num_warps sweep
 
-At BM64:
-
-- w1 and w4 effectively tied;
-- w2 and w8 worse;
-- retain w4 as robust reference.
+At BM64, w1 and w4 were effectively tied; w2 and w8 worse. Retain w4 as robust reference.
 
 ### C49 — sparse correction E isolation
 
 - full-E/no-E only ~1.01-1.03
-- no-E/dense still ~2.18-2.38x at bank level.
+- no-E/dense still ~2.18-2.38x bank-level.
 
 `E` is not the primary runtime problem.
 
-### C50 — existing row-reuse tiled kernel
+### C50 — existing 16x16 row-reuse tiled kernel
 
-Existing 16x16 tiled mapping did not beat row-wise:
-
-- tiled/row-wise ~1.02009
-
-This rejected that mapping, not row reuse as a concept.
+Did not beat tuned row-wise. This rejected that mapping, not row reuse as a concept.
 
 ### C51 — base / codebook isolation
 
@@ -233,16 +226,16 @@ This rejected that mapping, not row reuse as a concept.
 - hybrid/dense: **3.40778**
 - hybrid/row-wise: **1.62845**
 
-Shared-base GEMM is fine. The expensive component is codebook delta/decode. Separate cuBLAS-base + Triton-delta hybrid is rejected.
+Shared-base GEMM is fine. Codebook delta/decode is expensive. Separate cuBLAS-base + Triton-delta hybrid rejected.
 
 ### C52 — decode-to-dense workspace
 
-- workspace: 8,192 B extra resident dense scratch
+- extra dense scratch: 8,192 B
 - decode-workspace/dense: **2.96321**
 - decode-workspace/row-wise: **1.36082**
 - slower in 80/80 paired samples.
 
-Rejected: worse runtime and additional resident scratch.
+Rejected: slower and larger resident scratch.
 
 ### C53 — row-wise component ablation
 
@@ -260,26 +253,24 @@ Paired:
 - full/dense: **1.43449**
 - delta/base: **1.71970**
 
-Codebook delta/decode is dominant.
+Codebook delta/decode dominates.
 
 ### C54 — full-M row-tile
 
-One program owns all 64 output channels and reuses decoded weight across rows.
+One program owns all 64 output channels and reuses decoded weight across activation rows.
 
-- full-M N16 / row-wise median: **0.82873** (~17.1% faster)
-- full-M N32 / row-wise: **0.88681**
-- N16 won 57/80 samples
+- N16 / row-wise median: **0.82873** (~17.1% faster)
+- N32 / row-wise: **0.88681**
 - outputs exact in checked cases.
 
-Conclusion: decode/reconstruction reuse across activation rows is valid. Best C54 mapping: N16.
+Conclusion: decode/reconstruction reuse across rows is valid. Best C54 mapping: N16.
 
 ### C55 — compact address metadata
 
-Full-M/N16 fixed. Compared original codes vs equal-byte precomputed entry index / block offset.
+Full-M/N16 fixed. Equal-byte precomputed address metadata produced only small/noisy gains:
 
 - entry/codes median: **0.98361**
 - block-offset/codes: **0.98733**
-- metadata bytes unchanged at 3,072 B.
 
 Address arithmetic is not the main remaining cost.
 
@@ -300,23 +291,19 @@ Paired:
 Interpretation:
 
 - custom Triton matmul has ~13% disadvantage at width32;
-- the larger residual is codebook gather/decode/reconstruction;
-- the compact extra cost cannot be explained by address arithmetic alone.
+- larger residual is codebook gather/decode/reconstruction.
 
-### C57 — 32 -> 1024 runtime scale sweep
+### C57 — 32 -> 1024 codebook runtime scale sweep
 
-Accepted run:
+Accepted run commit:
 
-- commit: `c4c5e96980b5671d3d1fbac20cb23dd467e31b78`
-- widths: 32, 64, 128, 256, 512, 1024
-- rows: 1728
-- Up-like shape: `K=width`, `M=2*width`
-- fixed tile: N16 / M64 / K32, w4
-- no-E synthetic runtime diagnostic
+`c4c5e96980b5671d3d1fbac20cb23dd467e31b78`
 
-#### Storage curve
+Widths: 32, 64, 128, 256, 512, 1024. Rows: 1728. Up-like shape `K=W`, `M=2W`. Fixed tile N16/M64/K32, w4. No-E runtime diagnostic.
 
-Serialized estimated payload ratio:
+#### C57 storage curve
+
+Estimated serialized payload ratio:
 
 - 32: 0.59375
 - 64: 0.57617
@@ -334,9 +321,9 @@ Compact runtime resident ratio:
 - 512: 0.68759
 - 1024: 0.68752
 
-Storage therefore scales well and converges to roughly **57.0% serialized** and **68.75% runtime resident** versus two dense module weights.
+Storage scales well, converging near **57.0% serialized** and **68.75% resident** versus two independent dense module weights.
 
-#### Runtime curve
+#### C57 runtime curve
 
 `compact / dense` paired median:
 
@@ -365,28 +352,54 @@ Storage therefore scales well and converges to roughly **57.0% serialized** and 
 - 512: 2.34078
 - 1024: 2.18005
 
-#### C57 interpretation
+Interpretation:
 
-Do **not** interpret the 12.89x width-1024 number as intrinsic codebook cost. The fixed Triton tile itself becomes badly noncompetitive with vendor dense as width grows: predecoded Triton is already 5.88x dense at width1024.
+- the fixed custom Triton tile itself becomes noncompetitive at large width;
+- codebook gather/decode also fails to amortize, remaining ~2.18-2.34x over the same predecoded Triton execution at large widths.
 
-However, the codebook layer is also not being amortized by scale: adding compact gather/decode on top of the same custom matmul still costs roughly **2.18x** at width1024 and >2.29x at widths256-512.
+**Pivot decision:** stop primary optimization of direct fine-grained block-codebook GPU execution. Keep it as storage/reference baseline only.
 
-Therefore both are true:
+### C58 — matched-storage shared-basis runtime scale sweep
 
-1. the fixed custom Triton matmul is non-scalable and would need retuning/replacement at large widths;
-2. the fine-grained 2x2 codebook gather/decode also fails the pivot condition because its relative cost does not trend toward 1.0.
+Accepted run commit:
 
-### C57 pivot decision
+`27077cdda37ca344da8ea5e6f8e491f613dbe1fa`
 
-**Primary optimization of direct fine-grained block-codebook GPU execution stops here.**
+Representation:
 
-The codebook representation is not deleted. It remains useful as:
+```text
+W_module = W_base + A_module @ B_shared
+```
 
-- a compact storage/reference representation;
-- a baseline for future alternative layouts;
-- a possible representation to revisit if a fundamentally different decode strategy appears.
+Execution:
 
-But the main Gate-C execution candidate now pivots to GPU-native module-delta forms.
+1. one shared `F.linear(x, [W_base; B_shared])`;
+2. one module-specific `addmm(latent, A_module.T)` added to base output.
+
+Widths: 32, 64, 128, 256, 512, 1024. Rows: 1728. Rank = width/16.
+
+Persistent module-weight representation ratio is exactly **0.578125** at every width. This is very close to C57 codebook serialized ratio (~0.5703 at scale) and better than current codebook runtime-resident ratio (~0.6875).
+
+Theoretical matmul FLOP overhead versus one dense module GEMM: **9.375%**.
+
+`shared_basis / dense` paired median runtime:
+
+- 32: **3.12043**
+- 64: **2.94781**
+- 128: **4.86182**
+- 256: **1.63577**
+- 512: **1.29614**
+- 1024: **1.19407**
+
+Interpretation:
+
+- small widths are dominated by two-GEMM launch/shape inefficiency;
+- large widths show the intended scaling behavior;
+- by width512 the ratio is ~1.30x, and by width1024 ~1.19x, while persistent weight storage stays ~57.8%;
+- unlike direct codebook execution, the shared-basis runtime ratio improves sharply with scale once GEMMs are large enough;
+- C58 establishes runtime/storage feasibility only. Random synthetic factors do **not** establish approximation capacity or task quality.
+
+C58 is therefore a **promising alternative execution/storage family**, not yet a Gate-C candidate.
 
 ## 8. Invalid / retry history
 
@@ -398,7 +411,7 @@ But the main Gate-C execution candidate now pivots to GPU-native module-delta fo
 - C53 first attempt had PowerShell parser error before experiment start.
 - valid retries retain the same C number.
 
-## 9. Current design decision after C57
+## 9. Current design decision after C58
 
 The desired Gate-C representation should satisfy all three:
 
@@ -406,72 +419,82 @@ The desired Gate-C representation should satisfy all three:
 2. enough module-specific capacity to preserve task quality;
 3. GPU-native execution with no fine-grained runtime decode/gather.
 
-The first alternative to test is a **shared-input low-rank basis**:
+The shared-basis family now passes the **runtime/storage feasibility** screen strongly enough to justify a real-fixture capacity test.
+
+Do not optimize shared-basis runtime further yet. The next risk is representational capacity.
+
+At the current trusted width-32 composition fixture:
+
+- Up role: 32 -> 64;
+- Down role: 64 -> 32;
+- modules: 2.
+
+For a common rank `r` applied independently to Up and Down shared-basis representations, combined Up+Down routed-weight storage ratio is:
 
 ```text
-W_module = W_base + A_module @ B_shared
+ratio = 0.5 + 0.03515625 * r
 ```
 
-For Up-like `M=2W`, `K=W`, two modules, choose:
+Therefore:
 
-```text
-rank = W / 16
-```
-
-Store shared `[W_base ; B_shared]` as one projection matrix. Runtime:
-
-```text
-projected = F.linear(x, [W_base ; B_shared])
-base_output = projected[:M]
-latent      = projected[M:]
-out = addmm(base_output, latent, A_module.T)
-```
-
-This gives:
-
-- two GEMM-family operations;
-- no codebook decode/gather;
-- module-specific state only in small `A_module` matrices;
-- exact persistent weight-storage ratio **0.578125** versus two independent dense module weights;
-- theoretical matmul FLOP overhead ~9.375% versus one dense module GEMM.
-
-This storage ratio is close to C57 codebook serialized ratio (~0.5703) and better than its current runtime-resident ratio (~0.6875).
+- rank 2 -> **0.5703125** (matched to the ~57% storage target);
+- rank 4 -> 0.640625;
+- rank 8 -> 0.78125;
+- rank 12 -> 0.921875;
+- rank 14 -> 0.9921875 (largest tested rank still below dense routed-weight bytes);
+- rank >=16 exceeds dense routed-weight storage, but is diagnostically useful to locate capacity recovery;
+- rank 32 can represent both two-module Up/Down differences exactly in principle and serves as a sanity check.
 
 ## 10. Next experiment
 
-### Next ID: C58
+### Next ID: C59
 
-**Matched-storage shared-basis runtime scale sweep.**
+**Real-fixture shared-basis representation / quality frontier.**
 
-Widths:
+Tracked benchmark:
 
-- 32
-- 64
-- 128
-- 256
-- 512
-- 1024
+`fold/fold_lm/v05_benchmarks/gate_c_shared_basis_quality_frontier.py`
 
-Ranks:
+Use the trusted composition runtime fixture. No training in C59.
+
+For each rank:
 
 - 2
 - 4
 - 8
+- 12
+- 14
 - 16
+- 24
 - 32
-- 64
 
-Rows: 1728.
+fit each role independently with:
 
-Compare exact materialized dense reference against factorized shared-basis execution using vendor PyTorch/cuBLAS operations.
+```text
+W_base = mean(module weights)
+centered residuals = W_module - W_base
+B_shared = leading right singular vectors of stacked residuals
+A_module = projection coefficients onto B_shared
+```
 
-C58 answers runtime/storage feasibility only. It does not answer task quality.
+Then materialize the reconstructed routed weights into a copy of the trained dense model and evaluate the trusted validation task.
 
-Decision after C58:
+C59 records:
 
-- if shared-basis runtime stays near dense while preserving ~57.8% storage, proceed to real-fixture approximation/task-quality work;
-- if runtime is also badly noncompetitive, test a different GPU-native delta representation before any task-quality investment;
-- Gate C remains NOT PASSED either way.
+- task score versus dense;
+- Up / Down reconstruction MSE, RMSE, max error;
+- exact routed-weight storage bytes and ratio;
+- smallest sub-dense rank that preserves dense task score, if one exists;
+- rank32 exact-reconstruction / score sanity check.
+
+C59 answers representation capacity and task-quality feasibility only. It does not measure factorized runtime; C58 already covers runtime/storage feasibility on the synthetic scale sweep.
+
+Decision after C59:
+
+- if rank2 preserves task quality, shared-basis becomes the clear primary Gate-C candidate and should next be integrated into the real runtime/full-model path;
+- if a higher but still sub-dense rank preserves quality, evaluate its large-width runtime/storage curve before integration;
+- if no sub-dense rank preserves quality, do not immediately reject shared-basis: next test task-aware joint training/tuning before abandoning the family;
+- rank32 must recover the dense reference closely or C59 is invalid.
 
 ## 11. Handoff instructions
 
@@ -479,7 +502,7 @@ On a new chat/session:
 
 1. Read this file first.
 2. Confirm branch/HEAD and protected hashes.
-3. Read only files needed for the next C number.
+3. Read only files needed for the next experiment.
 4. Continue at the Next ID above.
 5. Keep one experiment per C number.
 6. Retry failures under the same C number.
