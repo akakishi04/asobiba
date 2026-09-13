@@ -41,7 +41,7 @@ Experiment IDs are `Cxx`.
 6. Failed retries keep the same C number.
 7. `status=PASS` means the experiment executed correctly, not that Gate C passed.
 8. Invalid runner/import/parser/hash/experiment-ID runs are not evidence.
-9. Prefer tracked benchmark files over giant chat-pasted Python payloads.
+9. Prefer tracked benchmark files over large chat-pasted runners.
 10. Long-running experiments must print progress.
 
 PC clipboard:
@@ -76,7 +76,7 @@ Original direct block-codebook execution is retained only as a storage/reference
 W_module = W_base + A_module @ B_shared
 ```
 
-The original universal rule `rank=max(1,width//16)` is rejected as a task-independent policy. Rank/capacity is treated as an adaptive design/training variable.
+The original universal rule `rank=max(1,width//16)` is rejected as a task-independent policy. Rank/capacity is adaptive by functional need.
 
 ## 5. Scientific discipline
 
@@ -89,18 +89,20 @@ Do not claim:
 
 Keep runtime, storage, representation capacity, optimizer policy, task quality, recurrence, and final Gate decisions separate.
 
-## 6. Codebook path — key accepted findings
+## 6. Codebook path — C41 to C57
 
-- C41: registered model bytes 51,200 B dense vs 44,800 B compact, **12.5% reduction**.
-- C42: repeated Graph request compact/dense median **1.028879**.
-- C45: GPU-only Graph compact/dense **1.05546**.
-- C46: remaining full-model slowdown localized overwhelmingly to Up; Down ~1.006x dense.
+Key accepted findings:
+
+- C41: dense registered bytes 51,200 vs compact 44,800, 12.5% reduction.
+- C42: repeated Graph compact/dense median 1.028879.
+- C45: GPU-only Graph compact/dense 1.05546.
+- C46: remaining slowdown localized overwhelmingly to Up; Down ~1.006x dense.
 - C49: sparse correction E only ~1-3% overhead.
 - C51/C53: shared-base GEMM near dense; codebook delta/decode dominates.
-- C54: full-M N16 reuse improves row-wise codebook path by ~17.1%.
-- C55: address precomputation gives only ~1-2% noisy gain.
-- C56: width32 real Up bank: predecoded Triton/dense **1.13357**, compact/predecoded **1.65877**, compact/dense **1.91422**.
-- C57: codebook serialized ratio converges near **0.5703**, but direct execution does not scale. At width1024: compact/dense **12.88719**, predecoded/dense **5.88088**, compact/predecoded **2.18005**.
+- C54: full-M N16 reuse improves row-wise codebook path ~17.1%.
+- C55: address precomputation only ~1-2% noisy gain.
+- C56: width32 Up bank predecoded/dense 1.13357, compact/predecoded 1.65877, compact/dense 1.91422.
+- C57: serialized ratio converges near 0.5703, but direct codebook execution fails to scale; width1024 compact/dense 12.88719, predecoded/dense 5.88088, compact/predecoded 2.18005.
 
 Decision after C57: stop primary optimization of direct fine-grained codebook GPU execution.
 
@@ -114,225 +116,200 @@ Representation:
 W_module = W_base + A_module @ B_shared
 ```
 
-Runtime uses vendor GEMM-family operations:
+Vendor-GEMM execution uses shared `F.linear` plus module-specific `addmm`.
 
-1. shared `F.linear(x, [W_base; B_shared])`;
-2. module-specific `addmm` from latent to output.
-
-Rank = width/16 in this diagnostic. Persistent routed-weight ratio: **0.578125**.
+At the scale diagnostic rank rule, persistent routed-weight ratio = 0.578125.
 
 `shared_basis / dense` paired median:
 
-- width32: 3.12043
-- width64: 2.94781
-- width128: 4.86182
-- width256: 1.63577
-- width512: 1.29614
-- width1024: **1.19407**
+- width32 3.12043
+- width64 2.94781
+- width128 4.86182
+- width256 1.63577
+- width512 1.29614
+- width1024 1.19407
 
-Interpretation: small sizes are launch/shape dominated; large widths scale in the desired direction.
+Large widths scale in the desired direction.
 
-## 8. C59-C61 — post-hoc fitting vs task-aware recovery
+## 8. C59-C61 — quality recovery
 
-### C59
+- C59: post-hoc SVD is not an adequate task objective. Composition rank2 ratio0.5703125 scored only 0.050926.
+- C60: task-aware factor tuning recovers composition rank2 from 0.050926 to 1.0 with non-factors frozen.
+- C61: composition rank2 recovery reproduces 3/3 seeds at score1.0 and ratio0.5703125.
 
-Accepted commit: `32f07a9abd5fd566c041134940a5a543bd11cd44`.
+## 9. C62-C64 — task-dependent capacity and checkpoint behavior
 
-Post-hoc mean-base + truncated-SVD fitting fails badly at low rank on the trusted composition fixture. Rank2 ratio 0.5703125 scores 0.050926; rank32 reproduces dense but uses 1.625x routed-weight bytes.
+### C62
 
-Conclusion: weight reconstruction is not the right task objective.
+Cross-task recovery showed:
 
-### C60
+- composition rank2: 3/3 dense match;
+- condition rank1: systematically insufficient;
+- language rank2: capacity exists, but one seed degrades during continued tuning.
 
-Accepted commit: `a713fe66101a0f99a38100117340286cd7ed5afe`.
-
-Task-aware factor tuning with all non-factor parameters frozen recovers dense composition score 1.0 for every tested rank 2/4/8/12/14. Rank2 recovers 0.050926 -> 1.0 at ratio 0.5703125.
-
-### C61
-
-Accepted commit: `6c74fa738721824268c2d2e8003f80ea21195f9e`.
-
-Rank2 composition recovery reproduces across seeds 20260911/12/13: all dense and post-recovery scores 1.0 at routed-weight ratio 0.5703125.
-
-## 9. C62 — cross-task multi-seed recovery
-
-Accepted commit: `514f1a4d6ef4f455af586f195de3add4b372ad15`.
-
-Initial equal-ratio rule:
-
-- condition width16 -> rank1
-- composition width32 -> rank2
-- language width32 -> rank2
-
-All had routed-weight ratio 0.5703125.
-
-Results:
-
-- composition: 3/3 recover exactly to dense;
-- condition: all improve strongly but remain below dense at rank1;
-- language: two seeds are already 1.0 after SVD initialization; seed20260911 degrades 0.909091 -> 0.818182 during factor tuning despite decreasing training loss.
-
-Decision: split condition capacity and language optimization/checkpoint questions.
-
-## 10. C63 — condition rank frontier
+### C63
 
 Accepted valid retry commit: `76011ee9108408d2275e39f3cab45518ea0a3b7b`.
 
-Condition, 3 seeds, factor lr0.002:
+Condition post-hoc recovery frontier:
 
-| rank | ratio | all final meet dense | all best checkpoints meet dense |
-|---:|---:|:---:|:---:|
-| 1 | 0.5703125 | false | false |
-| 2 | 0.6406250 | false | false |
-| 4 | 0.7812500 | **true** | **true** |
-| 6 | 0.9218750 | true | true |
-| 7 | 0.9921875 | true | true |
+| rank | routed-weight ratio | all final meet dense |
+|---:|---:|:---:|
+| 1 | 0.5703125 | false |
+| 2 | 0.6406250 | false |
+| 4 | 0.7812500 | true |
+| 6 | 0.9218750 | true |
+| 7 | 0.9921875 | true |
 
-Primary result: minimum robust tested rank = **4** for post-hoc factor recovery.
+Minimum robust tested condition rank = 4.
 
-## 11. C64 — language rank/checkpoint frontier
+### C64
 
 Accepted commit: `cd7de1cf7724e25526cba88eced89cc7cf4f4c43`.
 
-Language rank2 has sufficient functional capacity but one seed overtrains under fixed factor lr0.002. Rank4/rank8 finish at 1.0 for all three seeds. Capacity and optimizer/checkpoint policy are therefore distinct dimensions.
+Language rank2 reaches dense at the best checkpoint but can overtrain; rank4 and rank8 finish at 1.0 for all three seeds. Capacity and optimizer/checkpoint policy are distinct dimensions.
 
-## 12. C65 — direct joint training from initialization
+## 10. C65-C67 — native joint training
+
+### C65
 
 Accepted commit: `1196cb369eb90d0d15394aa1ffce0c31a7e950a7`.
 
 Native shared-basis training from untrained initialization:
 
-- condition rank4 ratio0.78125: nearly matches dense, one one-example validation miss;
-- composition rank2 ratio0.5703125: 3/3 exactly matches dense;
-- language rank4 ratio0.640625: unstable when factor lr0.002 while common lr0.01.
+- condition rank4 ratio0.78125: almost dense;
+- composition rank2 ratio0.5703125: 3/3 dense match;
+- language rank4 ratio0.640625: unstable when factor lr0.002 and common lr0.01.
 
-Decision: diagnose co-adaptation before changing representation.
-
-## 13. C66 — direct-joint language factor-LR frontier
+### C66
 
 Accepted commit: `ab84b6c15d0b959c120904898e35d0ce89950698`.
 
-Fixed language rank4/common lr0.01. Factor LR sweep:
+Language rank4, common lr0.01, factor LR sweep:
 
 | factor LR | final mean | min final | all final meet dense |
 |---:|---:|---:|:---:|
 | 0.002 | 0.787879 | 0.545455 | false |
 | 0.005 | 0.939394 | 0.818182 | false |
-| **0.010** | **1.000000** | **1.000000** | **true** |
+| 0.010 | 1.000000 | 1.000000 | true |
 
-Conclusion: C65 language instability was primarily a factor/common co-adaptation-rate problem. A post-hoc-recovery factor LR is not automatically valid for from-scratch joint training.
+Conclusion: from-scratch joint training requires factor/common co-adaptation; a post-hoc recovery LR does not transfer automatically.
 
-## 14. C67 — aligned factor/common LR cross-task joint training
+### C67
 
 Accepted commit: `c5bda0b605837903a29dbe2b7ae08820bee80a69`.
 
-Rule under test:
+Cross-task rule:
 
 ```text
 factor_lr = common_lr
 ```
 
-Task setup:
+- composition rank2/lr0.005: 3/3 dense match;
+- language rank4/lr0.01: 3/3 dense match;
+- condition rank4/lr0.01: validation deltas 0, -1/128, -1/128.
 
-- condition: rank4, lr0.01, routed-weight ratio **0.78125**;
-- composition: rank2, lr0.005, ratio **0.5703125**;
-- language: rank4, lr0.01, ratio **0.640625**.
+The condition residual was too small to justify changing capacity before a full-domain check.
 
-### Results
+## 11. C68 — exhaustive condition generalization
 
-Composition:
+Accepted run commit: `8f2ee6c0df66f2d7a81072a5b51432ba175e17e5`.
 
-- 3/3 direct = dense = **1.0**.
+Experiment ID: `C68-shared-basis-condition-exhaustive-generalization`.
 
-Language:
+C67 condition training is reproduced exactly, then each model is evaluated on every condition trajectory not used for training. Domain size = 32,768; training = 256; exhaustive held-out = **32,512 per seed**.
 
-- 3/3 direct = dense = **1.0**.
-- C66 result reproduces inside the cross-task run.
+Results:
 
-Condition:
+| seed | dense exact | direct exact | delta | dense-only | direct-only | net direct |
+|---:|---:|---:|---:|---:|---:|---:|
+| 20260911 | 0.99569392 | 0.99818528 | +0.00249135 | 28 | 109 | +81 |
+| 20260912 | 0.99424827 | 0.98785067 | -0.00639760 | 289 | 81 | -208 |
+| 20260913 | 0.97397882 | 0.98056102 | +0.00658220 | 216 | 430 | +214 |
 
-| seed | dense | direct | delta |
-|---:|---:|---:|---:|
-| 20260911 | 1.000000 | 1.000000 | 0 |
-| 20260912 | 1.000000 | 0.992188 | -0.0078125 |
-| 20260913 | 0.984375 | 0.976562 | -0.0078125 |
+Summary:
 
-Primary field:
+- mean exact delta = **+0.00089198**;
+- median exact delta = **+0.00249135**;
+- min = -0.00639760;
+- max = +0.00658220;
+- direct-only correct total = **620**;
+- dense-only correct total = **533**;
+- pooled net direct advantage = **+87**;
+- `all_exhaustive_direct_match_or_exceed_dense = false` because seed20260912 favors dense.
 
-`all_tasks_all_seeds_direct_match_or_exceed_dense = false`.
+### C68 interpretation
 
-### C67 interpretation
+The 128-example residual was not purely sampling noise: seed20260912 retains a real full-domain dense advantage. However, there is **no consistent directional deficit** for rank4 shared-basis condition training:
 
-- aligned learning rates are a strong native-training rule for composition and language;
-- they are not a universal guarantee because condition retains tiny residuals;
-- the remaining condition deltas are exactly **1/128**, i.e. one validation trajectory each;
-- therefore the next step should not immediately spend routed capacity or change optimizer policy. First determine whether the residual persists when condition is evaluated over its full held-out domain.
+- direct wins 2/3 seeds;
+- dense wins 1/3 seeds;
+- the three-seed mean and pooled paired count favor direct.
 
-The ordinary condition validation set has only 128 trajectories, while the complete condition input domain contains 32,768 unique signatures. With 256 training examples, 32,512 signatures remain available for deterministic exhaustive evaluation.
+Therefore the current evidence points more strongly to **initialization/optimizer seed variance** than to a systematic rank4 capacity deficit. Do not increase rank yet. First quantify seed robustness under the exact same training rule.
 
-## 15. Current design decision after C67
+## 12. Current design decision after C68
 
 Shared-basis remains the leading Gate-C representation family.
 
-Evidence currently supports:
+Current evidence supports:
 
-1. **adaptive rank/capacity** by functional need;
-2. **co-adaptation-aware optimizer policy** for native training;
-3. `factor_lr = common_lr` as a strong simple default, but not yet a universal law;
-4. do not interpret a one-example validation delta as a structural deficit until larger/full-domain evaluation confirms it.
+1. **adaptive capacity/rank** by functional need;
+2. **co-adaptation-aware training**, with `factor_lr = common_lr` a strong default for current tasks;
+3. composition and language native training are robust across the accepted 3 seeds at materially lower routed-weight storage;
+4. condition rank4 is not consistently worse than dense, but has material seed-to-seed variance even under exhaustive evaluation;
+5. increasing rank before quantifying this variance would confound capacity with optimization robustness.
 
-Gate C remains NOT PASSED. Production runtime integration and recurrence validation are still pending.
+Gate C remains **NOT PASSED**. Production runtime integration and recurrence validation are still pending.
 
-## 16. Next experiment — C68
+## 13. Next experiment — C69
 
-**Exhaustive held-out condition generalization after C67.**
+**Condition rank4 aligned-lr 12-seed exhaustive robustness.**
 
 Tracked benchmark:
 
-`fold/fold_lm/v05_benchmarks/gate_c_shared_basis_condition_exhaustive_generalization.py`
+`fold/fold_lm/v05_benchmarks/gate_c_shared_basis_condition_12seed_exhaustive_robustness.py`
 
-Accepted benchmark creation commit: `13b7ce8d51e995570950deb606555217ce803105`.
+Benchmark creation commit: `691df35bd768f2c24932168d3c1ac5fd8ec07cfe`.
 
-Fixed training conditions, exactly reproducing C67 condition:
+Question: does C68's mixed sign persist across more initializations, or is there a systematic dense/direct bias?
 
+Fixed setup:
+
+- condition only;
 - rank4;
-- dense/shared-basis both lr0.01;
+- dense and direct lr0.01;
 - 260 steps;
 - batch32;
-- seeds 20260911/20260912/20260913;
-- same initializations and batch sequence.
+- training size256;
+- exhaustive held-out size32,512;
+- seeds `20260911..20260922` (12 total).
 
-Per seed:
-
-1. retrain dense and direct shared-basis candidates;
-2. assert the original 128-example validation scores reproduce C67 exactly;
-3. enumerate the entire condition input domain;
-4. exclude the 256 training signatures;
-5. evaluate both models on all remaining **32,512** trajectories in batches;
-6. report exact trajectory accuracy plus paired dense-only/direct-only correctness counts.
+The first three seeds must exactly reproduce accepted C68 metrics. No rank, optimizer, architecture, or initialization rule is changed.
 
 Primary outputs:
 
-- `summary.all_exhaustive_direct_match_or_exceed_dense`;
-- `summary.exhaustive_exact_delta`;
-- total paired dense-only correct / direct-only correct counts;
-- paired net direct advantage.
+- mean/median/min/max exhaustive exact delta;
+- direct-win / dense-win / tie seed counts;
+- simple two-sided seed sign-test diagnostic;
+- pooled dense-only / direct-only correct counts and net advantage;
+- first-three-seed C68 reproduction assertion.
 
 Interpretation:
 
-- if exhaustive scores match or direct exceeds dense, C67's 1/128 residual was a small-validation artifact and condition does not justify extra rank on this task;
-- if dense retains a consistent exhaustive advantage, the residual is real and the next bounded diagnosis should test native condition capacity/rank rather than assuming optimizer noise;
-- if results differ by seed without a consistent direction, treat condition as optimizer/initialization-sensitive and quantify that before production integration.
+- if deltas center near zero with mixed signs, treat remaining condition difference primarily as seed/optimization variance and proceed to runtime/recurrence work without spending extra rank yet;
+- if dense wins most seeds with negative mean/median and pooled disadvantage, then direct condition training has a real robustness deficit and C70 should diagnose rank or training schedule;
+- if direct wins most seeds, rank4 native shared-basis is at least competitive on this complete synthetic condition domain despite individual seed reversals.
 
-C68 is exhaustive only for this tiny synthetic condition task and cannot establish broad model equivalence or Gate-C passage.
+C69 does not define a formal equivalence margin and cannot establish Gate C passage alone.
 
-## 17. Handoff
+## 14. Handoff
 
 On a new session:
 
 1. read this ledger;
 2. confirm branch/HEAD and protected hashes;
-3. continue at the Next ID above;
+3. continue at C69;
 4. keep one experiment per C number;
 5. retry failures under the same number;
 6. update this file after every accepted result or Gate decision change.
