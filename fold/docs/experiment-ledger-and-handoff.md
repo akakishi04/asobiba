@@ -66,22 +66,38 @@ W_module = W_base + A_module @ B_shared
 
 Current selected task points:
 
-- Condition: **rank3**
-- Composition: rank2
-- Language: rank4
-- native joint-training rule on current tasks: `factor_lr = common_lr`
+```text
+Condition   rank3
+Composition rank2
+Language    rank4
+```
 
-Important conclusions:
+Current training rule on accepted tiny tasks:
+
+```text
+factor_lr = common_lr
+```
+
+Current runtime formula:
+
+```text
+single projection [W_base; B_shared]
++
+module coefficient addmm
+```
+
+Current integration state:
 
 - direct fine-grained codebook execution is storage/reference only;
 - one universal rank rule is rejected;
 - rank/capacity is adaptive by functional need;
 - runtime cost is a first-class rank-allocation cost;
-- intended inference form is GEMM-native shared projection + coefficient `addmm`;
-- effective-weight materialization is reference-only;
-- Condition rank3 replaced rank4 only after a prospective independent-seed non-inferiority gate passed;
-- production runtime is still unmodified;
-- selected-rank recurrence/equivalence refresh is next before production integration.
+- effective-weight materialization is reference/diagnostic only;
+- Condition rank3 replaced rank4 only after prospective non-inferiority passed;
+- final selected-rank GEMM-native recurrence equivalence passed in C77;
+- production `modules.py` now contains an **opt-in** `SharedBasisFixedRoutingCore` candidate;
+- default `HighPrecisionFixedRoutingCore` construction is unchanged;
+- production integration is not accepted until C78 passes.
 
 Do not claim fixture success proves broad language quality or that FOLD beats Transformers / existing LLMs.
 
@@ -101,13 +117,13 @@ Synthetic `rank=width/16` Shared/Dense latency:
 
 Large width trends toward Dense.
 
-### C59-C67 — quality / native training
+### C59-C67 — quality / native factorized training
 
 - post-hoc SVD alone is not an adequate task objective;
 - Composition rank2 recovers and reproduces 3/3 seeds;
 - Condition rank1 insufficient; rank4 was first robust tested point before rank3 was later examined;
 - Language rank2 has capacity but unstable final checkpoint; rank4 stable;
-- aligned native rule `factor_lr = common_lr` succeeds across current task families.
+- aligned rule `factor_lr = common_lr` succeeds across current task families.
 
 ### C68-C69 — Condition rank4 exhaustive robustness
 
@@ -174,45 +190,43 @@ At width5120:
 - batch1 Shared/Dense: rank3 1.13681493 vs rank4 1.20286584
 - batch8 Shared/Dense: rank3 1.17189873 vs rank4 1.20927834
 
-Rank3 offered a real but moderate ~3-5.5% endpoint runtime benefit and ~5.5% full-core byte benefit, enough to justify one prospective quality decision.
+Rank3 offered a real but moderate ~3-5.5% endpoint runtime benefit and ~5.5% full-core byte benefit.
 
 ## 6. C76 — prospective independent-seed Condition rank3 non-inferiority
 
 Accepted run commit: `8fd6c3a600d7da91eb1c15e9f768c30988b8b2d4`.
 
-Benchmark: `fold_lm/v05_benchmarks/gate_c_shared_basis_condition_rank3_prospective_noninferiority.py`
+Decision rule fixed before new data:
 
-Decision rule was fixed before observing the new seeds:
-
-- seeds: `20260923..20260946` (24), disjoint from C74;
-- primary delta: rank3 exhaustive exact - rank4 exhaustive exact;
-- margin: `-0.002` absolute accuracy;
-- paired bootstrap unit: seed;
-- 100,000 deterministic bootstrap resamples;
+- seeds `20260923..20260946` (24), disjoint from C74;
+- primary delta = rank3 exhaustive exact - rank4 exhaustive exact;
+- margin = `-0.002` absolute accuracy;
+- bootstrap unit = seed;
+- 100,000 deterministic paired bootstrap resamples;
 - one-sided 95% lower bound;
 - pass iff lower bound > -0.002.
 
 Accepted result:
 
-- experiment status: PASS
-- seed independence: true
-- mean delta: **-0.0000794604421**
-- median: **-0.000199943781**
-- min: -0.00353717804
-- max: +0.00301426649
-- bootstrap lower 95%: **-0.000512627388**
-- non-inferiority gate: **PASS**
+- mean delta = **-0.0000794604421**
+- median = **-0.000199943781**
+- bootstrap lower 95% = **-0.000512627388**
+- non-inferiority gate = **PASS**
 - rank3 wins 10 / rank4 wins 13 / tie 1
 - sign-test p = `0.6776394844`
-- pooled net rank3 advantage = **-62** across 780,288 held-out trajectories
+- pooled net rank3 advantage = **-62** / 780,288 held-out trajectories
 
-### C76 decision
+Decision: Condition rank3 became the selected Condition capacity point on the current synthetic-domain evidence.
 
-Condition rank3 is now the **selected Condition capacity point** for subsequent integration work on the current synthetic-domain evidence.
+## 7. C77 — final selected-rank recurrence equivalence refresh
 
-This does not mean rank3 is universally superior or broad-task equivalent. It means the predeclared engineering non-inferiority contract was satisfied while C75 established a measurable runtime/storage benefit.
+Accepted run commit: `79a2f1c4f86a6c937010fbe1a94d876fa16398a7`.
 
-Current selected ranks are therefore:
+Experiment ID:
+
+`C77-shared-basis-final-selected-rank-recurrence-equivalence`
+
+Selected ranks:
 
 ```text
 Condition   rank3
@@ -220,9 +234,35 @@ Composition rank2
 Language    rank4
 ```
 
-Gate C remains **NOT PASSED**.
+Fresh seeds:
 
-## 7. Auto-Partition / adaptive-capacity consequence
+```text
+20261001, 20261002, 20261003
+```
+
+Accepted results across 3 tasks x 3 seeds:
+
+- run_count = 9
+- seeds disjoint from C76 = true
+- validation max abs gap max = **3.933906555175781e-06**
+- recurrence max abs gap max = **9.72747802734375e-05**
+- recurrence max relative-L2 gap max = **2.7345954560493825e-06**
+- all validation scores equal = true
+- all validation semantics equal = true
+- all validation outputs allclose = true
+- all recurrence depths 1/2/4/8/16/32/64 allclose = true
+- all runtime formula equivalent = true
+- protected C37 result preserved
+- runtime fixture preserved
+- tracked repository clean
+
+### C77 decision
+
+The final selected rank set is numerically safe for the tested materialized-reference vs GEMM-native execution comparison through 64 recurrent updates.
+
+C77 closes the pre-production inference-form equivalence refresh. It does **not** prove broad language quality and does not pass Gate C by itself.
+
+## 8. Auto-Partition / adaptive-capacity consequence
 
 See:
 
@@ -234,24 +274,62 @@ Current rules:
 1. diagnose co-adaptation and seed direction before increasing rank;
 2. runtime cost is a first-class capacity cost;
 3. when considering a lower rank, estimate operational benefit first;
-4. if benefit is material, fix a prospective quality tolerance before the deciding data;
-5. adopt the lower rank only if that gate passes;
-6. after selected-rank structural change, refresh execution/recurrence equivalence before production integration;
+4. if benefit is material, fix a prospective quality tolerance before deciding data;
+5. adopt lower rank only if that gate passes;
+6. after selected-rank structural change, refresh execution/recurrence equivalence;
 7. among capacities passing the same quality contract, prefer the lower-rank Pareto point unless another measured constraint dominates.
 
-## 8. Next experiment — C77
+## 9. Production integration state
 
-**Final selected-rank GEMM-native recurrence equivalence refresh.**
+After C77 acceptance, an opt-in production candidate was added to:
+
+`fold/fold_lm/v05/modules.py`
+
+Class:
+
+`SharedBasisFixedRoutingCore`
+
+Properties:
+
+- existing `HighPrecisionFixedRoutingCore` remains the default and is not replaced;
+- constructor explicitly opts in from an existing high-precision routed core plus rank;
+- routed weights are initialized with mean + truncated SVD;
+- production forward stores concatenated `[W_base; B_shared]` projections plus module coefficients;
+- production forward uses GEMM-native projection + `addmm` and does not materialize effective routed weights;
+- effective weights can be materialized only through diagnostic tooling;
+- class is trainable and supports state_dict save/load;
+- production module has no dependency on benchmark modules.
+
+Important remaining gap:
+
+C65-C67 trained the factorized Shared-Basis family using materialized effective weights during forward, while C70/C77 verified GEMM-native inference after that training. Before accepting the production class for training/runtime use, direct training in the production GEMM-native parameterization must be compared against the accepted materialized training path.
+
+## 10. Active experiment — C78
+
+**Opt-in production Shared-Basis direct-training integration gate.**
 
 Tracked benchmark:
 
-`fold/fold_lm/v05_benchmarks/gate_c_shared_basis_final_selected_rank_recurrence_equivalence.py`
+`fold/fold_lm/v05_benchmarks/gate_c_shared_basis_production_optin_integration.py`
 
-Benchmark creation commit:
+Tracked unit coverage:
 
-`27e18052bc85291394ca9de55e79e41d73a8732a`
+`fold/tests_lm/test_v05_shared_basis_core.py`
 
-Selected ranks:
+Tracked runner:
+
+`fold/scripts/run_c78.ps1`
+
+Scientific/engineering question:
+
+> Starting from the same untrained dense initialization and using the same selected ranks, data, batch order, optimizer family, and aligned learning rate, does the production GEMM-native `SharedBasisFixedRoutingCore` preserve the accepted materialized Shared-Basis training semantics and runtime algebra?
+
+C78 compares:
+
+1. benchmark materialized `JointTrainSharedBasisCore`;
+2. production opt-in `SharedBasisFixedRoutingCore`.
+
+Tasks/ranks:
 
 ```text
 Condition   rank3
@@ -259,33 +337,48 @@ Composition rank2
 Language    rank4
 ```
 
-Fresh refresh seeds:
+Fresh seeds:
 
 ```text
-20261001, 20261002, 20261003
+20261011, 20261012, 20261013
 ```
 
-No overlap with C76.
+C78 verification includes:
 
-C77 repeats the C70 pre-integration semantic/output/recurrence comparison using the final selected rank set:
+- compileall of `fold_lm/v05`;
+- focused production-core unit tests;
+- all `test_v05_*.py` regressions;
+- initial effective-weight equivalence;
+- autograd gradient equivalence;
+- full accepted training schedules with identical batch sequences;
+- final validation score equality;
+- final semantic equality;
+- final validation tensor allclose;
+- production native-vs-materialized recurrence through 64 updates;
+- exact state_dict round-trip;
+- protected artifact preservation;
+- tracked repository cleanliness.
 
-- trained factorized reference vs GEMM-native inference form;
-- validation score equality;
-- semantic equality;
-- validation tensor allclose;
-- recurrence depths 1/2/4/8/16/32/64;
-- rtol 5e-4, atol 1e-4;
-- no production runtime modification.
+Primary scientific flag:
 
-If all equivalence flags pass, the next step is an opt-in production `modules.py` integration and regression gate. If any equivalence flag fails, diagnose C77 under the same number before production mutation.
+```text
+production_integration_gate_passed
+```
 
-## 9. Handoff
+C78 may be accepted only if all integration flags pass. A benchmark `status=PASS` alone means execution completed and is not sufficient.
+
+If C78 passes, benchmark-only Shared-Basis runtime classes are no longer required as the authoritative implementation path for subsequent experiments. The next step should benchmark the actual production class at representative large shapes / resident memory before any Gate C pass decision or default-path switch.
+
+Gate C remains **NOT PASSED**.
+
+## 11. Handoff
 
 On a new session:
 
 1. read this ledger;
 2. confirm branch/HEAD and protected hashes;
-3. continue at C77;
-4. keep one experiment per C number;
-5. retry failures under the same number;
-6. do not modify production runtime until C77 is accepted.
+3. continue at C78;
+4. use `fold/scripts/run_c78.ps1` rather than a pasted multi-block PowerShell script;
+5. keep one experiment per C number;
+6. retry C78 failures under C78;
+7. do not switch the default Dense core until production integration and representative production runtime gates are accepted.
