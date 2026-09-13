@@ -77,7 +77,7 @@ Current conclusions:
 - native joint-training default on current tasks is `factor_lr = common_lr`;
 - intended inference form is GEMM-native `[W_base; B_shared]` projection + coefficient `addmm`;
 - effective-weight materialization is reference-only;
-- rank allocation must now account for **runtime cost as well as quality/storage**;
+- rank allocation must account for **runtime cost as well as quality/storage**;
 - production integration waits until selected rank policy and runtime practicality are sufficiently resolved.
 
 Do not claim that fixture success proves broad language quality or that FOLD beats Transformers / existing LLMs.
@@ -129,7 +129,7 @@ factor_lr = common_lr
 
 Composition and Language match Dense 3/3; Condition had only tiny validation residuals.
 
-### C68-C69 — Condition exhaustive robustness
+### C68-C69 — Condition rank4 exhaustive robustness
 
 C69 extended Condition rank4 aligned training to 12 seeds with exhaustive 32,512 held-out trajectories per seed:
 
@@ -226,11 +226,6 @@ At width5120:
 - batch1 latency ratio: **1.05725**
 - batch8 latency ratio: **1.06427**
 
-Thresholds:
-
-- batch1 <=1.10 first at width3072
-- batch8 <=1.10 first at width1536
-
 Interpretation: lean Shared Basis becomes close to Dense runtime while retaining ~28.6% full-core persistent-byte reduction.
 
 #### Medium — rank fraction 1/8
@@ -241,11 +236,6 @@ At width5120:
 
 - batch1: **1.07800**
 - batch8: **1.11564**
-
-Thresholds:
-
-- batch1 <=1.15 first at width3072; <=1.10 at width5120
-- batch8 <=1.15 first at width3072; <=1.10 not reached by width5120
 
 Interpretation: medium rank remains operationally plausible at large width, with ~24.0% full-core persistent-byte reduction and roughly 8-12% endpoint latency tax.
 
@@ -258,7 +248,7 @@ At width5120:
 - batch1: **1.23527**
 - batch8: **1.21851**
 
-At widths3072-5120 the high profile remains roughly in the `1.18-1.24x` range. Low-width threshold crossings are noisy/non-monotonic and must not be interpreted as stable large-width convergence.
+At widths3072-5120 the high profile remains roughly in the `1.18-1.24x` range.
 
 Interpretation: the high rank fraction carries a persistent runtime tax even at width5120, while saving only ~14.6% full-core persistent bytes.
 
@@ -272,75 +262,147 @@ C73 confirms that Shared Basis runtime viability is **rank-dependent**:
 
 Therefore rank cannot be selected from quality/storage alone. Adaptive capacity / Auto-Partition must include runtime cost in the objective.
 
-This also changes the priority for Condition. Condition currently uses width16/rank4 = rank fraction 1/4, but C63 skipped rank3. Because C73 shows that reducing rank fraction has material runtime value, the next quality question is whether rank3 can replace rank4 under the already accepted 12-seed exhaustive Condition protocol.
+## 7. C74 — Condition rank3 12-seed exhaustive viability
 
-Gate C remains **NOT PASSED**. Do not production-integrate the high-rank policy before resolving whether Condition can use a smaller rank and before final representative-shape integration checks.
+Accepted run commit: `15d380a59f8a0940272b6ff95c229567fdf9d309`.
 
-## 7. Auto-Partition / adaptive-capacity consequence
+Experiment ID:
+
+`C74-shared-basis-condition-rank3-12seed-exhaustive`
+
+Fixed setup:
+
+- Condition only;
+- rank3 candidate vs accepted rank4 and Dense;
+- aligned lr0.01;
+- 260 steps, batch32, train size256;
+- seeds `20260911..20260922`;
+- exhaustive held-out 32,512 per seed;
+- Dense references reproduced C69 exactly.
+
+Storage:
+
+- rank3 routed-weight ratio: **0.7109375**;
+- rank4 routed-weight ratio: **0.78125**;
+- rank3 uses **91%** of rank4 routed-weight bytes, i.e. a further 9% reduction vs rank4.
+
+Rank3 vs Dense exhaustive exact delta:
+
+- mean: **-0.00117391348**;
+- median: **-0.00072279572**;
+- min: -0.00922733545;
+- max: +0.00661295652;
+- rank3 wins: 4 seeds;
+- Dense wins: 8 seeds;
+- sign-test two-sided p = **0.3876953125**;
+- pooled Dense-only correct: 1,782;
+- pooled rank3-only correct: 1,324;
+- pooled net rank3 advantage: **-458**.
+
+Rank3 vs accepted rank4:
+
+- mean delta: **-0.00092273454**;
+- median delta: **-0.00016915798**;
+- rank3 better: 6 seeds;
+- rank4 better: 6 seeds.
+
+### C74 interpretation
+
+Rank3 is not catastrophically capacity-limited, but it does not earn automatic adoption either.
+
+Evidence is mixed:
+
+1. rank3-vs-rank4 seed direction is exactly balanced 6/6;
+2. rank3-vs-Dense direction tilts 4/8 and pooled counts favor Dense;
+3. the mean deficits are small in absolute terms, but some individual seeds lose close to 1 percentage point;
+4. there was no predeclared equivalence margin, so C74 cannot honestly certify rank3 as quality-equivalent;
+5. rank3 buys only a 9% routed-weight reduction relative to rank4, so its runtime benefit must be measured before spending more quality experiments.
+
+Decision after C74:
+
+- **retain rank4 as the accepted safe Condition point for now**;
+- keep rank3 as an optimization candidate, not an accepted replacement;
+- next quantify the actual runtime/storage benefit of the 3/16 rank fraction versus 1/4;
+- only if that benefit is material should a stricter prospectively-defined quality-equivalence experiment be considered.
+
+Gate C remains **NOT PASSED**.
+
+## 8. Auto-Partition / adaptive-capacity consequence
 
 Main living document:
 
 `fold/docs/shared-basis-auto-module-partition-report.md`
 
-Current rule additions from C71-C73:
+Current rule additions from C71-C74:
 
-- runtime reuse is secondary to quality, but runtime cost is now a first-class rank-allocation cost;
-- do not interpret high rank as free merely because persistent storage remains below Dense;
-- when two ranks both satisfy quality, prefer the lower rank if the runtime/storage Pareto point is materially better;
-- high-rank groups may justify Split / private capacity / alternate execution only after lower-rank quality is ruled out;
-- C73 gives evidence that large-width lean/medium profiles are substantially more attractive than high rank.
+- runtime cost is a first-class rank-allocation cost;
+- lower rank is preferred only when the quality margin remains acceptable;
+- do not convert a small average quality deficit into an automatic rejection without considering seed variance, but do not call it equivalent without a declared margin either;
+- high-rank groups carry a measurable runtime tax at large width;
+- C74 shows why rank reduction needs a Pareto decision: 9% extra routed-byte saving is accompanied by a small but nonzero quality-risk signal.
 
-The connector previously rejected one large living-spec rewrite; preserve these accepted conclusions here until that document can be safely refreshed without truncation.
+The connector previously rejected one large living-spec rewrite; preserve these accepted conclusions here until that document can be refreshed safely without truncation.
 
-## 8. Next experiment — C74
+## 9. Next experiment — C75
 
-**Condition rank3 12-seed exhaustive viability.**
+**Condition rank3-vs-rank4 runtime/storage bridge.**
 
 Tracked benchmark:
 
-`fold/fold_lm/v05_benchmarks/gate_c_shared_basis_condition_rank3_12seed_exhaustive.py`
+`fold/fold_lm/v05_benchmarks/gate_c_shared_basis_condition_rank3_rank4_runtime_bridge.py`
 
 Benchmark creation commit:
 
-`6ffe2793621281c4635e491f523c7345d77f337f`
+`a9cb67fc9ca5a3f7ab590862b443f9e791b5e813`
 
-Question: can Condition rank3 replace accepted rank4 under the same aligned native-training and exhaustive robustness protocol, motivated by C73's rank-dependent runtime tax?
+Question: before spending more quality trials on rank3, how much real runtime/storage benefit does the 3/16 rank fraction provide over the accepted 1/4 rank fraction?
 
-Fixed setup:
+Profiles:
 
-- Condition only;
-- rank3 candidate;
-- accepted rank4 C69 as comparison;
-- dense and factor lr0.01;
-- 260 steps;
-- batch32;
-- train size256;
-- seeds `20260911..20260922`;
-- exhaustive held-out 32,512 per seed;
-- Dense references must reproduce C69 exactly;
-- rank3 direct score is compared both to Dense and accepted rank4 for each seed.
+```text
+rank3_bridge = 3 * width / 16
+rank4_high   = width / 4
+```
+
+Widths:
+
+```text
+16, 32, 64, 128, 256, 512, 1024, 2048, 3072, 4096, 5120
+```
+
+Execution:
+
+- modules=2, hidden_mult=2;
+- width16 includes the real Condition-like slots=1 point plus slots=20;
+- larger widths use slots=20;
+- batches 1 / 8;
+- eager CUDA;
+- both routes;
+- 10 paired rounds;
+- 50 CUDA-event iterations per sample;
+- persistent bytes and forward peak delta measured;
+- each profile is compared to a semantically identical materialized Dense effective-weight reference.
 
 Primary outputs:
 
-- rank3 routed-weight storage ratio vs rank4;
-- rank3 - Dense exhaustive exact delta distribution;
-- rank3 / Dense seed win counts and sign-test diagnostic;
-- pooled paired Dense-only / rank3-only counts;
-- rank3 - rank4 exhaustive exact delta distribution and seed win counts.
+- actual width16 rank3 vs rank4 latency-tax ratios;
+- large-width rank3-vs-rank4 latency-tax difference;
+- rank3 vs rank4 full-core persistent bytes at width5120;
+- routed and temporary-memory ratios.
 
 Interpretation:
 
-- if rank3 is again mixed-sign and centered near Dense/rank4, adopt rank3 as the new Condition candidate and benchmark its runtime profile next;
-- if Dense/rank4 consistently beat rank3, retain rank4 despite its runtime tax and investigate alternate execution / structure instead;
-- no formal equivalence margin is declared inside C74, so final adoption remains evidence-based rather than a predeclared statistical equivalence test.
+- if rank3 materially reduces the runtime tax, then the 9% routed-byte saving plus runtime benefit may justify a stronger prospectively-defined quality-equivalence test;
+- if runtime improvement is small, retain rank4 and avoid trading quality margin for little operational gain;
+- C75 itself does not change the accepted quality rank.
 
-## 9. Handoff
+## 10. Handoff
 
 On a new session:
 
 1. read this ledger;
 2. confirm branch/HEAD and protected hashes;
-3. continue at C74;
+3. continue at C75;
 4. keep one experiment per C number;
 5. retry failures under the same number;
 6. update this file after every accepted result or Gate decision change.
