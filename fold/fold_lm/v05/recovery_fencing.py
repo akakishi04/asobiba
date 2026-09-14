@@ -32,6 +32,26 @@ class RecoveryFencingRegistry:
             self._leases[receipt_id] = RecoveryLease(worker_id, token, now + lease_ticks)
             return token
 
+    def renew(self, receipt_id: str, worker_id: str, token: int, *, now: int, lease_ticks: int) -> bool:
+        _validate_id(receipt_id, "receipt_id")
+        _validate_id(worker_id, "worker_id")
+        _validate_token(token)
+        _validate_time(now, "now")
+        if type(lease_ticks) is not int or lease_ticks <= 0:
+            raise ValueError("lease_ticks must be a positive integer")
+        with self._lock:
+            current = self._leases.get(receipt_id)
+            if (
+                current is None
+                or current.owner_id != worker_id
+                or current.token != token
+                or now >= current.expires_at
+            ):
+                return False
+            expires_at = max(current.expires_at, now + lease_ticks)
+            self._leases[receipt_id] = RecoveryLease(worker_id, token, expires_at)
+            return True
+
     def allows(self, receipt_id: str, worker_id: str, token: int, *, now: int) -> bool:
         _validate_id(receipt_id, "receipt_id")
         _validate_id(worker_id, "worker_id")
