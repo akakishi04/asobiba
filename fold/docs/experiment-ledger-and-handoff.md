@@ -2,76 +2,45 @@
 
 > Current authoritative handoff. Detailed history remains in Gate decisions and `experiment-ledger-addendum-*` files.
 
-## 1. Environment / protected artifacts
+## Environment / protocol
 
-- Repository: `akakishi04/asobiba`
-- Branch: `feat/sft-target-loss`
-- Local repo: `M:\asobiba\fold`
-- Python: `M:\asobiba\fold\.venv-py31315\Scripts\python.exe`
-- Python 3.13.15 / PyTorch 2.10.0+cu130 / CUDA 13.0
-- GPU: RTX 4070 Ti SUPER
+- Repo: `akakishi04/asobiba`, branch `feat/sft-target-loss`, local `M:\asobiba\fold`.
+- Python: `.venv-py31315\Scripts\python.exe`; Python 3.13.15; PyTorch 2.10.0+cu130; CUDA 13.0; RTX 4070 Ti SUPER.
+- Protected C37 SHA256: `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`.
+- Protected fixture SHA256: `A52F8209703149407580F7E2965B61B78653030EE992AF6D759865736741CA9E`.
+- One scientific question per C number. Full output overwrites `runs/chatgpt-last.log`. Judge execution validity separately from scientific result. Invalid retries keep the same C number. Valid negatives may complete it.
 
-Protected:
-
-- `runs/chatgpt-last-result.json`
-- SHA256 `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`
-- `runs/fixtures/v05-c-composition-20260921.pt`
-- SHA256 `A52F8209703149407580F7E2965B61B78653030EE992AF6D759865736741CA9E`
-
-## 2. Experiment protocol
-
-1. One scientific question per C number.
-2. Full output overwrites `runs/chatgpt-last.log`.
-3. User pastes the complete log.
-4. Judge execution validity separately from scientific/performance interpretation.
-5. Invalid retries keep the same C number.
-6. Valid negative results may complete the C number.
-7. Predeclare deciding thresholds before deciding data; characterization-only experiments must not invent post-hoc thresholds.
-8. Preserve protected artifacts and require tracked tree clean.
-
-## 3. Gate status
+## Gate status
 
 - Gate A: PASSED.
 - Gate B: PASSED.
 - Gate C: PASSED, scoped.
 - Gate D: PASSED, scoped.
-- Gate E: NOT PASSED. Active stage.
+- Gate E: NOT PASSED; active stage.
 
-Gate C lead:
+Gate C lead: `W_module = W_base + A_module @ B_shared`, materialized training / GEMM-native inference.
 
-```text
-W_module = W_base + A_module @ B_shared
-training  -> materialized
-inference -> gemm_native
-```
+Gate D lead: `fold_lm.v05.controller.ControlLaneActionRouter`. Main working-state width and routing-control width are independent capacity axes.
 
-Gate D lead: `fold_lm.v05.controller.ControlLaneActionRouter`.
+Primary product priority: operational VRAM headroom, then peak/resident VRAM, then latency/throughput, then artifact size.
 
-Supported principle: main working-state width and routing-control width are independent capacity axes.
-
-Primary product objective: operational VRAM headroom, then peak/resident VRAM, then latency/throughput, then artifact size.
-
-## 4. V5-E current contract
+## V5-E current production contract
 
 Action family:
 
 ```text
-ANSWER
-READ_MEMORY
-RETRIEVE
-OBSERVE
-ASK_USER
-STOP_UNRESOLVED
+ANSWER / READ_MEMORY / RETRIEVE / OBSERVE / ASK_USER / STOP_UNRESOLVED
 ```
 
 Authority:
 
 ```text
 model/router -> proposes action
-runtime      -> owns availability, permission, acquisition outcome, validation, eligibility mutation, and authoritative evidence mutation
+runtime      -> owns availability, permission, acquisition outcome, validation,
+                eligibility mutation, and authoritative evidence mutation
 ```
 
-Production representation boundary:
+Representation:
 
 ```text
 raw runtime encoding
@@ -80,101 +49,85 @@ raw runtime encoding
 -> ControlLaneActionRouter
 ```
 
-Production primitive: `fold_lm.v05.controller.canonicalize_boolean_channels`.
+Production adapter: `fold_lm.v05.controller.canonicalize_boolean_channels`.
 
-## 5. Accepted V5-E capability evidence — C97 to C105
+## Accepted V5-E evidence
 
-C97-C99 established information sufficiency and the successful acquisition/reobserve/answer loop.
+- C97-C99: information sufficiency and successful acquire/reobserve/answer loop.
+- C100-C102: learned SUCCESS / UNAVAILABLE / DENIED / INVALID handling with no guessed answers, repeat acquisition, or budget violations.
+- C103-C105: six-action mechanism selection and runtime-owned fallback; minimum-burden semantics passed.
+- C106: unseen eligibility-mask composition PASS; finite 16-mask memorization weakened.
+- C107: independent evaluator PASS; shared train/eval generator bug weakened.
+- C108: VALID NEGATIVE; raw signed-boolean amplitude changes caused a representation failure.
+- C109: localized failure to seed `20261311`, `ood_b (-0.1,+4.0)`, boundary actions ANSWER/STOP.
+- C110: diagnostic `-1/+1` canonicalization removed the C108 failure.
+- C111: production adapter integration PASS; known regression and fresh seeds recovered.
+- C112: natural class-frequency PASS; class-balanced sampling is not required in registered synthetic scope.
+- C113: stale-high eligibility PASS; runtime preflight rejects stale proposals before execution and falls back safely.
 
-C100-C102 established learned handling of `SUCCESS / UNAVAILABLE / DENIED / INVALID` with no guessed answers, repeat acquisition, or budget violations.
+## C114 — performance characterization: ACCEPTED
 
-C103-C105 expanded to the six-action mechanism policy and passed learned minimum-burden selection plus runtime-owned failure fallback.
+Batch=1, slots=1, fresh CUDA process per condition.
 
-## 6. Falsification / representation evidence — C106 to C112
-
-- C106 unseen eligibility-mask composition: PASS. Finite 16-mask memorization weakened as an explanation.
-- C107 independent evaluator: PASS. Shared train/eval generator bug weakened as an explanation.
-- C108 signed feature re-encoding: VALID NEGATIVE. Raw Control Lane was not invariant to arbitrary signed boolean amplitudes.
-- C109 localized the only failing condition to seed `20261311`, `ood_b (-0.1,+4.0)`, concentrated in `ANSWER` and `STOP_UNRESOLVED`.
-- C110 diagnostic canonicalization: PASS. Mapping schema-known boolean inputs to `-1/+1` removed the registered failure.
-- C111 production adapter integration: PASS. Known regression recovered and fresh seeds `20261321..23` all passed.
-- C112 natural class-frequency falsification: PASS. Removing class-balanced training still yielded perfect six-class recall under the registered synthetic distribution, including rare `ASK_USER` and `STOP_UNRESOLVED` classes at `1.5625%` each.
-
-## 7. C113 — stale eligibility runtime preflight: ACCEPTED PASS
-
-Experiment: `C113-v5e-stale-eligibility-preflight`.
-
-Fresh seeds `20261341..43`; unseen base=3; natural row sampling; production canonicalizer.
-
-Exhaustive stale-high test:
+Median hot-path results:
 
 ```text
-model-visible mask may contain false-positive eligibility
-actual authoritative mask is a subset
-router proposes
--> runtime preflight
--> stale proposal: external execution 0, commit 0, clear visible bit, reobserve
--> next minimum-burden action
+width 8:    router ~0.596 ms, adapter ~0.907 ms, production ~1.605 ms
+width 5120: router ~0.530 ms, adapter ~0.863 ms, production ~1.626 ms
 ```
 
-Accepted across all seeds:
+Production width5120/width8 latency ratio ~`1.013`; width5120 production/router-only ~`3.07`; extra warmup operational VRAM at width5120 `0 bytes`; router parameter count remained `186` at both widths.
 
-- 81 mask pairs / 162 required cases / 80 stale cases;
-- answerable ANSWER `1.0`;
-- required scenario pass `1.0`;
-- stale-prefix exact `1.0`;
-- actual-available ANSWER `1.0`;
-- actual-available exactly-one execution `1.0`;
-- no-actual STOP `1.0`;
-- no-actual zero-execution `1.0`;
-- hidden action-trace invariance `1.0`;
-- priority violations `0`;
-- stale external executions `0`;
-- repeat stale rejects `0`.
+Interpretation: production adapter cost is material relative to the tiny router but does not show meaningful width scaling or extra operational VRAM in the registered batch=1/slots=1 profile.
 
-Interpretation: stale-high model-visible eligibility can be contained safely by authoritative runtime preflight in the registered synthetic scope. Stale false-negative availability and real tool execution remain untested.
+## C115 — stale-low terminal refresh: ACCEPTED PASS
 
-## 8. Active experiment — C114 production control hot-path performance
+Fresh seeds `20261351..53`; 81 mask pairs / 162 required cases / 30 false-negative cases.
 
-Experiment: `C114-v5e-production-control-hot-path-profile`.
+STOP_UNRESOLVED with missing evidence triggers one authoritative availability refresh. Newly available mechanisms recover to ANSWER; confirmed-unavailable cases stop with zero execution. Required pass/recovery/STOP rates were `1.0`, with zero priority violations or premature STOP accepts.
 
-Question:
+## C116 — authoritative priority refresh: ACCEPTED PASS
 
-> What latency and operational-VRAM cost does the production Control Representation Adapter add to the batch-1 Control Lane hot path, and does that cost grow with full core width despite the fixed-width router?
+Fresh seeds `20261361..63`; 81 mask pairs / 162 required cases; 50 priority-upgrade and 30 terminal-recovery cases.
 
-Profiles:
+Before external execution or terminal STOP, runtime refreshes authoritative availability. If a lower-burden mechanism has become available, the current proposal is suppressed, state is replaced by the authoritative mask, and the router reobserves before execution.
+
+All registered rates were `1.0`; priority violations and premature STOP accepts were `0`; hidden action-trace invariance `1.0`.
+
+## Active experiment — C117
+
+Experiment: `C117-v5e-post-preflight-execution-failure-fallback`.
+
+Question: after C116 authoritative preflight, does the learned fallback remain correct if selected mechanisms subsequently fail and must be removed without evidence commit before reobservation/fallback?
+
+Prospective conditions:
 
 ```text
-router_only
-adapter_only
-production = adapter + router
+fresh seeds       = 20261371,20261372,20261373
+validation base   = 3 only
+mask pairs        = 81 visible<=authoritative pairs
+hidden            = 0,1
+trajectories      = success at each eligible position + all-fail
+expected total    = 594
 ```
 
-Widths: `8` and `5120`.
-
-Fixed measurement contract:
+Every fresh seed must satisfy:
 
 ```text
-batch=1
-slots=1
-control_width=4
-hidden_width=8
-action_count=6
-warmup=200
-iterations/sample=2000
-samples=5
-fresh CUDA process per (path,width)
+trajectory pass rate            = 1.0
+preflight correct rate          = 1.0
+failure fallback recovery rate  = 1.0
+hidden action-trace invariance  = 1.0
+ineligible mechanism count      = 0
+repeat failed mechanism count   = 0
+budget violation count          = 0
 ```
 
-Measure synchronized wall time, CUDA-event device time, warmup/post-profile free-VRAM consumption, single-decision peak allocated/reserved deltas, router parameter count, and production-vs-precanonicalized functional equivalence.
+C117 composes registered C116 preflight and C105 fallback semantics through the current production prediction path. It remains synthetic, invokes no real tools, and does not establish Gate E passage.
 
-Derived comparisons include width5120/width8 scaling for adapter and production, width5120 production/router-only latency ratios, and extra operational VRAM at width5120.
-
-C114 is characterization-only: no post-hoc performance threshold. Performance decisions are made after the registered measurements are observed.
-
-## 9. Separate tracks / non-claims
+## Separate tracks / non-claims
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV-replacement remains separate.
-- Gate C/D and C97-C114 evidence is synthetic/scoped unless explicitly measured otherwise.
+- Gate C/D and C97-C117 evidence is synthetic/scoped unless explicitly measured otherwise.
 - Do not claim broad language quality, general epistemic self-knowledge, real-world tool selection, or general superiority over Transformer/LLM systems.
