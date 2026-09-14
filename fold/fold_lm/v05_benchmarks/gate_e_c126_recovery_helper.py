@@ -1,10 +1,17 @@
 from __future__ import annotations
 
-from fold_lm.v05.receipt_recovery import ReceiptRecoveryRegistry
+import json
+
+from fold_lm.v05.receipt_recovery import ReceiptRecoveryRegistry, ReceiptRecoverySnapshot
 from fold_lm.v05_benchmarks import gate_e_c116_authoritative_preflight_priority_refresh as c116
 from fold_lm.v05_benchmarks import gate_e_c119_reconcile_helper as c119h
 
 RESTARTS = (1, 2, 3)
+
+
+def _roundtrip(snapshot):
+    payload = json.loads(json.dumps(snapshot.to_payload()))
+    return ReceiptRecoverySnapshot.from_payload(payload)
 
 
 def rows_for(router, device):
@@ -30,21 +37,22 @@ def rows_for(router, device):
                     rid = f"c126:{''.join(map(str, actual))}:{hidden}:{outcome}:{restart_count}"
                     registry = ReceiptRecoveryRegistry()
                     first_claim = registry.claim(rid)
-                    initial_snapshot = registry.snapshot()
+                    initial_snapshot = _roundtrip(registry.snapshot())
                     pending_survived = (
                         initial_snapshot.pending_receipt_ids == frozenset((rid,))
                         and not initial_snapshot.completed_receipt_ids
                     )
                     restart_duplicate_rejected = True
+                    registry = ReceiptRecoveryRegistry(initial_snapshot)
                     for _ in range(restart_count):
-                        registry = ReceiptRecoveryRegistry(registry.snapshot())
+                        registry = ReceiptRecoveryRegistry(_roundtrip(registry.snapshot()))
                         pending_survived = pending_survived and registry.is_pending(rid)
                         restart_duplicate_rejected = restart_duplicate_rejected and (not registry.claim(rid))
 
                     control = c119h.scenario(router, visible, actual, hidden, outcome, device)
                     resume_count = 1
                     registry.complete(rid)
-                    completed_snapshot = registry.snapshot()
+                    completed_snapshot = _roundtrip(registry.snapshot())
                     completion_persisted = (
                         rid not in completed_snapshot.pending_receipt_ids
                         and completed_snapshot.completed_receipt_ids == frozenset((rid,))
