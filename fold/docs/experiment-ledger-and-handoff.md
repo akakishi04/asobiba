@@ -87,7 +87,7 @@ Do not guess decision-critical missing facts. Do not commit failed/untrusted acq
 
 ## 5. V5-E accepted evidence — C97 to C105
 
-C97-C99 established and learned the information-sufficiency boundary and the successful `ACQUIRE -> runtime commit -> reobserve -> ANSWER` loop on unseen base=3.
+C97-C99 established and learned the information-sufficiency boundary and successful `ACQUIRE -> runtime commit -> reobserve -> ANSWER` loop.
 
 C100-C102 established acquisition outcomes:
 
@@ -121,44 +121,30 @@ C105 passed the learned mechanism fallback loop across fresh seeds `20261221..23
 
 ### C106 — unseen eligibility-mask composition: ACCEPTED PASS
 
-Training used only the 11 masks with Hamming weight <= 2. OOD validation used only the five never-trained masks with Hamming weight >= 3, together with unseen base=3.
+Training used only the 11 masks with Hamming weight <= 2. OOD validation used only the five never-trained masks with Hamming weight >= 3 on unseen base=3.
 
-Across fresh seeds `20261231..33`:
-
-- anchor action accuracy `1.0`;
-- anchor minimum six-class recall `1.0`;
-- OOD action accuracy `1.0`;
-- OOD minimum-burden rate `1.0`;
-- ineligible mechanism count `0`;
-- action flips `0`;
-- hidden-counterfactual action invariance `1.0`.
+Across fresh seeds `20261231..33`, anchor/OOD action accuracy, minimum-burden selection and hidden invariance were `1.0`, with zero ineligible selections or flips.
 
 Interpretation: memorization of all 16 finite masks is materially weakened as an explanation.
 
 ### C107 — independent evaluator: ACCEPTED PASS
 
-Training remained on the C106 canonical family. Evaluation used `gate_e_c107_independent_eval_fixture.py`, which independently reconstructs visible rows and expected actions and imports none of the forbidden C97-C106 oracle/generator modules.
+Training remained on the canonical C106 family. Evaluation used an independently written fixture with no forbidden C97-C106 oracle/generator imports.
 
 Across fresh seeds `20261301..03`:
 
 - independent/canonical label agreement `1.0`;
 - key coverage complete;
 - independent action accuracy `1.0`;
-- independent minimum six-class recall `1.0`;
-- independent minimum-burden rate `1.0`;
+- minimum six-class recall `1.0`;
+- minimum-burden rate `1.0`;
 - ineligible mechanism count `0`;
 - action flips `0`;
 - hidden-counterfactual invariance `1.0`.
 
-Interpretation: a shared train/eval generator implementation bug is materially weakened as an explanation.
+Interpretation: a shared train/eval generator bug is materially weakened as an explanation.
 
-## 7. Active experiment — C108 feature re-encoding falsification
-
-Experiment: `C108-v5e-feature-reencoding-falsification`
-
-Question:
-
-> Does the learned mechanism policy depend on exact numeric boolean encodings, or generalize across unseen signed codebooks preserving only `false < 0 < true`?
+### C108 — held-out signed feature re-encoding: ACCEPTED VALID NEGATIVE
 
 Training codebooks:
 
@@ -175,42 +161,62 @@ ood_b: false=-0.10, true=+4.0
 ood_c: false=-7.0, true=+9.0
 ```
 
-OOD scalar values are disjoint from training scalar values. Base remains canonical because it is policy-irrelevant.
+All codebooks preserved only the shared contract `false < 0 < true`; OOD scalar values were absent from training.
 
-Prospective configuration:
+Execution was valid and protected artifacts remained unchanged. Scientific gate failed prospectively:
+
+- anchor action accuracy min `1.0`;
+- anchor minimum class recall min `1.0`;
+- OOD action accuracy min `0.953125`;
+- OOD minimum class recall min `0.0`;
+- OOD minimum-burden rate min `1.0`;
+- OOD ineligible mechanism count sum `2`;
+- OOD action flip count sum `6`;
+- hidden-counterfactual action invariance min `1.0`;
+- seed `20261311` failed; seeds `20261312` and `20261313` passed.
+
+Interpretation:
+
+> The current Control Lane is not fully invariant to arbitrary signed boolean amplitude changes. `false < 0 < true` alone is not a sufficient production representation contract.
+
+This does not invalidate C103-C107; it narrows the supported representation scope.
+
+## 7. Active experiment — C109 failure localization
+
+Experiment: `C109-v5e-reencoding-failure-localization`
+
+Question:
+
+> Which held-out codebook and action class caused the accepted C108 failure, and does the known failing seed reproduce deterministically without changing training or thresholds?
+
+C109 replays exactly:
 
 ```text
-fresh seeds      = 20261311,20261312,20261313
-train bases      = 0,1,2
-validation base  = 3 only
-control width    = 4
-hidden width     = 8
-training steps   = 900
+20261311
+20261312
+20261313
 ```
 
-Every fresh seed and every OOD codebook must satisfy:
+with the same C108 training steps, codebooks, architecture and thresholds.
 
-```text
-anchor action accuracy               = 1.0
-anchor minimum six-class recall      = 1.0
-anchor action flips                  = 0
-OOD action accuracy                  = 1.0
-OOD minimum six-class recall         = 1.0
-OOD action flips                     = 0
-OOD answerable ANSWER rate           = 1.0
-OOD critical no-direct-ANSWER rate   = 1.0
-OOD minimum-burden rate              = 1.0
-OOD no-eligible STOP rate            = 1.0
-OOD ineligible mechanism count       = 0
-OOD hidden-counterfactual invariance = 1.0
-```
+For each OOD codebook it records:
 
-C108 is a falsification/generalization experiment. A valid failure is useful evidence and still completes C108.
+- action accuracy;
+- per-class recall;
+- full 6x6 confusion matrix;
+- flipped logical rows;
+- working/context control values for each error;
+- post-LayerNorm feature values for each error.
 
-## 8. Planned falsification axes after C108
+C109 is diagnostic only. It does not repair C108 and has no Gate-E passage claim.
 
-Continue one question per C number rather than resuming feature expansion immediately:
+Do not register a canonicalization/preprocessing fix until C109 identifies the failure pattern.
 
+## 8. Planned falsification / repair sequence after C109
+
+Decide from C109 evidence, one question per C number. Likely branches include:
+
+- explicit control-feature canonicalization if the failure is amplitude/normalization driven;
 - irrelevant distractor features;
 - noisy or stale capability state;
 - changed train/validation construction;
@@ -222,5 +228,5 @@ Arbitrary channel permutation or unknown semantic remapping is not a required in
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV-replacement remains separate.
-- Gate C/D and C97-C108 evidence is synthetic and scoped.
+- Gate C/D and C97-C109 evidence is synthetic and scoped.
 - Do not claim broad language quality, general epistemic self-knowledge, real-world tool selection, universal control-width sufficiency, or general superiority over Transformer/LLM systems.
