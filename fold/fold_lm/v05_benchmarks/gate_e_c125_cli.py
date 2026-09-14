@@ -1,0 +1,16 @@
+from __future__ import annotations
+import json,time
+from pathlib import Path
+from fold_lm.v05_benchmarks import gate_e_c125_atomic_claim_falsification as bench
+
+
+def main():
+    runs=Path("runs")
+    prior=max((p for p in runs.glob("c124-v5e-receipt-replay-*") if (p/"summary.json").exists()),key=lambda p:(p/"summary.json").stat().st_mtime)/"summary.json"
+    out=runs/f"c125-v5e-atomic-claim-{time.time_ns()}"
+    report=bench.run(protected_result_path=runs/"chatgpt-last-result.json",c124_summary_path=prior,output_dir=out)
+    shown=dict(report); shown["records"]="omitted; see summary.json"
+    print("=== C125 RESULT ==="); print(json.dumps(shown,indent=2,allow_nan=False))
+    return 0
+
+if __name__=="__main__": raise SystemExit(main())
