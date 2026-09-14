@@ -41,27 +41,24 @@ raw runtime encoding
 
 Action family: `ANSWER / READ_MEMORY / RETRIEVE / OBSERVE / ASK_USER / STOP_UNRESOLVED`.
 
-## Accepted evidence through C126
+## Accepted evidence through C127
 
 - C97-C105: information sufficiency, acquisition outcomes, six-action learned selection, and runtime-owned fallback established in synthetic scope.
-- C106: unseen eligibility-mask composition PASS.
-- C107: independent evaluator PASS.
+- C106-C107: unseen eligibility composition and independent evaluator PASS.
 - C108: VALID NEGATIVE; arbitrary signed boolean amplitudes broke the raw Control Lane.
 - C109-C111: localized the representation failure and integrated schema-aware boolean canonicalization into production.
-- C112: natural class-frequency PASS without class-balanced sampling.
-- C113: stale-high eligibility contained by authoritative preflight.
-- C114: accepted performance characterization; production hot path about `1.60-1.63 ms/decision`, width 8 vs 5120 ratio about `1.013`, extra warmup operational VRAM at width5120 `0 bytes`.
-- C115-C116: stale-low refresh and authoritative minimum-burden preflight PASS.
-- C117: post-preflight clean-failure fallback PASS on 594 trajectories per seed.
-- C118: UNKNOWN_EFFECT containment PASS; no retry/fallback/commit after ambiguous execution result.
-- C119: authoritative receipt reconciliation PASS; APPLIED, NOT_APPLIED and STILL_UNKNOWN separated without duplicate logical effects.
-- C120: request-key / mechanism / epoch receipt binding PASS on 1,922 scenarios per seed.
-- C121: receipt authority gate PASS on 1,442 scenarios per seed; provider and external verification verdict required.
-- C122: verification verdict scope PASS on 1,922 scenarios per seed; verdict must match receipt id, source id and scope epoch.
-- C123: commit-context revalidation PASS on 1,922 scenarios per seed; changed request epoch or provider generation caused zero commit/retry/fallback.
-- C124: sequential duplicate receipt replay PASS on 1,442 scenarios per seed.
-- C125: concurrent atomic receipt claim PASS on 1,442 scenarios per seed across 2/4/8 workers; exactly one winner and naive-race detection both held.
-- C126: restart recovery PASS on fresh seeds `20261461..63`, 1,442 scenarios per seed across 1/2/3 restarts. Pending state survived serialized snapshot reconstruction, restart duplicates were rejected, recovery resumed exactly once, completion persisted, and downstream outcome controls remained exact. C37/fixture preserved; tracked tree clean.
+- C112-C116: natural class-frequency, stale eligibility, performance characterization, stale-low refresh and authoritative preflight PASS.
+- C117: post-preflight clean-failure fallback PASS.
+- C118: UNKNOWN_EFFECT containment PASS.
+- C119: authoritative receipt reconciliation PASS.
+- C120: request-key / mechanism / epoch receipt binding PASS.
+- C121: receipt authority gate PASS.
+- C122: verification verdict scope PASS.
+- C123: commit-context revalidation PASS.
+- C124: sequential duplicate receipt replay PASS.
+- C125: concurrent atomic receipt claim PASS across 2/4/8 workers, including naive-race negative control.
+- C126: serialized pending/completed restart recovery PASS across 1/2/3 restarts.
+- C127: post-transition crash recovery PASS on fresh seeds `20261471..73`, 1,442 scenarios per seed across 1/2/3 restarts. APPLIED completed without replay, NOT_APPLIED replayed exactly once with the same key, STILL_UNKNOWN remained pending without replay or completion, and the naive pending-replay negative control exposed duplicate-effect risk. C37/fixture preserved; tracked tree clean.
 
 Current reconciliation / recovery chain:
 
@@ -74,54 +71,48 @@ UNKNOWN_EFFECT containment
 -> sequential replay suppression
 -> concurrent atomic claim
 -> serialized pending/completed recovery state
--> reconciliation / completion
+-> post-transition authoritative reconciliation
+-> completion
 ```
 
-## Active experiment — C127
+## Active experiment — C128
 
-Experiment: `C127-v5e-post-transition-crash-falsification`.
+Experiment: `C128-v5e-concurrent-recovery-ownership-falsification`.
 
-Question: if the downstream transition has already been invoked but the process crashes before local completion state is persisted, can restart recovery avoid duplicate effects by reconciling the transition outcome before deciding whether to replay or complete?
+Question: after restart leaves a receipt pending, can concurrent recovery workers establish exactly one owner so that only one worker may execute the C127 recovery plan?
 
-Production recovery policy: `fold_lm.v05.post_transition_recovery.plan_post_transition_recovery`.
+Production primitive: `fold_lm.v05.recovery_ownership.RecoveryOwnershipRegistry`.
 
-Registered outcomes:
-
-```text
-APPLIED
-  -> replay 0
-  -> mark completed
-  -> known logical effect count = 1
-
-NOT_APPLIED
-  -> replay exactly once with the same transition key
-  -> mark completed after replay
-  -> known logical effect count = 1
-
-STILL_UNKNOWN
-  -> replay 0
-  -> completion 0
-  -> retain pending state
-  -> logical effect count remains unasserted
-```
-
-Fresh seeds: `20261471,20261472,20261473`. Restart counts: `1,2,3`.
+Fresh seeds: `20261481,20261482,20261483`. Worker counts: `2,4,8`.
 
 Coverage per seed:
 
 ```text
-1,440 post-transition crash cases
+1,440 concurrent recovery ownership cases
 2 confirmed-none controls
 1,442 scenarios total
 ```
 
-C126 remains a required control gate. All deciding rates are fixed at `1.0`, including APPLIED zero replay, NOT_APPLIED one same-key replay, STILL_UNKNOWN pending retention, duplicate rejection, resolved exactly-one logical effect, restart-specific recovery, and hidden trace invariance.
+Required semantics:
 
-Scope: C127 assumes an authoritative reconciliation source can classify the downstream transition outcome. It does not prove filesystem transaction durability, distributed storage atomicity, or concurrent recovery ownership. Gate E remains NOT PASSED.
+```text
+naive ownership race      -> multiple winners detected
+production ownership race -> exactly one owner
+owner identity            -> exact winner
+losing workers            -> zero recovery transition actions
+owner release             -> exact owner only
+APPLIED                    -> zero replay / complete once / one logical effect
+NOT_APPLIED                -> one replay / complete once / one logical effect
+STILL_UNKNOWN              -> zero replay / zero completion / pending retained
+```
+
+C127 remains a required control gate. All deciding rates are fixed at `1.0`.
+
+Scope: C128 tests in-process Python-thread recovery ownership only. Owner death, lease expiry, takeover, stale-owner fencing and distributed ownership remain separate questions. Gate E remains NOT PASSED.
 
 ## Non-claims / separate tracks
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV-replacement remains separate.
-- Gate C/D and C97-C127 evidence is synthetic/scoped unless explicitly measured otherwise.
+- Gate C/D and C97-C128 evidence is synthetic/scoped unless explicitly measured otherwise.
 - Do not claim broad language quality, general epistemic self-knowledge, real-world tool selection, or general superiority over Transformer/LLM systems.
