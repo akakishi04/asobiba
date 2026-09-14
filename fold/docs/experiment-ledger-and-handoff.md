@@ -41,7 +41,7 @@ raw runtime encoding
 
 Action family: `ANSWER / READ_MEMORY / RETRIEVE / OBSERVE / ASK_USER / STOP_UNRESOLVED`.
 
-## Accepted evidence through C123
+## Accepted evidence through C124
 
 - C97-C105: information sufficiency, acquisition outcomes, six-action learned selection, and runtime-owned fallback established in synthetic scope.
 - C106: unseen eligibility-mask composition PASS.
@@ -58,7 +58,8 @@ Action family: `ANSWER / READ_MEMORY / RETRIEVE / OBSERVE / ASK_USER / STOP_UNRE
 - C120: request-key / mechanism / epoch receipt binding PASS on 1,922 scenarios per seed.
 - C121: receipt authority gate PASS on 1,442 scenarios per seed; provider and external verification verdict required.
 - C122: verification verdict scope PASS on 1,922 scenarios per seed; verdict must match receipt id, source id and scope epoch.
-- C123: commit-context revalidation PASS on 1,922 scenarios per seed; changed request epoch or provider generation caused zero commit/retry/fallback. C37/fixture preserved; tracked tree clean.
+- C123: commit-context revalidation PASS on 1,922 scenarios per seed; changed request epoch or provider generation caused zero commit/retry/fallback.
+- C124: sequential duplicate receipt replay PASS on 1,442 scenarios per seed. The first delivery claimed exactly once; repeated deliveries added no commit/retry/fallback. APPLIED totaled one commit, NOT_APPLIED one retry plus one commit, and STILL_UNKNOWN zero side effects. C37/fixture preserved; tracked tree clean.
 
 Current reconciliation chain:
 
@@ -68,35 +69,48 @@ UNKNOWN_EFFECT containment
 -> receipt authority
 -> verdict scope
 -> commit-context revalidation
+-> receipt replay suppression
 -> reconciliation
 ```
 
-## Active experiment — C124
+## Active experiment — C125
 
-Experiment: `C124-v5e-receipt-replay-falsification`.
+Experiment: `C125-v5e-atomic-receipt-claim-falsification`.
 
-Question: can sequential duplicate delivery of the same valid receipt be suppressed so that a local state transition occurs at most once?
+Question: can concurrent duplicate deliveries of the same valid receipt be atomically claimed so that exactly one worker wins and only that winner may drive the downstream reconciliation transition?
 
-Production primitive: `fold_lm.v05.receipt_replay.claim_receipt_once`.
+Production primitive: `fold_lm.v05.receipt_atomic_claim.AtomicReceiptClaimRegistry`.
 
-Fresh seeds: `20261441,20261442,20261443`.
+Fresh seeds: `20261451,20261452,20261453`.
+Worker counts: `2,4,8`.
 
 Coverage per seed:
 
 ```text
-480 first-delivery controls
-960 repeated-delivery cases
+1,440 concurrent duplicate-claim cases
 2 confirmed-none controls
 1,442 scenarios total
 ```
 
-The identical receipt is delivered 1, 2, or 3 times. The first delivery may claim it exactly once. Later duplicates must add no state transition. APPLIED must total one commit and zero retries; NOT_APPLIED must total one retry and one commit; STILL_UNKNOWN must total zero commit/retry/fallback. C123 remains a required control gate. All deciding rates are fixed at `1.0`.
+Required semantics:
 
-C124 tests sequential duplicate delivery only. Concurrent atomic claims and crash durability remain separate questions. Gate E remains NOT PASSED.
+```text
+naive non-atomic negative control -> race detected
+atomic registry                  -> exactly one winner
+post-race duplicate claim        -> rejected
+registry snapshot                -> exactly one receipt id
+APPLIED                           -> total one commit / zero retry
+NOT_APPLIED                       -> total one retry / one commit
+STILL_UNKNOWN                     -> total zero commit/retry/fallback
+```
+
+C124 remains a required control gate and hidden counterfactual traces must remain invariant. All deciding rates are fixed at `1.0`.
+
+C125 tests in-process Python-thread atomicity only. Cross-process/distributed storage atomicity and crash durability remain separate questions. Gate E remains NOT PASSED.
 
 ## Non-claims / separate tracks
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV-replacement remains separate.
-- Gate C/D and C97-C124 evidence is synthetic/scoped unless explicitly measured otherwise.
+- Gate C/D and C97-C125 evidence is synthetic/scoped unless explicitly measured otherwise.
 - Do not claim broad language quality, general epistemic self-knowledge, real-world tool selection, or general superiority over Transformer/LLM systems.
