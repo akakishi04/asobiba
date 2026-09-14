@@ -2,8 +2,8 @@
 
 The C102 scientific gate should remain a valid completed experiment even if a
 fresh-seed router is catastrophically wrong and never enters an expected outcome
-branch.  The base benchmark computes conditional rates whose denominator can be
-zero only under such a scientific failure.  This wrapper converts that case into
+branch. The base benchmark computes conditional rates whose denominator can be
+zero only under such a scientific failure. This wrapper converts that case into
 an explicit gate-false record instead of treating it as an invalid execution.
 """
 from __future__ import annotations
@@ -12,6 +12,8 @@ import fold_lm.v05_benchmarks.gate_e_learned_acquisition_outcome_closed_loop as 
 
 EXPERIMENT_ID = base.EXPERIMENT_ID
 SEEDS = base.SEEDS
+_ORIGINAL_EVALUATE = base._evaluate_closed_loop
+_ORIGINAL_RUN = base.run
 
 
 def _execution_safe_evaluate(router, device):
@@ -42,14 +44,11 @@ def _execution_safe_evaluate(router, device):
         }
 
 
-_ORIGINAL_EVALUATE = base._evaluate_closed_loop
-
-
 def run(*args, **kwargs):
     previous = base._evaluate_closed_loop
     base._evaluate_closed_loop = _execution_safe_evaluate
     try:
-        return base.run(*args, **kwargs)
+        return _ORIGINAL_RUN(*args, **kwargs)
     finally:
         base._evaluate_closed_loop = previous
 
