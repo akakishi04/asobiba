@@ -37,7 +37,7 @@ def rows_for(router, device):
                     rid = f"c127:{''.join(map(str, actual))}:{outcome}:{restart_count}"
                     registry = ReceiptRecoveryRegistry()
                     first_claim = registry.claim(rid)
-                    logical_effect_count = 1 if outcome == APPLIED else 0
+                    logical_effect_count = 1 if outcome == APPLIED else (0 if outcome == NOT_APPLIED else None)
                     registry = _restore(registry)
                     duplicate_rejected = not registry.claim(rid)
                     for _ in range(restart_count - 1):
@@ -58,8 +58,6 @@ def rows_for(router, device):
                         logical_effect_count += 1
                         registry.complete(rid)
                         complete_count = 1
-                    elif plan.hold_pending:
-                        pass
 
                     registry = _restore(registry)
                     snapshot = registry.snapshot()
@@ -73,7 +71,7 @@ def rows_for(router, device):
                         passed = first_claim and ok and replay_count == 1 and same_key and complete_count == 1 and logical_effect_count == 1 and not pending_after and rid in snapshot.completed_receipt_ids and duplicate_rejected
                     else:
                         final = "PENDING_UNCERTAIN"
-                        passed = first_claim and ok and replay_count == 0 and complete_count == 0 and pending_after and rid not in snapshot.completed_receipt_ids and duplicate_rejected
+                        passed = first_claim and ok and replay_count == 0 and complete_count == 0 and logical_effect_count is None and pending_after and rid not in snapshot.completed_receipt_ids and duplicate_rejected
 
                     rows.append({"visible":list(visible),"actual":list(actual),"hidden":hidden,"transition_outcome":outcome,"restarts":restart_count,"trace":trace,"replay_count":replay_count,"complete_count":complete_count,"logical_effect_count":logical_effect_count,"pending_after":pending_after,"duplicate_rejected":duplicate_rejected,"same_key":same_key,"final":final,"passed":bool(passed)})
     return rows
