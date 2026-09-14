@@ -22,10 +22,11 @@ def run_task(task_path: Path) -> dict:
     ready = Path(task["ready_path"])
     go = Path(task["go_path"])
     result_path = Path(task["result_path"])
+
+    store = SqliteRecoveryFencingStore(Path(task["db_path"]))
     ready.write_text(str(os.getpid()), encoding="utf-8")
     _wait_for(go)
 
-    store = SqliteRecoveryFencingStore(Path(task["db_path"]))
     mode = task["mode"]
     if mode == "acquire":
         value = store.acquire(
