@@ -9,7 +9,7 @@
 - Protected C37 SHA256: `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`.
 - Protected fixture SHA256: `A52F8209703149407580F7E2965B61B78653030EE992AF6D759865736741CA9E`.
 - One scientific question per C number. Invalid executions retry the same C number.
-- Long benchmarks must expose seed/phase/case progress and remaining work.
+- Long benchmarks expose seed/phase/case progress and remaining work.
 
 ## Gate status
 
@@ -26,7 +26,7 @@ Primary product priority: operational VRAM headroom, then peak/resident VRAM, la
 ```text
 learned Control Lane
 -> runtime-authoritative availability / permission
--> learned or runtime-formed acquisition request
+-> learned acquisition request
 -> real acquisition component
 -> provenance / outcome validation
 -> evidence commit only on validated evidence
@@ -34,49 +34,45 @@ learned Control Lane
 -> answer / further acquisition / unresolved
 ```
 
-Runtime fault-tolerance hardening through C132 additionally covers receipt binding/authority/scope, commit-context revalidation, replay suppression, atomic claim, crash recovery, concurrent recovery ownership, lease fencing/renewal, SQLite storage fencing, and independent-OS-process fencing.
+Runtime fault-tolerance hardening through C132 covers receipt binding/authority/scope, commit-context revalidation, replay suppression, atomic claim, crash recovery, concurrent recovery ownership, lease fencing/renewal, SQLite storage fencing, and independent-OS-process fencing.
 
-## Accepted through C136
+C133-C135 moved RETRIEVE onto a real persisted corpus and `StructuralIndex`, established safe zero-hit semantics, and added exact recovery after bounded-LSH false negatives. C136 learned a fixed eight-address query head. C137 replaced the fixed address classes with shared content addressing and dynamic candidate-set growth.
 
-C97-C123 established the synthetic information-sufficiency and six-action routing baseline plus runtime authority. C124-C132 hardened replay/crash/ownership/fencing/storage/process boundaries. C133 established the first real persisted-corpus retrieval vertical path. C134 established exact-search miss semantics. C135 established bounded-search false-negative recovery through exact escalation.
+## Accepted through C137
 
-C136 `C136-v5e-learned-retrieval-query-formation` is ACCEPTED PASS: focused regression 84/84; fresh seeds `20261561..63`; eight held-out paraphrases per seed; all deciding rates `1.0`. The learned fixed-size query-address head mapped held-out query text to the correct one of eight addresses, then real persisted retrieval, provenance validation, exactly-one evidence commit and post-commit `ANSWER` all succeeded. C37 and fixture were preserved and the tracked tree remained clean.
+C137 `C137-v5e-content-addressed-corpus-growth` is ACCEPTED PASS: focused regression 87/87; fresh seeds `20261571..73`; training candidate count 8; evaluation candidate count 12; four entities had zero query-head training examples. All deciding rates were `1.0`, including known/unseen candidate selection, unseen/overall retrieval-key accuracy, provenance, exactly-one commit, post-commit `ANSWER`, final evidence accuracy, dynamic candidate growth, and accepted C136 prerequisite. Protected C37 and fixture were preserved and the tracked tree remained clean.
 
-C136 remains scoped: validation retained each address-specific codeword, the head has eight fixed output classes, and corpus growth / unseen entities were not established.
+Scientific scope: C137 established dynamic content-addressed candidate selection, but every unseen validation query shared its unseen entity token with the matching record descriptor. It therefore did not establish semantic alias or compositional generalization.
 
-## Active experiment — C137
+Production content head: `fold_lm.v05.retrieval_content.SharedRetrievalContentHead`.
+Production retrieval adapter: `fold_lm.v05.retrieval_adapter.PersistedStructuralRetrievalAdapter`.
 
-Experiment: `C137-v5e-content-addressed-corpus-growth`.
+## Active experiment — C138
 
-Question: can retrieval query formation move from a fixed eight-class address head to shared content addressing, so a head trained on eight entities can select correctly after the catalog grows to twelve records, including four entity labels never seen during head training?
+Experiment: `C138-v5e-compositional-alias-generalization`.
 
-Production component: `fold_lm.v05.retrieval_content.SharedRetrievalContentHead`.
+Question: can the accepted C137 shared content head recombine learned query/descriptor attribute correspondences into held-out combinations when each validation query and matching record descriptor have zero lexical-token overlap?
+
+C138 changes no production runtime code. It reuses the C137 content head and 12-record persisted corpus.
+
+Training uses eight known three-attribute combinations. Query-side aliases and descriptor-side canonical terms are lexically disjoint. Four held-out evaluation records are new combinations of attribute values seen during training; every alias token used by those four queries appears somewhere in training, so only the combination is OOD.
 
 ```text
-query text
--> hashed text features
--> shared residual content encoder
--> score current record descriptors
--> select candidate index from current catalog
--> dynamic one-hot retrieval structure
--> PersistedStructuralRetrievalAdapter exact search
--> provenance validation
--> evidence commit
--> Control Lane reobserve
--> ANSWER
+8 TRAIN_COMBINATION controls
+4 UNSEEN_COMBINATION recombinations
+12 live candidates
+fresh seeds -> 20261581,20261582,20261583
 ```
 
-Training catalog: `q0..q7` (8 entities, 3 query paraphrases each). Evaluation catalog: `q0..q11` (12 entities). New `q8..q11` entities have zero training paraphrases. Fresh seeds: `20261571,20261572,20261573`.
+Required at `1.0`: known-combination accuracy, unseen-combination accuracy, unseen/overall retrieval-key accuracy, provenance, exactly-one evidence commit, post-commit `ANSWER`, final evidence accuracy, zero lexical overlap, unseen-alias training coverage, negative-control nontriviality, dynamic candidate growth, and accepted C137 prerequisite.
 
-Required rates at `1.0`: Control Lane `RETRIEVE`, known-entity address accuracy, unseen-entity address accuracy, unseen-entity retrieval-key accuracy, overall retrieval-key accuracy, provenance validation, exactly-one evidence commit, post-commit `ANSWER`, final evidence accuracy, dynamic candidate-growth contract, and accepted C136 prerequisite.
+The raw hashed-feature negative control must not solve all unseen combinations. A formally valid C138 FAIL is an accepted scientific negative result, not an execution failure; it would indicate that the current shared content head does not compositionally recombine learned alias correspondences under this controlled OOD split.
 
-Progress reports router train start/done, content-head train start/done, the 8->12 catalog-growth boundary, every evaluation case and `remaining=N`.
-
-Scope: unseen entity labels share the same lexical token between query and record descriptor. C137 does not establish unseen semantic aliases, open-domain retrieval or general semantic embedding quality. Exact evidence retrieval remains the post-selection validation path. Gate E remains NOT PASSED.
+Progress reports router/content-head training, all twelve validation cases, and `remaining=N`. Gate E remains NOT PASSED.
 
 ## Non-claims
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV replacement remains separate.
 - `fold/fold_memory.py` is a QuadraticMemory numerical reference kernel, not the V5-E persistent memory store.
-- Gate C/D and C97-C137 evidence remains scoped unless explicitly measured otherwise.
+- Gate C/D and C97-C138 evidence remains scoped unless explicitly measured otherwise.
