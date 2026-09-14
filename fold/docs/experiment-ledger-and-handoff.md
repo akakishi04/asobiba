@@ -75,13 +75,7 @@ Primary product objective remains operational VRAM headroom.
 
 ## 5. V5-E design rules
 
-Current action family is expanding from:
-
-```text
-ANSWER / ACQUIRE / STOP_UNRESOLVED
-```
-
-toward:
+Current action family:
 
 ```text
 ANSWER
@@ -96,23 +90,23 @@ Authority rule:
 
 ```text
 model/router -> proposes action
-runtime      -> owns availability, permission, acquisition outcome, validation, and authoritative evidence mutation
+runtime      -> owns availability, permission, acquisition outcome, validation, eligibility mutation, and authoritative evidence mutation
 ```
 
-Do not guess decision-critical missing facts. Do not commit failed/untrusted acquisition as evidence. Do not universally acquire or universally abstain.
+Do not guess decision-critical missing facts. Do not commit failed/untrusted acquisition as evidence. Do not universally acquire or universally abstain. Do not ask the user while a lower-burden equally capable self-service mechanism remains available under the current synthetic cost contract.
 
 ## 6. V5-E accepted evidence
 
-### C97-C99
+### C97-C99 — information sufficiency and successful acquisition
 
 - Oracle information-sufficiency boundary established.
 - Production Control Lane learned `ANSWER / ACQUIRE` on unseen base=3 with no hidden/target leakage.
 - Learned successful closed loop established: `ACQUIRE -> runtime commit -> reobserve -> ANSWER`.
 - Required cases acquired exactly once; answerable cases acquired zero times; final accuracy `1.0`.
 
-### C100-C102
+### C100-C102 — acquisition outcome handling
 
-Failure outcomes registered:
+Runtime outcome classes:
 
 ```text
 SUCCESS
@@ -130,7 +124,7 @@ failure -> no evidence commit -> STOP_UNRESOLVED
 
 C101 learned the three-action snapshot policy on unseen base=3 with action accuracy `1.0`, failure STOP rate `1.0`, and zero guessed answers.
 
-C102 then passed the actual learned end-to-end trajectory for all three fresh seeds:
+C102 passed the actual learned end-to-end trajectory across all fresh seeds:
 
 - required ACQUIRE recall `1.0`;
 - answerable ANSWER rate `1.0`;
@@ -141,20 +135,9 @@ C102 then passed the actual learned end-to-end trajectory for all three fresh se
 - repeat acquisition `0`;
 - budget violation `0`.
 
-### C103
+### C103 — mechanism-selection oracle
 
-Oracle acquisition-mechanism selection passed exhaustive 512 examples / 16 eligibility masks.
-
-Registered action family:
-
-```text
-ANSWER
-READ_MEMORY
-RETRIEVE
-OBSERVE
-ASK_USER
-STOP_UNRESOLVED
-```
+Exhaustive 512 examples / 16 eligibility masks passed.
 
 Synthetic equal-capability burden order:
 
@@ -162,68 +145,99 @@ Synthetic equal-capability burden order:
 READ_MEMORY < RETRIEVE < OBSERVE < ASK_USER
 ```
 
-Accepted C103 metrics were all perfect, including minimum-burden selection, no direct answer on critical missing evidence, STOP when no mechanism is eligible, ASK_USER avoidance when self-service is eligible, and hidden-counterfactual action invariance.
+Accepted C103 metrics were all `1.0` with zero violations, including minimum-burden selection, STOP when no mechanism is eligible, ASK_USER avoidance when self-service is eligible, and hidden-counterfactual action invariance.
 
-## 7. Active experiment — C104
+### C104 — learned six-action mechanism selector
+
+Production `ControlLaneActionRouter`, train bases `0,1,2`, unseen validation base `3`, fresh seeds `20261211..13`.
+
+Configuration:
+
+```text
+control width  = 4
+hidden width   = 8
+training steps = 640
+```
+
+Accepted across all three seeds:
+
+- action accuracy `1.0`;
+- minimum six-class recall `1.0`;
+- action flips `0`;
+- answerable ANSWER `1.0`;
+- no direct answer on critical missing evidence `1.0`;
+- minimum-burden eligible mechanism selection `1.0`;
+- no-eligible STOP_UNRESOLVED `1.0`;
+- ASK_USER avoided while self-service was eligible `1.0`;
+- ineligible mechanism predictions `0`;
+- hidden-counterfactual action invariance `1.0`;
+- hidden/target leakage false.
+
+C104 is snapshot mechanism selection only. It does not yet establish mechanism execution or fallback.
+
+## 7. Active experiment — C105
 
 Experiment:
 
-`C104-v5e-supervised-acquisition-mechanism-selector`
+`C105-v5e-learned-acquisition-mechanism-closed-loop`
 
 Question:
 
-> Can production `ControlLaneActionRouter` learn the C103 six-action mechanism policy from visible state plus explicit runtime eligibility bits and generalize to unseen base=3?
+> Can the learned six-action selector execute runtime-owned mechanism outcomes and fall back to the next least-burden eligible mechanism after failure, while committing evidence only on SUCCESS and stopping unresolved only after all eligible fallbacks are exhausted?
 
 Prospective configuration:
 
 ```text
-fresh seeds      = 20261211,20261212,20261213
-train bases      = 0,1,2
-validation base  = 3 only
-control width    = 4
-hidden width     = 8
-training steps   = 640
-action count     = 6
+fresh seeds        = 20261221,20261222,20261223
+train bases        = 0,1,2
+validation base    = 3 only
+acquisition budget = 4
+burden order       = READ_MEMORY < RETRIEVE < OBSERVE < ASK_USER
 ```
 
-Working control lane:
+Runtime contract:
 
 ```text
-base
-dependency
-evidence_present
-observed_hidden
+SUCCESS
+-> commit validated evidence
+-> reobserve
+-> ANSWER
+
+failure
+-> no evidence commit
+-> failed mechanism becomes ineligible
+-> reobserve updated eligibility
+-> choose next least-burden eligible mechanism
+
+no eligible mechanism remains
+-> STOP_UNRESOLVED
 ```
 
-Context control lane:
+C105 evaluates success at every eligible mechanism position after its failure prefix, plus all-fail exhaustion and answerable zero-acquisition controls.
+
+Every fresh seed must satisfy:
 
 ```text
-memory_eligible
-retrieval_eligible
-observation_eligible
-ask_user_eligible
+answerable ANSWER rate                         = 1.0
+answerable zero-acquisition rate               = 1.0
+required scenario pass rate                    = 1.0
+per-decision minimum-burden rate               = 1.0
+eventual-success ANSWER rate                   = 1.0
+eventual-success final accuracy                = 1.0
+all-fail STOP_UNRESOLVED rate                  = 1.0
+failed-attempt no-evidence-commit rate         = 1.0
+ineligible mechanism count                     = 0
+repeat failed mechanism count                  = 0
+budget violation count                         = 0
+ASK_USER before self-service exhaustion count  = 0
+hidden counterfactual action-trace invariance  = 1.0
 ```
 
-C104 uses class-balanced training. It does not search the minimum hidden width.
-
-Every fresh seed must achieve:
-
-```text
-action accuracy                                   = 1.0
-minimum recall across all six actions             = 1.0
-action flips                                      = 0
-answerable ANSWER rate                            = 1.0
-critical-missing no-direct-ANSWER rate            = 1.0
-minimum-burden eligible mechanism rate            = 1.0
-no-eligible STOP_UNRESOLVED rate                  = 1.0
-ASK_USER avoided when self-service eligible       = 1.0
-ineligible mechanism count                        = 0
-hidden-counterfactual action invariance           = 1.0
-```
+Strict rule: STOP_UNRESOLVED is a failure while any eligible fallback remains.
 
 ## 8. Separate tracks / non-claims
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV-replacement remains separate.
-- Gate C/D and C97-C104 evidence is synthetic and scoped.
+- Gate C/D and C97-C105 evidence is synthetic and scoped.
 - Do not claim broad language quality, general epistemic self-knowledge, real-world tool selection, universal control-width sufficiency, or general superiority over Transformer/LLM systems.
