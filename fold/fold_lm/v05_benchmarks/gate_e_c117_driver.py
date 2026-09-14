@@ -33,7 +33,12 @@ def main():
     if _cap("git","status","--porcelain","--untracked-files=no"): raise RuntimeError("Tracked working tree is not clean")
     if _sha(C37)!=EXPECTED_C37 or _sha(FIXTURE)!=EXPECTED_FIXTURE: raise RuntimeError("Protected artifact mismatch before C117")
     out=RUNS/f"c117-v5e-post-preflight-fallback-{time.time_ns()}"; prior=_latest()
-    print("=== import preflight ==="); print("C117 import OK:",bench.EXPERIMENT_ID,bench.SEEDS)
+    print("=== import preflight ===")
+    print("C117 import OK:",bench.EXPERIMENT_ID,bench.SEEDS)
+    smoke0=bench.helper._row(0); smoke1=bench.helper._row(1)
+    if (smoke0["target"],smoke1["target"]) != (1,0):
+        raise RuntimeError(f"C117 target smoke mismatch: {(smoke0['target'],smoke1['target'])}")
+    print("C117 target-construction smoke OK: hidden0->1 hidden1->0")
     print("=== focused regression ==="); _run(str(REPO/".venv-py31315"/"Scripts"/"python.exe"),"-m","unittest","tests_lm.test_v05_controller","-v")
     print(f"output_directory = {out}"); print(f"C37_result_sha256_before = {_sha(C37)}"); print(f"fixture_sha256_before = {_sha(FIXTURE)}")
     print("=== C117 benchmark ==="); report=bench.run(protected_result_path=C37,c116_summary_path=prior,output_dir=out)
