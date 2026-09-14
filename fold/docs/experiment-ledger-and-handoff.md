@@ -2,24 +2,21 @@
 
 > Current authoritative handoff. Detailed history remains in Gate decisions and `experiment-ledger-addendum-*` files.
 
-## 1. Environment
+## 1. Environment / protected artifacts
 
 - Repository: `akakishi04/asobiba`
-- FOLD path: `fold/`
 - Branch: `feat/sft-target-loss`
 - Local repo: `M:\asobiba\fold`
 - Python: `M:\asobiba\fold\.venv-py31315\Scripts\python.exe`
-- Python 3.13.15
-- PyTorch `2.10.0+cu130`
-- CUDA 13.0
+- Python 3.13.15 / PyTorch 2.10.0+cu130 / CUDA 13.0
 - GPU: RTX 4070 Ti SUPER
 
-Protected artifacts:
+Protected:
 
-- C37: `M:\asobiba\fold\runs\chatgpt-last-result.json`
-- SHA256: `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`
-- fixture: `M:\asobiba\fold\runs\fixtures\v05-c-composition-20260921.pt`
-- SHA256: `A52F8209703149407580F7E2965B61B78653030EE992AF6D759865736741CA9E`
+- `runs/chatgpt-last-result.json`
+- SHA256 `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`
+- `runs/fixtures/v05-c-composition-20260921.pt`
+- SHA256 `A52F8209703149407580F7E2965B61B78653030EE992AF6D759865736741CA9E`
 
 ## 2. Experiment protocol
 
@@ -29,31 +26,15 @@ Protected artifacts:
 4. Judge execution validity separately from scientific gate result.
 5. Invalid retries keep the same C number.
 6. Valid negative results may complete the C number.
-7. Predeclare deciding margins before collecting deciding data.
-8. Preserve C37 and the fixture.
-
-PC clipboard:
-
-```powershell
-$log = "M:\asobiba\fold\runs\chatgpt-last.log"
-Get-Content -LiteralPath $log -Raw -Encoding UTF8 -ErrorAction Stop | Set-Clipboard
-```
-
-Smartphone / Termius OSC52:
-
-```powershell
-$log = "M:\asobiba\fold\runs\chatgpt-last.log"
-$text = Get-Content -LiteralPath $log -Raw -Encoding UTF8 -ErrorAction Stop
-$b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text))
-[Console]::Write("$([char]27)]52;c;$b64$([char]7)")
-```
+7. Predeclare deciding thresholds before collecting deciding data.
+8. Preserve both protected artifacts and require tracked tree clean.
 
 ## 3. Gate status
 
 - Gate A: PASSED.
 - Gate B: PASSED.
-- Gate C: PASSED, scoped. Formal decision: `fold/docs/gate-c-decision-2026-09-14.md`.
-- Gate D: PASSED, scoped. Formal decision: `fold/docs/gate-d-decision-2026-09-14.md`.
+- Gate C: PASSED, scoped. See `gate-c-decision-2026-09-14.md`.
+- Gate D: PASSED, scoped. See `gate-d-decision-2026-09-14.md`.
 - Gate E: NOT PASSED. Active stage.
 
 Gate C lead:
@@ -80,98 +61,58 @@ Supported principle:
 
 > Main working-state width and routing-control width are independent capacity axes.
 
-## 4. Product priority
+Primary product objective remains operational VRAM headroom.
 
-Primary objective: preserve operational VRAM headroom for other applications.
+## 4. Binding Gate C/D evidence
 
-Priority:
-
-1. incremental device VRAM / remaining headroom;
-2. peak allocated/reserved VRAM;
-3. resident model VRAM;
-4. latency/throughput practicality;
-5. serialized artifact size.
-
-## 5. Binding Gate C/D evidence
-
-- Fine-grained codebook runtime was rejected as lead due decode/gather overhead.
-- Shared Basis preserved registered task quality with materially lower VRAM.
+- Fine-grained codebook execution was rejected as lead runtime because decode/gather overhead scaled badly.
+- Shared Basis preserved registered task quality and reduced operational VRAM.
 - C83 width5120 gained roughly `0.20-0.33 GiB` free VRAM versus Dense in tested profiles.
-- C88 showed 50% lower logical compute can still be slower at tiny width.
+- C88 showed lower logical compute is not automatically lower latency.
 - C91 showed compact routing can fail when controller representation remains coupled to full core width.
 - C92-C95 established the fixed Control Lane alternative.
-- C96 preserved routing/output quality while reducing logical compute by 50% and reaching maximum learned/fixed ratios `0.649631` device and `0.653782` wall in the registered large-width regime.
+- C96 preserved routing/output quality with 50% logical compute reduction; maximum learned/fixed ratios were `0.649631` device and `0.653782` wall in the registered large-width regime.
 
-Do not treat logical savings as runtime savings unless measured with correct routing.
+## 5. V5-E design rules
 
-## 6. V5-E design rules
+Current action family is expanding from:
 
-Current abstract action family:
+```text
+ANSWER / ACQUIRE / STOP_UNRESOLVED
+```
+
+toward:
 
 ```text
 ANSWER
-ACQUIRE
-STOP_UNRESOLVED
-```
-
-Future expansion may include:
-
-```text
-PARTIAL_ANSWER
 READ_MEMORY
 RETRIEVE
 OBSERVE
 ASK_USER
+STOP_UNRESOLVED
 ```
 
-Authority rules:
+Authority rule:
 
 ```text
-model/router -> proposes actions
-runtime      -> owns permissions, acquisition outcome, validation, and authoritative evidence mutation
+model/router -> proposes action
+runtime      -> owns availability, permission, acquisition outcome, validation, and authoritative evidence mutation
 ```
 
-Never commit failed/untrusted acquisition as evidence. Do not guess missing decision-critical facts. Do not universally acquire or universally abstain.
+Do not guess decision-critical missing facts. Do not commit failed/untrusted acquisition as evidence. Do not universally acquire or universally abstain.
 
-## 7. V5-E accepted evidence
+## 6. V5-E accepted evidence
 
-### C97 — oracle information sufficiency
+### C97-C99
 
-- required acquisition recall `1.0`;
-- unnecessary acquisition rate `0.0`;
-- direct-answerable and final accuracy `1.0`.
+- Oracle information-sufficiency boundary established.
+- Production Control Lane learned `ANSWER / ACQUIRE` on unseen base=3 with no hidden/target leakage.
+- Learned successful closed loop established: `ACQUIRE -> runtime commit -> reobserve -> ANSWER`.
+- Required cases acquired exactly once; answerable cases acquired zero times; final accuracy `1.0`.
 
-### C98 — learned ANSWER/ACQUIRE policy
+### C100-C102
 
-Production Control Lane, train bases `0,1,2`, unseen validation base `3`, three fresh seeds:
-
-- action accuracy `1.0`;
-- required ACQUIRE recall `1.0`;
-- unnecessary ACQUIRE `0.0`;
-- action flips `0`;
-- hidden/target leakage false.
-
-### C99 — learned successful acquisition loop
-
-```text
-ACQUIRE
--> runtime commits evidence
--> reobserve
--> ANSWER
-```
-
-Across all fresh seeds:
-
-- required exactly-one acquisition `1.0`;
-- answerable zero acquisition `1.0`;
-- post-acquisition ANSWER `1.0`;
-- repeat acquisition `0`;
-- budget violations `0`;
-- final accuracy `1.0`.
-
-### C100 — acquisition failure oracle
-
-Runtime outcomes:
+Failure outcomes registered:
 
 ```text
 SUCCESS
@@ -183,47 +124,69 @@ INVALID
 Accepted semantics:
 
 ```text
-SUCCESS
--> commit validated evidence
--> ANSWER
-
-UNAVAILABLE / DENIED / INVALID
--> no evidence commit
--> STOP_UNRESOLVED
+SUCCESS -> validated evidence commit -> ANSWER
+failure -> no evidence commit -> STOP_UNRESOLVED
 ```
 
-Accepted result:
+C101 learned the three-action snapshot policy on unseen base=3 with action accuracy `1.0`, failure STOP rate `1.0`, and zero guessed answers.
 
-- answerable zero-acquisition rate `1.0`;
-- SUCCESS answer/final-accuracy/evidence-commit rates `1.0`;
-- failure STOP_UNRESOLVED/no-commit/no-guess rates `1.0`;
+C102 then passed the actual learned end-to-end trajectory for all three fresh seeds:
+
+- required ACQUIRE recall `1.0`;
+- answerable ANSWER rate `1.0`;
+- unnecessary acquisition `0.0`;
+- SUCCESS commit / ANSWER / final accuracy `1.0`;
+- failure STOP / no-commit / no-guess `1.0`;
+- premature STOP `0`;
 - repeat acquisition `0`;
-- budget violations `0`.
+- budget violation `0`.
 
-C100 is oracle evidence, not learned failure handling.
+### C103
 
-## 8. Active experiment — C101
+Oracle acquisition-mechanism selection passed exhaustive 512 examples / 16 eligibility masks.
+
+Registered action family:
+
+```text
+ANSWER
+READ_MEMORY
+RETRIEVE
+OBSERVE
+ASK_USER
+STOP_UNRESOLVED
+```
+
+Synthetic equal-capability burden order:
+
+```text
+READ_MEMORY < RETRIEVE < OBSERVE < ASK_USER
+```
+
+Accepted C103 metrics were all perfect, including minimum-burden selection, no direct answer on critical missing evidence, STOP when no mechanism is eligible, ASK_USER avoidance when self-service is eligible, and hidden-counterfactual action invariance.
+
+## 7. Active experiment — C104
 
 Experiment:
 
-`C101-v5e-supervised-acquisition-outcome-policy`
+`C104-v5e-supervised-acquisition-mechanism-selector`
 
 Question:
 
-> Can production `ControlLaneActionRouter` learn `ANSWER / ACQUIRE / STOP_UNRESOLVED` from visible evidence plus a runtime-owned outcome token and generalize to unseen base=3 without hidden/target leakage?
+> Can production `ControlLaneActionRouter` learn the C103 six-action mechanism policy from visible state plus explicit runtime eligibility bits and generalize to unseen base=3?
 
-Fixed prospective conditions:
+Prospective configuration:
 
 ```text
-fresh seeds      = 20261191,20261192,20261193
+fresh seeds      = 20261211,20261212,20261213
 train bases      = 0,1,2
 validation base  = 3 only
 control width    = 4
-hidden width     = 4
-training steps   = 480
+hidden width     = 8
+training steps   = 640
+action count     = 6
 ```
 
-Control Lane:
+Working control lane:
 
 ```text
 base
@@ -232,35 +195,35 @@ evidence_present
 observed_hidden
 ```
 
-Outcome token:
+Context control lane:
 
 ```text
-NOT_ATTEMPTED
-SUCCESS
-UNAVAILABLE
-DENIED
-INVALID
+memory_eligible
+retrieval_eligible
+observation_eligible
+ask_user_eligible
 ```
 
-When evidence is absent, hidden=0/1 counterfactuals must be bit-identical to the router. Target and oracle action are never router inputs.
+C104 uses class-balanced training. It does not search the minimum hidden width.
 
-Every fresh seed must satisfy:
+Every fresh seed must achieve:
 
 ```text
-action accuracy                    = 1.0
-initial required ACQUIRE recall     = 1.0
-initial unnecessary ACQUIRE rate    = 0.0
-SUCCESS post-acquisition ANSWER     = 1.0
-failure STOP_UNRESOLVED rate        = 1.0
-action flips                       = 0
-failure guessed-answer count       = 0
+action accuracy                                   = 1.0
+minimum recall across all six actions             = 1.0
+action flips                                      = 0
+answerable ANSWER rate                            = 1.0
+critical-missing no-direct-ANSWER rate            = 1.0
+minimum-burden eligible mechanism rate            = 1.0
+no-eligible STOP_UNRESOLVED rate                  = 1.0
+ASK_USER avoided when self-service eligible       = 1.0
+ineligible mechanism count                        = 0
+hidden-counterfactual action invariance           = 1.0
 ```
 
-## 9. Separate hypothesis tracks
+## 8. Separate tracks / non-claims
 
-- Shared-Basis auto-partition remains separate. Check representation/optimization before capacity/split decisions.
-- Context/KV-replacement remains separate. Do not mix it into active V5-E unless explicitly pivoting.
-
-## 10. Scope / non-claims
-
-Gate C/D and C97-C101 evidence is synthetic and scoped. Do not claim broad language quality, general epistemic self-knowledge, real-world tool selection, universal control-width sufficiency, or general superiority over Transformer/LLM systems.
+- Shared-Basis auto-partition remains separate.
+- Context/KV-replacement remains separate.
+- Gate C/D and C97-C104 evidence is synthetic and scoped.
+- Do not claim broad language quality, general epistemic self-knowledge, real-world tool selection, universal control-width sufficiency, or general superiority over Transformer/LLM systems.
