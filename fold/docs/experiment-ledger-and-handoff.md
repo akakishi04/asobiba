@@ -11,7 +11,7 @@
 - Python 3.13.15 / PyTorch 2.10.0+cu130 / CUDA 13.0
 - GPU: RTX 4070 Ti SUPER
 
-Protected:
+Protected artifacts:
 
 - `runs/chatgpt-last-result.json`
 - SHA256 `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`
@@ -23,7 +23,7 @@ Protected:
 1. One scientific question per C number.
 2. Full output overwrites `runs/chatgpt-last.log`.
 3. User pastes the complete log.
-4. Judge execution validity separately from scientific gate result.
+4. Judge execution validity separately from scientific result.
 5. Invalid retries keep the same C number.
 6. Valid negative results may complete the C number.
 7. Predeclare deciding thresholds before collecting deciding data.
@@ -93,14 +93,14 @@ model/router -> proposes action
 runtime      -> owns availability, permission, acquisition outcome, validation, eligibility mutation, and authoritative evidence mutation
 ```
 
-Do not guess decision-critical missing facts. Do not commit failed/untrusted acquisition as evidence. Do not universally acquire or universally abstain. Do not ask the user while a lower-burden equally capable self-service mechanism remains available under the current synthetic cost contract.
+Do not guess decision-critical missing facts. Do not commit failed/untrusted acquisition as evidence. Do not universally acquire or abstain. Under the current synthetic equal-capability contract, do not ask the user while a lower-burden self-service mechanism remains available.
 
-## 6. V5-E accepted evidence
+## 6. V5-E accepted evidence — C97 to C104
 
 ### C97-C99 — information sufficiency and successful acquisition
 
-- Oracle information-sufficiency boundary established.
-- Production Control Lane learned `ANSWER / ACQUIRE` on unseen base=3 with no hidden/target leakage.
+- Oracle `ANSWER / ACQUIRE` boundary established.
+- Production Control Lane learned it on unseen base=3 with no hidden/target leakage.
 - Learned successful closed loop established: `ACQUIRE -> runtime commit -> reobserve -> ANSWER`.
 - Required cases acquired exactly once; answerable cases acquired zero times; final accuracy `1.0`.
 
@@ -122,22 +122,20 @@ SUCCESS -> validated evidence commit -> ANSWER
 failure -> no evidence commit -> STOP_UNRESOLVED
 ```
 
-C101 learned the three-action snapshot policy on unseen base=3 with action accuracy `1.0`, failure STOP rate `1.0`, and zero guessed answers.
+C101 learned the three-action snapshot policy. C102 passed the actual learned trajectory across three fresh seeds with required ACQUIRE, SUCCESS commit/ANSWER/accuracy, failure STOP/no-commit/no-guess all `1.0`, and zero premature STOP, repeat acquisition, or budget violation.
 
-C102 passed the actual learned end-to-end trajectory across all fresh seeds:
+### C103-C104 — acquisition mechanism selection
 
-- required ACQUIRE recall `1.0`;
-- answerable ANSWER rate `1.0`;
-- unnecessary acquisition `0.0`;
-- SUCCESS commit / ANSWER / final accuracy `1.0`;
-- failure STOP / no-commit / no-guess `1.0`;
-- premature STOP `0`;
-- repeat acquisition `0`;
-- budget violation `0`.
+Registered action family:
 
-### C103 — mechanism-selection oracle
-
-Exhaustive 512 examples / 16 eligibility masks passed.
+```text
+ANSWER
+READ_MEMORY
+RETRIEVE
+OBSERVE
+ASK_USER
+STOP_UNRESOLVED
+```
 
 Synthetic equal-capability burden order:
 
@@ -145,99 +143,122 @@ Synthetic equal-capability burden order:
 READ_MEMORY < RETRIEVE < OBSERVE < ASK_USER
 ```
 
-Accepted C103 metrics were all `1.0` with zero violations, including minimum-burden selection, STOP when no mechanism is eligible, ASK_USER avoidance when self-service is eligible, and hidden-counterfactual action invariance.
+C103 exhaustive oracle: 512 examples / all 16 masks passed.
 
-### C104 — learned six-action mechanism selector
-
-Production `ControlLaneActionRouter`, train bases `0,1,2`, unseen validation base `3`, fresh seeds `20261211..13`.
-
-Configuration:
-
-```text
-control width  = 4
-hidden width   = 8
-training steps = 640
-```
-
-Accepted across all three seeds:
+C104 production Control Lane learned the six-action selector on unseen base=3 across fresh seeds `20261211..13`:
 
 - action accuracy `1.0`;
 - minimum six-class recall `1.0`;
 - action flips `0`;
-- answerable ANSWER `1.0`;
-- no direct answer on critical missing evidence `1.0`;
-- minimum-burden eligible mechanism selection `1.0`;
-- no-eligible STOP_UNRESOLVED `1.0`;
-- ASK_USER avoided while self-service was eligible `1.0`;
+- minimum-burden selection `1.0`;
+- no-eligible STOP `1.0`;
+- ASK_USER avoided while self-service eligible `1.0`;
 - ineligible mechanism predictions `0`;
-- hidden-counterfactual action invariance `1.0`;
-- hidden/target leakage false.
+- hidden-counterfactual invariance `1.0`.
 
-C104 is snapshot mechanism selection only. It does not yet establish mechanism execution or fallback.
+## 7. C105 — accepted learned mechanism fallback closed loop
 
-## 7. Active experiment — C105
+Experiment: `C105-v5e-learned-acquisition-mechanism-closed-loop`
 
-Experiment:
-
-`C105-v5e-learned-acquisition-mechanism-closed-loop`
-
-Question:
-
-> Can the learned six-action selector execute runtime-owned mechanism outcomes and fall back to the next least-burden eligible mechanism after failure, while committing evidence only on SUCCESS and stopping unresolved only after all eligible fallbacks are exhausted?
-
-Prospective configuration:
-
-```text
-fresh seeds        = 20261221,20261222,20261223
-train bases        = 0,1,2
-validation base    = 3 only
-acquisition budget = 4
-burden order       = READ_MEMORY < RETRIEVE < OBSERVE < ASK_USER
-```
+Fresh seeds `20261221..23`, unseen base=3, acquisition budget 4.
 
 Runtime contract:
 
 ```text
+failure
+-> no evidence commit
+-> failed mechanism becomes ineligible
+-> reobserve
+-> choose next least-burden eligible mechanism
+
 SUCCESS
 -> commit validated evidence
 -> reobserve
 -> ANSWER
 
-failure
--> no evidence commit
--> failed mechanism becomes ineligible
--> reobserve updated eligibility
--> choose next least-burden eligible mechanism
-
-no eligible mechanism remains
+no eligible fallback remains
 -> STOP_UNRESOLVED
 ```
 
-C105 evaluates success at every eligible mechanism position after its failure prefix, plus all-fail exhaustion and answerable zero-acquisition controls.
+Accepted across all three seeds:
+
+- answerable ANSWER `1.0`;
+- answerable zero acquisition `1.0`;
+- required scenario pass `1.0`;
+- per-decision minimum burden `1.0`;
+- eventual-success ANSWER / final accuracy `1.0`;
+- all-fail STOP `1.0`;
+- failed-attempt no-commit `1.0`;
+- ineligible mechanism `0`;
+- repeat failed mechanism `0`;
+- budget violations `0`;
+- premature ASK_USER `0`;
+- hidden action-trace invariance `1.0`.
+
+C105 is still synthetic and uses all 16 masks during training.
+
+## 8. Active experiment — C106 falsification
+
+Experiment: `C106-v5e-unseen-eligibility-mask-generalization`
+
+Purpose: directly test whether C104/C105 merely memorized the finite 16-mask lookup table.
+
+Prospective mask split:
+
+```text
+training masks = Hamming weight <= 2  (11 masks)
+OOD masks      = Hamming weight >= 3  (5 masks)
+```
+
+The sets are disjoint and together cover all 16 masks.
+
+Other conditions:
+
+```text
+fresh seeds      = 20261231,20261232,20261233
+train bases      = 0,1,2
+validation base  = 3 only
+control width    = 4
+hidden width     = 8
+training steps   = 800
+```
+
+Two validation sets:
+
+1. Anchor validation on unseen base=3 using the training-mask family; must preserve all six classes.
+2. OOD composition validation on unseen base=3 using only never-trained masks.
 
 Every fresh seed must satisfy:
 
 ```text
-answerable ANSWER rate                         = 1.0
-answerable zero-acquisition rate               = 1.0
-required scenario pass rate                    = 1.0
-per-decision minimum-burden rate               = 1.0
-eventual-success ANSWER rate                   = 1.0
-eventual-success final accuracy                = 1.0
-all-fail STOP_UNRESOLVED rate                  = 1.0
-failed-attempt no-evidence-commit rate         = 1.0
-ineligible mechanism count                     = 0
-repeat failed mechanism count                  = 0
-budget violation count                         = 0
-ASK_USER before self-service exhaustion count  = 0
-hidden counterfactual action-trace invariance  = 1.0
+anchor action accuracy              = 1.0
+anchor minimum six-class recall     = 1.0
+anchor action flips                 = 0
+OOD action accuracy                 = 1.0
+OOD action flips                    = 0
+OOD answerable ANSWER rate          = 1.0
+OOD critical no-direct-ANSWER rate  = 1.0
+OOD minimum-burden rate             = 1.0
+OOD ineligible mechanism count      = 0
+OOD hidden-counterfactual invariance= 1.0
 ```
 
-Strict rule: STOP_UNRESOLVED is a failure while any eligible fallback remains.
+C106 is a falsification/generalization experiment. A valid failure is useful evidence and still completes C106.
 
-## 8. Separate tracks / non-claims
+## 9. Next falsification axes if C106 completes
+
+Do not immediately resume feature expansion. Candidate later tests, one per C number:
+
+- independently implemented evaluation generator;
+- feature re-encoding / permutation;
+- irrelevant distractor features;
+- noisy or stale capability state;
+- changed train/validation construction;
+- eventually real memory/retrieval/observation/user interaction.
+
+## 10. Separate tracks / non-claims
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV-replacement remains separate.
-- Gate C/D and C97-C105 evidence is synthetic and scoped.
+- Gate C/D and C97-C106 evidence is synthetic and scoped.
 - Do not claim broad language quality, general epistemic self-knowledge, real-world tool selection, universal control-width sufficiency, or general superiority over Transformer/LLM systems.
