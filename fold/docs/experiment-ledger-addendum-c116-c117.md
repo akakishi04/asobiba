@@ -58,4 +58,10 @@ budget violation count               = 0
 
 The inherited C105 scenario gate additionally requires minimum-burden fallback, no evidence commit on failed attempts, exactly one commit on success, correct final answer on eventual success, and STOP_UNRESOLVED after all mechanisms fail.
 
+### Invalid execution attempt 1
+
+The first C117 execution was invalid before any deciding trajectory result was produced. `gate_e_c117_eval_helper._row` called nonexistent `c105._target`, raising `AttributeError` at benchmark start. This is an implementation/reference error, not a scientific negative result. C117 therefore remains ACTIVE and retains the same seeds, thresholds, and experiment number.
+
+Fix: construct the registered target through C105's imported `_direct_answer` contract after evidence is present, and smoke-test both hidden targets during import preflight before training/evaluation starts.
+
 C117 remains synthetic and does not invoke real tools or model partial/non-idempotent external effects. A valid negative result completes C117 without relaxing thresholds.
