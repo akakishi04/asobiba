@@ -41,7 +41,7 @@ raw runtime encoding
 
 Action family: `ANSWER / READ_MEMORY / RETRIEVE / OBSERVE / ASK_USER / STOP_UNRESOLVED`.
 
-## Accepted evidence through C125
+## Accepted evidence through C126
 
 - C97-C105: information sufficiency, acquisition outcomes, six-action learned selection, and runtime-owned fallback established in synthetic scope.
 - C106: unseen eligibility-mask composition PASS.
@@ -60,9 +60,10 @@ Action family: `ANSWER / READ_MEMORY / RETRIEVE / OBSERVE / ASK_USER / STOP_UNRE
 - C122: verification verdict scope PASS on 1,922 scenarios per seed; verdict must match receipt id, source id and scope epoch.
 - C123: commit-context revalidation PASS on 1,922 scenarios per seed; changed request epoch or provider generation caused zero commit/retry/fallback.
 - C124: sequential duplicate receipt replay PASS on 1,442 scenarios per seed.
-- C125: concurrent atomic receipt claim PASS on fresh seeds `20261451..53`, 1,442 scenarios per seed, 1,440 concurrent cases across 2/4/8 workers. Atomic claims produced exactly one winner; post-race duplicates were rejected; the naive non-atomic negative control exposed multiple winners. C37/fixture preserved; tracked tree clean.
+- C125: concurrent atomic receipt claim PASS on 1,442 scenarios per seed across 2/4/8 workers; exactly one winner and naive-race detection both held.
+- C126: restart recovery PASS on fresh seeds `20261461..63`, 1,442 scenarios per seed across 1/2/3 restarts. Pending state survived serialized snapshot reconstruction, restart duplicates were rejected, recovery resumed exactly once, completion persisted, and downstream outcome controls remained exact. C37/fixture preserved; tracked tree clean.
 
-Current reconciliation chain:
+Current reconciliation / recovery chain:
 
 ```text
 UNKNOWN_EFFECT containment
@@ -72,58 +73,55 @@ UNKNOWN_EFFECT containment
 -> commit-context revalidation
 -> sequential replay suppression
 -> concurrent atomic claim
--> reconciliation
+-> serialized pending/completed recovery state
+-> reconciliation / completion
 ```
 
-## Active experiment — C126
+## Active experiment — C127
 
-Experiment: `C126-v5e-restart-recovery-falsification`.
+Experiment: `C127-v5e-post-transition-crash-falsification`.
 
-Question: after a claim has been persisted but before downstream transition begins, can restart reconstruction preserve a distinct pending state, reject fresh duplicate claims, resume exactly once, and persist completion?
+Question: if the downstream transition has already been invoked but the process crashes before local completion state is persisted, can restart recovery avoid duplicate effects by reconciling the transition outcome before deciding whether to replay or complete?
 
-Production state:
+Production recovery policy: `fold_lm.v05.post_transition_recovery.plan_post_transition_recovery`.
+
+Registered outcomes:
 
 ```text
-fold_lm.v05.receipt_recovery.ReceiptRecoverySnapshot
-fold_lm.v05.receipt_recovery.ReceiptRecoveryRegistry
+APPLIED
+  -> replay 0
+  -> mark completed
+  -> known logical effect count = 1
+
+NOT_APPLIED
+  -> replay exactly once with the same transition key
+  -> mark completed after replay
+  -> known logical effect count = 1
+
+STILL_UNKNOWN
+  -> replay 0
+  -> completion 0
+  -> retain pending state
+  -> logical effect count remains unasserted
 ```
 
-Snapshot states distinguish `pending_receipt_ids` from `completed_receipt_ids`. Snapshot data crosses a JSON-serializable payload boundary before every simulated restart.
-
-Fresh seeds: `20261461,20261462,20261463`.
-Restart counts: `1,2,3`.
+Fresh seeds: `20261471,20261472,20261473`. Restart counts: `1,2,3`.
 
 Coverage per seed:
 
 ```text
-1,440 restart-recovery cases
+1,440 post-transition crash cases
 2 confirmed-none controls
 1,442 scenarios total
 ```
 
-Required semantics:
+C126 remains a required control gate. All deciding rates are fixed at `1.0`, including APPLIED zero replay, NOT_APPLIED one same-key replay, STILL_UNKNOWN pending retention, duplicate rejection, resolved exactly-one logical effect, restart-specific recovery, and hidden trace invariance.
 
-```text
-C125 control gate                 -> preserved
-naive processed-set control       -> loss-of-pending-state flaw detected
-initial claim                     -> exactly once
-serialized pending snapshot       -> survives restart
-fresh duplicate claim on restart  -> rejected
-recovery resume                   -> exactly once
-completion                        -> pending -> completed
-post-completion duplicate claim   -> rejected
-APPLIED                            -> total one commit / zero retry
-NOT_APPLIED                        -> total one retry / one commit
-STILL_UNKNOWN                      -> total zero commit/retry/fallback
-```
-
-All deciding rates are fixed at `1.0`.
-
-Scope: C126 models serializable snapshot reconstruction after a crash point strictly between durable claim persistence and the start of downstream transition. It does not prove filesystem fsync durability, does not cover a crash after downstream transition begins, and does not test concurrent recovery ownership. Gate E remains NOT PASSED.
+Scope: C127 assumes an authoritative reconciliation source can classify the downstream transition outcome. It does not prove filesystem transaction durability, distributed storage atomicity, or concurrent recovery ownership. Gate E remains NOT PASSED.
 
 ## Non-claims / separate tracks
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV-replacement remains separate.
-- Gate C/D and C97-C126 evidence is synthetic/scoped unless explicitly measured otherwise.
+- Gate C/D and C97-C127 evidence is synthetic/scoped unless explicitly measured otherwise.
 - Do not claim broad language quality, general epistemic self-knowledge, real-world tool selection, or general superiority over Transformer/LLM systems.
