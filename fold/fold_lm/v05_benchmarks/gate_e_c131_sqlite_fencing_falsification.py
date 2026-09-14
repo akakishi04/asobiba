@@ -7,11 +7,11 @@ from pathlib import Path
 
 import torch
 
-from fold_lm.v05.benchmarks import gate_e_c113_stale_eligibility_preflight as c113
-from fold_lm.v05.benchmarks import gate_e_c130_lease_renewal_falsification as c130
-from fold_lm.v05.benchmarks import gate_e_c131_metrics as metrics
-from fold_lm.v05.benchmarks import gate_e_c131_sqlite_case as case
-from fold_lm.v05.benchmarks import gate_e_c131_sqlite_rows as rows_mod
+from fold_lm.v05_benchmarks import gate_e_c113_stale_eligibility_preflight as c113
+from fold_lm.v05_benchmarks import gate_e_c130_lease_renewal_falsification as c130
+from fold_lm.v05_benchmarks import gate_e_c131_metrics as metrics
+from fold_lm.v05_benchmarks import gate_e_c131_sqlite_case as case
+from fold_lm.v05_benchmarks import gate_e_c131_sqlite_rows as rows_mod
 
 EXPERIMENT_ID = "C131-v5e-sqlite-storage-fencing-falsification"
 SEEDS = (20261511, 20261512, 20261513)
