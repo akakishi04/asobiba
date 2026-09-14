@@ -95,7 +95,7 @@ runtime      -> owns availability, permission, acquisition outcome, validation, 
 
 Do not guess decision-critical missing facts. Do not commit failed/untrusted acquisition as evidence. Do not universally acquire or abstain. Under the current synthetic equal-capability contract, do not ask the user while a lower-burden self-service mechanism remains available.
 
-## 6. V5-E accepted evidence — C97 to C104
+## 6. V5-E accepted evidence — C97 to C105
 
 ### C97-C99 — information sufficiency and successful acquisition
 
@@ -106,27 +106,18 @@ Do not guess decision-critical missing facts. Do not commit failed/untrusted acq
 
 ### C100-C102 — acquisition outcome handling
 
-Runtime outcome classes:
-
-```text
-SUCCESS
-UNAVAILABLE
-DENIED
-INVALID
-```
-
 Accepted semantics:
 
 ```text
 SUCCESS -> validated evidence commit -> ANSWER
-failure -> no evidence commit -> STOP_UNRESOLVED
+UNAVAILABLE / DENIED / INVALID -> no commit -> STOP_UNRESOLVED
 ```
 
-C101 learned the three-action snapshot policy. C102 passed the actual learned trajectory across three fresh seeds with required ACQUIRE, SUCCESS commit/ANSWER/accuracy, failure STOP/no-commit/no-guess all `1.0`, and zero premature STOP, repeat acquisition, or budget violation.
+C101 learned the snapshot policy. C102 passed the actual learned end-to-end trajectory across three fresh seeds with required ACQUIRE, SUCCESS commit/ANSWER/accuracy, failure STOP/no-commit/no-guess all `1.0`, and zero premature STOP, repeat acquisition, or budget violation.
 
-### C103-C104 — acquisition mechanism selection
+### C103-C105 — mechanism selection and fallback
 
-Registered action family:
+Registered mechanism family:
 
 ```text
 ANSWER
@@ -143,114 +134,89 @@ Synthetic equal-capability burden order:
 READ_MEMORY < RETRIEVE < OBSERVE < ASK_USER
 ```
 
-C103 exhaustive oracle: 512 examples / all 16 masks passed.
+C103 exhaustive oracle passed all 512 examples / 16 eligibility masks.
 
-C104 production Control Lane learned the six-action selector on unseen base=3 across fresh seeds `20261211..13`:
+C104 learned the six-action selector on unseen base=3 across fresh seeds `20261211..13` with action accuracy and minimum six-class recall `1.0`, zero flips/ineligible actions, perfect minimum-burden selection, and hidden-counterfactual invariance `1.0`.
 
-- action accuracy `1.0`;
-- minimum six-class recall `1.0`;
-- action flips `0`;
-- minimum-burden selection `1.0`;
-- no-eligible STOP `1.0`;
-- ASK_USER avoided while self-service eligible `1.0`;
-- ineligible mechanism predictions `0`;
-- hidden-counterfactual invariance `1.0`.
+C105 learned the runtime fallback closed loop across fresh seeds `20261221..23`:
 
-## 7. C105 — accepted learned mechanism fallback closed loop
-
-Experiment: `C105-v5e-learned-acquisition-mechanism-closed-loop`
-
-Fresh seeds `20261221..23`, unseen base=3, acquisition budget 4.
-
-Runtime contract:
-
-```text
-failure
--> no evidence commit
--> failed mechanism becomes ineligible
--> reobserve
--> choose next least-burden eligible mechanism
-
-SUCCESS
--> commit validated evidence
--> reobserve
--> ANSWER
-
-no eligible fallback remains
--> STOP_UNRESOLVED
-```
-
-Accepted across all three seeds:
-
-- answerable ANSWER `1.0`;
-- answerable zero acquisition `1.0`;
+- answerable ANSWER / zero-acquisition `1.0`;
 - required scenario pass `1.0`;
-- per-decision minimum burden `1.0`;
+- per-decision minimum-burden rate `1.0`;
 - eventual-success ANSWER / final accuracy `1.0`;
 - all-fail STOP `1.0`;
-- failed-attempt no-commit `1.0`;
-- ineligible mechanism `0`;
-- repeat failed mechanism `0`;
-- budget violations `0`;
-- premature ASK_USER `0`;
+- failure no-commit `1.0`;
+- zero ineligible mechanisms, repeated failed mechanisms, budget violations, or premature ASK_USER;
 - hidden action-trace invariance `1.0`.
 
-C105 is still synthetic and uses all 16 masks during training.
-
-## 8. Active experiment — C106 falsification
+## 7. C106 — accepted falsification: unseen eligibility masks
 
 Experiment: `C106-v5e-unseen-eligibility-mask-generalization`
 
-Purpose: directly test whether C104/C105 merely memorized the finite 16-mask lookup table.
+Purpose: falsify the explanation that C104/C105 simply memorized all 16 mask-to-action combinations.
 
-Prospective mask split:
+Split:
 
 ```text
 training masks = Hamming weight <= 2  (11 masks)
 OOD masks      = Hamming weight >= 3  (5 masks)
+train bases    = 0,1,2
+validation     = base 3 only
+fresh seeds    = 20261231,20261232,20261233
 ```
 
-The sets are disjoint and together cover all 16 masks.
+Accepted across all seeds:
 
-Other conditions:
+- OOD masks never seen in training;
+- anchor action accuracy `1.0`;
+- anchor minimum six-class recall `1.0`;
+- OOD action accuracy `1.0`;
+- OOD minimum-burden selection `1.0`;
+- OOD ineligible mechanism predictions `0`;
+- OOD action flips `0`;
+- OOD hidden-counterfactual action invariance `1.0`.
+
+Interpretation: finite 16-mask memorization is materially weakened as an explanation. C106 still shares the same generator/oracle implementation family between training and evaluation.
+
+## 8. Active experiment — C107 independent-evaluator falsification
+
+Experiment: `C107-v5e-independent-evaluator-falsification`
+
+Question:
+
+> Does the C106 training path still pass when evaluation rows, visible-state construction, row ordering, and expected actions come from an independently written evaluator that imports none of the C97-C106 oracle/generator modules?
+
+Design:
+
+- training remains the accepted C106 training family;
+- fresh seeds `20261301,20261302,20261303`;
+- independent evaluation uses all 16 masks on unseen base=3;
+- independent fixture reconstructs action truth using separate direct conditionals;
+- independent fixture uses a deliberately different stable row order;
+- independent expected labels are compared against canonical labels as a separate semantic-agreement diagnostic;
+- the production router implementation itself is unchanged.
+
+Prospective C107 gate:
 
 ```text
-fresh seeds      = 20261231,20261232,20261233
-train bases      = 0,1,2
-validation base  = 3 only
-control width    = 4
-hidden width     = 8
-training steps   = 800
+independent fixture forbidden canonical imports    = 0
+independent/canonical label agreement               = 1.0
+independent/canonical key coverage complete         = true
+independent action accuracy                         = 1.0
+independent minimum six-class recall                = 1.0
+independent action flips                            = 0
+independent minimum-burden mechanism rate           = 1.0
+independent ineligible mechanism count              = 0
+independent hidden-counterfactual invariance        = 1.0
 ```
 
-Two validation sets:
+A valid negative result completes C107. Do not loosen thresholds retrospectively.
 
-1. Anchor validation on unseen base=3 using the training-mask family; must preserve all six classes.
-2. OOD composition validation on unseen base=3 using only never-trained masks.
+## 9. Planned falsification axes after C107
 
-Every fresh seed must satisfy:
+Continue one question per C number rather than adding V5-E features immediately:
 
-```text
-anchor action accuracy              = 1.0
-anchor minimum six-class recall     = 1.0
-anchor action flips                 = 0
-OOD action accuracy                 = 1.0
-OOD action flips                    = 0
-OOD answerable ANSWER rate          = 1.0
-OOD critical no-direct-ANSWER rate  = 1.0
-OOD minimum-burden rate             = 1.0
-OOD ineligible mechanism count      = 0
-OOD hidden-counterfactual invariance= 1.0
-```
-
-C106 is a falsification/generalization experiment. A valid failure is useful evidence and still completes C106.
-
-## 9. Next falsification axes if C106 completes
-
-Do not immediately resume feature expansion. Candidate later tests, one per C number:
-
-- independently implemented evaluation generator;
-- feature re-encoding / permutation;
+- feature re-encoding / channel permutation;
 - irrelevant distractor features;
 - noisy or stale capability state;
 - changed train/validation construction;
@@ -260,5 +226,5 @@ Do not immediately resume feature expansion. Candidate later tests, one per C nu
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV-replacement remains separate.
-- Gate C/D and C97-C106 evidence is synthetic and scoped.
+- Gate C/D and C97-C107 evidence is synthetic and scoped.
 - Do not claim broad language quality, general epistemic self-knowledge, real-world tool selection, universal control-width sufficiency, or general superiority over Transformer/LLM systems.
