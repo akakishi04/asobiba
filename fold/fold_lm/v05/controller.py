@@ -8,6 +8,7 @@ fixed-width control lane so controller capacity does not scale with core width.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 import torch
 from torch import nn
@@ -53,6 +54,59 @@ class ControlLaneRouterConfig:
                 raise ValueError(f"{name} must be a positive integer")
         if self.control_width > self.width:
             raise ValueError("control_width must not exceed width")
+
+
+def canonicalize_boolean_channels(
+    tensor: torch.Tensor,
+    channels,
+    *,
+    threshold: float,
+    false_value: float = -1.0,
+    true_value: float = 1.0,
+) -> torch.Tensor:
+    """Canonicalize schema-known boolean channels without changing other channels.
+
+    Values below ``threshold`` map to ``false_value`` and values above it map to
+    ``true_value``.  A value exactly on the threshold is rejected as ambiguous.
+    The caller owns the schema/threshold contract; this helper does not infer
+    boolean semantics from arbitrary model state.
+    """
+    if not isinstance(tensor, torch.Tensor):
+        raise TypeError("tensor must be torch.Tensor")
+    if tensor.ndim < 1 or not tensor.is_floating_point():
+        raise TypeError("tensor must be a floating tensor with at least one dimension")
+    if not torch.isfinite(tensor).all():
+        raise ValueError("tensor must contain finite values")
+    for name, value in (
+        ("threshold", threshold),
+        ("false_value", false_value),
+        ("true_value", true_value),
+    ):
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(float(value)):
+            raise ValueError(f"{name} must be a finite real number")
+    if float(false_value) >= float(true_value):
+        raise ValueError("false_value must be less than true_value")
+
+    channel_tuple = tuple(channels)
+    if not channel_tuple:
+        return tensor.clone()
+    if any(type(channel) is not int for channel in channel_tuple):
+        raise TypeError("channels must contain integers")
+    if len(set(channel_tuple)) != len(channel_tuple):
+        raise ValueError("channels must be unique")
+    width = tensor.shape[-1]
+    if any(channel < 0 or channel >= width for channel in channel_tuple):
+        raise ValueError("boolean channel index out of range")
+
+    output = tensor.clone()
+    selected = output[..., list(channel_tuple)]
+    boundary = torch.as_tensor(float(threshold), dtype=selected.dtype, device=selected.device)
+    if torch.any(selected == boundary):
+        raise ValueError("boolean control value equals ambiguous threshold")
+    false_tensor = torch.as_tensor(float(false_value), dtype=selected.dtype, device=selected.device)
+    true_tensor = torch.as_tensor(float(true_value), dtype=selected.dtype, device=selected.device)
+    output[..., list(channel_tuple)] = torch.where(selected > boundary, true_tensor, false_tensor)
+    return output
 
 
 def _validate_inputs(width: int, operation_vocab_size: int, working, context, operation_ids) -> None:
