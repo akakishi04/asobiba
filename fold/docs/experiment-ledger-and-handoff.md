@@ -26,6 +26,7 @@ Primary product priority: operational VRAM headroom, then peak/resident VRAM, la
 ```text
 learned Control Lane
 -> runtime-authoritative availability / permission
+-> learned or runtime-formed acquisition request
 -> real acquisition component
 -> provenance / outcome validation
 -> evidence commit only on validated evidence
@@ -35,43 +36,47 @@ learned Control Lane
 
 Runtime fault-tolerance hardening through C132 additionally covers receipt binding/authority/scope, commit-context revalidation, replay suppression, atomic claim, crash recovery, concurrent recovery ownership, lease fencing/renewal, SQLite storage fencing, and independent-OS-process fencing.
 
-## Accepted through C134
+## Accepted through C135
 
-C97-C123 established the synthetic information-sufficiency and six-action routing baseline plus runtime authority. C124-C132 hardened replay/crash/ownership/fencing/storage/process boundaries. C133 established the first real retrieval vertical path through persisted corpus + `StructuralIndex` + provenance validation + evidence commit + reobserve + `ANSWER`.
+C97-C123 established the synthetic information-sufficiency and six-action routing baseline plus runtime authority. C124-C132 hardened replay/crash/ownership/fencing/storage/process boundaries. C133 established the first real persisted-corpus retrieval vertical path. C134 established exact-search miss semantics. C135 established bounded-search false-negative recovery through exact escalation.
 
-C134 `C134-v5e-retrieval-miss-semantics` is ACCEPTED PASS: focused regression 78/78; fresh seeds `20261541..43`; 24 exact-search cases per seed (`MATCH`, `STRUCTURE_MISS`, `WRONG_SCHEMA` across eight records); all deciding rates `1.0`; zero-hit outcomes committed no evidence and ended `STOP_UNRESOLVED` after `RETRIEVE` exhaustion. C37 and fixture were preserved and the tracked tree remained clean. C134 changed no production runtime code.
+C135 `C135-v5e-bounded-retrieval-exact-recovery` is ACCEPTED PASS: focused regression 81/81; fresh seeds `20261551..53`; four cases per seed (`BOUNDED_HIT`, `BOUNDED_FALSE_NEGATIVE`, `TRUE_MISS`, `WRONG_SCHEMA`); all deciding rates `1.0`. The real current `StructuralIndex` bounded false negative for `q6` was recovered by exact search with provenance intact, exactly-one evidence commit and `ANSWER`. True misses and wrong-schema cases remained zero-commit unresolved outcomes. C37 and fixture were preserved and the tracked tree remained clean.
 
 Production retrieval adapter: `fold_lm.v05.retrieval_adapter.PersistedStructuralRetrievalAdapter`.
-Persisted fixture: `fold_lm/v05_benchmarks/fixtures/c133_structural_records.json`.
 
-## Active experiment — C135
+## Active experiment — C136
 
-Experiment: `C135-v5e-bounded-retrieval-exact-recovery`.
+Experiment: `C136-v5e-learned-retrieval-query-formation`.
 
-Question: when bounded LSH returns a false-negative zero hit for evidence that exact search can recover, can runtime treat the bounded miss as non-authoritative, escalate to exact search, validate provenance, commit recovered evidence exactly once, reobserve, and `ANSWER`, while true exact misses remain zero-commit unresolved outcomes?
+Strategic question: can FOLD move beyond a runtime-supplied ready-made retrieval signature and learn the retrieval address from query text itself, while preserving the accepted real retrieval/evidence path?
 
-Production extension: `PersistedStructuralRetrievalAdapter.retrieve_with_exact_recovery` and explicit bounded-search parameters on `retrieve`.
+Production component: `fold_lm.v05.retrieval_query.RetrievalAddressHead` plus deterministic signed hashed-text features.
 
-Fresh seeds: `20261551,20261552,20261553`.
-
-Per seed four cases:
+C136 uses a dedicated eight-record persisted corpus with one-hot structural addresses, neutral shared semantic signatures, and evidence values that are not inputs to the query head. Each address has three training paraphrases and one held-out validation paraphrase.
 
 ```text
-BOUNDED_HIT            -> bounded hit; exact not attempted; commit once; ANSWER
-BOUNDED_FALSE_NEGATIVE -> q6 bounded miss at scan_limit=1/probes=1; exact recovers; commit once; ANSWER
-TRUE_MISS              -> bounded miss; exact miss; zero commit; STOP_UNRESOLVED
-WRONG_SCHEMA           -> bounded miss; exact miss; zero commit; STOP_UNRESOLVED
+held-out query text
+-> learned RetrievalAddressHead
+-> predicted discrete address
+-> address_to_structure
+-> PersistedStructuralRetrievalAdapter exact search
+-> provenance validation
+-> evidence commit exactly once
+-> Control Lane reobserve
+-> ANSWER
 ```
 
-The false negative comes from the real current `StructuralIndex` LSH layout: `q5` and `q6` collide in the first table; the one-entry scan sees `q5` before `q6`, so bounded retrieval returns zero valid hits for `q6`, while exact search finds it.
+Fresh seeds: `20261561,20261562,20261563`. Eight held-out validation cases per seed.
 
-Accepted C134 is validated by summary identity/status/gate and is not rerun as a heavy control. Progress reports seed train start/done plus every case and remaining count. All deciding rates are fixed at `1.0`.
+Required rates at `1.0`: Control Lane `RETRIEVE`, held-out query-address accuracy, retrieved-key accuracy, provenance validation, exactly-one evidence commit, post-commit `ANSWER`, final evidence accuracy, full-corpus exact scoring, and accepted C135 prerequisite.
 
-Scope: controlled persisted corpus/signatures. C135 does not establish scalable exact fallback, learned retrieval-budget selection, natural-language query formation, stale-corpus handling, or open-domain retrieval quality. Gate E remains NOT PASSED.
+Progress output reports router train start/done, query-head train start/done, every validation case and `remaining=N`.
+
+Scope: controlled eight-address language-to-retrieval task. Held-out paraphrases keep the address-specific codeword seen during training. C136 does not establish open-domain semantic query formation, unseen-entity generalization, free continuous-signature generation, or corpus-growth generalization. Gate E remains NOT PASSED.
 
 ## Non-claims
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV replacement remains separate.
 - `fold/fold_memory.py` is a QuadraticMemory numerical reference kernel, not the V5-E persistent memory store.
-- Gate C/D and C97-C135 evidence remains scoped unless explicitly measured otherwise.
+- Gate C/D and C97-C136 evidence remains scoped unless explicitly measured otherwise.
