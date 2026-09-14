@@ -90,13 +90,18 @@ class PersistedStructuralRetrievalAdapter:
         *,
         schema: str,
         exact: bool = True,
+        scan_limit: int = 128,
+        probes: int = 2,
+        min_structure: float = 0.999999,
     ) -> tuple[RetrievalEvidence | None, dict]:
         hits, stats = self._index.search(
             structure,
             semantics,
             schema=schema,
             k=1,
-            min_structure=0.999999,
+            scan_limit=scan_limit,
+            probes=probes,
+            min_structure=min_structure,
             exact=exact,
         )
         stats = dict(stats)
@@ -116,3 +121,54 @@ class PersistedStructuralRetrievalAdapter:
             source_path=str(self._path),
         )
         return evidence, stats
+
+    def retrieve_with_exact_recovery(
+        self,
+        structure,
+        semantics,
+        *,
+        schema: str,
+        scan_limit: int = 128,
+        probes: int = 2,
+        min_structure: float = 0.999999,
+    ) -> tuple[RetrievalEvidence | None, dict]:
+        """Run bounded retrieval first; exact-search only after a bounded miss.
+
+        A bounded-LSH zero hit is not authoritative evidence of absence. The
+        returned trace makes the escalation explicit. A true exact miss remains
+        a zero-hit result and must not become evidence.
+        """
+        bounded_evidence, bounded_stats = self.retrieve(
+            structure,
+            semantics,
+            schema=schema,
+            exact=False,
+            scan_limit=scan_limit,
+            probes=probes,
+            min_structure=min_structure,
+        )
+        if bounded_evidence is not None:
+            return bounded_evidence, {
+                "bounded": bounded_stats,
+                "exact": None,
+                "exact_attempted": False,
+                "recovered_from_bounded_miss": False,
+                "final_mode": "bounded_lsh",
+            }
+
+        exact_evidence, exact_stats = self.retrieve(
+            structure,
+            semantics,
+            schema=schema,
+            exact=True,
+            scan_limit=scan_limit,
+            probes=probes,
+            min_structure=min_structure,
+        )
+        return exact_evidence, {
+            "bounded": bounded_stats,
+            "exact": exact_stats,
+            "exact_attempted": True,
+            "recovered_from_bounded_miss": exact_evidence is not None,
+            "final_mode": "exact" if exact_evidence is not None else "none",
+        }
