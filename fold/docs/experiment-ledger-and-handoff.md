@@ -63,17 +63,7 @@ Supported principle:
 
 Primary product objective remains operational VRAM headroom.
 
-## 4. Binding Gate C/D evidence
-
-- Fine-grained codebook execution was rejected as lead runtime because decode/gather overhead scaled badly.
-- Shared Basis preserved registered task quality and reduced operational VRAM.
-- C83 width5120 gained roughly `0.20-0.33 GiB` free VRAM versus Dense in tested profiles.
-- C88 showed lower logical compute is not automatically lower latency.
-- C91 showed compact routing can fail when controller representation remains coupled to full core width.
-- C92-C95 established the fixed Control Lane alternative.
-- C96 preserved routing/output quality with 50% logical compute reduction; maximum learned/fixed ratios were `0.649631` device and `0.653782` wall in the registered large-width regime.
-
-## 5. V5-E design rules
+## 4. V5-E current action / authority contract
 
 Current action family:
 
@@ -93,31 +83,22 @@ model/router -> proposes action
 runtime      -> owns availability, permission, acquisition outcome, validation, eligibility mutation, and authoritative evidence mutation
 ```
 
-Do not guess decision-critical missing facts. Do not commit failed/untrusted acquisition as evidence. Do not universally acquire or abstain. Under the current synthetic equal-capability contract, do not ask the user while a lower-burden self-service mechanism remains available.
+Do not guess decision-critical missing facts. Do not commit failed/untrusted acquisition as evidence. Under the current synthetic equal-capability contract, do not ask the user while a lower-burden self-service mechanism remains available.
 
-## 6. V5-E accepted evidence — C97 to C105
+## 5. V5-E accepted evidence — C97 to C105
 
-### C97-C99 — information sufficiency and successful acquisition
+C97-C99 established and learned the information-sufficiency boundary and the successful `ACQUIRE -> runtime commit -> reobserve -> ANSWER` loop on unseen base=3.
 
-- Oracle `ANSWER / ACQUIRE` boundary established.
-- Production Control Lane learned it on unseen base=3 with no hidden/target leakage.
-- Learned successful closed loop established: `ACQUIRE -> runtime commit -> reobserve -> ANSWER`.
-- Required cases acquired exactly once; answerable cases acquired zero times; final accuracy `1.0`.
-
-### C100-C102 — acquisition outcome handling
-
-Accepted semantics:
+C100-C102 established acquisition outcomes:
 
 ```text
 SUCCESS -> validated evidence commit -> ANSWER
 UNAVAILABLE / DENIED / INVALID -> no commit -> STOP_UNRESOLVED
 ```
 
-C101 learned the snapshot policy. C102 passed the actual learned end-to-end trajectory across three fresh seeds with required ACQUIRE, SUCCESS commit/ANSWER/accuracy, failure STOP/no-commit/no-guess all `1.0`, and zero premature STOP, repeat acquisition, or budget violation.
+The production Control Lane learned and executed these outcomes with zero guessed answers, repeat acquisition, or budget violations in the registered synthetic tests.
 
-### C103-C105 — mechanism selection and fallback
-
-Registered mechanism family:
+C103-C105 expanded acquisition into:
 
 ```text
 ANSWER
@@ -128,103 +109,118 @@ ASK_USER
 STOP_UNRESOLVED
 ```
 
-Synthetic equal-capability burden order:
+with synthetic equal-capability burden order:
 
 ```text
 READ_MEMORY < RETRIEVE < OBSERVE < ASK_USER
 ```
 
-C103 exhaustive oracle passed all 512 examples / 16 eligibility masks.
+C105 passed the learned mechanism fallback loop across fresh seeds `20261221..23`, including failure-driven eligibility removal, next-mechanism fallback, SUCCESS-only evidence commit, all-fail STOP, zero repeated failed mechanisms, zero ineligible selections, and hidden action-trace invariance `1.0`.
 
-C104 learned the six-action selector on unseen base=3 across fresh seeds `20261211..13` with action accuracy and minimum six-class recall `1.0`, zero flips/ineligible actions, perfect minimum-burden selection, and hidden-counterfactual invariance `1.0`.
+## 6. Falsification evidence
 
-C105 learned the runtime fallback closed loop across fresh seeds `20261221..23`:
+### C106 — unseen eligibility-mask composition: ACCEPTED PASS
 
-- answerable ANSWER / zero-acquisition `1.0`;
-- required scenario pass `1.0`;
-- per-decision minimum-burden rate `1.0`;
-- eventual-success ANSWER / final accuracy `1.0`;
-- all-fail STOP `1.0`;
-- failure no-commit `1.0`;
-- zero ineligible mechanisms, repeated failed mechanisms, budget violations, or premature ASK_USER;
-- hidden action-trace invariance `1.0`.
+Training used only the 11 masks with Hamming weight <= 2. OOD validation used only the five never-trained masks with Hamming weight >= 3, together with unseen base=3.
 
-## 7. C106 — accepted falsification: unseen eligibility masks
+Across fresh seeds `20261231..33`:
 
-Experiment: `C106-v5e-unseen-eligibility-mask-generalization`
-
-Purpose: falsify the explanation that C104/C105 simply memorized all 16 mask-to-action combinations.
-
-Split:
-
-```text
-training masks = Hamming weight <= 2  (11 masks)
-OOD masks      = Hamming weight >= 3  (5 masks)
-train bases    = 0,1,2
-validation     = base 3 only
-fresh seeds    = 20261231,20261232,20261233
-```
-
-Accepted across all seeds:
-
-- OOD masks never seen in training;
 - anchor action accuracy `1.0`;
 - anchor minimum six-class recall `1.0`;
 - OOD action accuracy `1.0`;
-- OOD minimum-burden selection `1.0`;
-- OOD ineligible mechanism predictions `0`;
-- OOD action flips `0`;
-- OOD hidden-counterfactual action invariance `1.0`.
+- OOD minimum-burden rate `1.0`;
+- ineligible mechanism count `0`;
+- action flips `0`;
+- hidden-counterfactual action invariance `1.0`.
 
-Interpretation: finite 16-mask memorization is materially weakened as an explanation. C106 still shares the same generator/oracle implementation family between training and evaluation.
+Interpretation: memorization of all 16 finite masks is materially weakened as an explanation.
 
-## 8. Active experiment — C107 independent-evaluator falsification
+### C107 — independent evaluator: ACCEPTED PASS
 
-Experiment: `C107-v5e-independent-evaluator-falsification`
+Training remained on the C106 canonical family. Evaluation used `gate_e_c107_independent_eval_fixture.py`, which independently reconstructs visible rows and expected actions and imports none of the forbidden C97-C106 oracle/generator modules.
+
+Across fresh seeds `20261301..03`:
+
+- independent/canonical label agreement `1.0`;
+- key coverage complete;
+- independent action accuracy `1.0`;
+- independent minimum six-class recall `1.0`;
+- independent minimum-burden rate `1.0`;
+- ineligible mechanism count `0`;
+- action flips `0`;
+- hidden-counterfactual invariance `1.0`.
+
+Interpretation: a shared train/eval generator implementation bug is materially weakened as an explanation.
+
+## 7. Active experiment — C108 feature re-encoding falsification
+
+Experiment: `C108-v5e-feature-reencoding-falsification`
 
 Question:
 
-> Does the C106 training path still pass when evaluation rows, visible-state construction, row ordering, and expected actions come from an independently written evaluator that imports none of the C97-C106 oracle/generator modules?
+> Does the learned mechanism policy depend on exact numeric boolean encodings, or generalize across unseen signed codebooks preserving only `false < 0 < true`?
 
-Design:
-
-- training remains the accepted C106 training family;
-- fresh seeds `20261301,20261302,20261303`;
-- independent evaluation uses all 16 masks on unseen base=3;
-- independent fixture reconstructs action truth using separate direct conditionals;
-- independent fixture uses a deliberately different stable row order;
-- independent expected labels are compared against canonical labels as a separate semantic-agreement diagnostic;
-- the production router implementation itself is unchanged.
-
-Prospective C107 gate:
+Training codebooks:
 
 ```text
-independent fixture forbidden canonical imports    = 0
-independent/canonical label agreement               = 1.0
-independent/canonical key coverage complete         = true
-independent action accuracy                         = 1.0
-independent minimum six-class recall                = 1.0
-independent action flips                            = 0
-independent minimum-burden mechanism rate           = 1.0
-independent ineligible mechanism count              = 0
-independent hidden-counterfactual invariance        = 1.0
+train_a: false=-0.5, true=+0.75
+train_b: false=-2.0, true=+1.25
 ```
 
-A valid negative result completes C107. Do not loosen thresholds retrospectively.
+Held-out OOD codebooks:
 
-## 9. Planned falsification axes after C107
+```text
+ood_a: false=-3.5, true=+0.20
+ood_b: false=-0.10, true=+4.0
+ood_c: false=-7.0, true=+9.0
+```
 
-Continue one question per C number rather than adding V5-E features immediately:
+OOD scalar values are disjoint from training scalar values. Base remains canonical because it is policy-irrelevant.
 
-- feature re-encoding / channel permutation;
+Prospective configuration:
+
+```text
+fresh seeds      = 20261311,20261312,20261313
+train bases      = 0,1,2
+validation base  = 3 only
+control width    = 4
+hidden width     = 8
+training steps   = 900
+```
+
+Every fresh seed and every OOD codebook must satisfy:
+
+```text
+anchor action accuracy               = 1.0
+anchor minimum six-class recall      = 1.0
+anchor action flips                  = 0
+OOD action accuracy                  = 1.0
+OOD minimum six-class recall         = 1.0
+OOD action flips                     = 0
+OOD answerable ANSWER rate           = 1.0
+OOD critical no-direct-ANSWER rate   = 1.0
+OOD minimum-burden rate              = 1.0
+OOD no-eligible STOP rate            = 1.0
+OOD ineligible mechanism count       = 0
+OOD hidden-counterfactual invariance = 1.0
+```
+
+C108 is a falsification/generalization experiment. A valid failure is useful evidence and still completes C108.
+
+## 8. Planned falsification axes after C108
+
+Continue one question per C number rather than resuming feature expansion immediately:
+
 - irrelevant distractor features;
 - noisy or stale capability state;
 - changed train/validation construction;
 - eventually real memory/retrieval/observation/user interaction.
 
-## 10. Separate tracks / non-claims
+Arbitrary channel permutation or unknown semantic remapping is not a required invariant unless an explicit schema/adapter is provided.
+
+## 9. Separate tracks / non-claims
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV-replacement remains separate.
-- Gate C/D and C97-C107 evidence is synthetic and scoped.
+- Gate C/D and C97-C108 evidence is synthetic and scoped.
 - Do not claim broad language quality, general epistemic self-knowledge, real-world tool selection, universal control-width sufficiency, or general superiority over Transformer/LLM systems.
