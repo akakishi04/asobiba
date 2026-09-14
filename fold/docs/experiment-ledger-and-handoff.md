@@ -1,6 +1,6 @@
 # FOLD Experiment Ledger and Handoff
 
-> Current authoritative handoff for FOLD. Read this first in a new session. Update after every accepted Cxx result, retry decision, or Gate decision change.
+> Current authoritative handoff for FOLD. Read this first in a new session. Detailed historical evidence remains in Gate decision documents and `experiment-ledger-addendum-*` files.
 
 ## 1. Environment / repository
 
@@ -18,11 +18,11 @@
 ## 2. Protected artifacts
 
 - C37 result: `M:\asobiba\fold\runs\chatgpt-last-result.json`
-- SHA256: `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`
+- C37 SHA256: `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`
 - runtime fixture: `M:\asobiba\fold\runs\fixtures\v05-c-composition-20260921.pt`
-- SHA256: `A52F8209703149407580F7E2965B61B78653030EE992AF6D759865736741CA9E`
+- fixture SHA256: `A52F8209703149407580F7E2965B61B78653030EE992AF6D759865736741CA9E`
 
-Diagnostics must preserve both.
+Every Cxx diagnostic must preserve both.
 
 ## 3. Experiment protocol
 
@@ -30,11 +30,11 @@ Diagnostics must preserve both.
 2. Full output overwrites `M:\asobiba\fold\runs\chatgpt-last.log`.
 3. User pastes the complete log back into ChatGPT.
 4. ChatGPT judges the result.
-5. Increment only after a valid successful run.
-6. Failed / invalid retries keep the same C number.
-7. `status=PASS` means the experiment executed correctly, not automatically that a stage gate passed.
-8. Invalid import/parser/hash/experiment-ID runs are not evidence.
-9. Prefer tracked benchmark files and short tracked runners over large pasted scripts.
+5. Increment only after a valid completed run.
+6. Failed/invalid retries keep the same C number.
+7. A valid negative scientific result may complete the C number and advance.
+8. `status=PASS` means valid execution, not automatically that a stage gate passed.
+9. Invalid import/parser/hash/experiment-ID runs are not evidence.
 10. If a scientific acceptance margin is needed, define it before collecting deciding data.
 
 PC clipboard:
@@ -57,11 +57,11 @@ $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text))
 
 ### Gate A
 
-Passed previously: reference math/accounting/causality established.
+PASSED previously: reference math/accounting/causality established.
 
 ### Gate B
 
-Passed previously: uncompressed shared-core + fixed/teacher-routed modules learn the registered tiny tasks reproducibly.
+PASSED previously: uncompressed shared-core + fixed/teacher-routed modules learn the registered tiny tasks reproducibly.
 
 ### Gate C
 
@@ -71,13 +71,13 @@ Formal decision:
 
 `fold/docs/gate-c-decision-2026-09-14.md`
 
-Accepted lead routed-weight family:
+Accepted routed-weight family:
 
 ```text
 W_module = W_base + A_module @ B_shared
 ```
 
-Selected tiny-task capacities:
+Selected registered capacities:
 
 ```text
 Condition   rank3
@@ -85,11 +85,11 @@ Composition rank2
 Language    rank4
 ```
 
-Accepted production execution policy:
+Production arithmetic policy:
 
 ```text
-training  -> materialized arithmetic
-inference -> GEMM-native arithmetic
+training  -> materialized
+inference -> gemm_native
 ```
 
 ### Gate D
@@ -100,25 +100,28 @@ Formal decision:
 
 `fold/docs/gate-d-decision-2026-09-14.md`
 
-Accepted production controller candidate:
+Lead production controller:
 
-```text
-ControlLaneActionRouter
-```
-
-Current registered synthetic configuration:
-
-```text
-control_width = 4
-hidden_width  = 4
-action space  = ANSWER / ADD1 / ADD2 / SUB1 / SUB2
-```
+`fold_lm.v05.controller.ControlLaneActionRouter`
 
 Supported design principle:
 
 > Main working-state width and routing-control width should be independent capacity axes.
 
-This is not a claim that control width 4 or hidden width 4 is universally sufficient.
+Registered synthetic configuration:
+
+```text
+control_width = 4
+hidden_width  = 4
+```
+
+This is not a claim that width 4 is universally sufficient.
+
+### Gate E
+
+**NOT PASSED. Current active stage.**
+
+V5-E is establishing when internal information is insufficient, when acquisition is justified, how acquisition results become authoritative evidence, and how failures terminate safely.
 
 ## 5. Model-lightness priority
 
@@ -132,193 +135,87 @@ Priority order:
 2. peak allocated and peak reserved VRAM;
 3. resident model VRAM;
 4. latency / throughput practicality;
-5. serialized artifact size as supporting deployment/storage evidence.
+5. serialized artifact size as supporting evidence.
 
-Do not use parameter count alone as the authoritative model-weight metric.
+Do not use parameter count alone as the authoritative lightness metric.
 
-## 6. Gate C accepted evidence summary
+## 6. Gate C accepted state
 
-### C41-C57 — codebook path rejected as lead runtime
+Lead production core:
 
-Direct fine-grained codebook execution reduced storage but decode/gather overhead scaled badly. C57 width1024 compact/dense latency reached `12.88719x`. Codebook remains a storage/reference baseline, not the lead execution family.
+`fold_lm.v05.modules.SharedBasisFixedRoutingCore`
 
-### C58-C67 — Shared Basis established
+Important accepted evidence:
 
-Task-aware/native factorized training recovered registered task quality. Aligned training rule:
+- fine-grained codebook path is not the lead runtime because decode/gather overhead scaled badly;
+- Shared Basis preserved registered tiny-task quality with task-specific rank selection;
+- Condition rank3 prospectively passed non-inferiority against rank4;
+- selected ranks preserve recurrence semantics through 64 updates in the registered tests;
+- direct GEMM-native optimization caused small arithmetic-order drift, so training remains materialized;
+- production inference uses GEMM-native arithmetic;
+- serialized state stores canonical Shared-Basis parameters only;
+- C83 established operational VRAM headroom as the primary lightness metric;
+- width5120 Shared-Basis profiles gained roughly `0.20-0.33 GiB` free VRAM versus Dense in the accepted C83 measurements.
 
-```text
-factor_lr = common_lr
-```
+## 7. Gate D accepted state
 
-### C68-C76 — Condition robustness and rank3 selection
+### C84-C87 — adaptive-compute semantics
 
-- rank4 12-seed exhaustive: 6 wins / 6 losses vs Dense, sign-test p `1.0`, mean delta near zero;
-- C75 established a material operational benefit for rank3;
-- C76 prospectively accepted rank3 with 24 fresh seeds and non-inferiority margin `-0.002`;
-- one-sided bootstrap lower bound `-0.000512627388` > required `-0.002`.
-
-### C77 — selected-rank recurrence equivalence
-
-Condition3 / Composition2 / Language4:
-
-- validation semantics/scores equal;
-- tensors allclose;
-- recurrence depths through 64 updates allclose.
-
-### C78-C80 — production arithmetic policy
-
-C78 was a valid negative direct-native-training result. C79 localized the drift to arithmetic order. C80 accepted:
+Accepted behavior includes:
 
 ```text
-training  -> materialized
-inference -> gemm_native
+ANSWER / no-op
+0-step / 1-step / 2-step compute
 ```
 
-### C81-C83 — production runtime/storage/VRAM
+Composition variable-depth routing achieved:
 
-C81 established practical large-shape production runtime/resident behavior.
-
-C82 established serialized Shared-Basis artifacts without stored materialized routed-weight banks.
-
-C83 made operational VRAM headroom the authoritative model-lightness metric. At width5120, tested profiles gained roughly `0.20-0.33 GiB` free VRAM versus Dense, with lower peak allocated/reserved memory at every point.
-
-## 7. Production state after Gate C
-
-`fold_lm.v05.modules.SharedBasisFixedRoutingCore` is the accepted V5-C candidate implementation.
-
-Properties:
-
-- Dense `HighPrecisionFixedRoutingCore` remains available;
-- Shared Basis is explicit/opt-in;
-- execution mode is explicit;
-- train with `materialized` arithmetic;
-- infer with `gemm_native` arithmetic;
-- state_dict stores canonical Shared-Basis parameters only.
-
-## 8. Gate D accepted evidence summary
-
-### C84-C85 — zero-compute ANSWER semantics and learned two-action routing
-
-Condition HOLD can be represented as `ANSWER/no-op`; UPDATE as `COMPUTE(update,1)`.
-
-- approximately half the events require no core compute;
-- no quality loss;
-- supervised router reproduced the oracle policy with action/class accuracy `1.0`.
-
-### C86-C87 — learned variable-depth routing
-
-Composition difficulty axis:
-
-```text
-operand 0 -> 0 steps
-operand 1 -> 1 step
-operand 2 -> 2 steps
-```
-
-C86 oracle and C87 learned routing both achieved:
-
-- exact trajectory quality `1.0`;
-- mean compute `1.0 step/event` vs fixed `2.0`;
+- learned five-action routing accuracy `1.0` in the registered task;
+- trajectory exact `1.0`;
+- mean compute `1.0 step/event` versus fixed-max `2.0`;
 - logical compute reduction `50%`.
 
-C87 five-action learned router had action accuracy and minimum class recall `1.0`.
+### C88-C89 — runtime crossover
 
-### C88-C89 — runtime reality and crossover
+C88 was a valid negative result: at tiny width32, 50% lower logical compute was slower in wall/device time because sparse-dispatch overhead dominated.
 
-C88 valid negative result at width32:
+C89 found practical router-inclusive sparse crossover at width3072 and strong benefit by width5120.
 
-- 50% logical compute reduction did **not** produce a speedup;
-- eager sparse path was slower because routing/gather/index overhead dominated.
+### C90-C96 — Control Lane
 
-C89 width sweep found a router-inclusive runtime crossover at width3072. At width5120, router-cost-plus-sparse diagnosis reached about `0.61x` device and `0.64x` wall latency vs fixed-max.
+C91 was a valid negative result: compact hidden4 routing collapsed when controller representation remained coupled to full width3072/5120.
 
-### C90-C95 — compact router failure, diagnosis, and Control Lane
+C92-C94 diagnosed representation/optimization rather than a simple training-duration explanation.
 
-C90 selected hidden4 as the smallest tiny-task quality-passing router point.
+A fixed-width Control Lane decoupled controller capacity from core width.
 
-C91 valid negative result: hidden4 full-width router collapsed at width3072/5120. Its apparent speedups were rejected because routing quality failed.
-
-C92-C94 showed:
-
-- the problem was not explained by training duration alone;
-- coupling controller input dimension to full core width caused severe optimization difficulty;
-- a fixed Control Lane largely removed width dependence;
-- by 480 steps, reused diagnostic seeds converged identically across width3072/5120.
-
-C95 prospective fresh-seed held-out validation:
+C95 fresh-seed held-out validation:
 
 - six width/seed conditions;
-- held-out action accuracy `1.0` in all conditions;
-- minimum class recall `1.0` in all conditions;
-- action flips `0`;
-- Control-Lane diagnostic router persistent bytes `436`.
+- action accuracy `1.0`;
+- minimum class recall `1.0`;
+- action flips `0`.
 
-### C96 — production Control Lane learned-action runtime/VRAM gate
-
-Production `ControlLaneActionRouter`, widths 3072/5120, three fresh seeds each.
-
-All six conditions passed all predeclared gates.
-
-Quality/routing:
+C96 production learned-action runtime/VRAM gate:
 
 - held-out action accuracy minimum `1.0`;
-- held-out minimum class recall `1.0`;
 - runtime action accuracy minimum `1.0`;
-- runtime minimum class recall `1.0`;
-- outputs vs fixed-max allclose.
-
-Adaptive compute:
-
-- logical compute reduction `50%` in every condition.
-
-Runtime:
-
-- learned/fixed device ratio mean `0.581919`;
-- device ratio maximum `0.649631`;
-- learned/fixed wall ratio mean `0.587959`;
-- wall ratio maximum `0.653782`.
-
-Controller footprint:
-
+- outputs vs fixed-max allclose;
+- logical compute reduction `50%`;
+- learned/fixed device ratio maximum `0.649631`;
+- learned/fixed wall ratio maximum `0.653782`;
 - router/core persistent ratio maximum `1.3481e-06`;
 - measured router incremental device-free-VRAM cost `0.0 GiB` at measurement resolution.
 
-C96 therefore establishes a production learned-action adaptive path that is both correct and materially faster in the registered large-width regime.
-
-## 9. Production state after Gate D
-
-Lead adaptive-routing candidate:
-
-`fold_lm.v05.controller.ControlLaneActionRouter`
-
-Current design rule:
-
-```text
-large semantic / working state
-+
-small explicit control state
-+
-router capacity independent of core width
-+
-sparse execution of selected compute
-```
-
-Keep `SupervisedActionRouter` as a comparison/backward-compatible full-width baseline.
-
 Important negative evidence remains binding:
 
-- tiny widths can lose to sparse-dispatch overhead;
 - lower logical compute is not automatically lower latency;
-- controller representation failures can masquerade as controller capacity failures;
+- controller representation failure can masquerade as capacity failure;
 - speed measurements are invalid if routing quality fails.
 
-## 10. Current stage — V5-E
+## 8. Current stage — V5-E
 
-V5-D is closed under the formal scoped decision.
-
-Proceed to **V5-E — information acquisition / knowing when internal compute is insufficient**.
-
-Roadmap action-space expansion candidates:
+Roadmap action-space expansion eventually includes:
 
 ```text
 PARTIAL_ANSWER
@@ -329,29 +226,28 @@ ASK_USER
 STOP_UNRESOLVED
 ```
 
-Initial V5-E principles:
+Current principles:
 
-1. preserve the Control-Lane separation rather than routing directly from the full working-state width;
-2. separate model action proposal from runtime permission/authority;
-3. start with a tiny synthetic information-sufficiency task;
-4. compare internal-compute-only vs acquire/clarify actions;
-5. do not integrate FOLD-R memory or Vision into the first V5-E experiment;
-6. do not reward universal abstention or universal acquisition.
+1. preserve Control-Lane separation;
+2. model proposes actions, runtime owns permissions/outcomes/authoritative evidence mutation;
+3. distinguish missing decision-critical information from irrelevant missing information;
+4. do not reward universal acquisition or universal abstention;
+5. do not silently invent missing evidence;
+6. failed/untrusted acquisition must not be committed as evidence;
+7. keep memory/retrieval/observation/user-question mechanism selection out until the abstract semantics are stable.
 
-On-policy recovery after self-induced routing errors remains deferred robustness work; it was not a listed Gate-D acceptance bullet and is not claimed complete.
-
-## 11. V5-E accepted evidence summary
+## 9. V5-E accepted evidence
 
 ### C97 — oracle information-sufficiency semantics
 
-Registered minimal action space:
+Action space:
 
 ```text
 ANSWER
 ACQUIRE
 ```
 
-Oracle boundary:
+Boundary:
 
 ```text
 missing hidden condition that can change target -> ACQUIRE
@@ -360,23 +256,18 @@ missing hidden condition irrelevant to target    -> ANSWER
 
 Accepted exhaustive 32-row result:
 
-- critical missing counterfactual pairs: `4`;
-- irrelevant missing counterfactual pairs: `4`;
-- required acquisition recall: `1.0`;
-- unnecessary acquisition rate: `0.0`;
-- ambiguous direct-answer attempts: `0`;
-- direct-answerable accuracy: `1.0`;
-- irrelevant-missing direct accuracy: `1.0`;
-- post-policy final accuracy: `1.0`;
-- direct-answer coverage: `0.75`.
+- required acquisition recall `1.0`;
+- unnecessary acquisition rate `0.0`;
+- ambiguous direct-answer attempts `0`;
+- direct-answerable accuracy `1.0`;
+- irrelevant-missing direct accuracy `1.0`;
+- post-policy final accuracy `1.0`.
 
-C97 is an oracle baseline only. `ACQUIRE` remains abstract and no memory/retrieval/tool/Vision mechanism is selected yet.
+### C98 — learned information-sufficiency routing
 
-### C98 — supervised information-sufficiency routing
+Production `ControlLaneActionRouter` learned the C97 boundary using visible evidence only.
 
-Production `ControlLaneActionRouter` learned the C97 `ANSWER / ACQUIRE` boundary from visible evidence only.
-
-Fixed split:
+Split:
 
 ```text
 train bases      = 0,1,2
@@ -384,75 +275,121 @@ validation base  = 3 only (unseen)
 fresh seeds      = 20261171,20261172,20261173
 ```
 
-The router received only:
+Accepted across all fresh seeds:
+
+- validation action accuracy `1.0`;
+- required ACQUIRE recall `1.0`;
+- unnecessary ACQUIRE rate `0.0`;
+- action flips `0`;
+- post-policy final accuracy `1.0`;
+- hidden/target input leakage false.
+
+### C99 — learned acquire/reobserve/answer cycle
+
+Fresh seeds:
 
 ```text
-base
-dependency
-evidence_present
-observed_hidden
+20261181
+20261182
+20261183
 ```
 
-Missing-evidence hidden=0/1 counterfactuals were bit-identical at router input; hidden truth, target answer, and oracle action were not inputs.
+Authority path:
 
-Accepted result across all three fresh seeds:
+```text
+model proposes ACQUIRE
+-> runtime reveals/commits evidence
+-> model re-observes updated evidence
+-> model chooses ANSWER
+```
 
-- validation action accuracy: `1.0`;
-- required ACQUIRE recall: `1.0`;
-- unnecessary ACQUIRE rate: `0.0`;
-- action flips: `0`;
-- post-policy final accuracy: `1.0`.
+Accepted result across all fresh seeds:
 
-C98 establishes learned information-sufficiency routing on this tiny synthetic task. It does not yet establish acquisition execution because `ACQUIRE` was treated as an abstract successful operation.
+- required acquisition recall `1.0`;
+- unnecessary acquisition rate `0.0`;
+- required exactly-one acquisition rate `1.0`;
+- answerable zero-acquisition rate `1.0`;
+- post-acquisition ANSWER rate `1.0`;
+- repeat acquisition count `0`;
+- budget violation count `0`;
+- ambiguous direct-answer attempts `0`;
+- post-cycle final accuracy `1.0`.
 
-## 12. Immediate next work — C99
+C99 establishes the first learned successful acquisition closed loop in the registered synthetic scope. It does not cover failed, denied, or invalid acquisition outcomes.
 
-C99 is the active experiment.
+## 10. Active experiment — C100
+
+Experiment:
+
+`C100-v5e-acquisition-failure-oracle`
 
 Question:
 
-> Can the learned policy close an actual `ACQUIRE -> runtime evidence update -> reobserve -> ANSWER` loop while preserving the model/runtime authority boundary?
+> When a required acquisition does not yield trusted evidence, can the reference policy terminate safely without committing false evidence, retrying past budget, or inventing an answer?
 
-Prospective conditions:
-
-```text
-fresh seeds        = 20261181,20261182,20261183
-train bases        = 0,1,2
-validation base    = 3 only (unseen)
-action space       = ANSWER / ACQUIRE
-acquisition budget = 1
-```
-
-Authority rule:
+Action space:
 
 ```text
-model/router -> proposes ANSWER or ACQUIRE
-runtime      -> alone mutates/reveals evidence state
-model/router -> re-observes the committed visible evidence
+ANSWER
+ACQUIRE
+STOP_UNRESOLVED
 ```
 
-C99 requires every fresh seed to satisfy:
+Runtime outcome classes:
 
 ```text
-required acquisition recall           = 1.0
-unnecessary acquisition rate           = 0.0
-required exactly-one acquisition rate  = 1.0
-answerable zero-acquisition rate        = 1.0
-post-acquisition ANSWER rate            = 1.0
-repeat acquisition count                = 0
-budget violation count                  = 0
-ambiguous direct-answer attempts        = 0
-post-cycle final accuracy               = 1.0
+SUCCESS
+UNAVAILABLE
+DENIED
+INVALID
 ```
 
-Keep C99 to one deterministic abstract acquisition mechanism. Do not add memory/retrieval/observation/user-question mechanism selection or acquisition failure yet.
+Authority semantics:
 
-## 13. Scope / non-claims
+```text
+SUCCESS
+-> runtime commits validated evidence
+-> reobserve
+-> ANSWER
 
-Gate C PASS is limited to the registered V5 synthetic tasks, current selected ranks/fractions, float32 execution, current Windows/CUDA/PyTorch environment, and tested two-module routed-core shapes.
+UNAVAILABLE / DENIED / INVALID
+-> runtime does not commit evidence
+-> outcome is observed
+-> STOP_UNRESOLVED
+```
 
-Gate D PASS is limited to the registered synthetic Condition/Composition routing tasks, tested 0/1/2-step semantics, current five-action routing table, widths 3072/5120, balanced batch216 runtime regime, current eager sparse execution, and the tested Control-Lane configuration.
+Budget:
 
-C97-C99 V5-E work is a tiny synthetic information-sufficiency/acquisition study. Do not claim broad uncertainty calibration, general epistemic self-knowledge, or real-world tool-selection capability from it.
+```text
+1 acquisition attempt for one missing critical fact
+```
+
+Prospective C100 gate:
+
+- answerable rows acquire zero times `1.0`;
+- SUCCESS post-acquisition ANSWER rate `1.0`;
+- SUCCESS final accuracy `1.0`;
+- SUCCESS evidence commit rate `1.0`;
+- failure STOP_UNRESOLVED rate `1.0`;
+- failure no-evidence-commit rate `1.0`;
+- failure no-guessed-answer rate `1.0`;
+- repeat acquisition count `0`;
+- budget violation count `0`.
+
+C100 is an oracle semantics baseline. Learned STOP_UNRESOLVED behavior comes later.
+
+## 11. Hypothesis documents / future tracks
+
+Shared-Basis auto-partition remains a separate future track. Current rule is quality-first and should include representation/optimization checks before structural split decisions.
+
+Context/KV-replacement work remains a separate track. Do not mix it into active C100 unless explicitly pivoting.
+
+## 12. Scope / non-claims
+
+Gate C PASS is limited to registered V5 synthetic tasks and tested runtime shapes/environment.
+
+Gate D PASS is limited to registered synthetic Condition/Composition routing, tested 0/1/2-step semantics, current action table, widths3072/5120, balanced batch216 runtime regime, current eager sparse execution, and tested Control-Lane configuration.
+
+C97-C100 V5-E work is a tiny synthetic information-sufficiency/acquisition study. Do not claim broad uncertainty calibration, general epistemic self-knowledge, or real-world tool-selection capability.
 
 Do not claim broad language quality, universal adaptive-compute superiority, universal control-width sufficiency, or general superiority over Transformers/LLMs from these diagnostics.
