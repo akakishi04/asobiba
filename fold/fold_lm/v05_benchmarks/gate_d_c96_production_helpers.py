@@ -11,7 +11,6 @@ from fold_lm.v05.controller import ControlLaneActionRouter, ControlLaneRouterCon
 from fold_lm.v05_benchmarks.gate_c_shared_basis_production_large_shape_runtime import _storage_bytes
 from fold_lm.v05_benchmarks.gate_d_c87_router_train import ACTION_COUNT, oracle_actions
 from fold_lm.v05_benchmarks.gate_d_c89_runtime_crossover_helpers import (
-    BATCH,
     EVENTS,
     _apply_oracle_actions,
     _event_context,
@@ -90,21 +89,6 @@ def learned_sparse_forward(core, router, working, operations, operands):
         actions = router(current, context, op).argmax(dim=-1)
         current = _apply_oracle_actions(core, current, actions)
     return current
-
-
-def _predicted_runtime_actions(router, working, operations, operands):
-    current = working.clone()
-    width = current.shape[-1]
-    actions_all = []
-    with torch.inference_mode():
-        for event in range(EVENTS):
-            op = operations[:, event]
-            operand = operands[:, event]
-            context = _event_context(width, operand, current.dtype)
-            actions = router(current, context, op).argmax(dim=-1)
-            actions_all.append(actions)
-            current = _apply_oracle_actions(core=None, working=current, actions=actions)
-    return torch.cat(actions_all)
 
 
 def _runtime_action_metrics(core, router, working, operations, operands):
