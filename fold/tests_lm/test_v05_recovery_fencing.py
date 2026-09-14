@@ -29,6 +29,14 @@ class V05RecoveryFencingTests(unittest.TestCase):
         self.assertFalse(registry.allows("r1", "worker-a", old, now=6))
         self.assertTrue(registry.allows("r1", "worker-b", new, now=6))
 
+    def test_same_worker_id_old_token_is_fenced_after_reacquire(self):
+        registry = RecoveryFencingRegistry()
+        old = registry.acquire("r1", "worker-a", now=0, lease_ticks=5)
+        new = registry.acquire("r1", "worker-a", now=5, lease_ticks=5)
+        self.assertEqual((old, new), (1, 2))
+        self.assertFalse(registry.allows("r1", "worker-a", old, now=6))
+        self.assertTrue(registry.allows("r1", "worker-a", new, now=6))
+
     def test_stale_owner_cannot_release_new_owner(self):
         registry = RecoveryFencingRegistry()
         old = registry.acquire("r1", "worker-a", now=0, lease_ticks=5)
