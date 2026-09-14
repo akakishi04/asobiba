@@ -20,7 +20,8 @@ class SqliteRecoveryFencingStore:
             raise TypeError("path must be pathlib.Path")
         self._path = path
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self._path, timeout=5.0) as conn:
+        conn = sqlite3.connect(self._path, timeout=5.0)
+        try:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=FULL")
             conn.execute(
@@ -42,6 +43,9 @@ class SqliteRecoveryFencingStore:
                 )
                 """
             )
+            conn.commit()
+        finally:
+            conn.close()
 
     def acquire(self, receipt_id: str, worker_id: str, *, now: int, lease_ticks: int) -> int | None:
         _validate_id(receipt_id, "receipt_id")
