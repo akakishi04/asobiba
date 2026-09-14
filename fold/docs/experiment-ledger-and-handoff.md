@@ -26,43 +26,60 @@ Primary product priority: operational VRAM headroom, then peak/resident VRAM, la
 ```text
 learned Control Lane
 -> runtime-authoritative availability / permission
--> acquisition execution
+-> real acquisition component
 -> provenance / outcome validation
--> evidence commit
+-> evidence commit only on validated evidence
 -> reobserve
 -> answer / further acquisition / unresolved
 ```
 
 Runtime fault-tolerance hardening through C132 additionally covers receipt binding/authority/scope, commit-context revalidation, replay suppression, atomic claim, crash recovery, concurrent recovery ownership, lease fencing/renewal, SQLite storage fencing, and independent-OS-process fencing.
 
-## Accepted through C132
+## Accepted through C133
 
-C97-C123 established the synthetic information-sufficiency and six-action routing baseline plus runtime authority. C124-C130 hardened replay, crash recovery, ownership, fencing and lease semantics. C131 established SQLite storage-enforced fencing across independent connections.
+C97-C123 established the synthetic information-sufficiency and six-action routing baseline plus runtime authority. C124-C132 hardened replay/crash/ownership/fencing/storage/process boundaries.
 
-C132 `C132-v5e-os-process-sqlite-fencing-falsification` is ACCEPTED PASS: fresh seeds `20261521..23`; focused regression 73/73; 18 OS-process race cases per seed across workers `2/4/8`, modes `RESOLVED/UNKNOWN`, three repetitions; all deciding rates `1.0`; distinct worker PIDs confirmed; SQLite accepted only current fencing-token writes and rejected stale-process writes. C131 control passed. C37 and fixture were preserved and the tracked tree was clean. C132 changed no production runtime code.
+C133 `C133-v5e-real-retrieval-vertical-integration` is ACCEPTED PASS: focused regression 76/76; fresh seeds `20261531..33`; eight persisted-corpus retrieval cases per seed; all deciding rates `1.0`; C37 and fixture preserved; tracked tree clean.
 
-## Active experiment — C133
+C133 established the first real retrieval vertical path:
 
-Experiment: `C133-v5e-real-retrieval-vertical-integration`.
-
-Strategic pivot: stop extending synthetic/runtime fault-tolerance depth for now and connect an actual repository retrieval component to the learned Control Lane.
-
-Question: when `READ_MEMORY` is unavailable and `RETRIEVE` is the least-burden available mechanism, can the learned Control Lane select `RETRIEVE`, invoke the real `fold_reasoning.index.StructuralIndex` through a persisted-corpus adapter, validate provenance, commit evidence exactly once, reobserve, and select `ANSWER`?
+```text
+Control Lane chooses RETRIEVE
+-> persisted JSON corpus
+-> fold_reasoning.index.StructuralIndex exact search
+-> source SHA + index fingerprint validation
+-> evidence commit exactly once
+-> reobserve
+-> ANSWER
+```
 
 Production adapter: `fold_lm.v05.retrieval_adapter.PersistedStructuralRetrievalAdapter`.
-Persisted fixture: `fold_lm/v05_benchmarks/fixtures/c133_structural_records.json`.
 
-Fresh seeds: `20261531,20261532,20261533`. Eight retrieval cases per seed = 24 total actual retrieval cases. C132 is validated as an accepted prerequisite by summary identity/status/gate; its expensive control stack is not rerun.
+## Active experiment — C134
 
-C133 uses `StructuralIndex.search(..., exact=True)` to isolate vertical integration from approximate-LSH recall. Required rates at `1.0`: RETRIEVE selection, persisted exact hit, source/index provenance validation, exactly-one evidence commit, post-commit ANSWER, evidence accuracy, exact-mode/full-corpus scoring, pre-retrieval action invariance, and accepted C132 prerequisite.
+Experiment: `C134-v5e-retrieval-miss-semantics`.
 
-Progress output: each seed reports `train start/done`; every retrieval case reports `case X/8` and `remaining=N`.
+Question: when the real exact retrieval component returns zero hits, does runtime preserve the distinction between “no evidence found” and evidence, commit nothing, disable the exhausted `RETRIEVE` mechanism for the attempt, reobserve, and stop unresolved when no other acquisition mechanism is available?
 
-Scope: controlled persisted corpus with supplied structural/semantic signatures. C133 does not establish learned query formation, natural-language retrieval quality, bounded-LSH recall, retrieval miss handling, wrong-schema handling, or stale-corpus handling. Gate E remains NOT PASSED.
+Fresh seeds: `20261541,20261542,20261543`.
+
+Per seed: 24 real retrieval cases from eight persisted records crossed with:
+
+```text
+MATCH           -> exactly one commit -> ANSWER
+STRUCTURE_MISS  -> zero hit / zero commit -> STOP_UNRESOLVED
+WRONG_SCHEMA    -> zero hit / zero commit -> STOP_UNRESOLVED
+```
+
+All searches use `StructuralIndex.search(..., exact=True)` so C134 isolates zero-hit semantics from approximate-retrieval recall. Search stats must retain source SHA/index fingerprint and full-corpus scoring even on zero-hit outcomes. Accepted C133 is validated by summary identity/status/gate and is not rerun as an expensive control.
+
+Progress output: each seed reports train start/done; every case reports `case X/24`, case type, key, pass/fail and `remaining=N`.
+
+C134 modifies no production runtime code. Bounded-LSH false negatives, stale corpus, natural-language retrieval quality and learned query formation remain outside C134. Gate E remains NOT PASSED.
 
 ## Non-claims
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV replacement remains separate.
 - `fold/fold_memory.py` is a QuadraticMemory numerical reference kernel, not the V5-E persistent memory store.
-- Gate C/D and C97-C133 evidence remains scoped unless explicitly measured otherwise.
+- Gate C/D and C97-C134 evidence remains scoped unless explicitly measured otherwise.
