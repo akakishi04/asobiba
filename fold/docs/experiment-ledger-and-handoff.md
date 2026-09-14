@@ -37,45 +37,44 @@ model/router proposal
 -> post-transition reconciliation
 -> concurrent recovery ownership
 -> lease takeover + fencing token
+-> lease renewal / expiry boundary
+-> storage-enforced fenced mutation
 -> completion
 ```
 
-## Accepted through C129
+## Accepted through C130
 
-C97-C107 established the synthetic information-sufficiency and routing baseline. C108 was a valid negative on arbitrary signed boolean amplitudes; C109-C111 localized and repaired it with schema-aware canonicalization. C112-C118 hardened natural sampling, eligibility refresh, preflight, failure fallback and UNKNOWN_EFFECT containment. C119-C123 established reconciliation, receipt binding/authority/scope and commit-context revalidation. C124-C129 progressively established sequential replay suppression, concurrent atomic receipt claim, restart recovery, post-transition crash recovery, concurrent recovery ownership and lease-expiry fencing.
+C97-C107 established the synthetic information-sufficiency and routing baseline. C108 was a valid negative on arbitrary signed boolean amplitudes; C109-C111 repaired it with schema-aware canonicalization. C112-C123 hardened sampling, eligibility, preflight, failure handling, reconciliation, receipt authority/scope and commit-context revalidation. C124-C130 progressively established replay suppression, atomic receipt claim, restart recovery, post-transition crash recovery, recovery ownership, lease fencing and lease-renewal boundary semantics.
 
-C129 valid retry: fresh seeds `20261491..93`; 1,442 scenarios per seed across 2/4/8 workers; all deciding rates `1.0`; focused regression 60/60; C37 and fixture preserved; tracked tree clean. The first C129 execution was invalid before benchmark execution because the CLI searched the wrong C128 result prefix. The retry kept the same scientific settings.
+C130: fresh seeds `20261501..03`; 1,442 scenarios per seed; renewal ticks `1,3,4`; all deciding rates `1.0`; focused regression 67/67; C37 and fixture preserved; tracked tree clean.
 
-## Active experiment — C130
+## Active experiment — C131
 
-Experiment: `C130-v5e-lease-renewal-boundary-falsification`.
+Experiment: `C131-v5e-sqlite-storage-fencing-falsification`.
 
-Question: can the current recovery owner renew an active lease before expiry without changing its fencing token, while preserving an unambiguous expiry boundary and safe takeover after the renewed lease expires?
+Question: after lease takeover, can persistent SQLite storage reject every stale fencing token and allow only the current owner/token to mutate recovery state across independent database connections?
 
-Production extension: `fold_lm.v05.recovery_fencing.RecoveryFencingRegistry.renew`.
+Production primitive: `fold_lm.v05.sqlite_recovery_fencing.SqliteRecoveryFencingStore`.
 
-Semantics:
+Storage semantics:
 
 ```text
-active                    -> now < expires_at
-expired                   -> now == expires_at
-valid renewal             -> current owner + current token + pre-expiry
-renewal token             -> unchanged
-renewed expiry            -> max(current expiry, now + lease_ticks)
-renewal at exact expiry   -> rejected
-takeover at exact expiry  -> allowed with a higher token
+journal mode       -> WAL
+synchronous        -> FULL
+acquire/takeover   -> BEGIN IMMEDIATE transaction
+fenced mutation    -> conditional SQL against current owner/token/expiry
+connection model   -> independent connection per operation
 ```
 
-Fresh seeds: `20261501,20261502,20261503`.
-Renewal ticks: `1,3,4`.
-Coverage: 1,440 renewal-boundary cases + 2 confirmed-none controls = 1,442 scenarios per seed.
+Fresh seeds: `20261511,20261512,20261513`. Worker counts: `2,4,8`.
+Coverage per seed: 1,440 storage-fencing cases + 2 confirmed-none controls = 1,442 scenarios.
 
-Required rates at `1.0`: C129 control preservation, wrong-owner renewal rejection, valid renewal, token preservation, expiry extension/no shortening, old-expiry takeover block, exact-expiry renewal rejection, exact-expiry takeover acceptance, higher takeover token, stale-token rejection, new-token acceptance, APPLIED / NOT_APPLIED / STILL_UNKNOWN recovery controls, timing-specific boundary rates and hidden trace invariance.
+Required rates at `1.0`: C130 control preservation, single storage-authoritative takeover, higher fencing token, stale-write rejection, current-write acceptance/state for resolved outcomes, zero write / empty effect state for STILL_UNKNOWN, worker-specific takeover/stale-reject rates, confirmed-none STOP and hidden trace invariance.
 
-Scope: deterministic logical time only. Real-clock skew, scheduler pauses and storage-enforced renewal remain outside C130. Gate E remains NOT PASSED.
+Scope: one local SQLite file with independent transactions. Distributed databases, separate OS processes, power-loss durability and filesystem corruption remain outside C131. Lease expiry remains deterministic logical time. Gate E remains NOT PASSED.
 
 ## Non-claims
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV replacement remains separate.
-- Gate C/D and C97-C130 evidence remains synthetic/scoped unless explicitly measured otherwise.
+- Gate C/D and C97-C131 evidence remains synthetic/scoped unless explicitly measured otherwise.
