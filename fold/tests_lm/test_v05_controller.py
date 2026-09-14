@@ -7,6 +7,7 @@ from fold_lm.v05.controller import (
     ControlLaneActionRouter,
     ControlLaneRouterConfig,
     SupervisedActionRouter,
+    canonicalize_boolean_channels,
 )
 
 
@@ -52,6 +53,31 @@ class V05ControllerTests(unittest.TestCase):
     def test_invalid_control_lane_width_is_rejected(self):
         with self.assertRaises(ValueError):
             ControlLaneRouterConfig(width=4, control_width=5)
+
+    def test_boolean_canonicalizer_maps_only_selected_signed_channels(self):
+        source = torch.tensor([[[9.0, -0.1, 4.0, -3.5, 7.0]]])
+        result = canonicalize_boolean_channels(source, (1, 2, 3), threshold=0.0)
+        expected = torch.tensor([[[9.0, -1.0, 1.0, -1.0, 7.0]]])
+        self.assertTrue(torch.equal(result, expected))
+        self.assertTrue(torch.equal(source, torch.tensor([[[9.0, -0.1, 4.0, -3.5, 7.0]]])))
+
+    def test_boolean_canonicalizer_supports_zero_one_schema(self):
+        source = torch.tensor([[[0.0, 1.0, 0.0, 1.0]]])
+        result = canonicalize_boolean_channels(source, (0, 1, 2, 3), threshold=0.5)
+        expected = torch.tensor([[[-1.0, 1.0, -1.0, 1.0]]])
+        self.assertTrue(torch.equal(result, expected))
+
+    def test_boolean_canonicalizer_rejects_ambiguous_threshold_value(self):
+        source = torch.tensor([[[0.0, 1.0]]])
+        with self.assertRaises(ValueError):
+            canonicalize_boolean_channels(source, (0,), threshold=0.0)
+
+    def test_boolean_canonicalizer_rejects_invalid_channels(self):
+        source = torch.tensor([[[1.0, -1.0]]])
+        with self.assertRaises(ValueError):
+            canonicalize_boolean_channels(source, (0, 0), threshold=0.0)
+        with self.assertRaises(ValueError):
+            canonicalize_boolean_channels(source, (2,), threshold=0.0)
 
 
 if __name__ == "__main__":
