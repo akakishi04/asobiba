@@ -41,7 +41,7 @@ raw runtime encoding
 
 Action family: `ANSWER / READ_MEMORY / RETRIEVE / OBSERVE / ASK_USER / STOP_UNRESOLVED`.
 
-## Accepted evidence through C127
+## Accepted evidence through C128
 
 - C97-C105: information sufficiency, acquisition outcomes, six-action learned selection, and runtime-owned fallback established in synthetic scope.
 - C106-C107: unseen eligibility composition and independent evaluator PASS.
@@ -56,9 +56,10 @@ Action family: `ANSWER / READ_MEMORY / RETRIEVE / OBSERVE / ASK_USER / STOP_UNRE
 - C122: verification verdict scope PASS.
 - C123: commit-context revalidation PASS.
 - C124: sequential duplicate receipt replay PASS.
-- C125: concurrent atomic receipt claim PASS across 2/4/8 workers, including naive-race negative control.
+- C125: concurrent atomic receipt claim PASS across 2/4/8 workers.
 - C126: serialized pending/completed restart recovery PASS across 1/2/3 restarts.
-- C127: post-transition crash recovery PASS on fresh seeds `20261471..73`, 1,442 scenarios per seed across 1/2/3 restarts. APPLIED completed without replay, NOT_APPLIED replayed exactly once with the same key, STILL_UNKNOWN remained pending without replay or completion, and the naive pending-replay negative control exposed duplicate-effect risk. C37/fixture preserved; tracked tree clean.
+- C127: post-transition crash recovery PASS; APPLIED avoids replay, NOT_APPLIED replays once with the same key, STILL_UNKNOWN stays pending.
+- C128: concurrent recovery ownership PASS on fresh seeds `20261481..83`, 1,442 scenarios per seed across 2/4/8 workers. Exactly one recovery owner won; losing workers executed no recovery action; the naive race control exposed multiple winners. C37/fixture preserved; tracked tree clean.
 
 Current reconciliation / recovery chain:
 
@@ -72,23 +73,24 @@ UNKNOWN_EFFECT containment
 -> concurrent atomic claim
 -> serialized pending/completed recovery state
 -> post-transition authoritative reconciliation
+-> concurrent recovery ownership
 -> completion
 ```
 
-## Active experiment — C128
+## Active experiment — C129
 
-Experiment: `C128-v5e-concurrent-recovery-ownership-falsification`.
+Experiment: `C129-v5e-recovery-fencing-falsification`.
 
-Question: after restart leaves a receipt pending, can concurrent recovery workers establish exactly one owner so that only one worker may execute the C127 recovery plan?
+Question: after a recovery owner lease expires, can takeover issue a strictly higher fencing token so that an old owner or old process incarnation cannot drive recovery state after a newer owner has taken over?
 
-Production primitive: `fold_lm.v05.recovery_ownership.RecoveryOwnershipRegistry`.
+Production primitive: `fold_lm.v05.recovery_fencing.RecoveryFencingRegistry`.
 
-Fresh seeds: `20261481,20261482,20261483`. Worker counts: `2,4,8`.
+Fresh seeds: `20261491,20261492,20261493`. Worker counts: `2,4,8`.
 
 Coverage per seed:
 
 ```text
-1,440 concurrent recovery ownership cases
+1,440 lease-expiry takeover / fencing cases
 2 confirmed-none controls
 1,442 scenarios total
 ```
@@ -96,23 +98,25 @@ Coverage per seed:
 Required semantics:
 
 ```text
-naive ownership race      -> multiple winners detected
-production ownership race -> exactly one owner
-owner identity            -> exact winner
-losing workers            -> zero recovery transition actions
-owner release             -> exact owner only
+active lease              -> takeover denied
+expired lease             -> exactly one takeover winner
+new fencing token         -> strictly greater than old token
+new owner / new token     -> allowed
+old owner / old token     -> write rejected
+old owner / old token     -> release rejected
+losing challengers        -> zero recovery actions
 APPLIED                    -> zero replay / complete once / one logical effect
 NOT_APPLIED                -> one replay / complete once / one logical effect
 STILL_UNKNOWN              -> zero replay / zero completion / pending retained
 ```
 
-C127 remains a required control gate. All deciding rates are fixed at `1.0`.
+C128 remains a required control gate. A dedicated regression also verifies stale-token rejection when the same worker id is reused by a newer process incarnation. All deciding rates are fixed at `1.0`.
 
-Scope: C128 tests in-process Python-thread recovery ownership only. Owner death, lease expiry, takeover, stale-owner fencing and distributed ownership remain separate questions. Gate E remains NOT PASSED.
+Scope: C129 uses deterministic logical-time leases in one Python process. It does not establish distributed consensus, database-enforced fencing, lease renewal, or clock-skew semantics. Gate E remains NOT PASSED.
 
 ## Non-claims / separate tracks
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV-replacement remains separate.
-- Gate C/D and C97-C128 evidence is synthetic/scoped unless explicitly measured otherwise.
+- Gate C/D and C97-C129 evidence is synthetic/scoped unless explicitly measured otherwise.
 - Do not claim broad language quality, general epistemic self-knowledge, real-world tool selection, or general superiority over Transformer/LLM systems.
