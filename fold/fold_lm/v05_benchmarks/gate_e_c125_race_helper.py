@@ -46,7 +46,7 @@ def rows_for(router, device):
         for hidden in (0, 1):
             if not any(actual):
                 control = c119h.scenario(router, visible, actual, hidden, "STILL_UNKNOWN", device)
-                rows.append({"outcome":"NONE_AVAILABLE","workers":0,"claims":0,"commit":0,"retry":0,"fallback":0,"final":"UNRESOLVED","trace":control["trace"],"passed":bool(control["passed"])})
+                rows.append({"visible":list(visible),"actual":list(actual),"hidden":hidden,"outcome":"NONE_AVAILABLE","workers":0,"claims":0,"commit":0,"retry":0,"fallback":0,"final":"UNRESOLVED","trace":control["trace"],"passed":bool(control["passed"])})
                 continue
             for outcome in c119h.OUTCOMES:
                 for workers in WORKERS:
@@ -59,7 +59,7 @@ def rows_for(router, device):
                         and snapshot == frozenset((rid,))
                         and control["passed"]
                     )
-                    rows.append({"outcome":outcome,"workers":workers,"claims":claims,"commit":control["commit"] if claims == 1 else 0,"retry":control["retry"] if claims == 1 else 0,"fallback":control["fallback"] if claims == 1 else 0,"final":control["final"],"trace":control["trace"],"passed":passed})
+                    rows.append({"visible":list(visible),"actual":list(actual),"hidden":hidden,"outcome":outcome,"workers":workers,"claims":claims,"commit":control["commit"] if claims == 1 else 0,"retry":control["retry"] if claims == 1 else 0,"fallback":control["fallback"] if claims == 1 else 0,"final":control["final"],"trace":control["trace"],"passed":passed})
     return rows
 
 
