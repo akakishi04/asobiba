@@ -2,7 +2,12 @@ import unittest
 
 import torch
 
-from fold_lm.v05.controller import ActionRouterConfig, SupervisedActionRouter
+from fold_lm.v05.controller import (
+    ActionRouterConfig,
+    ControlLaneActionRouter,
+    ControlLaneRouterConfig,
+    SupervisedActionRouter,
+)
 
 
 class V05ControllerTests(unittest.TestCase):
@@ -23,6 +28,30 @@ class V05ControllerTests(unittest.TestCase):
     def test_invalid_action_count_is_rejected(self):
         with self.assertRaises(ValueError):
             ActionRouterConfig(width=8, action_count=0)
+
+    def test_control_lane_five_action_contract(self):
+        router = ControlLaneActionRouter(
+            ControlLaneRouterConfig(width=32, control_width=4, hidden_width=4, action_count=5)
+        )
+        working = torch.zeros(3, 1, 32)
+        context = torch.zeros_like(working)
+        operations = torch.tensor([0, 1, 0], dtype=torch.int64)
+        self.assertEqual(router(working, context, operations).shape, (3, 5))
+
+    def test_control_lane_parameter_count_is_core_width_independent(self):
+        small = ControlLaneActionRouter(
+            ControlLaneRouterConfig(width=32, control_width=4, hidden_width=4, action_count=5)
+        )
+        large = ControlLaneActionRouter(
+            ControlLaneRouterConfig(width=5120, control_width=4, hidden_width=4, action_count=5)
+        )
+        small_count = sum(parameter.numel() for parameter in small.parameters())
+        large_count = sum(parameter.numel() for parameter in large.parameters())
+        self.assertEqual(small_count, large_count)
+
+    def test_invalid_control_lane_width_is_rejected(self):
+        with self.assertRaises(ValueError):
+            ControlLaneRouterConfig(width=4, control_width=5)
 
 
 if __name__ == "__main__":
