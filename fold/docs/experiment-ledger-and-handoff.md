@@ -41,7 +41,7 @@ raw runtime encoding
 
 Action family: `ANSWER / READ_MEMORY / RETRIEVE / OBSERVE / ASK_USER / STOP_UNRESOLVED`.
 
-## Accepted evidence through C124
+## Accepted evidence through C125
 
 - C97-C105: information sufficiency, acquisition outcomes, six-action learned selection, and runtime-owned fallback established in synthetic scope.
 - C106: unseen eligibility-mask composition PASS.
@@ -59,7 +59,8 @@ Action family: `ANSWER / READ_MEMORY / RETRIEVE / OBSERVE / ASK_USER / STOP_UNRE
 - C121: receipt authority gate PASS on 1,442 scenarios per seed; provider and external verification verdict required.
 - C122: verification verdict scope PASS on 1,922 scenarios per seed; verdict must match receipt id, source id and scope epoch.
 - C123: commit-context revalidation PASS on 1,922 scenarios per seed; changed request epoch or provider generation caused zero commit/retry/fallback.
-- C124: sequential duplicate receipt replay PASS on 1,442 scenarios per seed. The first delivery claimed exactly once; repeated deliveries added no commit/retry/fallback. APPLIED totaled one commit, NOT_APPLIED one retry plus one commit, and STILL_UNKNOWN zero side effects. C37/fixture preserved; tracked tree clean.
+- C124: sequential duplicate receipt replay PASS on 1,442 scenarios per seed.
+- C125: concurrent atomic receipt claim PASS on fresh seeds `20261451..53`, 1,442 scenarios per seed, 1,440 concurrent cases across 2/4/8 workers. Atomic claims produced exactly one winner; post-race duplicates were rejected; the naive non-atomic negative control exposed multiple winners. C37/fixture preserved; tracked tree clean.
 
 Current reconciliation chain:
 
@@ -69,25 +70,33 @@ UNKNOWN_EFFECT containment
 -> receipt authority
 -> verdict scope
 -> commit-context revalidation
--> receipt replay suppression
+-> sequential replay suppression
+-> concurrent atomic claim
 -> reconciliation
 ```
 
-## Active experiment — C125
+## Active experiment — C126
 
-Experiment: `C125-v5e-atomic-receipt-claim-falsification`.
+Experiment: `C126-v5e-restart-recovery-falsification`.
 
-Question: can concurrent duplicate deliveries of the same valid receipt be atomically claimed so that exactly one worker wins and only that winner may drive the downstream reconciliation transition?
+Question: after a claim has been persisted but before downstream transition begins, can restart reconstruction preserve a distinct pending state, reject fresh duplicate claims, resume exactly once, and persist completion?
 
-Production primitive: `fold_lm.v05.receipt_atomic_claim.AtomicReceiptClaimRegistry`.
+Production state:
 
-Fresh seeds: `20261451,20261452,20261453`.
-Worker counts: `2,4,8`.
+```text
+fold_lm.v05.receipt_recovery.ReceiptRecoverySnapshot
+fold_lm.v05.receipt_recovery.ReceiptRecoveryRegistry
+```
+
+Snapshot states distinguish `pending_receipt_ids` from `completed_receipt_ids`. Snapshot data crosses a JSON-serializable payload boundary before every simulated restart.
+
+Fresh seeds: `20261461,20261462,20261463`.
+Restart counts: `1,2,3`.
 
 Coverage per seed:
 
 ```text
-1,440 concurrent duplicate-claim cases
+1,440 restart-recovery cases
 2 confirmed-none controls
 1,442 scenarios total
 ```
@@ -95,22 +104,26 @@ Coverage per seed:
 Required semantics:
 
 ```text
-naive non-atomic negative control -> race detected
-atomic registry                  -> exactly one winner
-post-race duplicate claim        -> rejected
-registry snapshot                -> exactly one receipt id
-APPLIED                           -> total one commit / zero retry
-NOT_APPLIED                       -> total one retry / one commit
-STILL_UNKNOWN                     -> total zero commit/retry/fallback
+C125 control gate                 -> preserved
+naive processed-set control       -> loss-of-pending-state flaw detected
+initial claim                     -> exactly once
+serialized pending snapshot       -> survives restart
+fresh duplicate claim on restart  -> rejected
+recovery resume                   -> exactly once
+completion                        -> pending -> completed
+post-completion duplicate claim   -> rejected
+APPLIED                            -> total one commit / zero retry
+NOT_APPLIED                        -> total one retry / one commit
+STILL_UNKNOWN                      -> total zero commit/retry/fallback
 ```
 
-C124 remains a required control gate and hidden counterfactual traces must remain invariant. All deciding rates are fixed at `1.0`.
+All deciding rates are fixed at `1.0`.
 
-C125 tests in-process Python-thread atomicity only. Cross-process/distributed storage atomicity and crash durability remain separate questions. Gate E remains NOT PASSED.
+Scope: C126 models serializable snapshot reconstruction after a crash point strictly between durable claim persistence and the start of downstream transition. It does not prove filesystem fsync durability, does not cover a crash after downstream transition begins, and does not test concurrent recovery ownership. Gate E remains NOT PASSED.
 
 ## Non-claims / separate tracks
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV-replacement remains separate.
-- Gate C/D and C97-C125 evidence is synthetic/scoped unless explicitly measured otherwise.
+- Gate C/D and C97-C126 evidence is synthetic/scoped unless explicitly measured otherwise.
 - Do not claim broad language quality, general epistemic self-knowledge, real-world tool selection, or general superiority over Transformer/LLM systems.
