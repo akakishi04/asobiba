@@ -41,7 +41,7 @@ raw runtime encoding
 
 Action family: `ANSWER / READ_MEMORY / RETRIEVE / OBSERVE / ASK_USER / STOP_UNRESOLVED`.
 
-## Accepted evidence through C122
+## Accepted evidence through C123
 
 - C97-C105: information sufficiency, acquisition outcomes, six-action learned selection, and runtime-owned fallback established in synthetic scope.
 - C106: unseen eligibility-mask composition PASS.
@@ -57,7 +57,8 @@ Action family: `ANSWER / READ_MEMORY / RETRIEVE / OBSERVE / ASK_USER / STOP_UNRE
 - C119: authoritative receipt reconciliation PASS; APPLIED, NOT_APPLIED and STILL_UNKNOWN separated without duplicate logical effects.
 - C120: request-key / mechanism / epoch receipt binding PASS on 1,922 scenarios per seed.
 - C121: receipt authority gate PASS on 1,442 scenarios per seed; provider and external verification verdict required.
-- C122: verification verdict scope PASS on 1,922 scenarios per seed; verdict must match receipt id, source id and scope epoch. C37 and fixture preserved; tracked tree clean.
+- C122: verification verdict scope PASS on 1,922 scenarios per seed; verdict must match receipt id, source id and scope epoch.
+- C123: commit-context revalidation PASS on 1,922 scenarios per seed; changed request epoch or provider generation caused zero commit/retry/fallback. C37/fixture preserved; tracked tree clean.
 
 Current reconciliation chain:
 
@@ -66,44 +67,36 @@ UNKNOWN_EFFECT containment
 -> request binding
 -> receipt authority
 -> verdict scope
+-> commit-context revalidation
 -> reconciliation
 ```
 
-## Active experiment — C123
+## Active experiment — C124
 
-Experiment: `C123-v5e-commit-context-falsification`.
+Experiment: `C124-v5e-receipt-replay-falsification`.
 
-Question: after C122 passes, can runtime reject a previously valid reconciliation result when authoritative state changes before the final state transition?
+Question: can sequential duplicate delivery of the same valid receipt be suppressed so that a local state transition occurs at most once?
 
-Production primitive: `fold_lm.v05.commit_context.commit_context_matches`.
+Production primitive: `fold_lm.v05.receipt_replay.claim_receipt_once`.
 
-Versioned context:
-
-```text
-verified request epoch
-current request epoch
-verified provider generation
-current provider generation
-```
-
-Fresh seeds: `20261431,20261432,20261433`.
+Fresh seeds: `20261441,20261442,20261443`.
 
 Coverage per seed:
 
 ```text
-480 unchanged-context controls
-1,440 changed-context cases
+480 first-delivery controls
+960 repeated-delivery cases
 2 confirmed-none controls
-1,922 scenarios total
+1,442 scenarios total
 ```
 
-Changed request epoch or provider generation must cause zero commit, zero retry, and zero fallback. C122 remains a required control gate. All deciding rates are fixed at `1.0`.
+The identical receipt is delivered 1, 2, or 3 times. The first delivery may claim it exactly once. Later duplicates must add no state transition. APPLIED must total one commit and zero retries; NOT_APPLIED must total one retry and one commit; STILL_UNKNOWN must total zero commit/retry/fallback. C123 remains a required control gate. All deciding rates are fixed at `1.0`.
 
-C123 remains synthetic and does not establish Gate E passage.
+C124 tests sequential duplicate delivery only. Concurrent atomic claims and crash durability remain separate questions. Gate E remains NOT PASSED.
 
 ## Non-claims / separate tracks
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV-replacement remains separate.
-- Gate C/D and C97-C123 evidence is synthetic/scoped unless explicitly measured otherwise.
+- Gate C/D and C97-C124 evidence is synthetic/scoped unless explicitly measured otherwise.
 - Do not claim broad language quality, general epistemic self-knowledge, real-world tool selection, or general superiority over Transformer/LLM systems.
