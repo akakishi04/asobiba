@@ -340,20 +340,87 @@ Initial V5-E principles:
 
 On-policy recovery after self-induced routing errors remains deferred robustness work; it was not a listed Gate-D acceptance bullet and is not claimed complete.
 
-## 11. Immediate next work
+## 11. V5-E accepted evidence summary
 
-First V5-E experiment should establish **oracle information-sufficiency semantics** before training an acquisition controller.
+### C97 — oracle information-sufficiency semantics
 
-Suggested first question:
+Registered minimal action space:
 
-> Given identical visible inputs with a hidden condition that sometimes changes the answer, can a reference policy distinguish `ANSWER` from `ACQUIRE/ASK` without allowing internal compute to invent the missing fact?
+```text
+ANSWER
+ACQUIRE
+```
 
-Keep the first V5-E experiment separate from memory retrieval implementation, external tools, and Vision.
+Oracle boundary:
 
-## 12. Scope / non-claims
+```text
+missing hidden condition that can change target -> ACQUIRE
+missing hidden condition irrelevant to target    -> ANSWER
+```
+
+Accepted exhaustive 32-row result:
+
+- critical missing counterfactual pairs: `4`;
+- irrelevant missing counterfactual pairs: `4`;
+- required acquisition recall: `1.0`;
+- unnecessary acquisition rate: `0.0`;
+- ambiguous direct-answer attempts: `0`;
+- direct-answerable accuracy: `1.0`;
+- irrelevant-missing direct accuracy: `1.0`;
+- post-policy final accuracy: `1.0`;
+- direct-answer coverage: `0.75`.
+
+C97 is an oracle baseline only. `ACQUIRE` remains abstract and no memory/retrieval/tool/Vision mechanism is selected yet.
+
+## 12. Immediate next work — C98
+
+C98 is the active experiment.
+
+Question:
+
+> Can the production fixed-width `ControlLaneActionRouter` learn the C97 `ANSWER / ACQUIRE` policy from visible evidence only and generalize to an unseen visible base value?
+
+Prospective conditions:
+
+```text
+fresh seeds      = 20261171, 20261172, 20261173
+train bases      = 0, 1, 2
+validation base  = 3 only
+control width    = 4
+hidden width     = 4
+training steps   = 320
+```
+
+Router input contains only:
+
+```text
+base
+dependency
+evidence_present
+observed_hidden
+```
+
+When evidence is absent, counterfactual hidden=0/1 examples are required to produce bit-identical router inputs. Hidden truth, target answer, and oracle action are not router inputs.
+
+C98 requires every fresh seed to achieve on the unseen validation base:
+
+```text
+action accuracy                  = 1.0
+required acquisition recall      = 1.0
+unnecessary acquisition rate     = 0.0
+action flips                     = 0
+ambiguous direct-answer attempts = 0
+post-policy final accuracy       = 1.0
+```
+
+Do not add memory retrieval, external tools, Vision, or acquisition-mechanism selection to C98.
+
+## 13. Scope / non-claims
 
 Gate C PASS is limited to the registered V5 synthetic tasks, current selected ranks/fractions, float32 execution, current Windows/CUDA/PyTorch environment, and tested two-module routed-core shapes.
 
 Gate D PASS is limited to the registered synthetic Condition/Composition routing tasks, tested 0/1/2-step semantics, current five-action routing table, widths 3072/5120, balanced batch216 runtime regime, current eager sparse execution, and the tested Control-Lane configuration.
+
+C97/C98 V5-E work is a tiny synthetic information-sufficiency study. Do not claim broad uncertainty calibration, general epistemic self-knowledge, or real-world tool-selection capability from it.
 
 Do not claim broad language quality, universal adaptive-compute superiority, universal control-width sufficiency, or general superiority over Transformers/LLMs from these diagnostics.
