@@ -26,15 +26,15 @@ Protected artifacts:
 4. Judge execution validity separately from scientific result.
 5. Invalid retries keep the same C number.
 6. Valid negative results may complete the C number.
-7. Predeclare thresholds before collecting deciding data.
+7. Predeclare thresholds before deciding data.
 8. Preserve protected artifacts and require tracked tree clean.
 
 ## 3. Gate status
 
 - Gate A: PASSED.
 - Gate B: PASSED.
-- Gate C: PASSED, scoped. See `gate-c-decision-2026-09-14.md`.
-- Gate D: PASSED, scoped. See `gate-d-decision-2026-09-14.md`.
+- Gate C: PASSED, scoped.
+- Gate D: PASSED, scoped.
 - Gate E: NOT PASSED. Active stage.
 
 Gate C lead:
@@ -55,7 +55,7 @@ Supported principle:
 
 Primary product objective remains operational VRAM headroom.
 
-## 4. V5-E current contract
+## 4. V5-E current action / authority contract
 
 Action family:
 
@@ -75,7 +75,7 @@ model/router -> proposes action
 runtime      -> owns availability, permission, acquisition outcome, validation, eligibility mutation, and authoritative evidence mutation
 ```
 
-Do not guess decision-critical missing facts. Do not commit failed/untrusted acquisition as evidence. Under the current synthetic equal-capability contract, do not ask the user while a lower-burden self-service mechanism remains available.
+Do not guess decision-critical missing facts. Do not commit failed/untrusted acquisition as evidence. Under the registered synthetic burden contract, do not ask the user while a lower-burden self-service mechanism remains available.
 
 ## 5. Accepted V5-E capability evidence — C97 to C105
 
@@ -83,51 +83,33 @@ C97-C99 established information sufficiency and the successful `ACQUIRE -> runti
 
 C100-C102 established learned handling of `SUCCESS / UNAVAILABLE / DENIED / INVALID`, including no guessed answers, no repeat acquisition, and no budget violations.
 
-C103-C105 expanded the action family to `ANSWER / READ_MEMORY / RETRIEVE / OBSERVE / ASK_USER / STOP_UNRESOLVED` with synthetic burden order `READ_MEMORY < RETRIEVE < OBSERVE < ASK_USER` and passed the learned mechanism fallback closed loop.
+C103-C105 expanded the action family to `ANSWER / READ_MEMORY / RETRIEVE / OBSERVE / ASK_USER / STOP_UNRESOLVED` and passed learned mechanism selection plus failure-driven fallback under runtime authority.
 
 ## 6. Falsification evidence
 
 ### C106 — unseen mask composition: ACCEPTED PASS
 
-Training used only Hamming-weight <=2 masks; OOD validation used never-trained Hamming-weight >=3 masks on unseen base=3. All fresh seeds passed with OOD accuracy and minimum-burden rate `1.0`, zero flips and zero ineligible selections.
-
-Interpretation: finite 16-mask memorization is materially weakened as an explanation.
+OOD masks never seen in training still passed perfectly on unseen base=3. Finite 16-mask lookup memorization is materially weakened as an explanation.
 
 ### C107 — independent evaluator: ACCEPTED PASS
 
-Training stayed on the canonical generator family; evaluation used an independently written fixture. Label agreement and key coverage were complete, and all fresh seeds achieved action accuracy / minimum class recall / minimum-burden rate `1.0` with zero flips or ineligible selections.
-
-Interpretation: a shared train/eval generator implementation bug is materially weakened as an explanation.
+An independently implemented evaluator agreed with the canonical semantics and all fresh seeds passed. A shared train/eval generator bug is materially weakened as an explanation.
 
 ### C108 — signed feature re-encoding: ACCEPTED VALID NEGATIVE
 
-Training codebooks:
+OOD signed codebooks preserved only `false < 0 < true` while changing amplitudes.
 
-```text
-train_a: false=-0.5, true=+0.75
-train_b: false=-2.0, true=+1.25
-```
+Prospective gate failed:
 
-OOD codebooks:
-
-```text
-ood_a: false=-3.5, true=+0.20
-ood_b: false=-0.10, true=+4.0
-ood_c: false=-7.0, true=+9.0
-```
-
-Anchor remained perfect. OOD failed prospectively:
-
-- OOD accuracy min `0.953125`;
+- anchor action accuracy min `1.0`;
+- OOD action accuracy min `0.953125`;
 - OOD minimum class recall min `0.0`;
 - ineligible mechanism count sum `2`;
 - action flips sum `6`.
 
-Interpretation: the raw Control Lane is not fully invariant to arbitrary signed boolean amplitude changes; `false < 0 < true` alone is not a sufficient representation contract.
+Interpretation: raw Control-Lane numeric amplitude is part of the effective representation. `false < 0 < true` alone is not a sufficient raw production contract.
 
 ### C109 — failure localization: ACCEPTED DIAGNOSTIC PASS
-
-C109 replayed C108 without changing training, architecture, codebooks, seeds, or thresholds.
 
 Exactly one condition failed:
 
@@ -149,62 +131,87 @@ ASK_USER         = 1.0
 STOP_UNRESOLVED  = 0.0
 ```
 
-All other seed/codebook pairs were perfect.
+Failure is localized to boundary actions rather than mechanism-priority collapse.
 
-Interpretation: C108 is not broad policy collapse. Failure is localized to one asymmetric amplitude condition and boundary actions (`ANSWER`, `STOP_UNRESOLVED`). Do not claim LayerNorm is the confirmed cause yet.
+### C110 — signed boolean canonicalization: ACCEPTED DIAGNOSTIC PASS
 
-## 7. Active experiment — C110 signed-control canonicalization diagnostic
-
-Experiment: `C110-v5e-signed-control-canonicalization-diagnostic`
-
-Question:
-
-> If schema-known signed boolean Control-Lane values are canonicalized to `-1/+1` before the production router, does the registered C108 failure disappear while the raw path still reproduces the negative result?
-
-C110 is paired and diagnostic only.
-
-Unchanged:
+C110 replayed the raw C108 negative and then changed only the schema-known boolean representation:
 
 ```text
-router architecture
-training steps
-optimizer
-training codebooks
-OOD codebooks
-replay seeds = 20261311,20261312,20261313
-```
-
-Only adapter:
-
-```text
-schema-known boolean signed value
+signed boolean raw value
 -> sign(value)
 -> {-1,+1}
 ```
 
-Base remains untouched.
+Accepted result:
 
-Prospective gate:
+- raw C108 negative reproduced: `true`;
+- canonical anchor action accuracy / minimum class recall min `1.0`;
+- canonical OOD action accuracy / minimum class recall / minimum-burden rate min `1.0`;
+- canonical OOD ineligible mechanism count sum `0`;
+- canonical OOD action flips sum `0`;
+- all canonical validation passed.
+
+Interpretation:
+
+> Explicit schema-aware boolean canonicalization is sufficient to remove the registered C108 amplitude sensitivity. The raw router itself is not thereby encoding-invariant.
+
+## 7. Active experiment — C111 production Control Representation Adapter integration
+
+Experiment: `C111-v5e-production-control-canonicalization-integration`
+
+Production primitive added to `fold_lm.v05.controller`:
+
+`canonicalize_boolean_channels`
+
+Contract:
 
 ```text
-raw C108 negative reproduced                  = true
-canonical anchor action accuracy min          = 1.0
-canonical anchor minimum class recall min     = 1.0
-canonical OOD action accuracy min             = 1.0
-canonical OOD minimum class recall min        = 1.0
-canonical OOD minimum-burden rate min         = 1.0
-canonical OOD ineligible mechanism count sum  = 0
-canonical OOD action flip count sum           = 0
-canonical all validation passed               = true
+schema specifies boolean channels + decode threshold
+value < threshold -> -1
+value > threshold -> +1
+value == threshold -> reject as ambiguous
+non-boolean channels -> preserved unchanged
 ```
 
-If C110 passes, only conclude that explicit schema-aware boolean canonicalization is sufficient to remove the registered C108 amplitude sensitivity. This does not make the raw router encoding-invariant and does not yet justify production integration.
+Examples:
 
-## 8. Next falsification axes
+```text
+signed raw encoding -> threshold 0.0
+zero/one encoding   -> threshold 0.5
+```
 
-After C110, continue one question per C number. Candidate tests:
+The adapter is outside `ControlLaneActionRouter`; router architecture, parameter count, optimizer, training schedule, and C108 codebooks remain unchanged.
 
-- near-zero / noisy boolean metadata;
+Prospective validation:
+
+```text
+known regression seed = 20261311
+fresh seeds           = 20261321,20261322,20261323
+```
+
+Every registered seed/codebook must satisfy:
+
+```text
+adapter contract smoke                         = pass
+known C108 failure recovered                   = true
+all fresh seeds                                = pass
+anchor action accuracy min                     = 1.0
+anchor minimum six-class recall min            = 1.0
+OOD action accuracy min                        = 1.0
+OOD minimum six-class recall min               = 1.0
+OOD minimum-burden rate min                    = 1.0
+OOD ineligible mechanism count sum             = 0
+OOD action flip count sum                      = 0
+```
+
+C111 modifies a production representation primitive but is not a Gate E passage claim.
+
+## 8. Next falsification axes after C111
+
+Continue one question per C number. Priority candidates:
+
+- near-threshold / noisy boolean metadata;
 - stale capability state;
 - irrelevant distractor features;
 - changed train/validation construction;
@@ -214,5 +221,5 @@ After C110, continue one question per C number. Candidate tests:
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV-replacement remains separate.
-- Gate C/D and C97-C110 evidence is synthetic and scoped.
+- Gate C/D and C97-C111 evidence is synthetic and scoped.
 - Do not claim broad language quality, general epistemic self-knowledge, real-world tool selection, universal control-width sufficiency, or general superiority over Transformer/LLM systems.
