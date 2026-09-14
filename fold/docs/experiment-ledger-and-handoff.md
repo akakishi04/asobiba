@@ -71,9 +71,7 @@ Formal decision:
 
 `fold/docs/gate-c-decision-2026-09-14.md`
 
-This is not a claim that FOLD broadly outperforms Transformer LLMs.
-
-Current lead routed-weight family:
+Accepted lead routed-weight family:
 
 ```text
 W_module = W_base + A_module @ B_shared
@@ -94,7 +92,33 @@ training  -> materialized arithmetic
 inference -> GEMM-native arithmetic
 ```
 
-The same persistent Shared-Basis parameter layout/checkpoint is used in both modes.
+### Gate D
+
+**PASSED on 2026-09-14, scoped to the registered V5 synthetic adaptive-routing/runtime regime.**
+
+Formal decision:
+
+`fold/docs/gate-d-decision-2026-09-14.md`
+
+Accepted production controller candidate:
+
+```text
+ControlLaneActionRouter
+```
+
+Current registered synthetic configuration:
+
+```text
+control_width = 4
+hidden_width  = 4
+action space  = ANSWER / ADD1 / ADD2 / SUB1 / SUB2
+```
+
+Supported design principle:
+
+> Main working-state width and routing-control width should be independent capacity axes.
+
+This is not a claim that control width 4 or hidden width 4 is universally sufficient.
 
 ## 5. Model-lightness priority
 
@@ -120,122 +144,43 @@ Direct fine-grained codebook execution reduced storage but decode/gather overhea
 
 ### C58-C67 — Shared Basis established
 
-Lead family:
-
-```text
-W_module = W_base + A_module @ B_shared
-```
-
-Task-aware/native factorized training recovered the registered task quality. Aligned training rule:
+Task-aware/native factorized training recovered registered task quality. Aligned training rule:
 
 ```text
 factor_lr = common_lr
 ```
 
-Composition rank2 and Language rank4 became stable selected points; Condition was refined further in C74-C76.
+### C68-C76 — Condition robustness and rank3 selection
 
-### C68-C69 — Condition rank4 robustness
+- rank4 12-seed exhaustive: 6 wins / 6 losses vs Dense, sign-test p `1.0`, mean delta near zero;
+- C75 established a material operational benefit for rank3;
+- C76 prospectively accepted rank3 with 24 fresh seeds and non-inferiority margin `-0.002`;
+- one-sided bootstrap lower bound `-0.000512627388` > required `-0.002`.
 
-12 exhaustive seeds showed no systematic rank4 deficit against Dense:
+### C77 — selected-rank recurrence equivalence
 
-- rank4 wins 6 / Dense wins 6;
-- sign-test p = 1.0;
-- mean exact delta `-0.00025117894`.
+Condition3 / Composition2 / Language4:
 
-### C73 — rank/runtime scaling
+- validation semantics/scores equal;
+- tensors allclose;
+- recurrence depths through 64 updates allclose.
 
-At width5120:
+### C78-C80 — production arithmetic policy
 
-| fraction | full-core persistent ratio | batch1 latency | batch8 latency |
-|---|---:|---:|---:|
-| 1/16 | ~0.7136 | 1.05725x | 1.06427x |
-| 1/8 | ~0.7605 | 1.07800x | 1.11564x |
-| 1/4 | ~0.8542 | 1.23527x | 1.21851x |
-
-Rank is therefore an operational capacity cost, not a free quality knob.
-
-### C74-C76 — Condition rank3 selection
-
-C74 identified rank3 as plausible but did not justify adoption retrospectively.
-
-C75 showed rank3-vs-rank4 operational benefit: about 5.5% lower full-core persistent bytes and roughly 3-5.5% lower endpoint latency tax at large width.
-
-C76 then used 24 fresh seeds and a prospectively fixed non-inferiority margin `-0.002`:
-
-- mean rank3-rank4 exact delta `-0.0000794604421`;
-- one-sided 95% bootstrap lower bound `-0.000512627388`;
-- non-inferiority gate PASS.
-
-Decision: Condition rank3 selected.
-
-### C77 — final selected-rank recurrence equivalence
-
-Condition3 / Composition2 / Language4, 3 fresh seeds each:
-
-- all validation scores equal;
-- all validation semantics equal;
-- all validation tensors allclose;
-- recurrence depths 1/2/4/8/16/32/64 allclose;
-- max recurrence abs gap `9.72747802734375e-05`;
-- max recurrence relative-L2 gap `2.7345954560493825e-06`.
-
-### C78-C80 — production training/inference policy
-
-C78 valid negative result: direct GEMM-native arithmetic during optimization accumulated small long-training tensor drift despite nearly identical initial gradients and unchanged scores/semantics.
-
-C79 localized the drift to arithmetic order: production parameter layout + materialized arithmetic matched the accepted materialized reference with output and parameter gap exactly `0.0`.
-
-C80 accepted the explicit policy on fresh Language seeds:
+C78 was a valid negative direct-native-training result. C79 localized the drift to arithmetic order. C80 accepted:
 
 ```text
 training  -> materialized
 inference -> gemm_native
 ```
 
-- production training parameters exact vs accepted reference;
-- materialized outputs exact;
-- native inference scores/semantics equal;
-- native validation max abs gap `1.9073486328125e-06`;
-- V5 regression suite passed.
+### C81-C83 — production runtime/storage/VRAM
 
-### C81 — production large-shape runtime / resident memory
+C81 established practical large-shape production runtime/resident behavior.
 
-Actual production `SharedBasisFixedRoutingCore`, width5120:
+C82 established serialized Shared-Basis artifacts without stored materialized routed-weight banks.
 
-| profile | persistent ratio | batch1 latency | batch8 latency |
-|---|---:|---:|---:|
-| 1/16 | 0.713616 | 1.05653x | 1.06662x |
-| 1/8 | 0.760479 | 1.06485x | 1.10225x |
-| 3/16 | 0.807342 | 1.11150x | 1.14160x |
-
-All outputs allclose. Predeclared production practicality ceilings passed.
-
-### C82 — production serialized artifact
-
-Width3072 state_dict ratios:
-
-- 1/16: `0.713668`;
-- 1/8: `0.760522`;
-- 3/16: `0.807377`.
-
-All round-trips exact; no materialized effective-weight bank serialized.
-
-### C83 — authoritative operational VRAM/headroom gate
-
-Fresh-process width5120 measurements, 3 repeats/point, CUDA context initialized before baseline.
-
-| profile | batch | Dense ready | Shared ready | headroom gain |
-|---|---:|---:|---:|---:|
-| 1/16 | 1 | 1.2422 GiB | 0.9141 GiB | 0.3281 GiB |
-| 1/8 | 1 | 1.2422 GiB | 0.9668 GiB | 0.2754 GiB |
-| 3/16 | 1 | 1.2422 GiB | 1.0215 GiB | 0.2207 GiB |
-| 1/16 | 8 | 1.2617 GiB | 0.9512 GiB | 0.3105 GiB |
-| 1/8 | 8 | 1.2617 GiB | 1.0039 GiB | 0.2578 GiB |
-| 3/16 | 8 | 1.2617 GiB | 1.0586 GiB | 0.2031 GiB |
-
-All points exceeded the prospectively declared `0.15 GiB` minimum headroom gain. Peak allocated and peak reserved VRAM were lower than Dense for every comparison.
-
-Approximate inference-ready VRAM reduction is about 16% to 26% across the tested profiles/batches.
+C83 made operational VRAM headroom the authoritative model-lightness metric. At width5120, tested profiles gained roughly `0.20-0.33 GiB` free VRAM versus Dense, with lower peak allocated/reserved memory at every point.
 
 ## 7. Production state after Gate C
 
@@ -243,46 +188,172 @@ Approximate inference-ready VRAM reduction is about 16% to 26% across the tested
 
 Properties:
 
-- existing Dense `HighPrecisionFixedRoutingCore` remains available;
-- Shared Basis remains explicit/opt-in at this stage;
-- execution mode is explicit and does not silently follow `train()` / `eval()`;
+- Dense `HighPrecisionFixedRoutingCore` remains available;
+- Shared Basis is explicit/opt-in;
+- execution mode is explicit;
 - train with `materialized` arithmetic;
-- deploy/infer with `gemm_native` arithmetic;
-- state_dict stores only canonical Shared-Basis parameters, not effective routed-weight copies.
+- infer with `gemm_native` arithmetic;
+- state_dict stores canonical Shared-Basis parameters only.
 
-## 8. Current stage — V5-D
+## 8. Gate D accepted evidence summary
 
-V5-C is closed. Proceed to **V5-D — adaptive computation and routing**.
+### C84-C85 — zero-compute ANSWER semantics and learned two-action routing
 
-Roadmap action space begins with:
+Condition HOLD can be represented as `ANSWER/no-op`; UPDATE as `COMPUTE(update,1)`.
+
+- approximately half the events require no core compute;
+- no quality loss;
+- supervised router reproduced the oracle policy with action/class accuracy `1.0`.
+
+### C86-C87 — learned variable-depth routing
+
+Composition difficulty axis:
 
 ```text
-ANSWER
-COMPUTE(module, steps)
+operand 0 -> 0 steps
+operand 1 -> 1 step
+operand 2 -> 2 steps
 ```
 
-Initial V5-D principles:
+C86 oracle and C87 learned routing both achieved:
 
-1. establish fixed-step/fixed-route baselines before training a router;
-2. on tiny tasks, enumerate candidate routes/step counts to create oracle/near-oracle routing targets;
-3. begin with supervised routing;
-4. compare dynamic computation against fixed maximum-step baselines;
-5. quality must not be traded away merely to stop earlier;
-6. harder cases should use more computation than easier cases if adaptive compute is meaningful.
+- exact trajectory quality `1.0`;
+- mean compute `1.0 step/event` vs fixed `2.0`;
+- logical compute reduction `50%`.
 
-Gate D eventually requires:
+C87 five-action learned router had action accuracy and minimum class recall `1.0`.
 
-- additional steps used meaningfully on difficult cases;
-- lower average compute on easy cases than fixed maximum-step execution;
-- no quality collapse from premature stopping;
-- routing-head compression must not cause unacceptable action flips.
+### C88-C89 — runtime reality and crossover
 
-## 9. Immediate next work
+C88 valid negative result at width32:
 
-First V5-D experiment should register the routing/action semantics and establish an oracle/fixed-step baseline before adding a learned controller. Do not combine controller learning, information acquisition, memory, or Vision into the first V5-D experiment.
+- 50% logical compute reduction did **not** produce a speedup;
+- eager sparse path was slower because routing/gather/index overhead dominated.
 
-## 10. Scope / non-claims
+C89 width sweep found a router-inclusive runtime crossover at width3072. At width5120, router-cost-plus-sparse diagnosis reached about `0.61x` device and `0.64x` wall latency vs fixed-max.
 
-Gate C PASS is limited to the registered V5 synthetic tasks, current selected ranks/fractions, float32 execution, the current Windows/CUDA/PyTorch environment, and tested two-module routed-core shapes.
+### C90-C95 — compact router failure, diagnosis, and Control Lane
 
-Do not claim broad language quality or general superiority over Transformers/LLMs from these diagnostics.
+C90 selected hidden4 as the smallest tiny-task quality-passing router point.
+
+C91 valid negative result: hidden4 full-width router collapsed at width3072/5120. Its apparent speedups were rejected because routing quality failed.
+
+C92-C94 showed:
+
+- the problem was not explained by training duration alone;
+- coupling controller input dimension to full core width caused severe optimization difficulty;
+- a fixed Control Lane largely removed width dependence;
+- by 480 steps, reused diagnostic seeds converged identically across width3072/5120.
+
+C95 prospective fresh-seed held-out validation:
+
+- six width/seed conditions;
+- held-out action accuracy `1.0` in all conditions;
+- minimum class recall `1.0` in all conditions;
+- action flips `0`;
+- Control-Lane diagnostic router persistent bytes `436`.
+
+### C96 — production Control Lane learned-action runtime/VRAM gate
+
+Production `ControlLaneActionRouter`, widths 3072/5120, three fresh seeds each.
+
+All six conditions passed all predeclared gates.
+
+Quality/routing:
+
+- held-out action accuracy minimum `1.0`;
+- held-out minimum class recall `1.0`;
+- runtime action accuracy minimum `1.0`;
+- runtime minimum class recall `1.0`;
+- outputs vs fixed-max allclose.
+
+Adaptive compute:
+
+- logical compute reduction `50%` in every condition.
+
+Runtime:
+
+- learned/fixed device ratio mean `0.581919`;
+- device ratio maximum `0.649631`;
+- learned/fixed wall ratio mean `0.587959`;
+- wall ratio maximum `0.653782`.
+
+Controller footprint:
+
+- router/core persistent ratio maximum `1.3481e-06`;
+- measured router incremental device-free-VRAM cost `0.0 GiB` at measurement resolution.
+
+C96 therefore establishes a production learned-action adaptive path that is both correct and materially faster in the registered large-width regime.
+
+## 9. Production state after Gate D
+
+Lead adaptive-routing candidate:
+
+`fold_lm.v05.controller.ControlLaneActionRouter`
+
+Current design rule:
+
+```text
+large semantic / working state
++
+small explicit control state
++
+router capacity independent of core width
++
+sparse execution of selected compute
+```
+
+Keep `SupervisedActionRouter` as a comparison/backward-compatible full-width baseline.
+
+Important negative evidence remains binding:
+
+- tiny widths can lose to sparse-dispatch overhead;
+- lower logical compute is not automatically lower latency;
+- controller representation failures can masquerade as controller capacity failures;
+- speed measurements are invalid if routing quality fails.
+
+## 10. Current stage — V5-E
+
+V5-D is closed under the formal scoped decision.
+
+Proceed to **V5-E — information acquisition / knowing when internal compute is insufficient**.
+
+Roadmap action-space expansion candidates:
+
+```text
+PARTIAL_ANSWER
+READ_MEMORY
+RETRIEVE
+OBSERVE
+ASK_USER
+STOP_UNRESOLVED
+```
+
+Initial V5-E principles:
+
+1. preserve the Control-Lane separation rather than routing directly from the full working-state width;
+2. separate model action proposal from runtime permission/authority;
+3. start with a tiny synthetic information-sufficiency task;
+4. compare internal-compute-only vs acquire/clarify actions;
+5. do not integrate FOLD-R memory or Vision into the first V5-E experiment;
+6. do not reward universal abstention or universal acquisition.
+
+On-policy recovery after self-induced routing errors remains deferred robustness work; it was not a listed Gate-D acceptance bullet and is not claimed complete.
+
+## 11. Immediate next work
+
+First V5-E experiment should establish **oracle information-sufficiency semantics** before training an acquisition controller.
+
+Suggested first question:
+
+> Given identical visible inputs with a hidden condition that sometimes changes the answer, can a reference policy distinguish `ANSWER` from `ACQUIRE/ASK` without allowing internal compute to invent the missing fact?
+
+Keep the first V5-E experiment separate from memory retrieval implementation, external tools, and Vision.
+
+## 12. Scope / non-claims
+
+Gate C PASS is limited to the registered V5 synthetic tasks, current selected ranks/fractions, float32 execution, current Windows/CUDA/PyTorch environment, and tested two-module routed-core shapes.
+
+Gate D PASS is limited to the registered synthetic Condition/Composition routing tasks, tested 0/1/2-step semantics, current five-action routing table, widths 3072/5120, balanced batch216 runtime regime, current eager sparse execution, and the tested Control-Lane configuration.
+
+Do not claim broad language quality, universal adaptive-compute superiority, universal control-width sufficiency, or general superiority over Transformers/LLMs from these diagnostics.
