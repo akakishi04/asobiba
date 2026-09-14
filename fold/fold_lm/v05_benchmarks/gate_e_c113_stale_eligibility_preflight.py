@@ -6,9 +6,10 @@ stale-high. The router may propose such a mechanism, but runtime must revalidate
 against authoritative availability before external execution.
 
 Stale proposal -> no mechanism execution, no evidence commit, visible bit is
-cleared, state is reobserved, and the router may fall back. The first genuinely
-available selected mechanism succeeds. If none is actually available, the loop
-must terminate with STOP_UNRESOLVED after stale bits are exhausted.
+cleared, state is reobserved, and the router must fall back in the registered
+minimum-burden order. The first genuinely available selected mechanism succeeds.
+If none is actually available, the loop must terminate with STOP_UNRESOLVED only
+after the visible stale bits are exhausted.
 """
 from __future__ import annotations
 
@@ -33,7 +34,7 @@ SEEDS = (20261341, 20261342, 20261343)
 ACTION_TO_BIT = {1: 0, 2: 1, 3: 2, 4: 3}
 ANSWER = 0
 STOP_UNRESOLVED = 5
-MAX_DECISIONS = 5
+MAX_DECISIONS = 6
 
 
 def _sha(path: Path) -> str:
@@ -88,7 +89,7 @@ def _predict(router, *, dependency: int, evidence_present: int, observed_hidden:
     working = torch.zeros(1, 1, c108.WIDTH, device=device)
     context = torch.zeros_like(working)
     op_ids = torch.zeros(1, dtype=torch.int64, device=device)
-    working[0, 0, 0] = 1.0  # unseen validation base=3 canonicalized as 3/3
+    working[0, 0, 0] = 1.0  # unseen base=3 -> 3/3
     working[0, 0, 1] = float(dependency)
     working[0, 0, 2] = float(evidence_present)
     working[0, 0, 3] = float(observed_hidden)
@@ -109,26 +110,55 @@ def _mask_pairs():
     ]
 
 
+def _expected_action(visible_mask, evidence_present: bool) -> int:
+    if evidence_present:
+        return ANSWER
+    for bit, eligible in enumerate(visible_mask):
+        if eligible:
+            return bit + 1
+    return STOP_UNRESOLVED
+
+
+def _expected_stale_prefix(visible_mask, actual_mask) -> int:
+    count = 0
+    for bit, visible in enumerate(visible_mask):
+        if not visible:
+            continue
+        if actual_mask[bit]:
+            break
+        count += 1
+    return count
+
+
 def _run_required_scenario(router, visible_mask, actual_mask, hidden: int, device):
     visible = list(visible_mask)
     stale_rejects = 0
+    stale_external_executions = 0
     mechanism_executions = 0
     evidence_commits = 0
     repeat_rejects = 0
+    priority_violations = 0
     rejected_bits = set()
     action_trace = []
     final_status = "UNSET"
 
     for _ in range(MAX_DECISIONS):
+        evidence_present = evidence_commits > 0
         action = _predict(
             router,
             dependency=1,
-            evidence_present=int(evidence_commits > 0),
-            observed_hidden=hidden if evidence_commits else 0,
+            evidence_present=int(evidence_present),
+            observed_hidden=hidden if evidence_present else 0,
             visible_mask=visible,
             device=device,
         )
         action_trace.append(action)
+        expected = _expected_action(visible, evidence_present)
+        if action != expected:
+            priority_violations += 1
+            final_status = "PRIORITY_VIOLATION"
+            break
+
         if action == ANSWER:
             final_status = "ANSWERED"
             break
@@ -148,6 +178,7 @@ def _run_required_scenario(router, visible_mask, actual_mask, hidden: int, devic
             final_status = "VISIBLE_INELIGIBLE_ACTION"
             break
 
+        # Authoritative runtime preflight happens before any external execution.
         if actual_mask[bit] == 0:
             stale_rejects += 1
             rejected_bits.add(bit)
@@ -160,21 +191,28 @@ def _run_required_scenario(router, visible_mask, actual_mask, hidden: int, devic
     actual_available = any(actual_mask)
     expected_terminal = "ANSWERED" if actual_available else "UNRESOLVED"
     expected_exec = 1 if actual_available else 0
+    expected_stale = _expected_stale_prefix(visible_mask, actual_mask)
     passed = (
         final_status == expected_terminal
         and mechanism_executions == expected_exec
         and evidence_commits == expected_exec
+        and stale_rejects == expected_stale
+        and stale_external_executions == 0
         and repeat_rejects == 0
+        and priority_violations == 0
     )
     return {
         "visible_mask": list(visible_mask),
         "actual_mask": list(actual_mask),
         "hidden": hidden,
         "action_trace": action_trace,
+        "expected_stale_prefix": expected_stale,
         "stale_reject_count": stale_rejects,
+        "stale_external_execution_count": stale_external_executions,
         "mechanism_execution_count": mechanism_executions,
         "evidence_commit_count": evidence_commits,
         "repeat_stale_reject_count": repeat_rejects,
+        "priority_violation_count": priority_violations,
         "final_status": final_status,
         "scenario_passed": passed,
     }
@@ -188,7 +226,9 @@ def _evaluate_seed(router, device):
         for hidden in (0, 1)
     ]
     answerable = []
-    for dependency, evidence_present, hidden, mask in itertools.product((0, 1), (0, 1), (0, 1), itertools.product((0, 1), repeat=4)):
+    for dependency, evidence_present, hidden, mask in itertools.product(
+        (0, 1), (0, 1), (0, 1), itertools.product((0, 1), repeat=4)
+    ):
         if dependency == 1 and evidence_present == 0:
             continue
         action = _predict(
@@ -201,25 +241,41 @@ def _evaluate_seed(router, device):
         )
         answerable.append(action == ANSWER)
 
-    stale_rows = [r for r in required if r["stale_reject_count"] > 0]
+    stale_rows = [r for r in required if r["expected_stale_prefix"] > 0]
     no_actual = [r for r in required if not any(r["actual_mask"])]
     actual_available = [r for r in required if any(r["actual_mask"])]
+
+    trace_groups = {}
+    for row in required:
+        key = (tuple(row["visible_mask"]), tuple(row["actual_mask"]))
+        trace_groups.setdefault(key, []).append(row["action_trace"])
+    hidden_trace_invariance = 1.0
+    for traces in trace_groups.values():
+        if len(traces) != 2 or traces[0] != traces[1]:
+            hidden_trace_invariance = 0.0
+            break
+
     metrics = {
         "answerable_answer_rate": sum(answerable) / len(answerable),
         "required_scenario_pass_rate": sum(r["scenario_passed"] for r in required) / len(required),
-        "stale_rejection_no_execution_rate": sum(r["mechanism_execution_count"] <= 1 for r in stale_rows) / len(stale_rows),
-        "stale_rejection_no_commit_before_success_rate": 1.0 if all(r["evidence_commit_count"] <= 1 for r in stale_rows) else 0.0,
+        "stale_prefix_exact_rate": sum(r["stale_reject_count"] == r["expected_stale_prefix"] for r in stale_rows) / len(stale_rows),
         "actual_available_answer_rate": sum(r["final_status"] == "ANSWERED" for r in actual_available) / len(actual_available),
         "actual_available_exactly_one_execution_rate": sum(r["mechanism_execution_count"] == 1 for r in actual_available) / len(actual_available),
         "no_actual_stop_rate": sum(r["final_status"] == "UNRESOLVED" for r in no_actual) / len(no_actual),
         "no_actual_zero_execution_rate": sum(r["mechanism_execution_count"] == 0 for r in no_actual) / len(no_actual),
+        "hidden_action_trace_invariance": hidden_trace_invariance,
+        "priority_violation_count": sum(r["priority_violation_count"] for r in required),
+        "stale_external_execution_count": sum(r["stale_external_execution_count"] for r in required),
         "repeat_stale_reject_count": sum(r["repeat_stale_reject_count"] for r in required),
         "required_case_count": len(required),
         "stale_case_count": len(stale_rows),
     }
-    metrics["stale_eligibility_preflight_gate_passed"] = all(
-        value == 1.0 for key, value in metrics.items() if key.endswith("_rate")
-    ) and metrics["repeat_stale_reject_count"] == 0
+    metrics["stale_eligibility_preflight_gate_passed"] = (
+        all(value == 1.0 for key, value in metrics.items() if key.endswith("_rate") or key.endswith("_invariance"))
+        and metrics["priority_violation_count"] == 0
+        and metrics["stale_external_execution_count"] == 0
+        and metrics["repeat_stale_reject_count"] == 0
+    )
     return metrics, required
 
 
@@ -246,9 +302,10 @@ def run(*, protected_result_path: Path, c112_summary_path: Path, output_dir: Pat
         records.append({"seed": seed, "final_loss": loss, "metrics": metrics, "scenarios": scenarios, "validation_passed": passed})
         print(
             f"[C113] seed={seed} required={metrics['required_scenario_pass_rate']:.6f} "
+            f"stale_prefix={metrics['stale_prefix_exact_rate']:.6f} "
             f"available_answer={metrics['actual_available_answer_rate']:.6f} "
             f"no_actual_stop={metrics['no_actual_stop_rate']:.6f} "
-            f"repeat={metrics['repeat_stale_reject_count']} pass={passed}",
+            f"priority={metrics['priority_violation_count']} pass={passed}",
             flush=True,
         )
 
@@ -269,12 +326,17 @@ def run(*, protected_result_path: Path, c112_summary_path: Path, output_dir: Pat
         "stale_rejection_executes_mechanism": False,
         "mask_pair_count": len(_mask_pairs()),
         "required_case_count": ms[0]["required_case_count"],
+        "stale_case_count": ms[0]["stale_case_count"],
         "answerable_answer_rate": _stats([m["answerable_answer_rate"] for m in ms]),
         "required_scenario_pass_rate": _stats([m["required_scenario_pass_rate"] for m in ms]),
+        "stale_prefix_exact_rate": _stats([m["stale_prefix_exact_rate"] for m in ms]),
         "actual_available_answer_rate": _stats([m["actual_available_answer_rate"] for m in ms]),
         "actual_available_exactly_one_execution_rate": _stats([m["actual_available_exactly_one_execution_rate"] for m in ms]),
         "no_actual_stop_rate": _stats([m["no_actual_stop_rate"] for m in ms]),
         "no_actual_zero_execution_rate": _stats([m["no_actual_zero_execution_rate"] for m in ms]),
+        "hidden_action_trace_invariance": _stats([m["hidden_action_trace_invariance"] for m in ms]),
+        "priority_violation_count": {"sum": sum(m["priority_violation_count"] for m in ms), "max": max(m["priority_violation_count"] for m in ms)},
+        "stale_external_execution_count": {"sum": sum(m["stale_external_execution_count"] for m in ms), "max": max(m["stale_external_execution_count"] for m in ms)},
         "repeat_stale_reject_count": {"sum": sum(m["repeat_stale_reject_count"] for m in ms), "max": max(m["repeat_stale_reject_count"] for m in ms)},
         "all_validation_passed": all_pass,
         "stale_eligibility_preflight_gate_passed": all_pass,
