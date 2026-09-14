@@ -35,51 +35,43 @@ learned Control Lane
 
 Runtime fault-tolerance hardening through C132 additionally covers receipt binding/authority/scope, commit-context revalidation, replay suppression, atomic claim, crash recovery, concurrent recovery ownership, lease fencing/renewal, SQLite storage fencing, and independent-OS-process fencing.
 
-## Accepted through C133
+## Accepted through C134
 
-C97-C123 established the synthetic information-sufficiency and six-action routing baseline plus runtime authority. C124-C132 hardened replay/crash/ownership/fencing/storage/process boundaries.
+C97-C123 established the synthetic information-sufficiency and six-action routing baseline plus runtime authority. C124-C132 hardened replay/crash/ownership/fencing/storage/process boundaries. C133 established the first real retrieval vertical path through persisted corpus + `StructuralIndex` + provenance validation + evidence commit + reobserve + `ANSWER`.
 
-C133 `C133-v5e-real-retrieval-vertical-integration` is ACCEPTED PASS: focused regression 76/76; fresh seeds `20261531..33`; eight persisted-corpus retrieval cases per seed; all deciding rates `1.0`; C37 and fixture preserved; tracked tree clean.
+C134 `C134-v5e-retrieval-miss-semantics` is ACCEPTED PASS: focused regression 78/78; fresh seeds `20261541..43`; 24 exact-search cases per seed (`MATCH`, `STRUCTURE_MISS`, `WRONG_SCHEMA` across eight records); all deciding rates `1.0`; zero-hit outcomes committed no evidence and ended `STOP_UNRESOLVED` after `RETRIEVE` exhaustion. C37 and fixture were preserved and the tracked tree remained clean. C134 changed no production runtime code.
 
-C133 established the first real retrieval vertical path:
+Production retrieval adapter: `fold_lm.v05.retrieval_adapter.PersistedStructuralRetrievalAdapter`.
+Persisted fixture: `fold_lm/v05_benchmarks/fixtures/c133_structural_records.json`.
 
-```text
-Control Lane chooses RETRIEVE
--> persisted JSON corpus
--> fold_reasoning.index.StructuralIndex exact search
--> source SHA + index fingerprint validation
--> evidence commit exactly once
--> reobserve
--> ANSWER
-```
+## Active experiment — C135
 
-Production adapter: `fold_lm.v05.retrieval_adapter.PersistedStructuralRetrievalAdapter`.
+Experiment: `C135-v5e-bounded-retrieval-exact-recovery`.
 
-## Active experiment — C134
+Question: when bounded LSH returns a false-negative zero hit for evidence that exact search can recover, can runtime treat the bounded miss as non-authoritative, escalate to exact search, validate provenance, commit recovered evidence exactly once, reobserve, and `ANSWER`, while true exact misses remain zero-commit unresolved outcomes?
 
-Experiment: `C134-v5e-retrieval-miss-semantics`.
+Production extension: `PersistedStructuralRetrievalAdapter.retrieve_with_exact_recovery` and explicit bounded-search parameters on `retrieve`.
 
-Question: when the real exact retrieval component returns zero hits, does runtime preserve the distinction between “no evidence found” and evidence, commit nothing, disable the exhausted `RETRIEVE` mechanism for the attempt, reobserve, and stop unresolved when no other acquisition mechanism is available?
+Fresh seeds: `20261551,20261552,20261553`.
 
-Fresh seeds: `20261541,20261542,20261543`.
-
-Per seed: 24 real retrieval cases from eight persisted records crossed with:
+Per seed four cases:
 
 ```text
-MATCH           -> exactly one commit -> ANSWER
-STRUCTURE_MISS  -> zero hit / zero commit -> STOP_UNRESOLVED
-WRONG_SCHEMA    -> zero hit / zero commit -> STOP_UNRESOLVED
+BOUNDED_HIT            -> bounded hit; exact not attempted; commit once; ANSWER
+BOUNDED_FALSE_NEGATIVE -> q6 bounded miss at scan_limit=1/probes=1; exact recovers; commit once; ANSWER
+TRUE_MISS              -> bounded miss; exact miss; zero commit; STOP_UNRESOLVED
+WRONG_SCHEMA           -> bounded miss; exact miss; zero commit; STOP_UNRESOLVED
 ```
 
-All searches use `StructuralIndex.search(..., exact=True)` so C134 isolates zero-hit semantics from approximate-retrieval recall. Search stats must retain source SHA/index fingerprint and full-corpus scoring even on zero-hit outcomes. Accepted C133 is validated by summary identity/status/gate and is not rerun as an expensive control.
+The false negative comes from the real current `StructuralIndex` LSH layout: `q5` and `q6` collide in the first table; the one-entry scan sees `q5` before `q6`, so bounded retrieval returns zero valid hits for `q6`, while exact search finds it.
 
-Progress output: each seed reports train start/done; every case reports `case X/24`, case type, key, pass/fail and `remaining=N`.
+Accepted C134 is validated by summary identity/status/gate and is not rerun as a heavy control. Progress reports seed train start/done plus every case and remaining count. All deciding rates are fixed at `1.0`.
 
-C134 modifies no production runtime code. Bounded-LSH false negatives, stale corpus, natural-language retrieval quality and learned query formation remain outside C134. Gate E remains NOT PASSED.
+Scope: controlled persisted corpus/signatures. C135 does not establish scalable exact fallback, learned retrieval-budget selection, natural-language query formation, stale-corpus handling, or open-domain retrieval quality. Gate E remains NOT PASSED.
 
 ## Non-claims
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV replacement remains separate.
 - `fold/fold_memory.py` is a QuadraticMemory numerical reference kernel, not the V5-E persistent memory store.
-- Gate C/D and C97-C134 evidence remains scoped unless explicitly measured otherwise.
+- Gate C/D and C97-C135 evidence remains scoped unless explicitly measured otherwise.
