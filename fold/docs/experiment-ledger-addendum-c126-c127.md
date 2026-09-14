@@ -22,4 +22,6 @@ STILL_UNKNOWN -> no replay; do not complete; keep pending
 
 Fresh seeds: `20261471,20261472,20261473`. Restart counts: `1,2,3`. Expected coverage: 1,442 scenarios per seed, including 1,440 post-transition crash cases. C126 remains a required control gate. All deciding rates are fixed at `1.0`.
 
+A focused negative control must also pass before the benchmark: a naive `pending -> replay` recovery is required to demonstrate a duplicated logical effect when the pre-crash transition was already APPLIED.
+
 C127 assumes an authoritative source can classify the downstream transition outcome. It does not establish filesystem transaction durability or distributed recovery ownership. Gate E remains NOT PASSED.
