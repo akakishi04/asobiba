@@ -19,13 +19,16 @@ def _predict(router, visible, mask, device):
 
 
 def _row(hidden):
+    target = c105._direct_answer(3, 1, 1, hidden)
+    if target is None:
+        raise RuntimeError("C117 target construction unexpectedly unresolved")
     return {
         "base": 3,
         "dependency": 1,
         "hidden": hidden,
         "evidence_present": 0,
         "visible": (3, 1, 0, 0),
-        "target": c105._target(3, 1, hidden),
+        "target": target,
     }
 
 
