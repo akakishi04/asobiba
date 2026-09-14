@@ -11,7 +11,7 @@
 - Python 3.13.15 / PyTorch 2.10.0+cu130 / CUDA 13.0
 - GPU: RTX 4070 Ti SUPER
 
-Protected artifacts:
+Protected:
 
 - `runs/chatgpt-last-result.json`
 - SHA256 `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`
@@ -23,10 +23,10 @@ Protected artifacts:
 1. One scientific question per C number.
 2. Full output overwrites `runs/chatgpt-last.log`.
 3. User pastes the complete log.
-4. Judge execution validity separately from scientific result.
+4. Judge execution validity separately from scientific/performance interpretation.
 5. Invalid retries keep the same C number.
 6. Valid negative results may complete the C number.
-7. Predeclare thresholds before deciding data.
+7. Predeclare deciding thresholds before deciding data; characterization-only experiments must not invent post-hoc thresholds.
 8. Preserve protected artifacts and require tracked tree clean.
 
 ## 3. Gate status
@@ -45,17 +45,13 @@ training  -> materialized
 inference -> gemm_native
 ```
 
-Gate D lead controller:
+Gate D lead: `fold_lm.v05.controller.ControlLaneActionRouter`.
 
-`fold_lm.v05.controller.ControlLaneActionRouter`
+Supported principle: main working-state width and routing-control width are independent capacity axes.
 
-Supported principle:
+Primary product objective: operational VRAM headroom, then peak/resident VRAM, then latency/throughput, then artifact size.
 
-> Main working-state width and routing-control width are independent capacity axes.
-
-Primary product objective remains operational VRAM headroom.
-
-## 4. V5-E current action / authority contract
+## 4. V5-E current contract
 
 Action family:
 
@@ -75,13 +71,11 @@ model/router -> proposes action
 runtime      -> owns availability, permission, acquisition outcome, validation, eligibility mutation, and authoritative evidence mutation
 ```
 
-Do not guess decision-critical missing facts. Do not commit failed/untrusted acquisition as evidence. Under the registered synthetic burden contract, do not ask the user while a lower-burden self-service mechanism remains available.
-
-Production representation boundary includes explicit schema-aware boolean canonicalization before the router:
+Production representation boundary:
 
 ```text
 raw runtime encoding
--> Control Representation Adapter
+-> schema-aware Control Representation Adapter
 -> canonical boolean Control Lane
 -> ControlLaneActionRouter
 ```
@@ -90,153 +84,97 @@ Production primitive: `fold_lm.v05.controller.canonicalize_boolean_channels`.
 
 ## 5. Accepted V5-E capability evidence — C97 to C105
 
-C97-C99 established information sufficiency and the successful `ACQUIRE -> runtime commit -> reobserve -> ANSWER` loop.
+C97-C99 established information sufficiency and the successful acquisition/reobserve/answer loop.
 
-C100-C102 established learned handling of `SUCCESS / UNAVAILABLE / DENIED / INVALID`, including no guessed answers, no repeat acquisition, and no budget violations.
+C100-C102 established learned handling of `SUCCESS / UNAVAILABLE / DENIED / INVALID` with no guessed answers, repeat acquisition, or budget violations.
 
-C103-C105 expanded the action family to `ANSWER / READ_MEMORY / RETRIEVE / OBSERVE / ASK_USER / STOP_UNRESOLVED` and passed learned mechanism selection plus failure-driven fallback under runtime authority.
+C103-C105 expanded to the six-action mechanism policy and passed learned minimum-burden selection plus runtime-owned failure fallback.
 
-## 6. Falsification / representation evidence — C106 to C111
+## 6. Falsification / representation evidence — C106 to C112
 
-### C106 — unseen mask composition: ACCEPTED PASS
+- C106 unseen eligibility-mask composition: PASS. Finite 16-mask memorization weakened as an explanation.
+- C107 independent evaluator: PASS. Shared train/eval generator bug weakened as an explanation.
+- C108 signed feature re-encoding: VALID NEGATIVE. Raw Control Lane was not invariant to arbitrary signed boolean amplitudes.
+- C109 localized the only failing condition to seed `20261311`, `ood_b (-0.1,+4.0)`, concentrated in `ANSWER` and `STOP_UNRESOLVED`.
+- C110 diagnostic canonicalization: PASS. Mapping schema-known boolean inputs to `-1/+1` removed the registered failure.
+- C111 production adapter integration: PASS. Known regression recovered and fresh seeds `20261321..23` all passed.
+- C112 natural class-frequency falsification: PASS. Removing class-balanced training still yielded perfect six-class recall under the registered synthetic distribution, including rare `ASK_USER` and `STOP_UNRESOLVED` classes at `1.5625%` each.
 
-OOD masks never seen in training still passed perfectly on unseen base=3. Finite 16-mask lookup memorization is materially weakened as an explanation.
+## 7. C113 — stale eligibility runtime preflight: ACCEPTED PASS
 
-### C107 — independent evaluator: ACCEPTED PASS
+Experiment: `C113-v5e-stale-eligibility-preflight`.
 
-An independently implemented evaluator agreed with canonical semantics and all fresh seeds passed. A shared train/eval generator bug is materially weakened as an explanation.
+Fresh seeds `20261341..43`; unseen base=3; natural row sampling; production canonicalizer.
 
-### C108 — signed feature re-encoding: ACCEPTED VALID NEGATIVE
-
-Anchor remained perfect, but held-out signed codebooks produced OOD accuracy min `0.953125`, minimum class recall `0.0`, two ineligible selections and six action flips.
-
-Interpretation: raw Control-Lane numeric amplitude is part of the effective representation. `false < 0 < true` alone is not a sufficient raw production contract.
-
-### C109 — failure localization: ACCEPTED DIAGNOSTIC PASS
-
-Exactly one condition failed: seed `20261311`, codebook `ood_b (-0.1,+4.0)`, six errors. Acquisition mechanism classes retained recall `1.0`; failures concentrated in `ANSWER` and `STOP_UNRESOLVED`.
-
-### C110 — signed boolean canonicalization: ACCEPTED DIAGNOSTIC PASS
-
-Raw C108 failure reproduced. Changing only schema-known boolean representation to `-1/+1` restored all registered anchor/OOD metrics to `1.0` with zero flips/ineligible selections.
-
-### C111 — production Control Representation Adapter: ACCEPTED PASS
-
-Production `canonicalize_boolean_channels` recovered the known C108 failing seed and fresh seeds `20261321..23`; anchor/OOD action accuracy, minimum class recall and minimum-burden rate were all `1.0`, with zero ineligible selections or flips.
-
-Interpretation: explicit schema-aware canonicalization repairs the registered amplitude sensitivity without changing router architecture, optimizer, training schedule, or codebooks.
-
-## 7. C112 — natural class-frequency falsification: ACCEPTED PASS
-
-Experiment: `C112-v5e-natural-class-frequency-falsification`
-
-C112 removed class-balanced minibatches and sampled training rows uniformly with replacement while keeping the production adapter, router architecture, optimizer, batch size, 900-step schedule and codebooks fixed.
-
-Natural synthetic training distribution:
+Exhaustive stale-high test:
 
 ```text
-ANSWER           75.0000%
-READ_MEMORY      12.5000%
-RETRIEVE          6.2500%
-OBSERVE           3.1250%
-ASK_USER          1.5625%
-STOP_UNRESOLVED   1.5625%
+model-visible mask may contain false-positive eligibility
+actual authoritative mask is a subset
+router proposes
+-> runtime preflight
+-> stale proposal: external execution 0, commit 0, clear visible bit, reobserve
+-> next minimum-burden action
 ```
 
-Fresh seeds `20261331..33` all passed on unseen base=3:
+Accepted across all seeds:
 
-- anchor action accuracy `1.0`;
-- anchor minimum six-class recall `1.0`;
-- OOD action accuracy `1.0`;
-- OOD minimum six-class recall `1.0`;
-- OOD minimum-burden rate `1.0`;
-- OOD ineligible mechanism count `0`;
-- OOD action flips `0`;
-- OOD hidden-counterfactual invariance `1.0`.
+- 81 mask pairs / 162 required cases / 80 stale cases;
+- answerable ANSWER `1.0`;
+- required scenario pass `1.0`;
+- stale-prefix exact `1.0`;
+- actual-available ANSWER `1.0`;
+- actual-available exactly-one execution `1.0`;
+- no-actual STOP `1.0`;
+- no-actual zero-execution `1.0`;
+- hidden action-trace invariance `1.0`;
+- priority violations `0`;
+- stale external executions `0`;
+- repeat stale rejects `0`.
 
-Interpretation: the registered six-action selector is not dependent on class-balanced sampling within the current exhaustive synthetic distribution. This is not a claim about a measured product distribution.
+Interpretation: stale-high model-visible eligibility can be contained safely by authoritative runtime preflight in the registered synthetic scope. Stale false-negative availability and real tool execution remain untested.
 
-## 8. Active experiment — C113 stale eligibility preflight falsification
+## 8. Active experiment — C114 production control hot-path performance
 
-Experiment: `C113-v5e-stale-eligibility-preflight`
+Experiment: `C114-v5e-production-control-hot-path-profile`.
 
 Question:
 
-> Can the learned selector remain safe when model-visible eligibility is stale-high, if runtime performs authoritative preflight before any external mechanism execution and then forces reobservation/fallback?
+> What latency and operational-VRAM cost does the production Control Representation Adapter add to the batch-1 Control Lane hot path, and does that cost grow with full core width despite the fixed-width router?
 
-Prospective configuration:
-
-```text
-fresh seeds      = 20261341,20261342,20261343
-train bases      = 0,1,2
-validation base  = 3 only
-sampling         = natural uniform-row sampling
-production adapter = canonicalize_boolean_channels
-```
-
-Runtime contract:
+Profiles:
 
 ```text
-model-visible mask may contain stale false-positive eligibility
-actual authoritative mask is a subset of the visible mask
-
-router proposes action
--> runtime preflight checks authoritative availability
-
-stale at preflight
--> no external mechanism execution
--> no evidence commit
--> clear that visible eligibility bit
--> reobserve
--> choose next minimum-burden visible mechanism
-
-first genuinely available mechanism
--> exactly one external execution
--> SUCCESS
--> evidence commit
--> reobserve
--> ANSWER
-
-no authoritative mechanism available
--> exhaust visible stale bits
--> STOP_UNRESOLVED
+router_only
+adapter_only
+production = adapter + router
 ```
 
-C113 exhaustively evaluates all authoritative-mask subsets of all model-visible masks across the four mechanism bits and both hidden counterfactuals.
+Widths: `8` and `5120`.
 
-Every fresh seed must satisfy:
+Fixed measurement contract:
 
 ```text
-answerable ANSWER rate                         = 1.0
-required scenario pass rate                    = 1.0
-stale-prefix exact rate                        = 1.0
-actual-available ANSWER rate                   = 1.0
-actual-available exactly-one-execution rate    = 1.0
-no-actual STOP_UNRESOLVED rate                 = 1.0
-no-actual zero-execution rate                  = 1.0
-hidden action-trace invariance                 = 1.0
-priority violation count                       = 0
-stale external execution count                 = 0
-repeat stale-reject count                      = 0
+batch=1
+slots=1
+control_width=4
+hidden_width=8
+action_count=6
+warmup=200
+iterations/sample=2000
+samples=5
+fresh CUDA process per (path,width)
 ```
 
-C113 tests stale-high eligibility only. Stale false-negative availability is a separate problem. Runtime preflight is still synthetic and does not invoke real memory, retrieval, observation, or user interaction. A valid negative result completes C113 without relaxing thresholds.
+Measure synchronized wall time, CUDA-event device time, warmup/post-profile free-VRAM consumption, single-decision peak allocated/reserved deltas, router parameter count, and production-vs-precanonicalized functional equivalence.
 
-## 9. Next falsification / integration axes after C113
+Derived comparisons include width5120/width8 scaling for adapter and production, width5120 production/router-only latency ratios, and extra operational VRAM at width5120.
 
-Continue one question per C number. Priority candidates:
+C114 is characterization-only: no post-hoc performance threshold. Performance decisions are made after the registered measurements are observed.
 
-- stale false-negative availability / freshness refresh semantics;
-- irrelevant or spuriously correlated runtime metadata;
-- changed train/validation construction;
-- actual source/runtime failures at the adapter boundary;
-- eventually real memory/retrieval/observation/user interaction.
-
-Near-threshold noise should only be tested under an explicit source-confidence/deadband contract; otherwise sign-crossing changes the observed boolean itself and confounds representation robustness with runtime observation error.
-
-## 10. Separate tracks / non-claims
+## 9. Separate tracks / non-claims
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV-replacement remains separate.
-- Gate C/D and C97-C113 evidence is synthetic and scoped.
-- Do not claim broad language quality, general epistemic self-knowledge, real-world tool selection, universal control-width sufficiency, or general superiority over Transformer/LLM systems.
+- Gate C/D and C97-C114 evidence is synthetic/scoped unless explicitly measured otherwise.
+- Do not claim broad language quality, general epistemic self-knowledge, real-world tool selection, or general superiority over Transformer/LLM systems.
