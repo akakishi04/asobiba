@@ -29,6 +29,7 @@ def _latest_c128(runs: Path) -> Path:
 def main():
     runs=Path("runs")
     prior=_latest_c128(runs)
+    print(f"C129 prerequisite_summary = {prior}")
     out=runs/f"c129-v5e-recovery-fencing-{time.time_ns()}"
     report=bench.run(protected_result_path=runs/"chatgpt-last-result.json",c128_summary_path=prior,output_dir=out)
     shown=dict(report); shown["records"]="omitted; see summary.json"
