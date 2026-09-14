@@ -18,6 +18,27 @@ class ReceiptRecoverySnapshot:
         if self.pending_receipt_ids & self.completed_receipt_ids:
             raise ValueError("pending and completed receipt ids must be disjoint")
 
+    def to_payload(self) -> dict:
+        return {
+            "pending_receipt_ids": sorted(self.pending_receipt_ids),
+            "completed_receipt_ids": sorted(self.completed_receipt_ids),
+        }
+
+    @classmethod
+    def from_payload(cls, payload: dict) -> "ReceiptRecoverySnapshot":
+        if type(payload) is not dict:
+            raise TypeError("payload must be dict")
+        if set(payload) != {"pending_receipt_ids", "completed_receipt_ids"}:
+            raise ValueError("payload keys are invalid")
+        pending = payload["pending_receipt_ids"]
+        completed = payload["completed_receipt_ids"]
+        if type(pending) is not list or type(completed) is not list:
+            raise TypeError("payload receipt collections must be lists")
+        return cls(
+            pending_receipt_ids=frozenset(pending),
+            completed_receipt_ids=frozenset(completed),
+        )
+
 
 class ReceiptRecoveryRegistry:
     def __init__(self, snapshot: ReceiptRecoverySnapshot = ReceiptRecoverySnapshot()):
