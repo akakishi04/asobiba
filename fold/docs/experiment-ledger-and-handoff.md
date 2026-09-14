@@ -51,7 +51,7 @@ raw runtime encoding
 
 Production adapter: `fold_lm.v05.controller.canonicalize_boolean_channels`.
 
-## Accepted evidence through C117
+## Accepted evidence through C118
 
 - C97-C105: information sufficiency, acquisition outcomes, six-action learned selection, and runtime-owned fallback established in synthetic scope.
 - C106: unseen eligibility-mask composition PASS.
@@ -65,71 +65,74 @@ Production adapter: `fold_lm.v05.controller.canonicalize_boolean_channels`.
 - C114: accepted performance characterization; production hot path about `1.60-1.63 ms/decision`, width 8 vs 5120 ratio about `1.013`, extra warmup operational VRAM at width5120 `0 bytes`.
 - C115: stale-low terminal refresh PASS.
 - C116: authoritative preflight priority refresh PASS.
-- C117: post-preflight clean-failure fallback PASS on 81 mask pairs / 594 trajectories per seed. First attempt was invalid due helper reference error; valid retry preserved number/seeds/thresholds.
+- C117: post-preflight clean-failure fallback PASS on 81 mask pairs / 594 trajectories per seed. First attempt invalid; valid retry preserved number/seeds/thresholds.
+- C118: UNKNOWN_EFFECT containment PASS on 322 scenarios / 160 ambiguous cases per seed, with zero retry, fallback, or commit after ambiguity.
 
-## C118 — UNKNOWN_EFFECT containment: ACCEPTED PASS
+## C119 — idempotency receipt reconciliation: ACCEPTED PASS
 
-Fresh seeds `20261381..83`; 81 mask pairs; 322 scenarios; 160 UNKNOWN_EFFECT cases.
+Fresh seeds `20261391..93`; 81 mask pairs; 482 scenarios; 480 reconciliation cases.
 
-Accepted metrics were all exact:
+All deciding rates were `1.0`:
 
 ```text
-success control ANSWER                = 1.0
-success exactly-one commit            = 1.0
-UNKNOWN_EFFECT containment            = 1.0
-UNKNOWN_EFFECT exactly-one execution  = 1.0
-UNKNOWN_EFFECT zero commit             = 1.0
-UNKNOWN_EFFECT zero retry              = 1.0
-UNKNOWN_EFFECT zero fallback           = 1.0
-confirmed-none STOP                    = 1.0
-hidden action-trace invariance         = 1.0
+RECONCILED_APPLIED     -> zero retry, one commit, ANSWER
+RECONCILED_NOT_APPLIED -> one same-key retry, one commit, ANSWER
+STILL_UNKNOWN          -> zero retry/fallback/commit, unresolved
+recovered logical effect count -> exactly one
+confirmed-none STOP -> correct
+hidden trace invariance -> 1.0
 ```
 
-Interpretation: an ambiguous post-execution result is not treated as a clean failure. Without authoritative reconciliation, runtime stops without retry, fallback, or evidence commit.
+Protected C37 and fixture were preserved; tracked tree was clean. C119 assumes authoritative provider reconciliation exists.
 
-## Active experiment — C119
+## Active experiment — C120
 
-Experiment: `C119-v5e-idempotency-receipt-reconciliation`.
+Experiment: `C120-v5e-receipt-binding-falsification`.
 
-Question: if the provider supplies authoritative reconciliation tied to the original request key/receipt, can runtime recover from C118 UNKNOWN_EFFECT without duplicate logical effects?
+Question: can a reconciliation receipt affect runtime state only when it is bound to the exact current request identity?
 
-Registered states:
+Production primitive added: `fold_lm.v05.reconciliation.receipt_matches_request`.
+
+Binding fields:
 
 ```text
-RECONCILED_APPLIED
-  -> retry 0
-  -> commit once
-  -> ANSWER
+request key
+mechanism id
+request epoch
+```
 
-RECONCILED_NOT_APPLIED
-  -> retry once with original request key
-  -> commit once
-  -> ANSWER
+C120 crosses four receipt bindings with the three C119 reconciliation outcomes:
 
+```text
+VALID
+WRONG_KEY
+WRONG_MECHANISM
+STALE_EPOCH
+
+x
+
+APPLIED
+NOT_APPLIED
 STILL_UNKNOWN
-  -> retry 0
-  -> fallback 0
-  -> commit 0
-  -> unresolved
 ```
 
-Prospective coverage per seed:
+Coverage per fresh seed `20261401..03`:
 
 ```text
-fresh seeds          = 20261391,20261392,20261393
-mask pairs           = 81
-reconciliation cases = 480
-empty controls       = 2
-scenarios total      = 482
+81 mask pairs
+1,922 scenarios
+480 valid receipt cases
+1,440 invalid-binding cases
+2 confirmed-none STOP controls
 ```
 
-All deciding rates are fixed at `1.0`, including one reconciliation, same-key retry only after authoritative NOT_APPLIED, exactly one logical effect on recovered cases, STILL_UNKNOWN containment, confirmed-none STOP, and hidden trace invariance.
+Prospective gate requires every deciding rate to equal `1.0`: C119 valid controls, exact-binding acceptance, invalid-binding rejection and containment, zero commit/retry/fallback after invalid receipts, confirmed-none STOP, and hidden trace invariance.
 
-C119 assumes authoritative provider reconciliation exists. It remains synthetic and is not a Gate-E passage claim.
+C120 changes a production reconciliation primitive but remains synthetic. Gate E remains NOT PASSED.
 
 ## Non-claims / separate tracks
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV-replacement remains separate.
-- Gate C/D and C97-C119 evidence is synthetic/scoped unless explicitly measured otherwise.
+- Gate C/D and C97-C120 evidence is synthetic/scoped unless explicitly measured otherwise.
 - Do not claim broad language quality, general epistemic self-knowledge, real-world tool selection, or general superiority over Transformer/LLM systems.
