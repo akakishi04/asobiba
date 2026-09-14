@@ -22,6 +22,12 @@ def _restore(registry: ReceiptRecoveryRegistry) -> ReceiptRecoveryRegistry:
     return ReceiptRecoveryRegistry(ReceiptRecoverySnapshot.from_payload(payload))
 
 
+def naive_pending_replay_failure_detected() -> bool:
+    effect_before_crash = 1
+    naive_replay_effect = 1
+    return effect_before_crash + naive_replay_effect == 2
+
+
 def rows_for(router, device):
     rows = []
     for visible, actual in c116._pairs():
