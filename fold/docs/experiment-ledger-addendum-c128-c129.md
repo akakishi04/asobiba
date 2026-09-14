@@ -18,4 +18,6 @@ Fresh seeds: `20261491,20261492,20261493`. Worker counts: `2,4,8`. Expected cove
 
 Required semantics include exactly one takeover winner, monotonically higher fencing token, new-owner write acceptance, stale-owner write and release rejection, loser zero-action, exact owner release, C128 control preservation, and the registered APPLIED / NOT_APPLIED / STILL_UNKNOWN recovery outcomes. A dedicated regression also proves that an old token is rejected even when the worker id itself is reused by a newer incarnation.
 
+First C129 execution was invalid before scientific evaluation. The CLI searched for `c128-v5e-concurrent-recovery-*`, while the accepted C128 CLI actually writes `c128-v5e-recovery-ownership-*`. Focused regressions and protected-artifact postchecks passed, but no C129 benchmark result was produced. The harness-only repair now discovers `c128-*` summaries and accepts only the exact C128 experiment id, PASS status, and accepted C128 gate. C129 keeps the same experiment number, seeds, thresholds, and scientific question.
+
 C129 uses deterministic logical-time leases in one Python process. It does not establish distributed consensus, database-enforced fencing, lease renewal, or clock-skew semantics. Gate E remains NOT PASSED.
