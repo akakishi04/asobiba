@@ -9,6 +9,7 @@
 - Protected C37 SHA256: `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`.
 - Protected fixture SHA256: `A52F8209703149407580F7E2965B61B78653030EE992AF6D759865736741CA9E`.
 - One scientific question per C number. Invalid executions retry the same C number.
+- Long benchmarks must expose seed/phase/case progress and remaining work.
 
 ## Gate status
 
@@ -20,54 +21,48 @@
 
 Primary product priority: operational VRAM headroom, then peak/resident VRAM, latency/throughput, artifact size.
 
-## V5-E runtime / recovery chain
+## V5-E current architecture
 
 ```text
-model/router proposal
--> authoritative availability / permission
--> outcome validation
--> receipt binding / authority / scope
--> commit-context revalidation
--> replay suppression / atomic claim
--> pending/completed recovery state
--> post-transition reconciliation
--> concurrent recovery ownership
--> lease fencing + renewal boundary
--> storage-enforced fenced mutation
--> completion
+learned Control Lane
+-> runtime-authoritative availability / permission
+-> acquisition execution
+-> provenance / outcome validation
+-> evidence commit
+-> reobserve
+-> answer / further acquisition / unresolved
 ```
 
-## Accepted through C131
+Runtime fault-tolerance hardening through C132 additionally covers receipt binding/authority/scope, commit-context revalidation, replay suppression, atomic claim, crash recovery, concurrent recovery ownership, lease fencing/renewal, SQLite storage fencing, and independent-OS-process fencing.
 
-C97-C123 established the synthetic information-sufficiency, learned routing, representation canonicalization, authoritative preflight/failure handling, reconciliation, receipt authority/scope, and commit-context chain. C124-C130 hardened replay suppression, atomic receipt claim, restart recovery, post-transition crash recovery, recovery ownership, fencing tokens, and lease-renewal boundaries.
+## Accepted through C132
 
-C131 valid retry: `C131-v5e-sqlite-storage-fencing-falsification`; fresh seeds `20261511..13`; 1,442 scenarios per seed with 1,440 storage-fencing cases across 2/4/8 workers; all deciding rates `1.0`; focused regression 71/71; SQLite `3.50.4`, WAL/FULL; C37 and fixture preserved; tracked tree clean. The first C131 attempt was invalid before scientific evaluation due to a Windows SQLite-handle cleanup bug and a benchmark import typo; the retry kept the same scientific settings.
+C97-C123 established the synthetic information-sufficiency and six-action routing baseline plus runtime authority. C124-C130 hardened replay, crash recovery, ownership, fencing and lease semantics. C131 established SQLite storage-enforced fencing across independent connections.
 
-## Active experiment — C132
+C132 `C132-v5e-os-process-sqlite-fencing-falsification` is ACCEPTED PASS: fresh seeds `20261521..23`; focused regression 73/73; 18 OS-process race cases per seed across workers `2/4/8`, modes `RESOLVED/UNKNOWN`, three repetitions; all deciding rates `1.0`; distinct worker PIDs confirmed; SQLite accepted only current fencing-token writes and rejected stale-process writes. C131 control passed. C37 and fixture were preserved and the tracked tree was clean. C132 changed no production runtime code.
 
-Experiment: `C132-v5e-os-process-sqlite-fencing-falsification`.
+## Active experiment — C133
 
-Question: does the accepted C131 SQLite fencing contract still hold when lease takeover and fenced mutations are issued by independent OS processes instead of threads in one process?
+Experiment: `C133-v5e-real-retrieval-vertical-integration`.
 
-C132 reuses `fold_lm.v05.sqlite_recovery_fencing.SqliteRecoveryFencingStore` unchanged; no new production primitive is introduced.
+Strategic pivot: stop extending synthetic/runtime fault-tolerance depth for now and connect an actual repository retrieval component to the learned Control Lane.
 
-Fresh seeds: `20261521,20261522,20261523`.
+Question: when `READ_MEMORY` is unavailable and `RETRIEVE` is the least-burden available mechanism, can the learned Control Lane select `RETRIEVE`, invoke the real `fold_reasoning.index.StructuralIndex` through a persisted-corpus adapter, validate provenance, commit evidence exactly once, reobserve, and select `ANSWER`?
 
-Per-seed OS-process matrix:
+Production adapter: `fold_lm.v05.retrieval_adapter.PersistedStructuralRetrievalAdapter`.
+Persisted fixture: `fold_lm/v05_benchmarks/fixtures/c133_structural_records.json`.
 
-```text
-workers       -> 2,4,8
-modes         -> RESOLVED, UNKNOWN
-repetitions   -> 3 per worker/mode
-process cases -> 18
-```
+Fresh seeds: `20261531,20261532,20261533`. Eight retrieval cases per seed = 24 total actual retrieval cases. C132 is validated as an accepted prerequisite by summary identity/status/gate; its expensive control stack is not rerun.
 
-C131 is re-evaluated as a fresh-seed control. For every C132 case, takeover and write phases launch separate Python subprocesses. Required rates at `1.0`: C131 control, process identity, single takeover, higher token, stale-write rejection, RESOLVED current-write/state, UNKNOWN zero-write/empty-storage, and worker-specific process pass/takeover/stale-reject rates.
+C133 uses `StructuralIndex.search(..., exact=True)` to isolate vertical integration from approximate-LSH recall. Required rates at `1.0`: RETRIEVE selection, persisted exact hit, source/index provenance validation, exactly-one evidence commit, post-commit ANSWER, evidence accuracy, exact-mode/full-corpus scoring, pre-retrieval action invariance, and accepted C132 prerequisite.
 
-Scope: one Windows host and one local SQLite file. Distributed consensus, network partitions, power-loss durability, filesystem corruption, and real-clock lease behavior remain outside C132. Gate E remains NOT PASSED.
+Progress output: each seed reports `train start/done`; every retrieval case reports `case X/8` and `remaining=N`.
+
+Scope: controlled persisted corpus with supplied structural/semantic signatures. C133 does not establish learned query formation, natural-language retrieval quality, bounded-LSH recall, retrieval miss handling, wrong-schema handling, or stale-corpus handling. Gate E remains NOT PASSED.
 
 ## Non-claims
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV replacement remains separate.
-- Gate C/D and C97-C132 evidence remains scoped unless explicitly measured otherwise.
+- `fold/fold_memory.py` is a QuadraticMemory numerical reference kernel, not the V5-E persistent memory store.
+- Gate C/D and C97-C133 evidence remains scoped unless explicitly measured otherwise.
