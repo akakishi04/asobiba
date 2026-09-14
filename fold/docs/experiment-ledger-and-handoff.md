@@ -94,24 +94,11 @@ Before external execution or terminal STOP, runtime refreshes authoritative avai
 
 All registered rates were `1.0`; priority violations and premature STOP accepts were `0`; hidden action-trace invariance `1.0`.
 
-## Active experiment — C117
+## C117 — post-preflight clean-failure fallback: ACCEPTED PASS
 
-Experiment: `C117-v5e-post-preflight-execution-failure-fallback`.
+The first C117 attempt was invalid because its helper referenced a nonexistent internal target helper. The retry preserved the experiment number, seeds, thresholds, and scientific question, corrected target construction through the existing direct-answer semantics, and added an import-preflight smoke check.
 
-Question: after C116 authoritative preflight, does the learned fallback remain correct if selected mechanisms subsequently fail and must be removed without evidence commit before reobservation/fallback?
-
-Prospective conditions:
-
-```text
-fresh seeds       = 20261371,20261372,20261373
-validation base   = 3 only
-mask pairs        = 81 visible<=authoritative pairs
-hidden            = 0,1
-trajectories      = success at each eligible position + all-fail
-expected total    = 594
-```
-
-Every fresh seed must satisfy:
+Valid retry on fresh seeds `20261371..73` evaluated 81 mask pairs and 594 trajectories per seed. Accepted metrics:
 
 ```text
 trajectory pass rate            = 1.0
@@ -123,11 +110,44 @@ repeat failed mechanism count   = 0
 budget violation count          = 0
 ```
 
-C117 composes registered C116 preflight and C105 fallback semantics through the current production prediction path. It remains synthetic, invokes no real tools, and does not establish Gate E passage.
+Interpretation: under the registered synthetic contract, authoritative preflight composes with post-preflight clean failure handling. Failed mechanisms commit no evidence, are removed from eligibility, and fallback continues in minimum-burden order until success or STOP_UNRESOLVED.
+
+## Active experiment — C118
+
+Experiment: `C118-v5e-unknown-effect-containment`.
+
+Question: if a mechanism passes authoritative preflight and executes, but runtime cannot determine whether a potentially non-idempotent external effect occurred, can runtime contain the ambiguity without false evidence commit, duplicate execution, or automatic fallback?
+
+Registered UNKNOWN_EFFECT policy:
+
+```text
+exactly one external execution has occurred
+-> evidence commit = 0
+-> retry same mechanism = 0
+-> automatic fallback execution = 0
+-> terminal runtime state = UNRESOLVED_UNKNOWN_EFFECT
+```
+
+SUCCESS remains a control path and must commit exactly once and reobserve to ANSWER.
+
+Prospective conditions:
+
+```text
+fresh seeds       = 20261381,20261382,20261383
+validation base   = 3
+mask pairs        = all 81 visible<=authoritative pairs
+hidden            = 0,1
+non-empty actual  -> SUCCESS and UNKNOWN_EFFECT controls
+empty actual      -> confirmed unavailable STOP control
+```
+
+Every fresh seed must satisfy all registered success and containment rates at `1.0`, including exactly-one execution, zero commit/retry/fallback after UNKNOWN_EFFECT, confirmed-none STOP, and hidden action-trace invariance.
+
+C118 remains synthetic and deliberately conservative. Reconciliation and idempotency-key recovery are separate future questions. Gate E remains NOT PASSED.
 
 ## Separate tracks / non-claims
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV-replacement remains separate.
-- Gate C/D and C97-C117 evidence is synthetic/scoped unless explicitly measured otherwise.
+- Gate C/D and C97-C118 evidence is synthetic/scoped unless explicitly measured otherwise.
 - Do not claim broad language quality, general epistemic self-knowledge, real-world tool selection, or general superiority over Transformer/LLM systems.
