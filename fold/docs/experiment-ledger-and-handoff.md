@@ -77,7 +77,7 @@ runtime      -> owns availability, permission, acquisition outcome, validation, 
 
 Do not guess decision-critical missing facts. Do not commit failed/untrusted acquisition as evidence. Under the registered synthetic burden contract, do not ask the user while a lower-burden self-service mechanism remains available.
 
-Production representation boundary now includes explicit schema-aware boolean canonicalization before the router:
+Production representation boundary includes explicit schema-aware boolean canonicalization before the router:
 
 ```text
 raw runtime encoding
@@ -85,6 +85,8 @@ raw runtime encoding
 -> canonical boolean Control Lane
 -> ControlLaneActionRouter
 ```
+
+Production primitive: `fold_lm.v05.controller.canonicalize_boolean_channels`.
 
 ## 5. Accepted V5-E capability evidence — C97 to C105
 
@@ -120,67 +122,17 @@ Raw C108 failure reproduced. Changing only schema-known boolean representation t
 
 ### C111 — production Control Representation Adapter: ACCEPTED PASS
 
-Production primitive: `fold_lm.v05.controller.canonicalize_boolean_channels`.
-
-Contract:
-
-```text
-schema specifies boolean channels + decode threshold
-value < threshold -> -1
-value > threshold -> +1
-value == threshold -> reject as ambiguous
-non-boolean channels -> preserved unchanged
-```
-
-Accepted validation:
-
-- adapter contract smoke passed;
-- known C108 failing seed `20261311` recovered;
-- fresh seeds `20261321..23` all passed;
-- anchor accuracy / minimum six-class recall min `1.0`;
-- OOD accuracy / minimum six-class recall / minimum-burden rate min `1.0`;
-- OOD ineligible mechanism count `0`;
-- OOD action flips `0`.
+Production `canonicalize_boolean_channels` recovered the known C108 failing seed and fresh seeds `20261321..23`; anchor/OOD action accuracy, minimum class recall and minimum-burden rate were all `1.0`, with zero ineligible selections or flips.
 
 Interpretation: explicit schema-aware canonicalization repairs the registered amplitude sensitivity without changing router architecture, optimizer, training schedule, or codebooks.
 
-## 7. Active experiment — C112 natural class-frequency falsification
+## 7. C112 — natural class-frequency falsification: ACCEPTED PASS
 
 Experiment: `C112-v5e-natural-class-frequency-falsification`
 
-Question:
+C112 removed class-balanced minibatches and sampled training rows uniformly with replacement while keeping the production adapter, router architecture, optimizer, batch size, 900-step schedule and codebooks fixed.
 
-> Does the six-action production selector still learn the registered mechanism policy when class-balanced training is removed and batches are sampled uniformly from the naturally imbalanced exhaustive training rows?
-
-Keep fixed:
-
-```text
-production adapter = canonicalize_boolean_channels
-control width       = 4
-hidden width        = 8
-training steps      = 900
-batch size          = 96
-train bases         = 0,1,2
-validation base     = 3 only
-training/OOD codebooks unchanged from C108/C111
-```
-
-Fresh seeds:
-
-```text
-20261331
-20261332
-20261333
-```
-
-Only sampler changes:
-
-```text
-previous -> class-balanced 16 examples/action/step
-C112     -> uniform training-row sampling with replacement
-```
-
-Natural synthetic class distribution:
+Natural synthetic training distribution:
 
 ```text
 ANSWER           75.0000%
@@ -191,36 +143,100 @@ ASK_USER          1.5625%
 STOP_UNRESOLVED   1.5625%
 ```
 
-Prospective gate for every seed:
+Fresh seeds `20261331..33` all passed on unseen base=3:
+
+- anchor action accuracy `1.0`;
+- anchor minimum six-class recall `1.0`;
+- OOD action accuracy `1.0`;
+- OOD minimum six-class recall `1.0`;
+- OOD minimum-burden rate `1.0`;
+- OOD ineligible mechanism count `0`;
+- OOD action flips `0`;
+- OOD hidden-counterfactual invariance `1.0`.
+
+Interpretation: the registered six-action selector is not dependent on class-balanced sampling within the current exhaustive synthetic distribution. This is not a claim about a measured product distribution.
+
+## 8. Active experiment — C113 stale eligibility preflight falsification
+
+Experiment: `C113-v5e-stale-eligibility-preflight`
+
+Question:
+
+> Can the learned selector remain safe when model-visible eligibility is stale-high, if runtime performs authoritative preflight before any external mechanism execution and then forces reobservation/fallback?
+
+Prospective configuration:
 
 ```text
-anchor action accuracy               = 1.0
-anchor minimum six-class recall      = 1.0
-OOD action accuracy                  = 1.0
-OOD minimum six-class recall         = 1.0
-OOD minimum-burden rate              = 1.0
-OOD ineligible mechanism count       = 0
-OOD action flip count                = 0
-OOD hidden-counterfactual invariance = 1.0
+fresh seeds      = 20261341,20261342,20261343
+train bases      = 0,1,2
+validation base  = 3 only
+sampling         = natural uniform-row sampling
+production adapter = canonicalize_boolean_channels
 ```
 
-A valid negative result completes C112. Do not change steps, batch size, seeds, or thresholds retrospectively under C112.
+Runtime contract:
 
-## 8. Next falsification axes after C112
+```text
+model-visible mask may contain stale false-positive eligibility
+actual authoritative mask is a subset of the visible mask
+
+router proposes action
+-> runtime preflight checks authoritative availability
+
+stale at preflight
+-> no external mechanism execution
+-> no evidence commit
+-> clear that visible eligibility bit
+-> reobserve
+-> choose next minimum-burden visible mechanism
+
+first genuinely available mechanism
+-> exactly one external execution
+-> SUCCESS
+-> evidence commit
+-> reobserve
+-> ANSWER
+
+no authoritative mechanism available
+-> exhaust visible stale bits
+-> STOP_UNRESOLVED
+```
+
+C113 exhaustively evaluates all authoritative-mask subsets of all model-visible masks across the four mechanism bits and both hidden counterfactuals.
+
+Every fresh seed must satisfy:
+
+```text
+answerable ANSWER rate                         = 1.0
+required scenario pass rate                    = 1.0
+stale-prefix exact rate                        = 1.0
+actual-available ANSWER rate                   = 1.0
+actual-available exactly-one-execution rate    = 1.0
+no-actual STOP_UNRESOLVED rate                 = 1.0
+no-actual zero-execution rate                  = 1.0
+hidden action-trace invariance                 = 1.0
+priority violation count                       = 0
+stale external execution count                 = 0
+repeat stale-reject count                      = 0
+```
+
+C113 tests stale-high eligibility only. Stale false-negative availability is a separate problem. Runtime preflight is still synthetic and does not invoke real memory, retrieval, observation, or user interaction. A valid negative result completes C113 without relaxing thresholds.
+
+## 9. Next falsification / integration axes after C113
 
 Continue one question per C number. Priority candidates:
 
-- stale capability state;
-- irrelevant/distractor control state;
+- stale false-negative availability / freshness refresh semantics;
+- irrelevant or spuriously correlated runtime metadata;
 - changed train/validation construction;
-- source/runtime failures around the representation adapter boundary;
+- actual source/runtime failures at the adapter boundary;
 - eventually real memory/retrieval/observation/user interaction.
 
 Near-threshold noise should only be tested under an explicit source-confidence/deadband contract; otherwise sign-crossing changes the observed boolean itself and confounds representation robustness with runtime observation error.
 
-## 9. Separate tracks / non-claims
+## 10. Separate tracks / non-claims
 
 - Shared-Basis auto-partition remains separate.
 - Context/KV-replacement remains separate.
-- Gate C/D and C97-C112 evidence is synthetic and scoped.
+- Gate C/D and C97-C113 evidence is synthetic and scoped.
 - Do not claim broad language quality, general epistemic self-knowledge, real-world tool selection, universal control-width sufficiency, or general superiority over Transformer/LLM systems.
