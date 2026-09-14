@@ -372,26 +372,19 @@ Accepted exhaustive 32-row result:
 
 C97 is an oracle baseline only. `ACQUIRE` remains abstract and no memory/retrieval/tool/Vision mechanism is selected yet.
 
-## 12. Immediate next work — C98
+### C98 — supervised information-sufficiency routing
 
-C98 is the active experiment.
+Production `ControlLaneActionRouter` learned the C97 `ANSWER / ACQUIRE` boundary from visible evidence only.
 
-Question:
-
-> Can the production fixed-width `ControlLaneActionRouter` learn the C97 `ANSWER / ACQUIRE` policy from visible evidence only and generalize to an unseen visible base value?
-
-Prospective conditions:
+Fixed split:
 
 ```text
-fresh seeds      = 20261171, 20261172, 20261173
-train bases      = 0, 1, 2
-validation base  = 3 only
-control width    = 4
-hidden width     = 4
-training steps   = 320
+train bases      = 0,1,2
+validation base  = 3 only (unseen)
+fresh seeds      = 20261171,20261172,20261173
 ```
 
-Router input contains only:
+The router received only:
 
 ```text
 base
@@ -400,20 +393,59 @@ evidence_present
 observed_hidden
 ```
 
-When evidence is absent, counterfactual hidden=0/1 examples are required to produce bit-identical router inputs. Hidden truth, target answer, and oracle action are not router inputs.
+Missing-evidence hidden=0/1 counterfactuals were bit-identical at router input; hidden truth, target answer, and oracle action were not inputs.
 
-C98 requires every fresh seed to achieve on the unseen validation base:
+Accepted result across all three fresh seeds:
+
+- validation action accuracy: `1.0`;
+- required ACQUIRE recall: `1.0`;
+- unnecessary ACQUIRE rate: `0.0`;
+- action flips: `0`;
+- post-policy final accuracy: `1.0`.
+
+C98 establishes learned information-sufficiency routing on this tiny synthetic task. It does not yet establish acquisition execution because `ACQUIRE` was treated as an abstract successful operation.
+
+## 12. Immediate next work — C99
+
+C99 is the active experiment.
+
+Question:
+
+> Can the learned policy close an actual `ACQUIRE -> runtime evidence update -> reobserve -> ANSWER` loop while preserving the model/runtime authority boundary?
+
+Prospective conditions:
 
 ```text
-action accuracy                  = 1.0
-required acquisition recall      = 1.0
-unnecessary acquisition rate     = 0.0
-action flips                     = 0
-ambiguous direct-answer attempts = 0
-post-policy final accuracy       = 1.0
+fresh seeds        = 20261181,20261182,20261183
+train bases        = 0,1,2
+validation base    = 3 only (unseen)
+action space       = ANSWER / ACQUIRE
+acquisition budget = 1
 ```
 
-Do not add memory retrieval, external tools, Vision, or acquisition-mechanism selection to C98.
+Authority rule:
+
+```text
+model/router -> proposes ANSWER or ACQUIRE
+runtime      -> alone mutates/reveals evidence state
+model/router -> re-observes the committed visible evidence
+```
+
+C99 requires every fresh seed to satisfy:
+
+```text
+required acquisition recall           = 1.0
+unnecessary acquisition rate           = 0.0
+required exactly-one acquisition rate  = 1.0
+answerable zero-acquisition rate        = 1.0
+post-acquisition ANSWER rate            = 1.0
+repeat acquisition count                = 0
+budget violation count                  = 0
+ambiguous direct-answer attempts        = 0
+post-cycle final accuracy               = 1.0
+```
+
+Keep C99 to one deterministic abstract acquisition mechanism. Do not add memory/retrieval/observation/user-question mechanism selection or acquisition failure yet.
 
 ## 13. Scope / non-claims
 
@@ -421,6 +453,6 @@ Gate C PASS is limited to the registered V5 synthetic tasks, current selected ra
 
 Gate D PASS is limited to the registered synthetic Condition/Composition routing tasks, tested 0/1/2-step semantics, current five-action routing table, widths 3072/5120, balanced batch216 runtime regime, current eager sparse execution, and the tested Control-Lane configuration.
 
-C97/C98 V5-E work is a tiny synthetic information-sufficiency study. Do not claim broad uncertainty calibration, general epistemic self-knowledge, or real-world tool-selection capability from it.
+C97-C99 V5-E work is a tiny synthetic information-sufficiency/acquisition study. Do not claim broad uncertainty calibration, general epistemic self-knowledge, or real-world tool-selection capability from it.
 
 Do not claim broad language quality, universal adaptive-compute superiority, universal control-width sufficiency, or general superiority over Transformers/LLMs from these diagnostics.
