@@ -9,8 +9,7 @@
 - Protected C37: `runs/chatgpt-last-result.json`; SHA256 `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`.
 - Protected fixture: `runs/fixtures/v05-c-composition-20260921.pt`; SHA256 `A52F8209703149407580F7E2965B61B78653030EE992AF6D759865736741CA9E`.
 - One scientific question per C number. Invalid executions retry the same C number. Valid negatives close their C number and may advance after interpretation.
-- Long benchmarks expose seed/phase/case progress and remaining work.
-- Conversation, execution-command, formal-verdict, and cross-chat handoff responses follow `docs/experiment-conversation-handoff-protocol.md`. Read `AGENTS.md`, that protocol, and this handoff before continuing the active C number.
+- Conversation/execution/handoff responses follow `docs/experiment-conversation-handoff-protocol.md`.
 
 ## Gate status
 
@@ -35,73 +34,69 @@ learned Control Lane
 -> answer / further acquisition / unresolved
 ```
 
-Runtime fault-tolerance hardening through C132 covers receipt binding/authority/scope, commit-context revalidation, replay suppression, atomic claim, crash recovery, concurrent recovery ownership, lease fencing/renewal, SQLite storage fencing, and independent-OS-process fencing.
-
-C133-C135 moved RETRIEVE onto a real persisted corpus and StructuralIndex, established safe zero-hit semantics, and added explicitly measured exact recovery after bounded-LSH false negatives. C136 learned fixed-address query formation. C137 replaced fixed output classes with shared content addressing and dynamic candidate-set growth.
+Runtime fault-tolerance hardening through C132 covers receipt binding/authority/scope, commit-context revalidation, replay suppression, atomic claim, crash recovery, concurrent recovery ownership, lease fencing/renewal, SQLite storage fencing, and independent-OS-process fencing. C133-C135 moved RETRIEVE onto a real persisted corpus/StructuralIndex. C136 learned fixed-address query formation; C137 replaced fixed output classes with shared content addressing and dynamic candidate-set growth.
 
 Production head: `fold_lm.v05.retrieval_content.SharedRetrievalContentHead`.
 Production adapter: `fold_lm.v05.retrieval_adapter.PersistedStructuralRetrievalAdapter`.
 
-## Accepted through C142
+## Accepted chain through C143
 
-C137: ACCEPTED PASS within lexical content-addressing/corpus-growth scope; 87/87 regression, 8-to-12 candidate growth, all deciding rates 1.0. See `experiment-ledger-addendum-c137-c138.md`.
+- C137: ACCEPTED PASS, lexical content-addressing / 8→12 corpus-growth scope.
+- C138: ACCEPTED VALID NEGATIVE, compositional alias fixture with hashed front-end.
+- C139: ACCEPTED VALID NEGATIVE, collision-free diagnostic; solution possible but not all-seed robust.
+- C140: ACCEPTED VALID NEGATIVE, 12-seed replication; 8/12 fully correct.
+- C141: ACCEPTED PASS, oracle evaluation-only color substitution scope; all four C140 errors rescued, no new errors.
+- C142: ACCEPTED PASS, training-only supervised color alignment on the registered 12-candidate fixture; 12/12 COLOR_AUX heads passed original queries, BASELINE 5/12; no inference oracle or production change.
+- C143: **ACCEPTED VALID NEGATIVE**, exhaustive frozen ranking scope. Focused regression 152/152; 24 C142 checkpoints reconstructed; original-12 replay match 1.0; no retraining; protected/input/checkpoint controls valid. Expanded catalog: 64 descriptors, 1,728 alias queries/model, 41,472 total rankings. Runtime path not exercised.
 
-C138: ACCEPTED VALID NEGATIVE; 90/90 regression; known 1.0, unseen 0.25 on every seed; real hash collisions. See `experiment-ledger-addendum-c138-c139.md`.
-
-C139: ACCEPTED VALID NEGATIVE; 93/93 regression; 49-dimensional collision-free features; unseen `1.0, 0.5, 1.0`. C138/C139 also differ in input dimension, parameter shapes/counts, encoding and seed sets: their comparison does not isolate the causal effect of collision removal. See `experiment-ledger-addendum-c139-c140.md` and subsequent audits.
-
-C140: ACCEPTED VALID NEGATIVE; 96/96 regression; known 96/96, unseen 44/48, overall 140/144; 8/12 completely correct seeds. Fixed-configuration seed sensitivity reproduced, mechanism not isolated. See `experiment-ledger-addendum-c140-c141.md`.
-
-C141: ACCEPTED PASS, oracle localization only; 108/108 regression; the same C140 models reconstructed, four errors rescued and 140 successes preserved by evaluation-only canonical color substitution. No fresh seeds or learned original-query improvement. See `experiment-ledger-addendum-c141-c142.md`.
-
-C142: **ACCEPTED PASS, training-only supervised alignment on the registered fixture**, based on the uploaded user log at `680ad7b4063e284504a36e0ded1c05a781d467a3`. Focused regression 130/130. Twelve fresh paired seeds `20261621..20261632`. BASELINE: known 96/96, unseen 39/48, overall 135/144, 5/12 full model passes. COLOR_AUX: known 96/96, unseen 48/48, overall 144/144, 12/12 full model passes. All nine baseline errors rescued; all 135 successes preserved; no new errors. Worst treatment unseen margin `+0.0474634767` versus baseline `-0.0809568167`. All reported input/protection/paired-init/no-inference-oracle/frozen-evaluation/tracked-tree/HEAD checks passed. No production runtime change.
-
-C142 adds a fixed-weight color-alignment auxiliary loss using the same head. It supplies structured training labels and extra training computation, not extra inference parameters or an evaluation-time dictionary. Same optimizer-step count does not mean equal compute. Only four distinct held-out combinations were used; fresh seeds are not fresh tasks. The `q9->q2` baseline error preserves color and changes other attributes, so the improvement is not proof of a uniquely isolated color-only mechanism. C139/C140 negatives remain valid under their own conditions.
-
-C142 full local result and 24 model checkpoints:
-`runs/c142-v5e-training-only-color-alignment-90ebc41c7ada4d679d20b7c902cd3d29/`.
-The C142 report consumed C141 SHA `1a3ded18c9066cfbfc7ab4a60839058ced82120abc3036258dad9170fc7deadc`; its own report hash must be computed locally, not copied from that field.
-
-Detailed verdict and C143 preregistration: **`experiment-ledger-addendum-c142-c143.md`**.
-
-## Active experiment — C143
-
-Experiment: `C143-v5e-frozen-factorial-ranking-audit`.
-Stage: `V5-E-FROZEN-FACTORIAL-RANKING-AUDIT`.
-Status: ACTIVE, awaiting user evaluation; no C143 model result claimed.
-
-Question: do the stored C142 heads generalize beyond the four studied combinations to the exhaustive in-vocabulary factor/alias product?
+C143 aggregate results:
 
 ```text
-Load all 24 saved C142 heads; no retraining or model selection
-Original 12-query / 12-candidate ranking reconstruction against the C142 report
-4 colors x 4 shapes x 4 materials = 64 descriptor candidates
-8 training + 4 prior held-out + 52 newly evaluated combinations
-3 aliases per factor -> 27 raw query variants per combination
-1,728 queries/model x 24 models = 41,472 ranking decisions
-plus 288 original-12 reconstruction controls
-fresh_seed_count = 0; additional_training_steps = 0
+BASELINE ALL: 17178 / 20736 = 0.8284143519
+COLOR_AUX ALL: 19211 / 20736 = 0.9264564043
+
+COLOR_AUX TRAIN_COMBINATION:          2592 / 2592  = 1.0
+COLOR_AUX PRIOR_HELDOUT_COMBINATION:  945 / 1296   = 0.7291666667
+COLOR_AUX NEW_COMBINATION:            15674 / 16848 = 0.9303181387
+COLOR_AUX ORIGINAL_VALIDATION_IN_64:  128 / 144    = 0.8888888889
+
+COLOR_AUX residual errors = 1525
+BASELINE errors = 3558
+paired rescued = 2141
+paired regressions = 108
+both wrong = 1417
+full_model_pass_count = 0 for both arms
 ```
 
-Test generation uses training-only factor/alias tables; raw query and descriptor features alone enter the scorer. Use the unchanged C139 feature implementation and same stored head weights. Zero target-paired lexical overlap and zero OOV are required. Enumerate and write the manifest before any model scoring. No inference-time alias replacement or auxiliary loss at evaluation.
+C143 therefore shows that C142's supervised alignment materially improves broader in-vocabulary factor/alias ranking but is not sufficient for exhaustive 64-candidate generalization. The scoped C142 PASS remains valid. C143 does not establish an end-to-end runtime failure because persisted retrieval/evidence/ANSWER was not run for the generated 64-candidate catalog.
 
-**Ranking only:** no expanded persisted-corpus retrieval, provenance validation, commit or ANSWER is executed in C143. `runtime_path_exercised=False`. The generated 64-descriptor catalog is not a production corpus update. Do not report its ranking accuracy as end-to-end success.
+Detailed C143 verdict and C144 registration: `docs/experiment-ledger-addendum-c143-c144.md`.
 
-- PASS: all 20,736 COLOR_AUX rankings are correct with strictly positive finite expected-class margins, with all controls valid.
-- FAIL: valid reconstruction but any treatment ranking error/nonpositive margin in the expanded suite. Retain the scoped C142 PASS; examine new-combination and original-query-in-64 groups separately.
-- INVALID: prerequisite/checkpoint/hash/config/vocabulary/reconstruction/OOV/numeric/immutability/execution failure. Retry C143 after resolution; no retraining fallback.
+## Active experiment — C144
 
-Per-model groups: training combinations 216 strings (including 24 training strings), previously held-out combinations 108, new combinations 1,404. The exact 12 original validation strings in 64 candidates are an overlapping diagnostic group. Catalog expansion and query coverage expand together, so this is not an isolated one-factor causal comparison. The 52 new combinations are related synthetic tasks, not a separately sourced sealed dataset.
+Experiment: `C144-v5e-factor-mismatch-attribution`.
+Stage: `V5-E-FACTOR-MISMATCH-ATTRIBUTION`.
+Status: ACTIVE, awaiting user local analysis.
 
-Implementation: `gate_e_c143_frozen_factorial_audit.py`, `gate_e_c143_cli.py`, `tests_lm/test_v05_c143_frozen_factorial_audit.py`, `tools/run_c143.ps1`. Reviewer: 22/22 new CPU tests and Python compilation passed using synthetic weights. Full focused suite expected **152**; full suite and actual CUDA checkpoint evaluation not reviewer-executed. PowerShell reviewed, not executed by reviewer.
+Question: which canonical factor-difference patterns dominate C143 residual errors and the BASELINE→COLOR_AUX rescued/regressed decisions?
 
-Save the evaluation manifest, complete rankings, reconstruction evidence and input/checkpoint hashes under a new run directory. Read C142 reports/checkpoints and protected C37/fixture without modification. Scientific FAIL returns exit code zero; execution errors return nonzero. Gate E remains NOT PASSED. No C144 before C143 judgment.
+C144 performs **analysis only** over the accepted C143 `summary.json` + `evaluation-manifest.json`:
+
+```text
+model loading = False
+additional scoring = False
+additional training steps = 0
+runtime path = False
+```
+
+It first recomputes the accepted C143 aggregate counts from full records. Every wrong selection is then classified as COLOR / SHAPE / MATERIAL / pairwise mismatch / all-three mismatch. It also reports factor-space distance, bucket-specific mask counts, expected-value and alias-token error rates, and separate mismatch distributions for 2141 rescues and 108 regressions.
+
+C144 PASS means the descriptive attribution completed with exact prerequisite/accounting consistency; it is not a model-capability pass. The output distribution determines C145. Do not add new factor losses or tune C142 until C144 is judged.
 
 ## Non-claims
 
 - Shared-Basis auto-partition and context/KV replacement remain separate.
 - `fold/fold_memory.py` is a QuadraticMemory numerical reference kernel, not the V5-E persistent memory store.
-- C139-C143 vocabulary-basis features are diagnostics, not scalable production tokenizer proposals.
-- Oracle substitution, explicit training supervision, and automatically discovered semantic factors are different claims.
-- C143 is a frozen selector audit, not a new full-runtime gate.
-- Gate C/D and C97-C143 evidence remains scoped unless explicitly measured otherwise.
+- C139-C144 vocabulary/factor fixtures are diagnostics and synthetic development tasks, not scalable production tokenizer or open-domain semantic evidence.
+- C141 oracle substitution, C142 explicit training supervision, and automatically discovered semantic factors are different claims.
+- Gate E remains NOT PASSED.
