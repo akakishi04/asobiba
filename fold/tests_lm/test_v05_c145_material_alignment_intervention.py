@@ -82,8 +82,8 @@ class V05C145MaterialAlignmentTests(unittest.TestCase):
 
     def test_metrics_counts_material_involvement(self):
         suite = dict(descriptors=["red round metal","blue round metal","red square wood"],
-                     queries=[dict(expected_address=0,bucket="NEW_COMBINATION"),
-                              dict(expected_address=1,bucket="NEW_COMBINATION"),
+                     queries=[dict(expected_address=0,bucket="TRAIN_COMBINATION"),
+                              dict(expected_address=1,bucket="PRIOR_HELDOUT_COMBINATION"),
                               dict(expected_address=2,bucket="NEW_COMBINATION")])
         results=[dict(correct=False,predicted_address=2,expected_margin=-.1),
                  dict(correct=True,predicted_address=1,expected_margin=.2),
@@ -91,6 +91,7 @@ class V05C145MaterialAlignmentTests(unittest.TestCase):
         m=c145._metrics(suite,results)
         self.assertEqual(m["errors"],2)
         self.assertEqual(m["material_involved_errors"],2)
+        self.assertEqual(m["groups"]["PRIOR_HELDOUT_COMBINATION"]["accuracy"], 1.0)
 
     def test_c144_validator_accepts_registered_profile(self):
         data=dict(experiment_id=c145.C144_ID,status="PASS",diagnostic_execution_valid=True,
