@@ -39,68 +39,69 @@ Runtime fault-tolerance hardening through C132 covers receipt binding/authority/
 
 C133-C135 moved RETRIEVE onto a real persisted corpus and StructuralIndex, established safe zero-hit semantics, and added explicitly measured exact recovery after bounded-LSH false negatives. C136 learned fixed-address query formation. C137 replaced fixed output classes with shared content addressing and dynamic candidate-set growth.
 
-Production content head: `fold_lm.v05.retrieval_content.SharedRetrievalContentHead`.
-Production retrieval adapter: `fold_lm.v05.retrieval_adapter.PersistedStructuralRetrievalAdapter`.
+Production head: `fold_lm.v05.retrieval_content.SharedRetrievalContentHead`.
+Production adapter: `fold_lm.v05.retrieval_adapter.PersistedStructuralRetrievalAdapter`.
 
-## Accepted through C141
+## Accepted through C142
 
-C137: ACCEPTED PASS within lexical content-addressing/corpus-growth scope; 87/87 regression, 3 fresh seeds, 8-to-12 candidate growth, all deciding rates 1.0. See `experiment-ledger-addendum-c137-c138.md`.
+C137: ACCEPTED PASS within lexical content-addressing/corpus-growth scope; 87/87 regression, 8-to-12 candidate growth, all deciding rates 1.0. See `experiment-ledger-addendum-c137-c138.md`.
 
-C138: ACCEPTED VALID NEGATIVE; 90/90 regression, known accuracy 1.0, unseen 0.25 on every seed. Real signed-hash collisions exist. See `experiment-ledger-addendum-c138-c139.md`.
+C138: ACCEPTED VALID NEGATIVE; 90/90 regression; known 1.0, unseen 0.25 on every seed; real hash collisions. See `experiment-ledger-addendum-c138-c139.md`.
 
-C139: ACCEPTED VALID NEGATIVE; 93/93 regression; 49-dimensional collision-free features, zero OOV; unseen `1.0, 0.5, 1.0`. A solution is possible on this finite fixture, but the all-seed gate failed. C138/C139 differ in input dimension, parameter shapes/counts, encoding and seeds, so their comparison does not isolate a collision-removal causal effect. See `experiment-ledger-addendum-c139-c140.md` and subsequent audits.
+C139: ACCEPTED VALID NEGATIVE; 93/93 regression; 49-dimensional collision-free features; unseen `1.0, 0.5, 1.0`. C138/C139 also differ in input dimension, parameter shapes/counts, encoding and seed sets: their comparison does not isolate the causal effect of collision removal. See `experiment-ledger-addendum-c139-c140.md` and subsequent audits.
 
-C140: ACCEPTED VALID NEGATIVE based on the user's log at `f036550182c99a06865d788dacf055e3dea5820d`; 96/96 regression; fresh seeds `20261601..20261612`; known 96/96, unseen 44/48, overall 140/144; completely correct seeds 8/12. Errors: `20261602: q10->q2`, `20261604: q11->q1`, `20261606: q11->q1`, `20261612: q10->q2`. Worst margin `-0.0787280798`. This replicates seed-associated sensitivity, not its unique mechanism. See `experiment-ledger-addendum-c140-c141.md`.
+C140: ACCEPTED VALID NEGATIVE; 96/96 regression; known 96/96, unseen 44/48, overall 140/144; 8/12 completely correct seeds. Fixed-configuration seed sensitivity reproduced, mechanism not isolated. See `experiment-ledger-addendum-c140-c141.md`.
 
-C141: **ACCEPTED PASS, oracle color-localization scope only**, based on the user's complete terminal log at `b913e56950e7c0454ca63ec58f1f05f7439e7205`; focused regression 108/108; same twelve C140 seeds, fresh count zero. Baseline replay matches, all four failures rescued, all 140 successes preserved, zero new errors, treatment 144/144 and all margins positive. Frozen weights, input/protected hashes, tracked tree and execution HEAD are preserved. No production change. This is sufficiency of an evaluation-only oracle substitution, not learned original-query improvement or a new robustness proof. C139/C140 negatives remain in force.
+C141: ACCEPTED PASS, oracle localization only; 108/108 regression; the same C140 models reconstructed, four errors rescued and 140 successes preserved by evaluation-only canonical color substitution. No fresh seeds or learned original-query improvement. See `experiment-ledger-addendum-c141-c142.md`.
 
-C141 full local report: `runs/c141-v5e-color-alias-localization-718ccf78048943dd92820ea86cfa11b0/summary.json`.
-C141 consumed C140 SHA256: `a0b23c3a24d6674efd3f9c229d994543af4b1918318e4caa1e9c4c5e6e8d8ca8` (not the C141 report's own hash).
+C142: **ACCEPTED PASS, training-only supervised alignment on the registered fixture**, based on the uploaded user log at `680ad7b4063e284504a36e0ded1c05a781d467a3`. Focused regression 130/130. Twelve fresh paired seeds `20261621..20261632`. BASELINE: known 96/96, unseen 39/48, overall 135/144, 5/12 full model passes. COLOR_AUX: known 96/96, unseen 48/48, overall 144/144, 12/12 full model passes. All nine baseline errors rescued; all 135 successes preserved; no new errors. Worst treatment unseen margin `+0.0474634767` versus baseline `-0.0809568167`. All reported input/protection/paired-init/no-inference-oracle/frozen-evaluation/tracked-tree/HEAD checks passed. No production runtime change.
 
-Training audit: all 8 training records have distinct shape/material pairs, permitting selection without color. All C140 wrong selections retain shape/material and change color. C141's rescue localizes an effective intervention but does not prove color was wholly unlearned or distinguish residual lexical overlap from contextual alignment. Provenance authenticates a source, not relevance; commit-once here is a harness indicator, not a new durability proof.
+C142 adds a fixed-weight color-alignment auxiliary loss using the same head. It supplies structured training labels and extra training computation, not extra inference parameters or an evaluation-time dictionary. Same optimizer-step count does not mean equal compute. Only four distinct held-out combinations were used; fresh seeds are not fresh tasks. The `q9->q2` baseline error preserves color and changes other attributes, so the improvement is not proof of a uniquely isolated color-only mechanism. C139/C140 negatives remain valid under their own conditions.
 
-Detailed C141 verdict and C142 preregistration: **`experiment-ledger-addendum-c141-c142.md`**.
+C142 full local result and 24 model checkpoints:
+`runs/c142-v5e-training-only-color-alignment-90ebc41c7ada4d679d20b7c902cd3d29/`.
+The C142 report consumed C141 SHA `1a3ded18c9066cfbfc7ab4a60839058ced82120abc3036258dad9170fc7deadc`; its own report hash must be computed locally, not copied from that field.
 
-## Active experiment — C142
+Detailed verdict and C143 preregistration: **`experiment-ledger-addendum-c142-c143.md`**.
 
-Experiment: `C142-v5e-training-only-color-alignment`.
-Stage: `V5-E-TRAINING-ONLY-COLOR-ALIGNMENT`.
-Status: ACTIVE, awaiting user CUDA execution; no result claimed.
+## Active experiment — C143
 
-Question: does a training-only color-alias alignment auxiliary objective make the unchanged shared head solve the original held-out alias queries across fresh paired seeds, without inference-time oracle substitution?
+Experiment: `C143-v5e-frozen-factorial-ranking-audit`.
+Stage: `V5-E-FROZEN-FACTORIAL-RANKING-AUDIT`.
+Status: ACTIVE, awaiting user evaluation; no C143 model result claimed.
+
+Question: do the stored C142 heads generalize beyond the four studied combinations to the exhaustive in-vocabulary factor/alias product?
 
 ```text
-12 fresh seeds 20261621..20261632
-same initial head copied into BASELINE and COLOR_AUX per seed
-BASELINE loss = original retrieval cross entropy
-COLOR_AUX loss = original retrieval cross entropy + 1.0 * color-alignment cross entropy
-same 600 optimizer steps / lr 0.002 / logit scale 12.0
-same head: feature_dim=49 / hidden_dim=64 / residual_scale=1.0
-same 24 full queries / 8 full training candidates / 12 evaluation candidates
-extra training-only supervision: 12 distinct aliases versus 4 canonical colors
-no validation/held-out fields used to derive training pairs
-original raw query text in BOTH evaluation arms; zero paired lexical overlap
-144 baseline + 144 COLOR_AUX cases = 288 decisions; 24 trained heads
+Load all 24 saved C142 heads; no retraining or model selection
+Original 12-query / 12-candidate ranking reconstruction against the C142 report
+4 colors x 4 shapes x 4 materials = 64 descriptor candidates
+8 training + 4 prior held-out + 52 newly evaluated combinations
+3 aliases per factor -> 27 raw query variants per combination
+1,728 queries/model x 24 models = 41,472 ranking decisions
+plus 288 original-12 reconstruction controls
+fresh_seed_count = 0; additional_training_steps = 0
 ```
 
-This introduces explicit color-first training supervision and extra computation, not additional model parameters or inference processing. Same optimizer steps does not mean equal training FLOPs. No auxiliary coefficient search, model-size change, extra epochs or validation-based selection.
+Test generation uses training-only factor/alias tables; raw query and descriptor features alone enter the scorer. Use the unchanged C139 feature implementation and same stored head weights. Zero target-paired lexical overlap and zero OOV are required. Enumerate and write the manifest before any model scoring. No inference-time alias replacement or auxiliary loss at evaluation.
 
-- PASS: every COLOR_AUX case is correct through retrieval/evidence/ANSWER with a strictly positive finite expected-class margin; all controls valid.
-- If baseline has errors, report paired rescue and new errors. If both arms are perfect, treatment sufficiency passed but improvement over baseline is unproven; do not substitute seeds.
-- FAIL: valid execution but any treatment error/nonpositive margin remains. Partial improvement is not relabeled PASS.
-- INVALID: prerequisite/input/protection, OOV/overlap, paired initialization, evaluation mutation, numeric, authority or execution failure; resolve and retry C142.
+**Ranking only:** no expanded persisted-corpus retrieval, provenance validation, commit or ANSWER is executed in C143. `runtime_path_exercised=False`. The generated 64-descriptor catalog is not a production corpus update. Do not report its ranking accuracy as end-to-end success.
 
-The unchanged fixture has already informed intervention design; this is targeted development-set research. Fresh seeds are not fresh tasks. PASS does not demonstrate automatically discovered semantic factors, open-domain reasoning, scalable text encoding or production readiness. Gate E remains NOT PASSED. Do not begin C143 before C142 is judged.
+- PASS: all 20,736 COLOR_AUX rankings are correct with strictly positive finite expected-class margins, with all controls valid.
+- FAIL: valid reconstruction but any treatment ranking error/nonpositive margin in the expanded suite. Retain the scoped C142 PASS; examine new-combination and original-query-in-64 groups separately.
+- INVALID: prerequisite/checkpoint/hash/config/vocabulary/reconstruction/OOV/numeric/immutability/execution failure. Retry C143 after resolution; no retraining fallback.
 
-Implementation: `fold_lm/v05_benchmarks/gate_e_c142_color_alignment.py`, `gate_e_c142_cli.py`, `tests_lm/test_v05_c142_color_alignment.py`.
-Reviewer validation: **22/22 new CPU tests**, including synthetic adapter evaluation and checkpoint reconstruction; Python compilation passed. Expected full focused suite: **130 tests**. Full focused suite and formal CUDA benchmark are not reviewer-executed. No registered fresh-seed benchmark result was inspected.
+Per-model groups: training combinations 216 strings (including 24 training strings), previously held-out combinations 108, new combinations 1,404. The exact 12 original validation strings in 64 candidates are an overlapping diagnostic group. Catalog expansion and query coverage expand together, so this is not an isolated one-factor causal comparison. The 52 new combinations are related synthetic tasks, not a separately sourced sealed dataset.
 
-C142 validates the full C141 report and saves both arms' cases, margins, losses, initial/final fingerprints, model-only checkpoints, input/prerequisite hashes, commit and environment under a unique run directory. Do not overwrite protected C37. Scientific FAIL has exit code 0; execution exceptions return nonzero.
+Implementation: `gate_e_c143_frozen_factorial_audit.py`, `gate_e_c143_cli.py`, `tests_lm/test_v05_c143_frozen_factorial_audit.py`, `tools/run_c143.ps1`. Reviewer: 22/22 new CPU tests and Python compilation passed using synthetic weights. Full focused suite expected **152**; full suite and actual CUDA checkpoint evaluation not reviewer-executed. PowerShell reviewed, not executed by reviewer.
+
+Save the evaluation manifest, complete rankings, reconstruction evidence and input/checkpoint hashes under a new run directory. Read C142 reports/checkpoints and protected C37/fixture without modification. Scientific FAIL returns exit code zero; execution errors return nonzero. Gate E remains NOT PASSED. No C144 before C143 judgment.
 
 ## Non-claims
 
 - Shared-Basis auto-partition and context/KV replacement remain separate.
 - `fold/fold_memory.py` is a QuadraticMemory numerical reference kernel, not the V5-E persistent memory store.
-- C139-C142 vocabulary-basis features are diagnostics, not scalable production tokenizer proposals.
-- C141 oracle substitution is not a deployed fix; C142 structured auxiliary supervision is not unsupervised semantic discovery.
-- Gate C/D and C97-C142 evidence remains scoped unless explicitly measured otherwise.
+- C139-C143 vocabulary-basis features are diagnostics, not scalable production tokenizer proposals.
+- Oracle substitution, explicit training supervision, and automatically discovered semantic factors are different claims.
+- C143 is a frozen selector audit, not a new full-runtime gate.
+- Gate C/D and C97-C143 evidence remains scoped unless explicitly measured otherwise.
