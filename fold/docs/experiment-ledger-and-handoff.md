@@ -5,13 +5,12 @@
 ## Environment / protocol
 
 - Repo: `akakishi04/asobiba`; branch `feat/sft-target-loss`; local `M:\asobiba\fold`.
-- Python 3.13.15 / PyTorch 2.10.0+cu130 / CUDA 13.0 / RTX 4070 Ti SUPER.
-- Protected C37 SHA256: `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`.
-- Protected fixture SHA256: `A52F8209703149407580F7E2965B61B78653030EE992AF6D759865736741CA9E`.
-- One scientific question per C number. Invalid executions retry the same C number.
-- Valid negative results close their C number and may advance.
+- Python 3.13.15 / PyTorch 2.10.0+cu130 / CUDA 13.0 / RTX 4070 Ti SUPER. User execution uses `.venv-py31315\Scripts\python.exe`.
+- Protected C37: `runs/chatgpt-last-result.json`; SHA256 `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`.
+- Protected fixture: `runs/fixtures/v05-c-composition-20260921.pt`; SHA256 `A52F8209703149407580F7E2965B61B78653030EE992AF6D759865736741CA9E`.
+- One scientific question per C number. Invalid executions retry the same C number. Valid negatives close their C number and may advance after interpretation.
 - Long benchmarks expose seed/phase/case progress and remaining work.
-- Conversation, execution-command, formal-verdict, and cross-chat handoff responses for `C###` experiments follow `docs/experiment-conversation-handoff-protocol.md`. A new chat should read `AGENTS.md`, that protocol, and this handoff before continuing the active C number.
+- Conversation, execution-command, formal-verdict, and cross-chat handoff responses follow `docs/experiment-conversation-handoff-protocol.md`. Read `AGENTS.md`, that protocol, and this handoff before continuing the active C number.
 
 ## Gate status
 
@@ -38,54 +37,60 @@ learned Control Lane
 
 Runtime fault-tolerance hardening through C132 covers receipt binding/authority/scope, commit-context revalidation, replay suppression, atomic claim, crash recovery, concurrent recovery ownership, lease fencing/renewal, SQLite storage fencing, and independent-OS-process fencing.
 
-C133-C135 moved RETRIEVE onto a real persisted corpus and `StructuralIndex`, established safe zero-hit semantics, and added exact recovery after bounded-LSH false negatives. C136 learned fixed-address query formation. C137 replaced fixed output classes with shared content addressing and dynamic candidate-set growth.
-
-## Accepted through C139
-
-C137 `C137-v5e-content-addressed-corpus-growth` is ACCEPTED PASS: focused regression 87/87; fresh seeds `20261571..73`; candidate set expanded from 8 to 12 after training; four entities had zero query-head training examples; all deciding rates were `1.0`.
-
-C138 `C138-v5e-compositional-alias-generalization` is ACCEPTED VALID NEGATIVE: focused regression 90/90; fresh seeds `20261581..83`; eight known combinations remained `1.0`, but four held-out recombinations were only `0.25` accurate on every seed. Overall scenario/retrieval/evidence accuracy was `0.75`. Postchecks and retrieval/evidence authority controls were valid. A post-result audit identified real token-hash collisions in the 128-dimensional hashed text front end, including `amber` / canonical `red`, so C138 did not isolate the shared content head as the sole cause.
-
-C139 `C139-v5e-hash-collision-composition-diagnostic` is ACCEPTED VALID NEGATIVE: focused regression 93/93; fresh seeds `20261591..93`; 49-dimensional collision-free training-vocabulary features; zero evaluation OOV; six old C138 collision buckets reproduced as a control; known combinations remained `1.0` on every seed. Held-out recombination accuracy was `1.0, 0.5, 1.0` (mean `0.833333`, median `1.0`) versus C138's `0.25` on every seed. Seed `20261592` missed `q10` and `q11`; the other two seeds solved all four held-out recombinations. Overall retrieval/evidence accuracy was `0.944444` mean. Protected artifacts, tracked tree, prerequisite identity, provenance, exactly-one commit and post-commit `ANSWER` remained valid. C139 modified no production code.
-
-C139 fails its preregistered all-seed `1.0` criterion, so collision removal alone is not accepted as a robust solution. However, the two perfect seeds show that the unchanged pooled representation plus `SharedRetrievalContentHead` is not strictly incapable of representing a solution on this finite controlled task. The improvement relative to C138 is consistent with hash collision being a material contributor, but C139 does not establish it as the sole cause.
+C133-C135 moved RETRIEVE onto a real persisted corpus and StructuralIndex, established safe zero-hit semantics, and added explicitly measured exact recovery after bounded-LSH false negatives. C136 learned fixed-address query formation. C137 replaced fixed output classes with shared content addressing and dynamic candidate-set growth.
 
 Production content head: `fold_lm.v05.retrieval_content.SharedRetrievalContentHead`.
 Production retrieval adapter: `fold_lm.v05.retrieval_adapter.PersistedStructuralRetrievalAdapter`.
 
-## Active experiment — C140
+## Accepted through C140
 
-Experiment: `C140-v5e-collision-free-multiseed-robustness`.
+C137 is ACCEPTED PASS within lexical content-addressing/corpus-growth scope: 87/87 regression, 3 fresh seeds, 8-to-12 candidate growth, all deciding rates 1.0. See `experiment-ledger-addendum-c137-c138.md`.
 
-Question: is the unchanged collision-free C139 solution robust across a broader set of fresh initialization seeds?
+C138 is ACCEPTED VALID NEGATIVE: 90/90 regression, known accuracy 1.0, unseen accuracy 0.25 on every seed. Real collisions exist in the 128-dimensional signed-hash front end. See `experiment-ledger-addendum-c138-c139.md`.
 
-C140 is diagnostic-only and changes no production runtime code. It repeats the exact C139 collision-free configuration on twelve fresh seeds `20261601..20261612`. It does not change the head architecture, pooling, hidden width, residual scale, train steps, learning rate, objective, candidate set, corpus, retrieval semantics, or evidence path.
+C139 is ACCEPTED VALID NEGATIVE: 93/93 regression; 49-dimensional collision-free training-vocabulary features, zero OOV; unseen accuracy `1.0, 0.5, 1.0`. Two complete successes show a solution is possible on this finite fixture, but the all-seed criterion failed. Comparing C138 and C139 does not isolate collision removal: input dimension, parameter shapes/counts, encoding and seed sets also differ. See `experiment-ledger-addendum-c139-c140.md` and the C140 audit addendum.
+
+C140 is ACCEPTED VALID NEGATIVE based on the user's terminal log at commit `f036550182c99a06865d788dacf055e3dea5820d`: focused regression 96/96; fresh seeds `20261601..20261612`; known 96/96, unseen 44/48, overall scenario/key/evidence 140/144; completely correct seeds 8/12. All reported control/provenance/commit-indicator/ANSWER/prerequisite/protected-artifact/tracked-tree checks passed. No production change.
+
+Errors: `20261602: q10->q2`, `20261604: q11->q1`, `20261606: q11->q1`, `20261612: q10->q2`. Worst margin `-0.0787280798`. C140 reproduces seed-associated sensitivity under the fixed C139 configuration. It neither identifies the optimization mechanism nor proves inability to represent a solution. The unseen evaluations repeat four distinct queries, not 48 independent tasks.
+
+Training-only fixture audit: all 8 training records have distinct shape/material pairs, so record identity can be distinguished without color. All C140 errors preserve shape/material and select the wrong color. This permits a shortcut explanation but does not prove the learned heads used that shortcut. Provenance authenticates the source, not query relevance; the C140 commit metric is a harness indicator, not a new durability proof.
+
+Detailed verdict, error margins, evidence provenance and C141 preregistration: **`experiment-ledger-addendum-c140-c141.md`**.
+
+## Active experiment — C141
+
+Experiment: `C141-v5e-color-alias-localization`.
+Stage: `V5-E-COLOR-ALIAS-LOCALIZATION`.
+Status: ACTIVE, awaiting user CUDA execution; no result claimed.
+
+Question: on replayed C140 heads with frozen parameters, does evaluation-only replacement of the query's color alias by its canonical color rescue all four C140 failures without introducing new errors?
 
 ```text
-12 fresh seeds
-same 49-d collision-free training-vocabulary bag features
-same pooled SharedRetrievalContentHead
-same 8 TRAIN_COMBINATION controls
-same 4 UNSEEN_COMBINATION recombinations
-same 12 live candidates
-same exact persisted retrieval / provenance / commit / ANSWER path
+same C140 seeds 20261601..20261612 (REPLAY, not fresh)
+same C139 training function / data / objective / schedule / head
+same 49-dimensional collision-free vocabulary basis
+same 12 descriptors / persisted records / retrieval and evidence harness
+12 original queries + 12 color-only substitutions per seed
+144 baseline + 144 intervention = 288 decisions
 ```
 
-C140 additionally records the expected-class score margin against the best competing candidate for every case. Margin instrumentation is observational only and does not affect training or selection.
+The positional alias map is derived only from TRAIN_COMBINATION rows. This is an **oracle diagnostic** using fixture structure, not a learned production canonicalizer. Canonical color intentionally creates lexical overlap. Do not describe a positive result as learned semantic generalization.
 
-Required for PASS: all 12 seeds pass all 12 cases, all deciding accuracy/rate metrics are `1.0` on every seed, every held-out recombination has strictly positive expected-class margin, collision-free/OOV and raw-baseline controls remain valid, and the accepted mixed-outcome C139 prerequisite is used.
+C140 saved no head checkpoints. C141 retrains with the exact same function/seeds, verifies the original discrete outcomes and score margins against the full local C140 `summary.json` (absolute tolerance `1e-5`), then compares both arms with identical parameters. Replay mismatch is INVALID. Model/input/prerequisite fingerprints must be preserved.
 
-Interpretation:
+- PASS: rescue all 4 errors, preserve all 140 successes, and achieve positive expected-class margins for all treatment cases with all execution controls valid. This supports only the diagnostic substitution's sufficiency.
+- FAIL: valid replay but incomplete rescue, new errors or nonpositive treatment margins. Report partial rescue and new errors separately; no unique causal claim follows automatically.
+- INVALID: prerequisite, replay, OOV, numeric, authority, artifact or execution failure; resolve and retry C141.
 
-- PASS -> the exact C139 collision-free configuration is robust across this 12-seed replication. The isolated C139 seed failure remains observed but is not reproduced in the broader fresh-seed set.
-- FAIL -> initialization/training sensitivity is reproduced under the unchanged configuration. Because successful parameterizations already exist, the following diagnostic should localize factor-aligned versus shortcut/non-compositional solutions before changing production architecture.
+Implementation: `fold_lm/v05_benchmarks/gate_e_c141_color_alias_localization.py`, `gate_e_c141_cli.py` and `tests_lm/test_v05_c141_color_alias_localization.py`. New helper tests: 12/12 passed on reviewer CPU. Expected full focused suite: 108 tests; full suite and CUDA benchmark not yet run by reviewer.
 
-Gate E remains NOT PASSED.
+No production runtime change. Gate E remains NOT PASSED. Do not begin C142 before C141 is judged.
 
 ## Non-claims
 
-- Shared-Basis auto-partition remains separate.
-- Context/KV replacement remains separate.
+- Shared-Basis auto-partition and context/KV replacement remain separate.
 - `fold/fold_memory.py` is a QuadraticMemory numerical reference kernel, not the V5-E persistent memory store.
-- C139/C140 collision-free vocabulary-basis encoding is diagnostic, not a scalable production tokenizer proposal.
-- Gate C/D and C97-C140 evidence remains scoped unless explicitly measured otherwise.
+- C139-C141 vocabulary-basis features are diagnostics, not scalable production tokenizer proposals.
+- C141 oracle color substitution is not a deployed fix or fresh-seed robustness evidence.
+- Gate C/D and C97-C141 evidence remains scoped unless explicitly measured otherwise.
