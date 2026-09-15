@@ -7,17 +7,12 @@ import torch
 from torch.nn import functional as F
 
 from fold_lm.v05.retrieval_content import SharedRetrievalContentHead
+from fold_lm.v05_benchmarks import gate_e_c138_compositional_alias_generalization as c138
 from fold_lm.v05_benchmarks import gate_e_c145_material_alignment_intervention as c145
 
 
-def fixture_rows():
-    return [
-        dict(split="TRAIN_COMBINATION", descriptor="red round metal",
-             train=["ruby curved alloy", "crimson circular metallic", "vermillion ring steel"], validation="ruby circular alloy"),
-        dict(split="TRAIN_COMBINATION", descriptor="blue square wood",
-             train=["azure boxy timber", "navy angular lumber", "cobalt four-sided wooden"], validation="navy boxy timber"),
-        dict(split="UNSEEN_COMBINATION", descriptor="red square wood", train=[], validation="ruby angular lumber"),
-    ]
+def full_rows():
+    return copy.deepcopy(c138._load_fixture())
 
 
 class V05C145MaterialAlignmentTests(unittest.TestCase):
@@ -27,24 +22,28 @@ class V05C145MaterialAlignmentTests(unittest.TestCase):
         self.assertFalse(set(c145.SEEDS) & old)
 
     def test_alignment_spec_uses_training_rows_only(self):
-        rows = fixture_rows()
-        a = c145._alignment_spec(rows, 2)
-        rows[-1]["descriptor"] = "green triangular glass"
-        rows[-1]["train"] = ["emerald pointed crystal"]
-        self.assertEqual(c145._alignment_spec(rows, 2), a)
+        rows = full_rows()
+        expected = c145._alignment_spec(rows, 2)
+        for row in rows:
+            if row["split"] != "TRAIN_COMBINATION":
+                row["descriptor"] = "green triangular glass"
+                row["train"] = ["emerald pointed crystal"]
+        self.assertEqual(c145._alignment_spec(rows, 2), expected)
+        self.assertEqual(len(expected.aliases), 12)
+        self.assertEqual(len(expected.canonicals), 4)
 
     def test_alignment_spec_rejects_bad_axis(self):
         with self.assertRaises(ValueError):
-            c145._alignment_spec(fixture_rows(), 3)
+            c145._alignment_spec(full_rows(), 3)
 
     def test_main_spec_is_not_mutating(self):
-        rows = fixture_rows()
+        rows = full_rows()
         saved = copy.deepcopy(rows)
         q,d,t = c145._main_spec(rows)
         self.assertEqual(rows, saved)
-        self.assertEqual(len(q), 6)
-        self.assertEqual(len(d), 2)
-        self.assertEqual(len(t), 6)
+        self.assertEqual(len(q), 24)
+        self.assertEqual(len(d), 8)
+        self.assertEqual(len(t), 24)
 
     def test_mask_axis_order(self):
         self.assertEqual(c145._mask("red round metal", "blue round metal"), "COLOR")
