@@ -24,7 +24,7 @@ learned Control Lane -> authoritative availability/permission -> learned acquisi
 C132 and earlier cover binding/scope/authority, replay, atomic claim, recovery/fencing. C133-C135 introduce persisted retrieval, C136 fixed-address query formation, C137 shared content addressing/dynamic candidates. Production head: `fold_lm.v05.retrieval_content.SharedRetrievalContentHead`; adapter: `fold_lm.v05.retrieval_adapter.PersistedStructuralRetrievalAdapter`.
 `docs/evidence-recovery-mode-v0.1.md` is separate and not implemented by these diagnostics.
 
-## Accepted through C157
+## Accepted through C158
 
 - C137 PASS lexical addressing/growth. C138-C140 VALID NEGATIVE composition/seed sensitivity; C138/C139 do not isolate hash-removal causality across their dimension/encoding/seed changes.
 - C141 PASS oracle substitution only. C142 PASS supervised color alignment on the original small task. C143 VALID NEGATIVE expanded ranking; C144 PASS descriptive factor accounting.
@@ -35,13 +35,17 @@ C132 and earlier cover binding/scope/authority, replay, atomic claim, recovery/f
 - C153 PASS, 346 tests: 82944 retrievals, 580608 deliveries; 414720 malformed/stale rejections, 82944 valid request admissions, 82944 duplicate rejections. Immutable diagnostic inbox, not durable publication.
 - C154 PASS, 363 tests: 82944 entries -> 3072 ADDED, 79872 ALREADY_PRESENT; 3072 provenance conflicts rejected. Each of 48 actual EvidenceStates has 64 OBSERVED refs, no payload. C154's classification caveat remains in the PC-ALM review addendum.
 - C155 PASS, 388 tests: 12288 resolver cases, 3072 each RESOLVED/SOURCE_UNBOUND/SNAPSHOT_MISMATCH/RECORD_UNBOUND. 3072 reads/196608 vectors; zero 1296 times, one 1776 times; failures/mutations zero.
-- C156 PASS, 412 tests: 82944 original requests x four branches = 331776 views. Each status has 82944 occurrences; resolved zero 34992/one 47952. Actual WorkingState and signed control channels; no stale-payload leakage, state mutation, clock advancement or acquisition debit. 82944 exact64 reads, 5308416 vectors, 331776 internal-step debits.
-- **C157 ACCEPTED PASS**, 440/440 tests; execution commit `40f63b46c67d5c71a8e8bc75ac6ba07ddd3ef05a`. Three new C113-recipe reference routers, seeds 20261741..20261743, 900 CPU updates each. 1990656 recorded-view decisions, 576 evaluation batches; errors/nonpositive margins/input mutations/weight mutations all zero. Minimum logit margin 5.344475269317627; 3/3 routers pass. ANSWER 497664, RETRIEVE 746496, STOP 746496; correct ANSWER with zero 209952/one 287712. All reported protected/tree/HEAD checks pass.
+- C156 PASS, 412 tests: 82944 original requests x four branches = 331776 views. Actual WorkingState and signed control channels; no stale-payload leakage, state mutation, clock advancement or acquisition debit. 82944 exact64 reads/5308416 vectors; 331776 internal-step debits.
+- C157 PASS, 440 tests: three newly trained C113-recipe reference routers, seeds 20261741..20261743, 900 CPU updates each. 1990656 recorded-view decisions over six distinct input patterns; zero action/margin/input/weight failures. Minimum expected-action margin 5.344475269317627; all three pass. Not generated answers or independent reasoning tasks.
+- **C158 ACCEPTED PASS**, 475/475 tests; execution commit `1b407ef26d6c1f5575482e07f6c8d046a3bff438`. Full 1990656 C157 decisions replayed. All 1920 live episodes pass: 3456 Controller decisions/internal debits, 768 authorized acquisitions, 384 restored refs, 1536 actual exact64 calls/98304 vectors. Terminal ANSWER_ACTION 768/STOP_UNRESOLVED 1152; observed zero 324/one 444. Permission-denied and exhausted-budget branches have zero fetches. All three frozen routers pass, no weight mutation; protected/tree/HEAD checks pass.
 
-C157 establishes recorded working/context input -> learned action selection, not live action execution or generated answers. Only **six distinct model input patterns** occur; the large count is artifact/interface coverage, not independent reasoning questions. Present irrelevant evidence can still induce ANSWER. Source semantics are bookkeeping, not newly measured accuracy. Exact64 costs and total diagnostic timings are not production performance claims.
+C158 connects learned action -> authorized acquisition -> sequential in-process admission/projection -> live reobservation -> terminal action. It restores only an already selected reference within a pinned observation epoch, not a new query choice or changing-world observation. ANSWER is still an action with readback metadata, not generated/computed answer content. Runtime permission/budget/attempt caps are explicit. No durability, crash recovery or concurrency claim follows. Source semantic counts are bookkeeping; authentic irrelevant evidence is not repaired. Exact64 costs and total diagnostic timings are not production performance.
 
 ## Accepted artifact chain
 
+**C158:** `runs/c158-v5e-live-recovery-0285f65942c14db8997f7c910dd94a4f/summary.json`.
+SHA256 `6c49a3e681313208881743f1c2991325e4826d4970cb65d5df9cfcebd65173c8`.
+Episode plan SHA256 `0f9d0703a28efc5d9e52a11e261fe58c83411fd75994d81428c4f217b3017f8c`.
 **C157:** `runs/c157-v5e-controller-bridge-e68cc92a350145b983d123acad386982/summary.json`.
 SHA256 `b521eafc61fedaf3b9d2f78fb9c591de654b95cfa6689938c8c042fbc200b934`.
 **C156:** `runs/c156-v5e-request-reobservation-0d0d4cb6c1704c4987ebf8651fc683e0/summary.json`.
@@ -59,40 +63,37 @@ SHA256 `d2b48acb36d28f0422d09067cc23af882c812d020a00ccfc8c6e8286fd896afa`.
 Manifest SHA256 `5a19de10d8152ac262846682a79a13bb942eeacd7dca979afb09b70170ebdd65`.
 Split plan SHA256 `db65d4754e465c55bfc19438f9d50324bb49e928911a53643deddc531625f4c0`.
 
-Current verdict/preregistration: **`docs/experiment-ledger-addendum-c157-c158.md`**.
-Earlier plans/verdicts remain in chained addenda, including `experiment-ledger-addendum-c156-c157.md`, `experiment-ledger-addendum-c155-c156.md` and `experiment-ledger-addendum-c154-pcalm-review.md`. Formal verdicts use user logs and inspected source, not independently rerun full artifacts. Subsequent local runs verify the runner-printed report hashes against the actual files.
+Current verdict/preregistration: **`docs/experiment-ledger-addendum-c158-c159.md`**.
+C158 original plan: `docs/experiment-ledger-addendum-c157-c158.md`. Earlier plans/verdicts remain in chained addenda, including `experiment-ledger-addendum-c156-c157.md`, `experiment-ledger-addendum-c155-c156.md` and `experiment-ledger-addendum-c154-pcalm-review.md`. Formal verdicts use user logs and inspected source, not independently rerun full artifacts. Subsequent local runs verify runner-printed report hashes against actual files.
 
-## Active C158 — Bounded Controller-driven reference recovery
+## Active C159 — Evidence-bound terminal result
 
-`C158-v5e-bounded-controller-reference-recovery`; stage `V5-E-BOUNDED-CONTROLLER-REFERENCE-RECOVERY`.
-**ACTIVE, awaiting user CPU execution. No C158 result claimed.**
+`C159-v5e-evidence-bound-terminal-result`; stage `V5-E-EVIDENCE-BOUND-TERMINAL-RESULT`.
+**ACTIVE, awaiting user CPU execution. No C159 result claimed.**
 
-Question: can a frozen Controller proposal execute one authorized retrieval, admit/project its result and reobserve the resulting live state, reaching the correct terminal action without stale values or unbounded retries?
+Question: can the accepted recorded terminal state become a request/snapshot-bound typed return without zero/None confusion, wrong-request evidence or raw fetched-but-unadmitted leakage?
 
 ```text
-live C156 reobservation -> frozen C157 Controller
--> runtime permission/acquisition-budget gate
--> real C153 fetch/admission -> C154 EvidenceRef projection
--> live C156 reobservation -> same Controller -> ANSWER action / STOP
+C158 plan + terminal JSONL (hash pinned and fully reaggregated)
+-> immutable request binding
+-> deterministic emit_terminal, no expected value/scenario/corpus input
+-> ANSWERED observed bit with source binding / UNRESOLVED / REJECTED
+-> JSON roundtrip
 ```
 
-Reuse all three C157 routers/checkpoints without training. Replay all 1990656 C157 decisions first (full source order, exact actions/labels, logits/margins atol 1e-5). Hash every pinned input and reaggregate C154/C153 state lineage via C155. No recreating or relocating missing inputs.
+No model load, neural scoring, training, fresh seeds, retrieval, live-cycle rerun, state commit or generated answer content. This is a recorded-output contract bridge. ANSWERED copies validated final working payload; it is not a learned semantic answer. Unresolved/rejected results retain request/scope but expose no value or supporting evidence. Reasons come from recorded runtime state, not scenario labels. A guard rejection is not a learned successful STOP and does not overwrite the original action.
 
-New coverage: **128 snapshot/key bindings**, 64 keys in each original layout. Reaggregate all source streams, then choose one identity-only representative request per binding, not by correctness/value. Save plan before evaluation. This is record-level integration, not all 82944 original language requests or a new relevance score.
+Require C158 full summary/plan/three 640-row JSONL and all upstream input hashes. Reaggregate actions and margins, state identity/clocks, values, budgets, acquisitions/publications, costs and scenario counts before the new boundary. Missing/modified inputs are INVALID, not reconstructed. Source records remain untouched.
 
-Five scenarios per binding/router: WARM_PRESENT, COLD_RECOVER, COLD_MISSING_DELIVERY, COLD_PERMISSION_DENIED, COLD_BUDGET_EXHAUSTED. Cold removes only the selected ref in a diagnostic branch; other 63 refs remain. All start with stale working presence; the actual readback refreshes it. Model-visible RETRIEVE starts true, deliberately stale for denial/budget exhaustion. Runtime authority blocks execution, then updates visible eligibility. After the first RETRIEVE proposal the attempt is spent; maximum one acquisition and three decisions. Model actions are never overridden. A pathological repeated RETRIEVE is bounded but still FAIL, not successful learned termination.
+Base **1920 outputs: 768 ANSWERED (324 zero / 444 one), 1152 UNRESOLVED**. Four independent output-fault controls: WRONG_REQUEST 1920; WRONG_PROVENANCE 768; PAYLOAD_DISAGREEMENT 768; FORCED_UNGROUNDED_ANSWER 1152. Total **4608 controls / 6528 emitter calls**. Output faults are deliberate copies, not new learned failures or independent tasks. Save all results/checks in source-bound per-router JSONL. Diagnostic schema `c159-terminal-result-v1`, not production API/durability.
 
-Missing delivery withholds a real successful fetch before admission; it must publish nothing and end with no usable value. Valid admission and matching projection are adopted together as immutable in-process state. New reference restoration stays within the already pinned evidence epoch/revision 1, not a new external-world observation. No generated answer, changing snapshots, durable publication, crash recovery, concurrent transactions or production deployment.
+PASS: exact base status/value and control rejection counts/reasons, no usable payload on failures, zero mutations/serialization failures and all protections. Valid bad output is FAIL and saved; bad source/hash/reaggregation/setup is INVALID and retries C159. Gate E remains NOT PASSED. C160 is not registered; judge C159 first.
 
-Expected: **1920 live episodes; 3456 live decisions/internal debits; 768 acquisitions; 384 restored refs; 1536 exact64 calls/98304 vectors**. Terminal ANSWER 768/STOP 1152; resolved zero 324/one 444. Exact readback costs include the second read after successful recovery. Model input patterns are still the existing six; the advance is sequential integration, not new learned reasoning.
-
-PASS requires every episode's action/margin/status/value/ref/clock/budget/authority/cost invariants and preservation checks. Finite behavioral violations are valid FAILs, not retries. Bad sources/checkpoints/replay/numerics/execution are INVALID. Gate E remains NOT PASSED. Judge C158 before C159; no C159 registered.
-
-Files: `gate_e_c158_live_recovery.py`, `gate_e_c158_cli.py`, `tests_lm/test_v05_c158_live_recovery.py`, `tools/run_c158.ps1`.
-Reviewer **35/35 new CPU helper tests and compilation passed** using exact production state/controller copies. Controlled callbacks isolate the new orchestration; no real C157 checkpoint or full prior artifact integration was available. Full **475 tests**, formal replay/live integration and PowerShell remain unexecuted by the reviewer.
+Files: `gate_e_c159_terminal_result.py`, `gate_e_c159_cli.py`, `tests_lm/test_v05_c159_terminal_result.py`, `tools/run_c159.ps1`.
+Reviewer **33/33 new standard-library CPU tests and compilation passed**. Fabricated full-size source integration passed; an injected emitter defect produced a valid FAIL, input tampering produced INVALID. No actual user episode files were available. Full **508 tests**, real artifact-chain integration and PowerShell remain unexecuted by reviewer.
 
 ## Independent reports / non-claims
 
 Multi-Axis/MA-1 and PC-ALM/FHLC/PA-0..PA-6 remain separate, unimplemented research candidates. PC-ALM report on main: `fold/docs/pcalm-layer-local-credit-hypothesis-report.md` at `903e31f1e509c92877206741672918e7bacc701b`. Review conditions (finite-iteration timing, same-state gradients, immutable evidence, full cost accounting and quantified gates) remain in `experiment-ledger-addendum-c154-pcalm-review.md`. No report is merged or rewritten here.
 
-Shared-Basis partition, Multi-Axis, local credit, KV/context work, ranking, retrieval, request admission, EvidenceState, payload readback, working reobservation, Controller and ANSWER are separate claims. Diagnostic epoch/generation-to-time/revision mapping is not the final production clock design. Cross-source namespaces, revisions/retractions, durable publication and fault recovery remain separate. `fold/fold_memory.py` is a QuadraticMemory reference, not the V5-E store.
+Shared-Basis partition, Multi-Axis, local credit, KV/context work, ranking, retrieval, request admission, EvidenceState, payload readback, working reobservation, Controller, typed return and learned ANSWER are separate claims. Diagnostic epoch/generation-to-time/revision mapping is not the final production clock design. Cross-source namespaces, revisions/retractions, durable publication and fault recovery remain separate. `fold/fold_memory.py` is a QuadraticMemory reference, not the V5-E store.
