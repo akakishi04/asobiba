@@ -11,6 +11,7 @@
 - One scientific question per C number. Invalid executions retry the same C number.
 - Valid negative results close their C number and may advance.
 - Long benchmarks expose seed/phase/case progress and remaining work.
+- Conversation, execution-command, formal-verdict, and cross-chat handoff responses for `C###` experiments follow `docs/experiment-conversation-handoff-protocol.md`. A new chat should read `AGENTS.md`, that protocol, and this handoff before continuing the active C number.
 
 ## Gate status
 
