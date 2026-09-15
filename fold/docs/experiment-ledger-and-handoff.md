@@ -23,7 +23,7 @@ learned Control Lane -> authoritative availability/permission -> learned acquisi
 
 C132 and earlier cover binding/scope/authority, replay, atomic claim and recovery/fencing. C133-C135 introduce persisted retrieval; C136 fixed-address query formation; C137 shared content addressing/dynamic candidates.
 Production head: `fold_lm.v05.retrieval_content.SharedRetrievalContentHead`; adapter: `fold_lm.v05.retrieval_adapter.PersistedStructuralRetrievalAdapter`.
-`docs/evidence-recovery-mode-v0.1.md` remains a separate design, not implemented by the projection diagnostic.
+`docs/evidence-recovery-mode-v0.1.md` remains a separate design, not implemented by the current diagnostic.
 
 ## Accepted through C154
 
@@ -38,7 +38,7 @@ Production head: `fold_lm.v05.retrieval_content.SharedRetrievalContentHead`; ada
 - C153 PASS, validated evidence admission, execution commit `dc5f5d8bf72bc04692411c05213c824eb8c8c918`; 346/346 regression; 82,944 actual retrievals; 580,608 submissions: 414,720 registered fault rejections, 82,944 valid request admissions and 82,944 duplicate rejections. Fault/duplicate paths preserve the immutable diagnostic state. Authentic wrong control evidence is not oracle-repaired. No production/durable commit, Controller or ANSWER.
 - **C154 ACCEPTED PASS**, EvidenceState projection, execution commit `8768303869d6ee24d72cc98a9690219a4205a495`; 363/363 regression. Exact accepted C153 state artifacts: 48 streams, 82,944 entries, 3,072 ADDED, 79,872 ALREADY_PRESENT, 3,072 injected PROVENANCE_CONFLICT rejections. Each actual V5 EvidenceState ends with 64 unique OBSERVED refs. All reported source/protected hashes, tracked-tree and HEAD postchecks pass; `run_execution_valid=True`.
 
-C154 maps request-level admissions to record-key references. The 3,072 observations are 64 refs in each of 48 isolated states, not 3,072 distinct corpus records or a measured memory-compression gain. Payloads are not stored in EvidenceState; no new retrieval/scoring/training or payload re-observation was performed. The source semantic counts are only reaggregated: WITHIN_FACTOR 20,727/20,736 and GLOBAL_CONCEPT 20,736/20,736 per layout. Do not infer corrected query decisions from final record-set coverage.
+C154 maps request-level admissions to record-key references. The 3,072 observations are 64 refs in each of 48 isolated states, not 3,072 distinct corpus records or a measured memory-compression gain. Payloads are not stored in EvidenceState; no new retrieval/scoring/training or payload re-observation was performed. Source semantics are only reaggregated: WITHIN_FACTOR 20,727/20,736 and GLOBAL_CONCEPT 20,736/20,736 per layout. Final record coverage does not correct earlier query decisions.
 
 ## Accepted artifact chain
 
@@ -53,26 +53,46 @@ SHA256 `d2b48acb36d28f0422d09067cc23af882c812d020a00ccfc8c6e8286fd896afa`.
 Manifest SHA256 `5a19de10d8152ac262846682a79a13bb942eeacd7dca979afb09b70170ebdd65`.
 Split plan SHA256 `db65d4754e465c55bfc19438f9d50324bb49e928911a53643deddc531625f4c0`.
 
-Detailed current verdict and concurrent report review: **`docs/experiment-ledger-addendum-c154-pcalm-review.md`**. C154 preregistration remains unchanged in `docs/experiment-ledger-addendum-c153-c154.md`; older details remain in the previous chained addenda.
+C154 verdict and PC-ALM review: `docs/experiment-ledger-addendum-c154-pcalm-review.md`.
+C154 preregistration remains unchanged in `docs/experiment-ledger-addendum-c153-c154.md`.
+**Current C155 preregistration: `docs/experiment-ledger-addendum-c154-c155.md`.**
 
-Review evidence is the user's terminal log and source inspection, not an independent rerun of full local artifacts. The reviewer parsed the C154 console JSON and checked aggregate arithmetic; no new benchmark/regression suite was run for this documentation-only update.
+Review evidence for C154 is the user's terminal log and source inspection, not an independent full local-artifact rerun.
 
-## Review decision / next experiment boundary
+## Active C155 — Provenance-bound payload dereference
 
-Synthetic ranker tuning remains closed. C154 closes the registered request-to-reference projection, not payload availability or durable production session integration. **No C155 is currently preregistered or implemented.** The next candidate boundary is provenance-bound payload dereference/re-observation using trusted snapshot metadata; this is a planning direction, not an active experiment or execution instruction.
+`C155-v5e-provenance-bound-payload-dereference`, stage `V5-E-PROVENANCE-BOUND-PAYLOAD-DEREFERENCE`.
+**ACTIVE, awaiting user CPU execution. No formal result claimed.**
 
-Before reusing the C154 runner template, distinguish source/execution INVALID from valid negative projection behavior: several registered FAIL conditions currently raise exceptions caught as INVALID. This does not change the observed C154 PASS, but the classification must not be used to retry away a genuine negative. Existing experiment code is unchanged by this review.
+Question: can the existing EvidenceState references recover stored Boolean payloads from the exact trusted snapshot, while missing source, wrong snapshot and missing record bindings expose no value?
 
-The epoch/generation -> evidence-time/revision mapping is diagnostic-only. Cross-source namespaces, changing snapshots, replacement/retraction, concurrency, persistent publication, Controller and ANSWER require their own explicit contracts. Do not silently erase request-level audit history after record-reference deduplication.
+```text
+48 actual EvidenceStates x 64 refs = 3072 references
+MATCHED / MISSING_SOURCE / WRONG_SNAPSHOT / MISSING_RECORD per ref
+= 12288 resolver cases
+3072 matched exact64 adapter calls = 196608 vectors
+9216 unresolved controls -> no evidence, no value, no adapter call
+```
+
+Load both accepted C154/C153 reports and all 96 state artifacts with strict hash/coverage/request-binding checks. Reconstruct the trusted source registry from pinned C153 metadata; match the original absolute snapshot paths, source SHA and index fingerprints. Do not recreate or relocate snapshots silently. Use real `PersistedStructuralRetrievalAdapter`; handles contain signatures/scope but no payload. Expected old inbox values enter only the evaluator, not resolution.
+
+Existing 0 is valid `RESOLVED(value=0)` evidence. Unbound source/record and wrong snapshot return no value (`None`), not zero or proof of absence. Every read preserves EvidenceState and its clocks. No model load, ranking, fresh seed, training, new observation commit, Controller, ANSWER, concurrent publication or durability. Two original snapshot layouts remain separate identities. Source query semantics are bookkeeping, not new answer accuracy.
+
+PASS requires all counts, payload/source identities, zero/one coverage, guard behavior and state/file invariants. Valid wrong resolver behavior is retained as scientific FAIL. Wrong setup/hash/artifact/clock or execution is INVALID; retry C155. CLI exit 0 for valid PASS/FAIL; nonzero for exceptions. Do not reuse C154's behavior-to-INVALID ambiguity; old experiment code remains untouched.
+
+Files: `gate_e_c155_payload_dereference.py`, `gate_e_c155_cli.py`, `tests_lm/test_v05_c155_payload_dereference.py`, `tools/run_c155.ps1`.
+Reviewer: **25/25 new CPU helper tests** with exact production state/adapter/index dependencies. Separate full-shaped synthetic plumbing smoke passes; injected wrong output yields valid FAIL, corrupt source yields INVALID. This is not a formal C155 run. Expected focused regression **388 = 363 + 25**. Full suite, real user artifact integration and PowerShell have not been reviewer-executed.
+
+No C156 registered; judge C155 before choosing the next boundary. Synthetic ranker tuning remains closed. Cross-source namespaces, changing snapshots, replacement/retraction and final clock contracts remain separate. Request-level audit history is retained.
 
 ## Independent research reports
 
-**Multi-Axis Shared Basis:** separate architecture hypothesis, previously reviewed. MA-1 is not proved by C150-C154 and is not folded into V5-E integration.
+**Multi-Axis Shared Basis:** separate architecture hypothesis, previously reviewed. MA-1 is not proved by C150-C155 and is not folded into V5-E integration.
 
-**PC-ALM / FOLD Hybrid Local Credit (FHLC):** new report `fold/docs/pcalm-layer-local-credit-hypothesis-report.md` on main at `903e31f1e509c92877206741672918e7bacc701b`, blob `62f61588de77d9c277f4dcac2170ba29db0a1a03`. Original report is not copied/merged/rewritten by this update. Review is recorded in `experiment-ledger-addendum-c154-pcalm-review.md`.
+**PC-ALM / FOLD Hybrid Local Credit (FHLC):** report `fold/docs/pcalm-layer-local-credit-hypothesis-report.md` on main at `903e31f1e509c92877206741672918e7bacc701b`, blob `62f61588de77d9c277f4dcac2170ba29db0a1a03`. Original report is not copied/merged/rewritten by this update. Review remains in `experiment-ledger-addendum-c154-pcalm-review.md`.
 
-Decision: retain an independent research candidate; not standard FOLD training or an executable preregistration. Proposed PA-0..PA-6 belong to a separate track. Before execution: fix finite-iteration timing, output/hidden boundary and reduction scales; separate exact chain-rule factorization from approximate global credit; compare gradients at the same weights/state; keep authoritative evidence immutable during local dynamics; account for all primal/dual/graph/reduction costs; quantify gates and tuning budgets. CE validation cannot be skipped before Shared Basis adoption. PA-0 has not been implemented, run or formally preregistered in this review.
+Retain an independent research candidate, not standard FOLD training or an executable preregistration. PA-0..PA-6 are separate. Before execution: fix finite-iteration timing, boundaries/reduction scales; separate chain-rule factorization from approximate global credit; compare gradients at the same weights/state; keep authoritative evidence immutable; account for primal/dual/graph/reduction costs; quantify gates/tuning. CE validation cannot be skipped before Shared Basis adoption. No PA experiment is implemented or run here.
 
 ## Non-claims
 
-Gate E is still NOT PASSED. Shared-Basis partition, Multi-Axis, PC-ALM credit, KV/context work, ranking, persisted retrieval, request-level admission, EvidenceState projection, durable storage, re-observation and ANSWER are separate claims. `fold/fold_memory.py` is a QuadraticMemory reference, not the V5-E store. Oracle replacement, explicit supervision, manual composition and automatically discovered factors differ.
+Gate E is still NOT PASSED. Shared-Basis partition, Multi-Axis, PC-ALM credit, KV/context work, ranking, persisted retrieval, request-level admission, EvidenceState projection, payload dereference, durable storage and ANSWER are separate claims. `fold/fold_memory.py` is a QuadraticMemory reference, not the V5-E store. Oracle replacement, explicit supervision, manual composition and automatically discovered factors differ.
