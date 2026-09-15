@@ -30,3 +30,4 @@
 - 不足情報の判断も推定である。情報不足と推論未完了を混同せず、分かる部分は答える。既知情報の聞き直し・無限取得を避け、情報取得後の品質改善と不要質問率を測る。モデルの取得提案と実行基盤の権限・予算を分離する。
 - 異なるTokenizer/入力単位でtokens/sだけを比較しない。同じ元文章・課題のwall-clock、byte当たりloss、state/KV量を併記する。
 - v0.5実験は`experiment_id / commit_sha / data split hashes / seed / precision / serialized bytes / peak RAM-VRAM / active modules / internal steps / wall-clock / quality / coverage / acquisition metrics / known deviations`をmanifestに残す。Gate未達は未達として記録し、後からbaselineや閾値を有利に動かさない。
+- `C###`実験の会話・実行指示・結果判定・別チャットへの引き継ぎは`docs/experiment-conversation-handoff-protocol.md`を標準形式とする。新C番号提示時と正式判定時は、formal status、claim/non-claim、changed/held-constant variables、interpretation boundary、branch/HEAD、再現可能PowerShell、想定regression件数、progress目印、ログ回収、停止条件を原則として含める。結果判定前に次Cへ進まず、valid negativeも正式結果としてledger/handoffへ残す。
