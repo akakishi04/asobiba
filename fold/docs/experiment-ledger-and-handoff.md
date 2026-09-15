@@ -24,7 +24,7 @@ learned Control Lane -> authoritative availability/permission -> learned acquisi
 C132 and earlier cover binding/scope/authority, replay, atomic claim, recovery/fencing. C133-C135 introduce persisted retrieval, C136 fixed-address query formation, C137 shared content addressing/dynamic candidates. Production head: `fold_lm.v05.retrieval_content.SharedRetrievalContentHead`; adapter: `fold_lm.v05.retrieval_adapter.PersistedStructuralRetrievalAdapter`.
 `docs/evidence-recovery-mode-v0.1.md` is separate and not implemented by these diagnostics.
 
-## Accepted through C155
+## Accepted through C156
 
 - C137 PASS lexical addressing/growth. C138-C140 VALID NEGATIVE composition/seed sensitivity; hash-removal causality is not isolated across C138/C139's dimensional/encoding/seed changes.
 - C141 PASS oracle substitution only. C142 PASS supervised color alignment on original small task. C143 VALID NEGATIVE expanded ranking; C144 PASS descriptive factor-mismatch accounting.
@@ -34,12 +34,17 @@ C132 and earlier cover binding/scope/authority, replay, atomic claim, recovery/f
 - C152 PASS, 322 tests: 24 frozen heads, two layouts; full replay; 82944 exact64 adapter reads with correct selected identity/provenance/payload/cost. Source semantic correctness: WITHIN_FACTOR 20727/layout, GLOBAL_CONCEPT 20736/layout. No new learning.
 - C153 PASS, 346 tests; commit `dc5f5d8bf72bc04692411c05213c824eb8c8c918`: 82944 retrievals, 580608 deliveries; 414720 registered malformed/stale rejections, 82944 valid request admissions, 82944 duplicate rejections. Immutable diagnostic inbox, not durable/production commit or Controller/ANSWER.
 - C154 PASS, 363 tests; commit `8768303869d6ee24d72cc98a9690219a4205a495`: 82944 request entries -> 3072 ADDED, 79872 ALREADY_PRESENT; 3072 provenance conflicts rejected. Each of 48 actual EvidenceStates has 64 OBSERVED refs, no payload. Not 3072 distinct records or a measured compression ratio.
-- **C155 ACCEPTED PASS**, 388 tests; commit `ab8e29bc1d7fa3a9fa4cb786874aef4f5b881fe4`: all 12288 resolver cases valid, 3072 each RESOLVED/SOURCE_UNBOUND/SNAPSHOT_MISMATCH/RECORD_UNBOUND. 3072 exact64 reads/196608 scored vectors; zero resolved 1296 times, one 1776 times; failures/mutations zero. Source/protected hashes, tracked tree and HEAD pass. No model, training, neural scoring, Controller, ANSWER or new observation commit.
+- C155 PASS, 388 tests; commit `ab8e29bc1d7fa3a9fa4cb786874aef4f5b881fe4`: 12288 resolver cases, 3072 each RESOLVED/SOURCE_UNBOUND/SNAPSHOT_MISMATCH/RECORD_UNBOUND. 3072 exact64 reads/196608 vectors; zero 1296 times, one 1776 times; failures/mutations zero. No Controller, training or new observation commit.
+- **C156 ACCEPTED PASS**, 412/412 tests; execution commit `fe2b277341b62abf04bb51d284ce7fd288f15581`. 82944 original requests x 4 branches = 331776 views. RESOLVED/REFERENCE_UNBOUND/SOURCE_UNBOUND/SNAPSHOT_MISMATCH each 82944; resolved zero 34992/one 47952. 82944 actual exact64 reads/5308416 vectors. Behavioral, control-tensor, evidence-state and old-working-state failures all zero. 331776 internal debits; zero acquisition debits. All reported input/protected/tree/HEAD postchecks pass, `run_execution_valid=True`.
 
-C155 establishes provenance-bound readback of existing references, not current-query relevance or learned abstention. The three unbound controls expose no payload. Source semantic totals remain 20727/20736 versus 20736/20736 in both layouts, reaggregated only. A state containing all 64 records does not repair the nine wrong source requests. Read times and exact64 costs are diagnostic, not production performance.
+C156 maps the selected request-bound reference into actual WorkingState and canonical signed working channels. Valid zero retains presence; unresolved reads clear stale presence/value; other records are not substituted. Evidence clocks and state stay fixed. No learned Controller, action selection, ANSWER, live policy loop, durable commit or crash recovery has yet been established on this path.
+
+Source semantics remain bookkeeping (20727/layout versus 20736/layout). Authentic irrelevant evidence is not repaired. These controlled repeated artifacts are not independent natural-language tasks. Diagnostic exact64 costs and wall times are not production throughput/VRAM evidence. Synthetic ranker tuning remains closed.
 
 ## Accepted artifact chain
 
+**C156:** `runs/c156-v5e-request-reobservation-0d0d4cb6c1704c4987ebf8651fc683e0/summary.json`.
+SHA256 `b2c43401a6731400de8e18697f82f5e220aeb3f2368737d9dee5847f7ca1f84f`.
 **C155:** `runs/c155-v5e-payload-dereference-2e18c0303d69421e8f1d21f9d0a3e2a1/summary.json`.
 SHA256 `1ac82ec4c4e60e6c7586058d497096d602a861e191909ca2adfd685f1f2fb4aa`.
 **C154:** `runs/c154-v5e-evidence-state-projection-ddacda18a60e4b7b91c370155ae5551c/summary.json`.
@@ -53,37 +58,35 @@ SHA256 `d2b48acb36d28f0422d09067cc23af882c812d020a00ccfc8c6e8286fd896afa`.
 Manifest SHA256 `5a19de10d8152ac262846682a79a13bb942eeacd7dca979afb09b70170ebdd65`.
 Split plan SHA256 `db65d4754e465c55bfc19438f9d50324bb49e928911a53643deddc531625f4c0`.
 
-Current verdict/preregistration: **`docs/experiment-ledger-addendum-c155-c156.md`**.
-C155 original plan: `docs/experiment-ledger-addendum-c154-c155.md`; C154 verdict/PC-ALM review: `docs/experiment-ledger-addendum-c154-pcalm-review.md`; earlier evidence remains in chained addenda. Formal verdicts are based on user terminal logs and inspected source, not independently rerun full user artifacts. Printed report hashes are checked against actual files on the user's subsequent run.
+Current verdict/preregistration: **`docs/experiment-ledger-addendum-c156-c157.md`**.
+C156 original plan: `docs/experiment-ledger-addendum-c155-c156.md`; C155 plan: `docs/experiment-ledger-addendum-c154-c155.md`; C154 verdict/PC-ALM review: `docs/experiment-ledger-addendum-c154-pcalm-review.md`. Earlier evidence remains in chained addenda. Formal verdicts use user terminal logs and inspected source, not independently rerun full user artifacts. Subsequent formal runs verify printed report hashes against actual files.
 
-## Active C156 — Request-bound WorkingState reobservation
+## Active C157 — Learned Controller readback bridge
 
-`C156-v5e-request-bound-reobservation`, stage `V5-E-REQUEST-BOUND-REOBSERVATION`.
-**ACTIVE, awaiting user CPU execution.**
+`C157-v5e-learned-controller-readback-bridge`; stage `V5-E-LEARNED-CONTROLLER-READBACK-BRIDGE`.
+**ACTIVE, awaiting user CPU execution. No formal result claimed.**
 
-Question: can the original request's selected ref be read into actual WorkingState and existing signed working-input channels without taking a different available record or retaining an old payload on an unresolved read?
+Question: do accepted recorded working inputs plus explicit availability produce the appropriate actual learned action, including ANSWER for resolved zero and no ANSWER when unresolved?
 
 ```text
-82944 original C153 requests -> exact selected reference in C154 EvidenceState
--> unchanged C155 resolver / real persisted exact64 adapter
--> actual WorkingState + advance_internal + BudgetState
--> canonicalize_boolean_channels (working tensor only, no learned controller)
-
-MATCHED / MISSING_REFERENCE / MISSING_SOURCE / WRONG_SNAPSHOT
-= 331776 views; 82944 real reads; 5308416 scored vectors
-248832 unresolved views -> no value, no accepted ref, no read
+C156 JSONL working slots -> canonicalizer -> Controller working input
++ fixed context RETRIEVE_AVAILABLE (0,1,0,0) or NO_ACQUISITION (0,0,0,0)
++ operation ID 0
+-> real ControlLaneActionRouter forward, no action override
 ```
 
-Each scenario begins independently from the same stale working fixture: presence=1, bit alternates, k=7, internal budget=3, acquisition budget=2. Only evidence channels 2/3 are replaced. Internal k advances to 8, budget to 2; acquisition budget and EvidenceState identity/time/revision remain fixed. Masked missing value has `Observation.value=None`; valid zero retains presence. No external observation is acquired or committed.
+Prepare **three new** reference routers via unchanged C113 `_train_router`: seeds **20261741, 20261742, 20261743**, 900 updates each, CPU float32/highest, two threads, width/control/hidden/action counts 8/4/8/6, AdamW lr .01. Existing logical training data/canonicalizer/natural sampling, no source cases or evaluation outcomes used for fitting. All three final-schedule routers are saved/reloaded and frozen before bridge evaluation. No checkpoint/seed selection, no ranker retraining. Training is not zero and this is not old-controller-checkpoint replay.
 
-All three accepted reports, 48 C155 result files, 96 C154/C153 state files and original snapshots are required and hash-checked. Preserve every request-to-selected-key link and original trace; no expected value/semantic label goes into reobservation. Non-evidence working channels stay intact. Full per-request JSONL and hashes are diagnostic artifacts, not a production persistence format.
+331776 source views x 2 contexts x 3 routers = **1990656 decisions**, 576 evaluation batches. **Only six distinct model input patterns**, not millions of independent reasoning tasks. Every row is evaluated; no prediction cache. Expected aggregate action counts: ANSWER 497664, RETRIEVE 746496, STOP_UNRESOLVED 746496. Matched zero/one both ANSWER; unresolved chooses RETRIEVE only in the explicitly available context, otherwise STOP. Presence is not relevance: the source's authentic wrong selections are not repaired.
 
-PASS: all request/value/status/input/clock/budget invariants, unchanged sources and registered read/scan counts. Valid measured bad behavior yields FAIL with cases retained. Invalid sources/hash/lineage/schema or unexpected execution errors yield INVALID. No adaptation of counts, seeds or expected values after results.
+Validate the exact C156 report, all 48 JSONL hashes/sizes and reaggregate request/scope/provenance/status/value/channels/clock/costs; hash all input artifacts listed by C156. Keep source trace order; save actual logits/actions/expected labels/margins per router/stream as NPZ plus source binding metadata. This is diagnostic storage only.
 
-No model load, training, fresh seeds, learned Controller, action selection, ANSWER, context-eligibility/op-ID integration, durable publication, crash recovery or concurrency. Future controller integration is not claimed here. Gate E remains NOT PASSED. Do not start C157 before judging C156.
+PASS requires every registered learned action and strictly positive finite expected-action logit margin, all three routers, exact counts and preserved input/weight state. Valid finite wrong actions/nonpositive margins or measured mutations yield FAIL and remain recorded. Bad source/hash/schema/recipe, nonfinite values or unexpected execution/outer guard errors are INVALID. No changing criteria or filtering seeds.
 
-Files: `gate_e_c156_request_reobservation.py`, `gate_e_c156_cli.py`, `tests_lm/test_v05_c156_request_reobservation.py`, `tools/run_c156.ps1`.
-Reviewer **24/24 new CPU helper tests passed** with exact production state/controller copies; controlled resolver responses isolate the new bridge. Python compilation passed. Full **412-test suite**, actual prior artifact integration and PowerShell were not run by reviewer. Synthetic ranker tuning remains closed.
+**ANSWER is an action ID, not generated answer text/value.** No external action executes, no live retrieval/reobservation, runtime authority enforcement, durable publication, learned relevance or end-to-end acquisition loop is tested. Context masks are hand-specified fixtures. Gate E stays NOT PASSED. C158 is not registered; judge C157 first.
+
+Files: `gate_e_c157_controller_bridge.py`, `gate_e_c157_cli.py`, `tests_lm/test_v05_c157_controller_bridge.py`, `tools/run_c157.ps1`.
+Reviewer **28/28 new CPU tests and compilation passed** with exact production Controller dependency. Synthetic full-shaped trace decoder, raw learned-forward interface, wrong-output retention, margins/checkpoint helpers verified. Fixed-recipe training wrapper tested with controlled trainer; no formal fresh router trained by reviewer. Full **440 tests**, actual artifact integration, formal training/evaluation and PowerShell not reviewer-executed.
 
 ## Independent reports / non-claims
 
