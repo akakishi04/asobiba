@@ -8,7 +8,7 @@
 - Python 3.13.15 / PyTorch 2.10.0+cu130 / CUDA 13.0 / RTX 4070 Ti SUPER; `.venv-py31315\Scripts\python.exe`.
 - C37 `runs/chatgpt-last-result.json`: `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`.
 - Fixture `runs/fixtures/v05-c-composition-20260921.pt`: `A52F8209703149407580F7E2965B61B78653030EE992AF6D759865736741CA9E`.
-- Read AGENTS.md, `docs/experiment-conversation-handoff-protocol.md` and this handoff. One question per C number; invalid executions retry the same number and accepted negatives remain recorded.
+- Read `AGENTS.md`, `docs/experiment-conversation-handoff-protocol.md` and this handoff. One question per C number; invalid executions retry the same number and accepted negatives remain recorded.
 
 ## Gate status and architecture boundaries
 
@@ -23,7 +23,7 @@ learned Control Lane -> authoritative availability/permission -> learned acquisi
 
 C132 and earlier cover binding/scope/authority, replay, atomic claim and recovery/fencing. C133-C135 introduce persisted retrieval; C136 fixed-address query formation; C137 dynamic content addressing. Production head: `fold_lm.v05.retrieval_content.SharedRetrievalContentHead`; adapter: `fold_lm.v05.retrieval_adapter.PersistedStructuralRetrievalAdapter`. `docs/evidence-recovery-mode-v0.1.md` is separate, not implemented by these diagnostics.
 
-## Accepted through C159
+## Accepted through C160
 
 - C137 PASS lexical addressing/growth. C138-C140 VALID NEGATIVE composition/seed sensitivity; dimension/encoding/seed changes prevent isolated hash-removal causality claims.
 - C141 PASS oracle substitution only; C142 PASS small-task supervised color alignment. C143 VALID NEGATIVE expanded ranking; C144 PASS descriptive factor accounting.
@@ -35,13 +35,21 @@ C132 and earlier cover binding/scope/authority, replay, atomic claim and recover
 - C154 PASS, 363 tests: 82944 entries -> 3072 ADDED, 79872 ALREADY_PRESENT; 3072 provenance conflicts rejected. 48 actual EvidenceStates x 64 refs, no payload. Classification caveat remains in the PC-ALM review addendum.
 - C155 PASS, 388 tests: 12288 resolver cases, 3072 each RESOLVED/SOURCE_UNBOUND/SNAPSHOT_MISMATCH/RECORD_UNBOUND; 3072 reads/196608 vectors. Zero/one 1296/1776, no mutations/failures.
 - C156 PASS, 412 tests: 82944 requests x four conditions = 331776 views. Real WorkingState/signed channels, no stale value or external clock change; 82944 reads/5308416 vectors, 331776 internal debits.
-- C157 PASS, 440 tests: three new C113-recipe routers, seeds 20261741..20261743, 900 CPU updates each; 1990656 recorded-input decisions over six patterns. All actions/margins/input/weight checks pass; minimum logit margin 5.344475269317627.
+- C157 PASS, 440 tests: three C113-recipe routers, seeds 20261741..20261743, 900 CPU updates each; 1990656 recorded-input decisions over six patterns. All actions/margins/input/weight checks pass; minimum logit margin 5.344475269317627.
 - C158 PASS, 475 tests: all 1990656 prior decisions replayed; 1920 live episodes/3456 decisions, 768 acquisitions, 384 restored refs, 1536 exact64 calls/98304 vectors. ANSWER_ACTION 768 / STOP 1152, values zero 324/one 444. All three frozen routers and five registered conditions pass. Denied/exhausted branches dispatch nothing. No generated answer or dynamic-world epoch.
-- **C159 ACCEPTED PASS**, 508/508 tests; execution commit `741ca66e93e389ffc7e90688dc924e04695da778`. 1920 stored terminals -> 6528 emissions: ANSWERED 768 (zero 324/one 444), UNRESOLVED 1152 (384 each delivery/permission/budget). All 4608 wrong-request/provenance/payload/ungrounded-answer controls rejected. Failed cases, mutations and serialization failures zero; protected/tree/HEAD checks pass.
+- C159 ACCEPTED PASS, 508/508 tests; execution commit `741ca66e93e389ffc7e90688dc924e04695da778`. 1920 stored terminals -> 6528 emissions: ANSWERED 768, UNRESOLVED 1152. All 4608 registered wrong-request/provenance/payload/ungrounded-answer controls rejected; no failures/mutations/serialization failures.
+- **C160 ACCEPTED VALID NEGATIVE**, 546/546 tests; execution commit `d2c1468a19e9a13a8fa47fafe3aad5fa01597aec`. Full 82944 live query episodes completed with 5308416 ranker candidate scores, 165888 Controller decisions, 82944 acquisitions, 82944 publications, 165888 exact64 calls / 10616832 vectors and exact 27648 episodes per Controller. Minimum Controller margin 6.142457485198975; mutations/serialization failures zero. Nevertheless `answered=0`, `failed_episodes=82944`, and every arm/layout reports `binding_correct=0`, `semantic_correct=0`. Protected artifacts/tree/HEAD passed and `diagnostic_execution_valid=true`.
 
-C159 establishes a deterministic observed-bit return contract from trusted recorded terminal traces; no model, retrieval or live cycle runs in that experiment. C158 establishes the bounded live cycle from an already selected record. Neither alone establishes a live query-to-result composition. ANSWERED is not learned/generated semantic answer content. Authentic irrelevant evidence is not corrected by presence/provenance guards. Large repeated counts and total diagnostic times are not independent task coverage or production performance. Gate E remains NOT PASSED.
+C160 therefore does not establish live query-to-result composition. It is a valid negative, not an invalid retry. The C151 ranking replay, C157 Controller margins, acquisition/publication counts, exact read costs and old C159 replay all remain accepted, so the unresolved question is the shared composition boundary between the preserved C158-style cycle result and the C159 typed terminal contract. C160's console aggregate does not reveal whether stored C158 cycle assessments themselves failed or whether one/multiple terminal guards rejected otherwise accepted cycles.
+
+Do not retrain, select new checkpoints, change thresholds, shrink coverage, alter the known 18 WITHIN_FACTOR semantic control errors, or rerun C160 merely to obtain PASS. Gate E remains NOT PASSED.
 
 ## Accepted artifact chain
+
+**C160:** `runs/c160-v5e-live-query-result-80754c5ca25f4970aa1ceeb5d3a8b04b/summary.json`.
+SHA256 `1c99ab5395e67c859a7730e1a9111d4595e2668b85cb56d0a31dfff79aea4bbd`.
+Query-cycle plan SHA256 `656b53b55db3ed756a6421f767527857f8d71886c8e976735f3734d7160beb13`.
+Uploaded console-log SHA256 `98eafa0e628e1d214ba3f9c63cf1eee22c7bd3708092932be51026f2c1d3fc43`.
 
 **C159:** `runs/c159-v5e-terminal-result-9e2b2e3e1f9c42bda1f33d7d49fa3cd7/summary.json`.
 SHA256 `522a6ce4d8792e4e659fc7262928f9d610d814c2ffccff47cc658f6b49e069e6`.
@@ -65,30 +73,30 @@ SHA256 `d2b48acb36d28f0422d09067cc23af882c812d020a00ccfc8c6e8286fd896afa`.
 Manifest `5a19de10d8152ac262846682a79a13bb942eeacd7dca979afb09b70170ebdd65`.
 Split plan `db65d4754e465c55bfc19438f9d50324bb49e928911a53643deddc531625f4c0`.
 
-Current verdict/preregistration: **`docs/experiment-ledger-addendum-c159-c160.md`**.
-Previous plans/verdicts remain in `experiment-ledger-addendum-c158-c159.md`, `experiment-ledger-addendum-c157-c158.md` and chained addenda. Formal verdicts use user console logs plus inspected source/registered gates, not independently replayed full artifacts; subsequent local runs verify report hashes against real files.
+Current verdict/preregistration: **`docs/experiment-ledger-addendum-c160-c161.md`**.
+Previous plans/verdicts remain in `experiment-ledger-addendum-c159-c160.md`, `experiment-ledger-addendum-c158-c159.md`, `experiment-ledger-addendum-c157-c158.md` and chained addenda. Formal verdicts use user console logs plus inspected source/registered gates, not independently replayed full local artifacts; subsequent local runs verify report/trace hashes against real files.
 
-## Active C160 — Live query-to-terminal-result composition
+## Active C161 — C160 failure-boundary localization
 
-`C160-v5e-live-query-to-terminal-result`; `V5-E-LIVE-QUERY-TO-TERMINAL-RESULT`.
-**ACTIVE, awaiting user CUDA/CPU execution. No C160 result claimed.**
+`C161-v5e-c160-failure-boundary-localization`; `V5-E-C160-FAILURE-BOUNDARY-LOCALIZATION`.
+**ACTIVE / NOT YET JUDGED.**
 
-Question: can frozen query selection -> live authorized cold reference recovery -> typed observed-bit return execute in one process, retaining identity and known relevance-error boundaries?
+Question: **is the universal C160 failure entirely a single post-cycle terminal rejection after an otherwise accepted C158 cycle assessment?**
 
-All 24 C151 rankers, original 1728 queries/64 candidates, both C152 layouts, all three frozen C157 routers; zero training/fresh seeds. Ranker CUDA float32, Controller CPU. Assignment is manifest query index modulo 3 (same across arms/layouts); one router per query, 576 queries/router/stream, not the full ranker/query/router product. All units/signatures/canonical vocab and inference arithmetic remain unchanged.
+C161 is read-only. It consumes the accepted C160 summary SHA256 `1c99ab5395e67c859a7730e1a9111d4595e2668b85cb56d0a31dfff79aea4bbd` and the 48 gzip traces whose hashes/sizes are registered inside that summary. It executes **no model forward, retrieval, acquisition, publication, live cycle or emitter repair**, and performs zero training/fresh seeds.
 
-Only COLD_RECOVER is newly exercised: selected ref removed from a known 64-ref state, stale working payload cleared, budget(3 internal,1 acquisition), authoritative permission true. Raw Controller proposals drive actual C153 acquisition/admission, C154 projection, C155/C156 readback; fresh terminal result goes directly to C159 emitter. Expected RETRIEVE -> ANSWER. No recorded selected address substitutes for the live argmax; evaluator labels/values never enter the cycle or emitter. Other 63 refs remain; no initially empty world, new epoch, absent-target detection or generated language.
+Coverage is fixed at **48 traces x 1728 rows = 82944 episodes**. It aggregates stored `cycle_assessment.passed/checks/margins`, terminal `output.status/reason`, `output_assessment.bound/serialization_ok`, boundary classes, arm/layout partitions and router coverage. It saves compact examples only; C160 rows are never rewritten.
 
-Pin C159 and C151 summaries. Verify all source traces/upstream hashes and replay all 6528 recorded C159 outputs, then reaggregate C154/C153 states and reload the ORIGINAL C152 catalogs/snapshots. C153's input map binds catalog hashes. Load all source model checkpoints safely; full 41472+288 C151 ranker replay before live per-layout ranking, exact predictions/rivals and float tolerance 1e-5. C157's old large action replay is not repeated here; frozen fingerprint checks and accepted earlier replay stay distinct.
+PASS requires all 82944 stored cycle assessments to pass, no false cycle checks, all outputs to be REJECTED for one and only one common reason, all outputs unbound but serialization-valid, and every row to classify as `POST_CYCLE_TERMINAL_REJECTION`. This PASS localizes a failure reason only; it does not repair C160 or advance Gate E.
 
-Expected new scope: **82944 live query episodes, 5308416 candidate scores, 165888 Controller decisions, 82944 acquisitions/restored refs, 165888 exact64 adapter calls/10616832 vectors, 82944 typed ANSWERED outputs**. Each assigned Controller handles 27648 episodes. In each arm/layout all 20736 outputs must be bound to the selected record. Semantic counts must remain **20727 WITHIN_FACTOR / 20736 GLOBAL_CONCEPT per layout**; the 18 known control errors across layouts must not be silently corrected. Cycle/output-integrity errors and semantic relevance are separate metrics.
+A valid complete trace set that contains any cycle-assessment failure, multiple terminal reasons or multiple failure boundaries is **ACCEPTED VALID NEGATIVE / FAIL** for C161's single-boundary hypothesis. Wrong C160 hash/profile, missing/tampered traces, malformed schema, incomplete coverage/router schedule or postcheck failure is **INVALID / RETRY C161**.
 
-Save fixed plan before new measurement; all per-query decisions/logits/state outcomes/typed outputs/assessments in 48 gzip JSONL files with hashes. Final state digest plus referenced source states avoids writing 64 refs per query. No prediction/payload cache bypasses query/cycle coverage. Exact64 costs include readback, not production bounded-search evidence.
+Files:
+- `fold_lm/v05_benchmarks/gate_e_c161_failure_localization.py`
+- `tests_lm/test_v05_c161_failure_localization.py`
+- `tools/run_c161.ps1`
 
-PASS requires all registered cycle/output invariants, positive Controller margins, counts, source-scope semantics and preservation. Finite behavior defects yield saved FAIL; bad sources/replay/checkpoints/numerics/execution yield INVALID and same-number retry. Do not train, reduce coverage or choose checkpoints after a failure. Gate E stays NOT PASSED. C161 unregistered.
-
-Files: `gate_e_c160_live_query_result.py`, `gate_e_c160_cli.py`, `tests_lm/test_v05_c160_live_query_result.py`, `tools/run_c160.ps1`.
-Reviewer **38/38 CPU helper tests and compilation passed**: toy exhaustive-shaped ranking, controlled integration callbacks, full-shaped synthetic recorded-output replay, zero/identity/relevance boundaries and strict gates. Real user model/state artifacts and complete dependency-chain execution were unavailable. Full **546 tests**, formal CUDA/CPU integration and PowerShell NOT reviewer-executed.
+Focused regression target: **558 tests = prior 546 + 12 C161 helper tests**. The helper tests are registered; the formal user regression and real 48-trace diagnostic are not yet executed. Do not preregister a repair C162 until C161 is judged.
 
 ## Independent reports / non-claims
 
