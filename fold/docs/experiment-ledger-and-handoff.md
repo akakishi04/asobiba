@@ -8,8 +8,8 @@
 - Python3.13.15 / PyTorch2.10.0+cu130 / CUDA13.0 / RTX4070 Ti SUPER; `.venv-py31315\Scripts\python.exe`.
 - C37 `runs/chatgpt-last-result.json`: `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`.
 - Fixture `runs/fixtures/v05-c-composition-20260921.pt`: `A52F8209703149407580F7E2965B61B78653030EE992AF6D759865736741CA9E`.
-- Read `AGENTS.md`, `docs/experiment-conversation-handoff-protocol.md`, this handoff and current addendum. Judge -> ledger/handoff -> next C. One scientific question per C; invalid executions retry the same number; valid negatives stay accepted evidence.
-- Latest accepted execution: **C166**, HEAD `dc1f315cac66d1963f8e0d08bb897457affbe94a`. Acceptance recorded in `a651c3765618d0c52927e1c7dcdcdc29b96a8b3c`; acceptance-only handoff `da060aa975642a9907891b6d7bfdde61383b868d` precedes C167 registration. Use the final C167 registration HEAD as ExpectedHead, not the old execution HEAD.
+- Read `AGENTS.md`, `docs/experiment-conversation-handoff-protocol.md`, this handoff and current verdict/design. Judge -> ledger/handoff -> next C. One scientific question per C; invalid executions retry the same number; valid negatives stay accepted evidence.
+- Latest accepted execution: **C167**, HEAD `a3eb2dba7c3c74de90d228f1c6d2648ef1cee8d1`. Subsequent documentation commits are not scientific execution HEADs.
 
 ## Gate status / architecture boundaries
 
@@ -26,74 +26,66 @@ Production retrieval head `fold_lm.v05.retrieval_content.SharedRetrievalContentH
 persisted adapter `fold_lm.v05.retrieval_adapter.PersistedStructuralRetrievalAdapter`.
 `docs/evidence-recovery-mode-v0.1.md` remains separate design, not implemented by these diagnostics.
 
-## Accepted evidence through C166
+## Accepted evidence through C167
 
-C137 PASS lexical addressing/growth. C138-C140 VALID NEGATIVE composition/seed sensitivity. C141 PASS oracle localization; C142 PASS small supervised alignment. C143 VALID NEGATIVE expanded ranking; C144 PASS descriptive attribution. C145-C148 include accepted negative interventions; C149 PASS arithmetic attribution. C150 PASS original synthetic split. Earlier detailed claims remain in chained addenda.
+Earlier detailed summaries and artifact identities remain in the prior handoff at `a3eb2dba7c3c74de90d228f1c6d2648ef1cee8d1` and its chained addenda. They are not superseded by this compression of the current handoff.
+
+C137 PASS lexical addressing/growth. C138-C140 VALID NEGATIVE composition/seed sensitivity. C141 PASS oracle localization; C142 PASS small supervised alignment. C143 VALID NEGATIVE expanded ranking; C144 PASS descriptive attribution. C145-C148 include accepted negative interventions; C149 PASS arithmetic attribution; C150 PASS original synthetic split.
 
 - **C151 PASS**,298 tests: four splits x three paired initializations; WITHIN_FACTOR20,727/20,736 and GLOBAL_CONCEPT20,736/20,736. Nine control errors in S2/20261726; synthetic ranker tuning closed; no independent task/language generalization.
-- **C152 PASS**,322 tests:24 frozen heads/two layouts;82,944 exact64 reads with selected identity/provenance/payload/cost preserved.
+- **C152 PASS**,322 tests:24 frozen heads/two layouts;82,944 exact64 reads, selected identity/provenance/payload/cost preserved.
 - **C153 PASS**,346 tests:82,944 reads,580,608 deliveries,414,720 invalid rejections,82,944 admissions and duplicate rejections each; immutable diagnostic inbox, not durability.
 - **C154 PASS**,363 tests:3,072 ADDED/79,872 ALREADY_PRESENT,3,072 conflicts rejected;48 states x64 refs. Classification caveat: `experiment-ledger-addendum-c154-pcalm-review.md`.
 - **C155 PASS**,388 tests:12,288 resolver cases/four statuses;3,072 reads/196,608 vectors;zero/one1,296/1,776.
-- **C156 PASS**,412 tests:82,944 requests x4 conditions=331,776 views; zero/unresolved separated, no stale payload/external-clock advance.
-- **C157 PASS**,440 tests:three Controllers, seeds20261741..20261743,900 updates each;1,990,656 recorded-input decisions;minimum margin5.344475269317627.
-- **C158 PASS**,475 tests:preselected-record warm/recover/missing/denied/exhausted live cases;1,920 episodes/3,456 decisions,768 acquisitions,384 restorations,1,536 calls/98,304 vectors. Not raw-query selection.
+- **C156 PASS**,412 tests:82,944 requests x4 conditions=331,776 views;zero/unresolved separated,no stale payload/external-clock advance.
+- **C157 PASS**,440 tests:three Controllers20261741..20261743,900 updates each;1,990,656 recorded-input decisions;minimum margin5.344475269317627.
+- **C158 PASS**,475 tests:preselected warm/recover/missing/denied/exhausted;1,920 episodes/3,456 decisions,768 acquisitions,384 restorations,1,536 calls/98,304 vectors. Not raw-query selection.
 - **C159 PASS**,508 tests:stored-terminal emitter;1,920 terminals ->6,528 emissions,ANSWERED768/UNRESOLVED1,152,4,608 controls rejected.
-- **C160 ACCEPTED VALID NEGATIVE**,546 tests,execution `d2c1468a19e9a13a8fa47fafe3aad5fa01597aec`:82,944 complete live cycles but ANSWERED0/failed82,944. Never retroactively relabel.
-- **C161 PASS**,558 tests:all82,944 stored cycle assessments pass; single post-cycle rejection MALFORMED_EVIDENCE.
-- **C162 PASS**,588 tests:82,944 digest-verified offline tuple/list pairs; native rejection/list-bound output,768 guards pass; reconstruction, not original heap capture.
-- **C163 PASS**,614 tests:82,944 raw-query live cycles yield bound ANSWERED after observations-only normalization; native controls reject.165,888 decisions,82,944 acquisitions/restorations,165,888 calls/10,616,832 vectors;768 guards/494 input checks pass.
-- **C164 PASS**,638 tests:82,944 rankings x2 fresh continuations=165,888 branch episodes. Normal ANSWERED82,944 / missing UNRESOLVED-MISSING_DELIVERY82,944;331,776 decisions,165,888 acquisitions,82,944 publications,248,832 calls/15,925,248 vectors. Missing branch never publishes/rereads;768 guards/545 input checks pass.
-- **C165 PASS**,665 tests:165,888 allowed/permission-denied branch episodes,zero failures.331,776 decisions,82,944 acquisitions/restorations,165,888 adapter calls/10,616,832 vectors. Denied UNRESOLVED/PERMISSION_DENIED82,944,zero acquisition/read/debit/publication;budget1->1. Raw RETRIEVE not overridden.768 guards/596 inputs and historical code/tree/HEAD preserved.
-- **C166 ACCEPTED PASS**,**695/695 tests**,execution `dc1f315cac66d1963f8e0d08bb897457affbe94a`:82,944 fresh rankings x initial acquisition allowance1/0=165,888 independent-continuation branch episodes,zero failures.331,776 decisions,82,944 acquisitions/restorations,165,888 reads/10,616,832 vectors. Normal ANSWERED82,944; exhausted UNRESOLVED/BUDGET_EXHAUSTED82,944. All exhausted initial/final allowances0, authorities BUDGET_EXHAUSTED, no overbudget fetch/debit/publication/readback. PermissionTrue in both.768 guards/647 input checks/historical code/tree/HEAD preserved;zero mutations/serialization failures. Margins normal6.142457485198975/exhausted5.3444743156433105.
+- **C160 ACCEPTED VALID NEGATIVE**,546 tests,execution `d2c1468a19e9a13a8fa47fafe3aad5fa01597aec`:82,944 complete live cycles,ANSWERED0/failed82,944. Never retroactively relabel.
+- **C161 PASS**,558 tests:all82,944 stored cycle assessments pass;single terminal rejection MALFORMED_EVIDENCE.
+- **C162 PASS**,588 tests:82,944 digest-verified offline tuple/list pairs;native rejection/list-bound output;768 guards. Reconstruction,not original heap capture.
+- **C163 PASS**,614 tests:82,944 raw-query live bound ANSWERED after observations-only normalization;native controls reject.165,888 decisions,82,944 acquisitions/restorations,165,888 calls/10,616,832 vectors;768 guards/494 input checks.
+- **C164 PASS**,638 tests:82,944 rankings x2 continuations=165,888 branch episodes;normal ANSWERED82,944/missing UNRESOLVED-MISSING_DELIVERY82,944.331,776 decisions,165,888 acquisitions,82,944 publications,248,832 calls/15,925,248 vectors;missing never publishes/rereads;768 guards/545 input checks.
+- **C165 PASS**,665 tests:165,888 allowed/permission-denied episodes,zero failures;331,776 decisions,82,944 acquisitions/restorations,165,888 calls/10,616,832 vectors. Denied UNRESOLVED/PERMISSION_DENIED82,944;zero acquisition/read/debit/publication;budget1->1.768 guards/596 input checks.
+- **C166 PASS**,695 tests:165,888 initial acquisition-allowance1/0 episodes,zero failures;331,776 decisions,82,944 acquisitions/restorations,165,888 calls/10,616,832 vectors. Exhausted UNRESOLVED/BUDGET_EXHAUSTED82,944;no fetch/debit/publication/readback;permissionTrue both.768 guards/647 input checks.
+- **C167 ACCEPTED PASS**,**725/725 tests**:82,944 fresh ranking prefixes x cold/warm=165,888 episodes;failed0,matched observed-output pairs82,944,ANSWERED165,888.248,832 decisions,82,944 acquisitions/restorations,248,832 exact64 reads/15,925,248 vectors. Warm82,944 episodes each:one paid read,one ANSWER,no acquisition/admission/publication,unchanged evidence,acquisition allowance1->1,final budget(2,1). Cold retains recovery behavior/final budget(1,0). Margins cold6.142457485198975/warm9.29835307598114.768 guards/698 declared input-path checks and new output-artifact/historical-code/tree/HEAD checks pass;zero mutations/serialization failures.
 
 ## Interpretation boundary
 
-Raw-query-originating normal recovery, post-fetch missing delivery, permission denial and initial acquisition-budget exhaustion have measured typed terminal evidence. These are distinct runtime claims, not broad model intelligence.
-Normal branches retain20,736 bound outputs per arm/layout, semantic_correct WITHIN_FACTOR20,727 / GLOBAL_CONCEPT20,736; zero34,992/one47,952. Nine known errors x2 layouts remain18 repeated instances, not18 new error types. Unresolved semantic_correct=null; unresolved is not bit0 or nonexistence.
+Raw-query normal recovery, missing delivery, permission denial, acquisition-budget exhaustion and warm already-bound references have measured typed terminal evidence. These are distinct runtime claims, not broad model intelligence.
+For every answered condition/layout, each arm has20,736 bound outputs;semantic_correct WITHIN_FACTOR20,727/GLOBAL_CONCEPT20,736. In C167,known errors repeat36 times=9 x2 layouts x2 answered conditions,not36 error types. Each condition values0=34,992/1=47,952. Unresolved remains neither bit0 nor nonexistence;unresolved semantic_correct=null.
 
-Runtime enforces permission/budget after the model proposal. C166 does not establish learned numerical budget comprehension or avoidance of unaffordable proposals. Zero denied/exhausted adapter calls does not remove shared ranking, prerequisite IO or internal decisions; no OS isolation/confidential-catalog guarantee is measured.
+Runtime enforces permission/budget after model proposal. Zero denied/exhausted adapter calls excludes shared ranking,prerequisite IO and internal decisions. Warm still pays an exact64 read. No learned numerical budget comprehension,OS isolation,zero-IO answer-cache or warm language-session prefix reuse is established.
 
-C160 stays accepted negative. EvidenceState stays tuple-backed; C163 bridge/C159 emitter unchanged. No checkpoint/threshold/target repair. No accepted raw-query **warm already-bound** path, initially empty world, dynamic epochs, relevance abstention, generated answers, durability or production rollout yet. Repeated fixed-fixture episodes are not independent task generalization; diagnostic timing/allocator data is not full-model production performance. **Gate E NOT PASSED**.
+C160 stays accepted negative;EvidenceState tuple backing and historical C163 bridge/C159 emitter unchanged. No checkpoint/threshold/target repair. No accepted general semantic relevance/necessity judgment,initially empty world,dynamic epochs,generated answers,durability or production rollout from these diagnostics. Repeated fixed-fixture episodes are not independent task generalization;diagnostic timing/allocator data is not full-model production performance.
+
+The roadmap's comparative hallucination/quality/unnecessary-question/coverage criteria are not satisfied merely by accumulating local PASS results. A final evaluation's scope,baselines,denominators and numerical decision rules must be fixed before its deciding comparison. **Gate E NOT PASSED**;remaining number of experiments is not yet established.
 
 ## Accepted artifact chain
 
-**C166:** `runs/c166-v5e-live-budget-exhausted-94d4977de28e464aa298c02f1f63bf06/summary.json`.
-SHA256 `77596c3765a83ea4ccf68a289059cb26f603b2a4fe28b3392f0fe24cec9861a2`.
-Plan `0946b2ef10a92346449d484590b0a753e91561906b14af710dbdebe4b1041eaf`.
-Controls `0cd6072abd850d5a7976bd8bf4c029b50e0a6dd670e2fa2a2c792fc6c7254d81`.
-Uploaded-log SHA256 `a607be254bdbd681ffa75538b549bb6ecbfe73c60200c9c88c19f1e755ee5d49`.
+**C167:** `runs/c167-v5e-live-warm-reference-c9c6b3da430a408f9032690e76ec232a/summary.json`.
+SHA256 `5907d4b2dd4e66a9a2d8a6017b68ab8461a9bfca6bd90dd01c1774f5c3e020e9`.
+Plan `24afcd65e73a7ff2c2d81accb9987e75a7dba40e5d85d8dc662a1a784ac6c70e`.
+Controls `fd8ee32e98443b7ab3ec0bdf9bfd4c4672cb4ae7710bc2318938150e8be534a4`.
+Uploaded-log SHA256 `ce0a633df8dfa338046484766b38afa18f985b1e94789710857f97287c45922a`.
 
-**C165:** `runs/c165-v5e-live-permission-denied-e8e5f5d4b9504812bfeeecba65db79d7/summary.json`, SHA256 `7cdfbf97fec85bb28e3fbc3fe4cbb470ec4497c31dbec33879d7b442097724c6`.
-**C164:** `runs/c164-v5e-live-missing-delivery-47e1d170b3114b8d94e6c1d221ebf464/summary.json`, SHA256 `42df47fe4c03d24df064ff47eecf5b3c84b8df2f36d6a47b7f861ac14778fed2`.
-**C163:** `runs/c163-v5e-live-container-bridge-113788996bc74a1886db817fd95dceae/summary.json`, SHA256 `7afc8838d152e791ed33f87e7a9d64d5e4802f9c57ef49b911ca47c4691efd60`.
-C151-C162 paths/hashes, earlier evidence and source splits remain in chained addenda and the prior authoritative handoff at `dc1f315cac66d1963f8e0d08bb897457affbe94a`.
-C151 SHA `d2b48acb36d28f0422d09067cc23af882c812d020a00ccfc8c6e8286fd896afa`; manifest `5a19de10d8152ac262846682a79a13bb942eeacd7dca979afb09b70170ebdd65`; split plan `db65d4754e465c55bfc19438f9d50324bb49e928911a53643deddc531625f4c0`.
+**C166:** `runs/c166-v5e-live-budget-exhausted-94d4977de28e464aa298c02f1f63bf06/summary.json`,SHA256 `77596c3765a83ea4ccf68a289059cb26f603b2a4fe28b3392f0fe24cec9861a2`.
+**C165:** `runs/c165-v5e-live-permission-denied-e8e5f5d4b9504812bfeeecba65db79d7/summary.json`,SHA256 `7cdfbf97fec85bb28e3fbc3fe4cbb470ec4497c31dbec33879d7b442097724c6`.
+**C164:** `runs/c164-v5e-live-missing-delivery-47e1d170b3114b8d94e6c1d221ebf464/summary.json`,SHA256 `42df47fe4c03d24df064ff47eecf5b3c84b8df2f36d6a47b7f861ac14778fed2`.
+**C163:** `runs/c163-v5e-live-container-bridge-113788996bc74a1886db817fd95dceae/summary.json`,SHA256 `7afc8838d152e791ed33f87e7a9d64d5e4802f9c57ef49b911ca47c4691efd60`.
+C151-C162 paths/hashes and earlier source splits remain in chained addenda and the handoff at `a3eb2dba7c3c74de90d228f1c6d2648ef1cee8d1`.
+C151 SHA `d2b48acb36d28f0422d09067cc23af882c812d020a00ccfc8c6e8286fd896afa`;manifest `5a19de10d8152ac262846682a79a13bb942eeacd7dca979afb09b70170ebdd65`;split plan `db65d4754e465c55bfc19438f9d50324bb49e928911a53643deddc531625f4c0`.
 
-Current verdict: **`docs/experiment-ledger-addendum-c166-c167.md`**.
-Current preregistration: **`docs/experiment-ledger-addendum-c167-preregistration.md`**.
-C166 reviewer checked uploaded console/source/preregistration consistency and uploaded-byte hash. Omitted records mean no independent full-report hash reconstruction or user-side raw-trace/model replay is claimed.
+Current verdict: **`docs/experiment-ledger-addendum-c167-c168.md`**.
+C167 preregistration remains historical: `docs/experiment-ledger-addendum-c167-preregistration.md`.
+Reviewer checked uploaded-byte hash and console/source/preregistration consistency. Omitted records mean no independent full-report hash reconstruction or raw-trace/model replay is claimed.
 
-## Active C167 — Live query warm reference
+## Next action — design boundary, no active experiment
 
-`C167-v5e-live-query-warm-reference`; `V5-E-LIVE-QUERY-WARM-REFERENCE`.
-**ACTIVE / NOT YET JUDGED. No C168 registered.**
-
-Question: with permissionTrue/budget(3,1) fixed, does the selected reference's initial presence avoid redundant acquisition and let one paid dereference/one learned decision produce the same typed bit as cold recovery?
-
-Change only initial selected-reference membership. The local wrapper verifies C160's original cold input, then forwards that state or a fresh immutable full-fixture copy to the unchanged C158 cycle. All other arguments are identical. Warm input is not the preceding cold output. Record effective initial state digest/count/membership; no expected payload/target/action enters the runtime.
-
-82,944 fresh rankings/5,308,416 candidate scores, each cold then warm with independent state/working/inbox/budget.165,888 branch episodes,248,832 decisions,82,944 acquisitions/restorations,248,832 exact64 calls/15,925,248 vectors. Cold[2,0]:two reads,one acquisition,budget(1,0). Warm[0]:one read,no acquisition/admission/publication,budget(2,1),internal step8,unchanged full state. Both emit ANSWERED82,944; no UNRESOLVED. Each Controller27,648 episodes per condition.
-
-Both conditions separately retain each arm/layout's bound20,736 and semantic WITHIN_FACTOR20,727/GLOBAL_CONCEPT20,736. Total known-error instances36=9 x2 layouts x2 conditions, not36 failure types. Each condition zero34,992/one47,952.82,944 observed-output pairs agree apart from distinct request/scope IDs.
-
-Unchanged C163 AuditedEmitter:165,888 native controls+165,888 adapted emissions+768 first-cold guards; historical native MALFORMED_EVIDENCE retained. C15141,472+288/C1596,528 replays separate. Pin full C166 parent/all input and trace/plan/control hashes; historical core/C158-C166 blobs unchanged. Save48 traces x3456rows plus initial state metadata and all behavior assessments. New UUID run; Python/runner rehash sources/code/tree/HEAD,runner checks new output artifacts too.
-
-PASS requires all original cold gates plus every warm no-reacquisition/paid-read/one-answer/state/budget/pair/semantic/cost/guard/protection check. Valid finite failures remain ACCEPTED VALID NEGATIVE. Invalid prerequisites/replay/nonfinite/incomplete execution/protection failures retry C167 unchanged. No tuning for PASS. Warm does not mean zero IO, natural-language-session reuse or FOLD-R capsule implementation; no full Gate E pass.
-
-Files: `fold_lm/v05_benchmarks/gate_e_c167_live_warm_reference.py`, `tests_lm/test_v05_c167_live_warm_reference.py`, `tools/run_c167.ps1`.
-Focused regression **725 expected=695+30**. Reviewer compiled both Python files,passed22 dependency-light AST/excerpt/test-double checks; eight actual-cycle/emitter integration methods,full725,realCUDA/CPU and WindowsPowerShell unexecuted. Uploaded code/test/runner blob bytes match local reviewed files. Stop after C167 for formal judgment/ledger update before C168.
+**C167 ACCEPTED PASS. C168 NOT REGISTERED. No next experiment is currently ACTIVE.**
+The user's Gate E exit-condition question identifies a planning need: map the five roadmap properties to actual evidence and define a finite acceptance-evaluation contract before continuing long local contrasts. This is not a new scientific result and does not change C167's criteria.
+Do not run C167 again just because documentation HEAD advanced. Preserve its report and48 traces. Do not invent a C168 execution command or expected test count. Register the next C only with a concrete one-question design and reproducible implementation/decision rules.
 
 ## Independent research tracks
 
-Multi-Axis/MA-1 and PC-ALM/FHLC/PA-0..PA-6 remain separate, unimplemented candidates. Shared-Basis partition, Multi-Axis, local credit, KV/context, ranking, retrieval, admission, EvidenceState, readback, reobservation, Controller, typed return and learned ANSWER are distinct claims. Diagnostic epoch/generation mappings are not production clocks. Cross-source namespaces, revisions/retractions and durable publication/recovery remain separate. `fold/fold_memory.py` is a QuadraticMemory reference, not the V5-E store.
+Multi-Axis/MA-1 and PC-ALM/FHLC/PA-0..PA-6 remain separate,unimplemented candidates. Shared-Basis partition,Multi-Axis,local credit,KV/context,ranking,retrieval,admission,EvidenceState,readback,reobservation,Controller,typed return and learned ANSWER are distinct claims. Diagnostic epoch/generation mappings are not production clocks. Cross-source namespaces,revisions/retractions and durable publication/recovery remain separate. `fold/fold_memory.py` is a QuadraticMemory reference,not the V5-E store.
