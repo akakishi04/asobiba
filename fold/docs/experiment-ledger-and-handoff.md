@@ -9,7 +9,7 @@
 - C37 `runs/chatgpt-last-result.json`: `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`.
 - Fixture `runs/fixtures/v05-c-composition-20260921.pt`: `A52F8209703149407580F7E2965B61B78653030EE992AF6D759865736741CA9E`.
 - Read `AGENTS.md`, `docs/experiment-conversation-handoff-protocol.md`, this handoff and current addendum. Judge -> ledger/handoff -> next C. One scientific question per C; invalid executions retry the same number; valid negatives stay accepted evidence.
-- Latest accepted execution: **C166**, HEAD `dc1f315cac66d1963f8e0d08bb897457affbe94a`. Acceptance recorded in `a651c3765618d0c52927e1c7dcdcdc29b96a8b3c`, before the next experiment is registered.
+- Latest accepted execution: **C166**, HEAD `dc1f315cac66d1963f8e0d08bb897457affbe94a`. Acceptance recorded in `a651c3765618d0c52927e1c7dcdcdc29b96a8b3c`; acceptance-only handoff `da060aa975642a9907891b6d7bfdde61383b868d` precedes C167 registration. Use the final C167 registration HEAD as ExpectedHead, not the old execution HEAD.
 
 ## Gate status / architecture boundaries
 
@@ -71,13 +71,28 @@ C151-C162 paths/hashes, earlier evidence and source splits remain in chained add
 C151 SHA `d2b48acb36d28f0422d09067cc23af882c812d020a00ccfc8c6e8286fd896afa`; manifest `5a19de10d8152ac262846682a79a13bb942eeacd7dca979afb09b70170ebdd65`; split plan `db65d4754e465c55bfc19438f9d50324bb49e928911a53643deddc531625f4c0`.
 
 Current verdict: **`docs/experiment-ledger-addendum-c166-c167.md`**.
-Last executed preregistration: **`docs/experiment-ledger-addendum-c166-preregistration.md`**.
-Reviewer checked uploaded console/source/preregistration consistency and uploaded-byte hash. Omitted records mean no independent full-report hash reconstruction or user-side raw-trace/model replay is claimed.
+Current preregistration: **`docs/experiment-ledger-addendum-c167-preregistration.md`**.
+C166 reviewer checked uploaded console/source/preregistration consistency and uploaded-byte hash. Omitted records mean no independent full-report hash reconstruction or user-side raw-trace/model replay is claimed.
 
-## Next experiment boundary
+## Active C167 — Live query warm reference
 
-**C166 judged and recorded. No C167 registered yet.**
-Next design must isolate one remaining limitation and preregister before execution. Historical source/run artifacts remain protected; do not rerun C166 for a more favorable metric.
+`C167-v5e-live-query-warm-reference`; `V5-E-LIVE-QUERY-WARM-REFERENCE`.
+**ACTIVE / NOT YET JUDGED. No C168 registered.**
+
+Question: with permissionTrue/budget(3,1) fixed, does the selected reference's initial presence avoid redundant acquisition and let one paid dereference/one learned decision produce the same typed bit as cold recovery?
+
+Change only initial selected-reference membership. The local wrapper verifies C160's original cold input, then forwards that state or a fresh immutable full-fixture copy to the unchanged C158 cycle. All other arguments are identical. Warm input is not the preceding cold output. Record effective initial state digest/count/membership; no expected payload/target/action enters the runtime.
+
+82,944 fresh rankings/5,308,416 candidate scores, each cold then warm with independent state/working/inbox/budget.165,888 branch episodes,248,832 decisions,82,944 acquisitions/restorations,248,832 exact64 calls/15,925,248 vectors. Cold[2,0]:two reads,one acquisition,budget(1,0). Warm[0]:one read,no acquisition/admission/publication,budget(2,1),internal step8,unchanged full state. Both emit ANSWERED82,944; no UNRESOLVED. Each Controller27,648 episodes per condition.
+
+Both conditions separately retain each arm/layout's bound20,736 and semantic WITHIN_FACTOR20,727/GLOBAL_CONCEPT20,736. Total known-error instances36=9 x2 layouts x2 conditions, not36 failure types. Each condition zero34,992/one47,952.82,944 observed-output pairs agree apart from distinct request/scope IDs.
+
+Unchanged C163 AuditedEmitter:165,888 native controls+165,888 adapted emissions+768 first-cold guards; historical native MALFORMED_EVIDENCE retained. C15141,472+288/C1596,528 replays separate. Pin full C166 parent/all input and trace/plan/control hashes; historical core/C158-C166 blobs unchanged. Save48 traces x3456rows plus initial state metadata and all behavior assessments. New UUID run; Python/runner rehash sources/code/tree/HEAD,runner checks new output artifacts too.
+
+PASS requires all original cold gates plus every warm no-reacquisition/paid-read/one-answer/state/budget/pair/semantic/cost/guard/protection check. Valid finite failures remain ACCEPTED VALID NEGATIVE. Invalid prerequisites/replay/nonfinite/incomplete execution/protection failures retry C167 unchanged. No tuning for PASS. Warm does not mean zero IO, natural-language-session reuse or FOLD-R capsule implementation; no full Gate E pass.
+
+Files: `fold_lm/v05_benchmarks/gate_e_c167_live_warm_reference.py`, `tests_lm/test_v05_c167_live_warm_reference.py`, `tools/run_c167.ps1`.
+Focused regression **725 expected=695+30**. Reviewer compiled both Python files,passed22 dependency-light AST/excerpt/test-double checks; eight actual-cycle/emitter integration methods,full725,realCUDA/CPU and WindowsPowerShell unexecuted. Uploaded code/test/runner blob bytes match local reviewed files. Stop after C167 for formal judgment/ledger update before C168.
 
 ## Independent research tracks
 
