@@ -9,6 +9,7 @@
 - C37 `runs/chatgpt-last-result.json`: `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`.
 - Fixture `runs/fixtures/v05-c-composition-20260921.pt`: `A52F8209703149407580F7E2965B61B78653030EE992AF6D759865736741CA9E`.
 - Read `AGENTS.md`, `docs/experiment-conversation-handoff-protocol.md` and this handoff. One question per C number; invalid executions retry the same number and accepted negatives remain recorded.
+- Latest accepted execution HEAD: C161 `97e26b5dfa71ac7998138050942bbfd107f3c46e`. C162 is registered by the subsequent commit adding this section; its runner requires an explicit expected current HEAD, not the C161 execution HEAD.
 
 ## Gate status and architecture boundaries
 
@@ -23,7 +24,7 @@ learned Control Lane -> authoritative availability/permission -> learned acquisi
 
 C132 and earlier cover binding/scope/authority, replay, atomic claim and recovery/fencing. C133-C135 introduce persisted retrieval; C136 fixed-address query formation; C137 dynamic content addressing. Production head: `fold_lm.v05.retrieval_content.SharedRetrievalContentHead`; adapter: `fold_lm.v05.retrieval_adapter.PersistedStructuralRetrievalAdapter`. `docs/evidence-recovery-mode-v0.1.md` is separate, not implemented by these diagnostics.
 
-## Accepted through C160
+## Accepted through C161
 
 - C137 PASS lexical addressing/growth. C138-C140 VALID NEGATIVE composition/seed sensitivity; dimension/encoding/seed changes prevent isolated hash-removal causality claims.
 - C141 PASS oracle substitution only; C142 PASS small-task supervised color alignment. C143 VALID NEGATIVE expanded ranking; C144 PASS descriptive factor accounting.
@@ -38,13 +39,19 @@ C132 and earlier cover binding/scope/authority, replay, atomic claim and recover
 - C157 PASS, 440 tests: three C113-recipe routers, seeds 20261741..20261743, 900 CPU updates each; 1990656 recorded-input decisions over six patterns. All actions/margins/input/weight checks pass; minimum logit margin 5.344475269317627.
 - C158 PASS, 475 tests: all 1990656 prior decisions replayed; 1920 live episodes/3456 decisions, 768 acquisitions, 384 restored refs, 1536 exact64 calls/98304 vectors. ANSWER_ACTION 768 / STOP 1152, values zero 324/one 444. All three frozen routers and five registered conditions pass. Denied/exhausted branches dispatch nothing. No generated answer or dynamic-world epoch.
 - C159 ACCEPTED PASS, 508/508 tests; execution commit `741ca66e93e389ffc7e90688dc924e04695da778`. 1920 stored terminals -> 6528 emissions: ANSWERED 768, UNRESOLVED 1152. All 4608 registered wrong-request/provenance/payload/ungrounded-answer controls rejected; no failures/mutations/serialization failures.
-- **C160 ACCEPTED VALID NEGATIVE**, 546/546 tests; execution commit `d2c1468a19e9a13a8fa47fafe3aad5fa01597aec`. Full 82944 live query episodes completed with 5308416 ranker candidate scores, 165888 Controller decisions, 82944 acquisitions, 82944 publications, 165888 exact64 calls / 10616832 vectors and exact 27648 episodes per Controller. Minimum Controller margin 6.142457485198975; mutations/serialization failures zero. Nevertheless `answered=0`, `failed_episodes=82944`, and every arm/layout reports `binding_correct=0`, `semantic_correct=0`. Protected artifacts/tree/HEAD passed and `diagnostic_execution_valid=true`.
+- **C160 ACCEPTED VALID NEGATIVE**, 546/546 tests; execution commit `d2c1468a19e9a13a8fa47fafe3aad5fa01597aec`. Full 82944 live query episodes, 5308416 candidate scores, 165888 Controller decisions, 82944 acquisitions/publications, 165888 exact64 calls / 10616832 vectors. Minimum Controller margin 6.142457485198975; exact 27648 episodes/router; mutations/serialization failures zero. Nevertheless ANSWERED=0, failed_episodes=82944, binding_correct=semantic_correct=0 in every arm/layout. Protected artifacts/tree/HEAD and execution validity passed.
+- **C161 ACCEPTED PASS**, 558/558 tests; execution commit `97e26b5dfa71ac7998138050942bbfd107f3c46e`. Read-only analysis of 48 preserved C160 traces / 82944 rows: stored cycle assessment PASS=82944, FAIL=0, false cycle checks none. Every output is REJECTED / MALFORMED_EVIDENCE; POST_CYCLE_TERMINAL_REJECTION=82944, output_bound=0, serialization_ok=82944. All arm/layout/router partitions exact. No benchmark model/retrieval/live-cycle/training execution. C160 summary/tree/HEAD postchecks pass.
 
-C160 therefore does not establish live query-to-result composition. It is a valid negative, not an invalid retry. The C151 ranking replay, C157 Controller margins, acquisition/publication counts, exact read costs and old C159 replay all remain accepted, so the unresolved question is the shared composition boundary between the preserved C158-style cycle result and the C159 typed terminal contract. C160's console aggregate does not reveal whether stored C158 cycle assessments themselves failed or whether one/multiple terminal guards rejected otherwise accepted cycles.
+C161 localizes the recorded C160 failure to one post-cycle emitter guard; it does not independently rerun the cycle or validate every stored evaluator assertion. Source inspection shows native EvidenceState observations are tuples, C158 returns asdict(state), C160 passes the native result directly, but C159 requires observations to be a list. Accepted C159 used JSON-loaded traces. A reviewer helper reproduces the tuple/list discrepancy; full unchanged-artifact differential is C162, not yet judged.
 
-Do not retrain, select new checkpoints, change thresholds, shrink coverage, alter the known 18 WITHIN_FACTOR semantic control errors, or rerun C160 merely to obtain PASS. Gate E remains NOT PASSED.
+C160 remains a valid negative with zero typed ANSWERED outputs, not an invalid retry or a retroactive PASS. Do not retrain, select checkpoints, change thresholds, shrink coverage or repair the known nine WITHIN_FACTOR ranker errors per layout (18 repeated instances across layouts). Gate E remains NOT PASSED.
 
 ## Accepted artifact chain
+
+**C161:** `runs/c161-v5e-c160-failure-localization-794f97af76da46c3b7b919f0f278f214/summary.json`.
+SHA256 `2cb356e36dde0e9d8ef87146b3e3d31eacc1afbb2743bee17815f1eb11958f38`.
+Uploaded console-log SHA256 `097ed3aeefc2fc5fa92fcd431efd20a4f168b0ca768b455a6fc7b9f62c871574`.
+The complete console report re-encodes to the runner's report hash; real local report/trace bytes were not independently uploaded/replayed by the reviewer.
 
 **C160:** `runs/c160-v5e-live-query-result-80754c5ca25f4970aa1ceeb5d3a8b04b/summary.json`.
 SHA256 `1c99ab5395e67c859a7730e1a9111d4595e2668b85cb56d0a31dfff79aea4bbd`.
@@ -73,30 +80,27 @@ SHA256 `d2b48acb36d28f0422d09067cc23af882c812d020a00ccfc8c6e8286fd896afa`.
 Manifest `5a19de10d8152ac262846682a79a13bb942eeacd7dca979afb09b70170ebdd65`.
 Split plan `db65d4754e465c55bfc19438f9d50324bb49e928911a53643deddc531625f4c0`.
 
-Current verdict/preregistration: **`docs/experiment-ledger-addendum-c160-c161.md`**.
-Previous plans/verdicts remain in `experiment-ledger-addendum-c159-c160.md`, `experiment-ledger-addendum-c158-c159.md`, `experiment-ledger-addendum-c157-c158.md` and chained addenda. Formal verdicts use user console logs plus inspected source/registered gates, not independently replayed full local artifacts; subsequent local runs verify report/trace hashes against real files.
+Current verdict/preregistration: **`docs/experiment-ledger-addendum-c161-c162.md`**.
+Earlier registrations remain unchanged in `experiment-ledger-addendum-c160-c161.md`, `experiment-ledger-addendum-c159-c160.md` and chained addenda. Formal verdicts use user console logs plus inspected source/registered gates, not independently replayed full local artifacts; subsequent local runs verify report/trace hashes against real files.
 
-## Active C161 — C160 failure-boundary localization
+## Active C162 — Evidence-container differential
 
-`C161-v5e-c160-failure-boundary-localization`; `V5-E-C160-FAILURE-BOUNDARY-LOCALIZATION`.
-**ACTIVE / NOT YET JUDGED.**
+`C162-v5e-evidence-container-differential`; `V5-E-EVIDENCE-CONTAINER-DIFFERENTIAL`.
+**ACTIVE / NOT YET JUDGED. No C163 registered.**
 
-Question: **is the universal C160 failure entirely a single post-cycle terminal rejection after an otherwise accepted C158 cycle assessment?**
+Question: does changing ONLY native `final_evidence.observations` tuple -> list account for all C160 rejections under the unchanged C159 emitter while preserving evidence, source binding, observed bits and every tested guard?
 
-C161 is read-only. It consumes the accepted C160 summary SHA256 `1c99ab5395e67c859a7730e1a9111d4595e2668b85cb56d0a31dfff79aea4bbd` and the 48 gzip traces whose hashes/sizes are registered inside that summary. It executes **no model forward, retrieval, acquisition, publication, live cycle or emitter repair**, and performs zero training/fresh seeds.
+Consume pinned C161/C160 summaries, all 48 C160 traces, the C154 report/48 state files, C151 report/manifest and both original C152 corpora. Mirror C160's source-state order and remove/append semantics using actual EvidenceState. Verify each reconstructed state's exact saved digest/count. This reconstructs the native representation from code and pinned sources; it is not an original heap capture. Do not infer native container types solely from JSON.
 
-Coverage is fixed at **48 traces x 1728 rows = 82944 episodes**. It aggregates stored `cycle_assessment.passed/checks/margins`, terminal `output.status/reason`, `output_assessment.bound/serialization_ok`, boundary classes, arm/layout partitions and router coverage. It saves compact examples only; C160 rows are never rewritten.
+Execute **82944 differential pairs / 165888 pair emitter calls**, plus **768 guard calls = 128 snapshot-record bindings x six fault probes**. No benchmark training/fresh seeds, model forward, retrieval, live-cycle rerun, production changes, new epoch or guard edits. Keep all old C158/C159/C160/core source identities fixed. The list-form candidate is a new in-memory copy, never an overwrite of the accepted negative result.
 
-PASS requires all 82944 stored cycle assessments to pass, no false cycle checks, all outputs to be REJECTED for one and only one common reason, all outputs unbound but serialization-valid, and every row to classify as `POST_CYCLE_TERMINAL_REJECTION`. This PASS localizes a failure reason only; it does not repair C160 or advance Gate E.
+PASS requires every native output to reproduce saved MALFORMED_EVIDENCE, every list-form output to be content-preserving, bound, observed-value correct and JSON-stable; all 768 controls reject correctly; full coverage, zero mutations and all source protections. Per-layout semantic counts stay WITHIN_FACTOR 20727/20736 and GLOBAL_CONCEPT 20736/20736. PASS is an offline mechanism diagnosis only, not repaired live composition or Gate E.
 
-A valid complete trace set that contains any cycle-assessment failure, multiple terminal reasons or multiple failure boundaries is **ACCEPTED VALID NEGATIVE / FAIL** for C161's single-boundary hypothesis. Wrong C160 hash/profile, missing/tampered traces, malformed schema, incomplete coverage/router schedule or postcheck failure is **INVALID / RETRY C161**.
+Finite output/guard discrepancies with valid sources are saved FAIL / VALID NEGATIVE. Missing/changed sources, code/identity/schema/coverage mismatch, reconstruction digest/count mismatch or execution/postcheck failure are INVALID / same C162 retry. Never regenerate or rewrite C160/C161 traces. Save fixed plan, all pair outputs and controls separately, and rehash all consumed inputs at the end.
 
-Files:
-- `fold_lm/v05_benchmarks/gate_e_c161_failure_localization.py`
-- `tests_lm/test_v05_c161_failure_localization.py`
-- `tools/run_c161.ps1`
-
-Focused regression target: **558 tests = prior 546 + 12 C161 helper tests**. The helper tests are registered; the formal user regression and real 48-trace diagnostic are not yet executed. Do not preregister a repair C162 until C161 is judged.
+Files: `fold_lm/v05_benchmarks/gate_e_c162_evidence_container.py`, `tests_lm/test_v05_c162_evidence_container.py`, `tools/run_c162.ps1`.
+Focused regression target: **588 = prior 558 + 30 new helper tests**.
+Reviewer ran **30/30 new helper tests and compilation**, including a 48-stream x 3-row synthetic loader/writer test. Local tests used excerpts of the inspected actual state/emitter definitions, not a complete repository checkout. No full historical dependency suite, real 82944-pair diagnostic or Windows PowerShell execution is claimed. C162 remains unjudged until the user run is reviewed.
 
 ## Independent reports / non-claims
 
