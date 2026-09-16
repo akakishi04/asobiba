@@ -9,7 +9,7 @@
 - C37 `runs/chatgpt-last-result.json`: `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`.
 - Fixture `runs/fixtures/v05-c-composition-20260921.pt`: `A52F8209703149407580F7E2965B61B78653030EE992AF6D759865736741CA9E`.
 - Read `AGENTS.md`, `docs/experiment-conversation-handoff-protocol.md`, this handoff and the current addendum before work. Judge -> record ledger/handoff -> next C. One question per C; invalid execution retries the same number; accepted valid negatives remain recorded.
-- Latest accepted execution: **C164** at `c3ee72d7ad7b7112fb45c6601899b69a96cf4969`. Verdict is `docs/experiment-ledger-addendum-c164-c165.md`. C165 is registered by subsequent diagnostic code/tests/runner/preregistration commits and must use the final registration HEAD as ExpectedHead.
+- Latest accepted execution: **C165** at `4dfc1634ea4a18f70390807011a83f60654e1b00`. Verdict: `docs/experiment-ledger-addendum-c165-c166.md`, first recorded in `0a4b0d472501286f4e20a0c831e9e71712355750` before next-C design. Do not confuse execution HEAD with later documentation/registration HEAD.
 
 ## Gate status / architecture boundaries
 
@@ -25,36 +25,42 @@ Production retrieval head: `fold_lm.v05.retrieval_content.SharedRetrievalContent
 Persisted adapter: `fold_lm.v05.retrieval_adapter.PersistedStructuralRetrievalAdapter`.
 `docs/evidence-recovery-mode-v0.1.md` is a separate design, not implemented by these diagnostics.
 
-## Accepted evidence through C164
+## Accepted evidence through C165
 
-- C137 PASS lexical addressing/growth. C138-C140 VALID NEGATIVE composition/seed sensitivity. C141 PASS oracle localization; C142 PASS small supervised alignment. C143 VALID NEGATIVE expanded ranking; C144 PASS descriptive attribution. C145-C148 include accepted negative interventions; C149 PASS arithmetic attribution. C150 PASS original synthetic split.
-- **C151 PASS**, 298 tests: four replacement splits x three paired initializations. WITHIN_FACTOR 20,727/20,736 and GLOBAL_CONCEPT 20,736/20,736. Nine WITHIN_FACTOR control errors occur in S2/20261726; synthetic ranker tuning is closed and does not establish independent language/task generalization.
-- **C152 PASS**, 322 tests: 24 frozen heads x two layouts, 82,944 real exact64 reads with selected identity/provenance/payload/cost preserved.
-- **C153 PASS**, 346 tests: 82,944 reads, 580,608 deliveries, 414,720 malformed/stale rejections, 82,944 valid admissions and duplicate rejections each; diagnostic immutable inbox, not durable publication.
-- **C154 PASS**, 363 tests: 82,944 entries -> 3,072 ADDED, 79,872 ALREADY_PRESENT, 3,072 conflicts rejected; 48 EvidenceStates x 64 references.
-- **C155 PASS**, 388 tests: 12,288 resolver cases across four status classes; 3,072 reads/196,608 vectors; zero/one 1,296/1,776.
-- **C156 PASS**, 412 tests: 82,944 requests x four conditions = 331,776 views; signed presence/payload channels distinguish zero from unresolved; no stale payload or external-clock advance.
+- C137 PASS lexical addressing/growth. C138-C140 VALID NEGATIVE composition/seed sensitivity. C141 PASS oracle localization; C142 PASS small supervised alignment. C143 VALID NEGATIVE expanded ranking; C144 PASS descriptive attribution. C145-C148 include accepted negative interventions; C149 PASS arithmetic attribution. C150 PASS original synthetic split. Earlier details remain in chained addenda.
+- **C151 PASS**, 298 tests: four replacement splits x three paired initializations. WITHIN_FACTOR 20,727/20,736 and GLOBAL_CONCEPT 20,736/20,736. Nine control errors occur in S2/20261726; synthetic ranker tuning is closed, without independent task/language generalization.
+- **C152 PASS**, 322 tests: 24 frozen heads x two layouts, 82,944 exact64 reads preserving selected identity/provenance/payload/cost.
+- **C153 PASS**, 346 tests: 82,944 reads, 580,608 deliveries, 414,720 invalid rejections, 82,944 valid admissions and duplicate rejections each; immutable diagnostic inbox, not durable publication.
+- **C154 PASS**, 363 tests: 82,944 entries -> 3,072 ADDED / 79,872 ALREADY_PRESENT, 3,072 conflicts rejected; 48 states x 64 references. Classification caveat remains in `experiment-ledger-addendum-c154-pcalm-review.md`.
+- **C155 PASS**, 388 tests: 12,288 resolver cases, four status classes; 3,072 reads/196,608 vectors; zero/one 1,296/1,776.
+- **C156 PASS**, 412 tests: 82,944 requests x four conditions = 331,776 views; zero/unresolved separation, no stale payload or external-clock advance.
 - **C157 PASS**, 440 tests: three learned Controllers, seeds 20261741..20261743, 900 CPU updates each; 1,990,656 recorded-input decisions; minimum margin 5.344475269317627.
-- **C158 PASS**, 475 tests: selected-record live bounded cycle across warm/recover/missing-delivery/permission-denied/budget-exhausted conditions. 1,920 episodes/3,456 decisions, 768 acquisitions, 384 restorations, 1,536 exact64 calls/98,304 vectors. ANSWER 768 / STOP 1,152. This did not start from raw query selection.
-- **C159 PASS**, 508 tests: stored-terminal emitter only, 1,920 terminals -> 6,528 emissions; ANSWERED 768 / UNRESOLVED 1,152; all 4,608 registered controls rejected.
-- **C160 ACCEPTED VALID NEGATIVE**, 546 tests, execution `d2c1468a19e9a13a8fa47fafe3aad5fa01597aec`: 82,944 complete live query episodes with correct retrieval/controller accounting, but ANSWERED=0 / failed=82,944 because the native tuple-backed EvidenceState was rejected by the historical emitter. Never retroactively relabel this run.
-- **C161 ACCEPTED PASS**, 558 tests, execution `97e26b5dfa71ac7998138050942bbfd107f3c46e`: all 82,944 C160 stored cycle assessments pass; all outputs reject at one post-cycle reason `MALFORMED_EVIDENCE`.
-- **C162 ACCEPTED PASS**, 588 tests, execution `32c6ceb4dd3748ea0d89a065f8ecd004cc20f117`: 82,944 offline tuple/list differential pairs; unchanged emitter rejects tuple and accepts list-only copy; all 768 guards pass; known semantic boundary preserved.
-- **C163 ACCEPTED PASS**, 614 tests, execution `d3cecf1c1221d2119a2e6ab172c69770bde46788`: 82,944 fresh raw-query live cycles all produce bound typed ANSWERED after observations-only normalization. On the same cycles all native controls still reject `MALFORMED_EVIDENCE`. 5,308,416 candidate scores, 165,888 Controller decisions, 82,944 acquisitions/restorations, 165,888 exact64 calls/10,616,832 vectors, zero failures/mutations; all 768 guards pass. Values 34,992 zero / 47,952 one. Per layout semantic correctness remains WITHIN_FACTOR 20,727 and GLOBAL_CONCEPT 20,736.
-- **C164 ACCEPTED PASS**, 638 tests, execution `c3ee72d7ad7b7112fb45c6601899b69a96cf4969`: 82,944 fresh ranking prefixes, each forked into two independent fresh cold continuations = 165,888 branch episodes with zero failures. Normal delivery produces 82,944 ANSWERED; post-fetch evidence removal produces 82,944 `UNRESOLVED / MISSING_DELIVERY` with no payload. Totals: 331,776 Controller decisions, 165,888 real acquisitions, 82,944 publications, 248,832 exact64 adapter calls / 15,925,248 vectors. Missing-delivery branch has zero publications/readbacks and minimum margin 5.3444743156433105; normal branch retains the C163 semantic boundary and value counts. All 768 guards, 545 consumed-input checks, historical source blobs, tracked tree and execution HEAD pass.
+- **C158 PASS**, 475 tests: preselected-record live warm/recover/missing-delivery/permission-denied/budget-exhausted cases. 1,920 episodes/3,456 decisions; 768 acquisitions, 384 restorations, 1,536 exact64 calls/98,304 vectors. ANSWER 768 / STOP 1,152; not raw-query selection.
+- **C159 PASS**, 508 tests: stored-terminal emitter, 1,920 terminals -> 6,528 emissions; ANSWERED 768 / UNRESOLVED 1,152; 4,608 controls rejected.
+- **C160 ACCEPTED VALID NEGATIVE**, 546 tests, execution `d2c1468a19e9a13a8fa47fafe3aad5fa01597aec`: 82,944 complete live query cycles with expected retrieval/accounting but ANSWERED=0 / failed=82,944. Never retroactively relabel this run.
+- **C161 ACCEPTED PASS**, 558 tests, execution `97e26b5dfa71ac7998138050942bbfd107f3c46e`: all 82,944 stored cycle assessments pass; single post-cycle rejection MALFORMED_EVIDENCE.
+- **C162 ACCEPTED PASS**, 588 tests, execution `32c6ceb4dd3748ea0d89a065f8ecd004cc20f117`: 82,944 digest-verified reconstructed tuple/list pairs; native rejection versus bound list output; 768 guards pass. Offline reconstruction, not original heap capture.
+- **C163 ACCEPTED PASS**, 614 tests, execution `d3cecf1c1221d2119a2e6ab172c69770bde46788`: 82,944 new live raw-query cycles yield bound ANSWERED after observations-only normalization; same-cycle native controls all reject MALFORMED_EVIDENCE. 5,308,416 candidate scores, 165,888 decisions, 82,944 acquisitions/restorations, 165,888 calls/10,616,832 vectors. All 768 guards and 494 input checks pass; zero mutations/failures.
+- **C164 ACCEPTED PASS**, 638 tests, execution `c3ee72d7ad7b7112fb45c6601899b69a96cf4969`: 82,944 new ranking prefixes x normal/missing-delivery fresh continuations = 165,888 branch episodes. ANSWERED 82,944 / UNRESOLVED-MISSING_DELIVERY 82,944. 331,776 decisions, 165,888 real acquisitions, 82,944 publications, 248,832 calls/15,925,248 vectors. Missing branch never publishes/rereads. All 768 guards and 545 input checks pass; zero failures.
+- **C165 ACCEPTED PASS**, **665/665 tests**, execution `4dfc1634ea4a18f70390807011a83f60654e1b00`: 82,944 new rankings x allowed/permission-denied fresh continuations = 165,888 branch episodes with zero failures. 331,776 raw decisions; 82,944 acquisitions/restorations; 165,888 adapter calls/10,616,832 vectors. Allowed ANSWERED=82,944; denied UNRESOLVED/PERMISSION_DENIED=82,944, with zero actual adapter calls/acquisitions/publications/readbacks and acquisition budget held at 1. All denied first authorities are PERMISSION_DENIED; raw RETRIEVE proposals are not overridden. All 768 guards, 596 consumed inputs, historical blobs, tracked tree and execution HEAD pass. No weight/output mutations or serialization failures.
 
-C164 establishes a narrow live transport-failure claim: after a real fetch, removing only the delivered evidence object prevents admission/publication/readback and causes the learned Controller to STOP, returning typed payload-free UNRESOLVED rather than the stale working bit or debug-visible fetched payload. It does **not** establish target absence, semantic relevance abstention, permission/budget-denied raw-query behavior, dynamic epochs, durable commit, learned answer generation, general language/task capability or production performance.
+## Current scientific boundary
 
-The original C160 valid negative remains accepted. Authoritative EvidenceState remains tuple-backed; C163/C164 use the explicit diagnostic output normalization rather than silently changing the historical emitter. No threshold/checkpoint/case changes repair the known nine WITHIN_FACTOR errors per layout.
+C165 establishes runtime permission enforcement in the fixed synthetic raw-query -> selection -> bounded cycle -> typed result path. C164 separately established post-fetch transport loss handling. Normal branches retain 20,736 bound outputs per arm/layout with semantic_correct WITHIN_FACTOR=20,727 / GLOBAL_CONCEPT=20,736; zero/one totals 34,992/47,952. The known nine errors x two layouts remain 18 repeated instances, not new error types. Denied/missing semantic_correct is null; unresolved is neither zero nor evidence of nonexistence.
+
+C165 first proposals are RETRIEVE even when permission is false. Runtime blocks dispatch; reobservation/unavailability leads the learned Controller to STOP. This is not a learned general policy-understanding claim. Zero denied adapter calls does not mean zero catalog ranking or zero prerequisite file access: shared rankings and artifact validation still execute. No OS/security isolation or confidential-catalog-access guarantee is measured.
+
+C160 remains an accepted valid negative. Authoritative EvidenceState remains tuple-backed; the C163 observations-only output bridge and C159 emitter are unchanged. No checkpoint/threshold/case changes repair known semantic errors. Repeated episodes measure fixed-fixture coverage, not independent task generalization. No raw-query budget-exhausted/warm integration, initially empty world, changing external epochs, relevance abstention, generated answers, durable publication or production rollout is established by C165. Diagnostic timing/allocator data is not final FOLD performance. **Gate E remains NOT PASSED.**
 
 ## Accepted artifact chain
 
-**C164:** `runs/c164-v5e-live-missing-delivery-47e1d170b3114b8d94e6c1d221ebf464/summary.json`.
-SHA256 `42df47fe4c03d24df064ff47eecf5b3c84b8df2f36d6a47b7f861ac14778fed2`.
-Plan `09c1cedcf371e320cae3cb1451319ff837a9abe33d1fb78ee7b3acaa74a8f04e`.
-Controls `800c27c47f2fad4db97188a96e95f894de22f0e7dcc9de40650fe88841c66bb9`.
-Uploaded-log SHA256 `8b1a735e212cb10f2c72bcc3e58a69045f0cdba6a3c1badccc7730aca536b54c`.
+**C165:** `runs/c165-v5e-live-permission-denied-e8e5f5d4b9504812bfeeecba65db79d7/summary.json`.
+SHA256 `7cdfbf97fec85bb28e3fbc3fe4cbb470ec4497c31dbec33879d7b442097724c6`.
+Plan `5d84b8a80dad07487c936393625f72267a0ffb8266e29ee69b2edba6eda3ebea`.
+Controls `8c6ada9f2e8f694736e4ca381509d487d566883cd1097514b6973998a08a3f3b`.
+Uploaded-log SHA256 `01a3c05d7c08b59be6682ff2593fe524522cfc50c892f1efc90309bbcf9fcc1b`.
 
+**C164:** `runs/c164-v5e-live-missing-delivery-47e1d170b3114b8d94e6c1d221ebf464/summary.json`, SHA256 `42df47fe4c03d24df064ff47eecf5b3c84b8df2f36d6a47b7f861ac14778fed2`.
 **C163:** `runs/c163-v5e-live-container-bridge-113788996bc74a1886db817fd95dceae/summary.json`, SHA256 `7afc8838d152e791ed33f87e7a9d64d5e4802f9c57ef49b911ca47c4691efd60`.
 **C162:** `runs/c162-v5e-evidence-container-a9f04a81882346c99d11c1cafa6f771c/summary.json`, SHA256 `0da31284af3a58ba052ba9629e321520f7f2dbb9352a32c52c3892adff65cdac`.
 **C161:** `runs/c161-v5e-c160-failure-localization-794f97af76da46c3b7b919f0f278f214/summary.json`, SHA256 `2cb356e36dde0e9d8ef87146b3e3d31eacc1afbb2743bee17815f1eb11958f38`.
@@ -62,36 +68,16 @@ Uploaded-log SHA256 `8b1a735e212cb10f2c72bcc3e58a69045f0cdba6a3c1badccc7730aca53
 **C159:** `runs/c159-v5e-terminal-result-9e2b2e3e1f9c42bda1f33d7d49fa3cd7/summary.json`, SHA256 `522a6ce4d8792e4e659fc7262928f9d610d814c2ffccff47cc658f6b49e069e6`.
 **C158:** `runs/c158-v5e-live-recovery-0285f65942c14db8997f7c910dd94a4f/summary.json`, SHA256 `6c49a3e681313208881743f1c2991325e4826d4970cb65d5df9cfcebd65173c8`.
 **C157:** `runs/c157-v5e-controller-bridge-e68cc92a350145b983d123acad386982/summary.json`, SHA256 `b521eafc61fedaf3b9d2f78fb9c591de654b95cfa6689938c8c042fbc200b934`.
-**C156:** SHA256 `b2c43401a6731400de8e18697f82f5e220aeb3f2368737d9dee5847f7ca1f84f`.
-**C155:** SHA256 `1ac82ec4c4e60e6c7586058d497096d602a861e191909ca2adfd685f1f2fb4aa`.
-**C154:** SHA256 `4814c9489b76bfb124e7134336611a3f513eb922083b0eca251be533820c4284`.
-**C153:** SHA256 `cddf360fc2211302d1dab0abd8d96038bb3d39ab273f9dea336da348d70d3a78`.
-**C152:** SHA256 `d70b57b6d7c0aa8876c0647ab1d858ec2808fd3478cf12c02b3d83be8cf2d844`.
-**C151:** SHA256 `d2b48acb36d28f0422d09067cc23af882c812d020a00ccfc8c6e8286fd896afa`; manifest `5a19de10d8152ac262846682a79a13bb942eeacd7dca979afb09b70170ebdd65`; split plan `db65d4754e465c55bfc19438f9d50324bb49e928911a53643deddc531625f4c0`.
+C151-C156 identities/paths and earlier history remain in `experiment-ledger-addendum-c164-c165.md`, the chained addenda and pinned input manifests. C151 SHA `d2b48acb36d28f0422d09067cc23af882c812d020a00ccfc8c6e8286fd896afa`; manifest `5a19de10d8152ac262846682a79a13bb942eeacd7dca979afb09b70170ebdd65`; split plan `db65d4754e465c55bfc19438f9d50324bb49e928911a53643deddc531625f4c0`.
 
-Current verdict: **`docs/experiment-ledger-addendum-c164-c165.md`**.
-Current preregistration: **`docs/experiment-ledger-addendum-c165-preregistration.md`**.
-Earlier registrations/verdicts remain in the chained C159-C164 addenda.
+Current verdict: **`docs/experiment-ledger-addendum-c165-c166.md`**.
+Completed preregistration: `docs/experiment-ledger-addendum-c165-preregistration.md`.
+Reviewer scope: complete uploaded console JSON/aggregate/progress/postcheck consistency plus source/preregistration review. Console omits records; no independent full report hash reconstruction or user-side raw trace/model rerun is claimed.
 
-## Active C165 — Live query runtime permission denial
+## Next-C boundary
 
-`C165-v5e-live-query-permission-denied`; `V5-E-LIVE-QUERY-PERMISSION-DENIED`.
-**ACTIVE / NOT YET JUDGED. No C166 registered.**
-
-One question: when the learned Controller proposes RETRIEVE for a raw-query-selected missing reference, does `Permission(False)` block all adapter acquisition/search and preserve acquisition budget, after which the frozen Controller stops and the typed result becomes payload-free `UNRESOLVED / PERMISSION_DENIED`?
-
-Changed variable is **runtime permission only**. The C160 helper still constructs its ordinary `Permission(True)`; C165's local diagnostic wrapper verifies that base condition and substitutes True or False at the C158 cycle boundary while forwarding every other argument and identity delivery unchanged. No global patch, model action override or evaluator target enters the cycle.
-
-Run 82,944 fresh ranking prefixes / 5,308,416 candidate scores. Each prefix feeds two independent fresh cold continuations: allowed and denied. Expected totals: 165,888 branch episodes, 331,776 Controller decisions, 82,944 executed acquisitions/publications, 165,888 exact64 adapter calls / 10,616,832 vectors. Denied branch must have **zero adapter calls, zero executed acquisitions, zero publication/readback and no acquisition-budget debit**. Each Controller handles 27,648 episodes per condition. Raw actions remain RETRIEVE=165,888, ANSWER=82,944, STOP=82,944.
-
-Allowed output remains 82,944 ANSWERED with zero/one 34,992/47,952 and frozen semantic boundary WITHIN_FACTOR 20,727 / GLOBAL_CONCEPT 20,736 per layout. Denied output must be 82,944 `UNRESOLVED / PERMISSION_DENIED`, request/scope-bound but payload-free; semantic correctness is null/not-applicable.
-
-Use unchanged C163 AuditedEmitter for 165,888 native tuple controls and 165,888 adapted candidates plus 768 first-normal-identity guards. Pin C164 SHA `42df47fe4c03d24df064ff47eecf5b3c84b8df2f36d6a47b7f861ac14778fed2`, all its records/plan/controls/consumed input hashes and historical source blobs; then reuse the established C151/C159 prerequisite replays and frozen artifact chain. Save 48 gzip traces x 3,456 rows plus controls and a preregistered permission plan.
-
-PASS requires all allowed-control gates plus all 82,944 denied first-step authorities exactly `PERMISSION_DENIED`, positive finite `[2,5]` action margins, zero unpermitted fetch/search, zero acquisition debit, zero publication/readback, preserved budget, exact typed no-payload terminal results, all emitter/guard/source/input/tree/HEAD protections and zero measured mutation/serialization defects. Valid finite defects are saved FAIL/VALID NEGATIVE. Invalid source/hash/schema/replay/numeric/outer execution failures retry **C165 unchanged**.
-
-Files: `fold_lm/v05_benchmarks/gate_e_c165_live_permission_denied.py`, `tests_lm/test_v05_c165_live_permission_denied.py`, `tools/run_c165.ps1`.
-Focused regression **665 expected = 638 previous + 27 new**. Source review completed; formal complete-import regression and real CUDA/CPU/PowerShell run are not claimed. Stop after C165 execution for formal judgment before any C166 design.
+**Accepted through C165. No active new C; C166 is not yet registered.**
+The acceptance/handoff update precedes next-C design. Keep prior code, artifacts, failure classifications and scientific gates unchanged. A subsequent one-question preregistration must state its own counts, controlled variables, interpretation limits, runner/regression/protection requirements and stop condition before execution.
 
 ## Independent reports / non-claims
 
