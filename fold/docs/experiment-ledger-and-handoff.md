@@ -1,6 +1,6 @@
 # FOLD Experiment Ledger and Handoff
 
-> Current authoritative state; detailed history remains in chained experiment-ledger addenda.
+> Current authoritative state. Detailed verdicts and preregistrations remain in chained addenda.
 
 ## Environment / protocol
 
@@ -8,62 +8,61 @@
 - Python 3.13.15 / PyTorch 2.10.0+cu130 / CUDA 13.0 / RTX 4070 Ti SUPER; `.venv-py31315\Scripts\python.exe`.
 - C37 `runs/chatgpt-last-result.json`: `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`.
 - Fixture `runs/fixtures/v05-c-composition-20260921.pt`: `A52F8209703149407580F7E2965B61B78653030EE992AF6D759865736741CA9E`.
-- Read `AGENTS.md`, `docs/experiment-conversation-handoff-protocol.md` and this handoff. One question per C number; invalid executions retry the same number and accepted negatives remain recorded.
-- Latest accepted execution HEAD: C162 `32c6ceb4dd3748ea0d89a065f8ecd004cc20f117`. C163 is registered by the subsequent commit adding its module, tests, runner and addendum. Use that registration HEAD as explicit ExpectedHead, not C162's execution HEAD.
+- Read `AGENTS.md`, `docs/experiment-conversation-handoff-protocol.md`, this handoff and the current addendum before work. Judge -> record ledger/handoff -> next C. One question per C; invalid execution retries the same number; valid negatives remain recorded.
+- Latest accepted execution: C163 at `d3cecf1c1221d2119a2e6ab172c69770bde46788`. Documentation commits after that are not the original execution HEAD.
 
-## Gate status and architecture boundaries
+## Gate status / architecture boundaries
 
-Gate A/B PASSED; Gate C/D PASSED within measured scope; **Gate E NOT PASSED**, active.
+Gate A/B PASSED; Gate C/D PASSED within measured scope; **Gate E NOT PASSED**.
 Priority: operational VRAM headroom, peak/resident VRAM, latency/throughput, artifact size.
 
 ```text
-learned Control Lane -> authoritative availability/permission -> learned acquisition request
--> real acquisition -> provenance/outcome validation -> evidence commit -> reobserve
+learned Control Lane -> authoritative permission/budget -> actual acquisition
+-> provenance/outcome validation -> evidence commit -> reobserve
 -> answer / further acquisition / unresolved
 ```
 
-C132 and earlier cover binding/scope/authority, replay, atomic claim and recovery/fencing. C133-C135 introduce persisted retrieval; C136 fixed-address query formation; C137 dynamic content addressing. Production head: `fold_lm.v05.retrieval_content.SharedRetrievalContentHead`; adapter: `fold_lm.v05.retrieval_adapter.PersistedStructuralRetrievalAdapter`. `docs/evidence-recovery-mode-v0.1.md` is separate, not implemented by these diagnostics.
+C132 and earlier cover binding/scope/authority, replay, atomic claim and recovery/fencing. C133-C135 introduce persisted retrieval; C136 fixed-address query formation; C137 dynamic content addressing. Production head `fold_lm.v05.retrieval_content.SharedRetrievalContentHead`; adapter `fold_lm.v05.retrieval_adapter.PersistedStructuralRetrievalAdapter`. `docs/evidence-recovery-mode-v0.1.md` is a separate design, not implemented by these diagnostics.
 
-## Accepted through C162
+## Accepted evidence through C163
 
 - C137 PASS lexical addressing/growth. C138-C140 VALID NEGATIVE composition/seed sensitivity; dimension/encoding/seed changes prevent isolated hash-removal causality claims.
 - C141 PASS oracle substitution only; C142 PASS small-task supervised color alignment. C143 VALID NEGATIVE expanded ranking; C144 PASS descriptive factor accounting.
 - C145 VALID NEGATIVE material alignment (1464->346 errors); C146 VALID NEGATIVE all-factor reference (476->11). Named-loss ladder closed.
-- C147 VALID NEGATIVE frozen composition (11->4, 3 new errors); C148 VALID NEGATIVE train consistency (11->12, no rescue). C149 PASS arithmetic attribution, not unique causality or permission to remove cross terms.
-- C150 PASS on original synthetic split. C151 PASS, 298 tests: four replacement splits, three paired initializations each. WITHIN_FACTOR 20727/20736, GLOBAL_CONCEPT 20736/20736. Nine control errors in S2/20261726; other three splits have no accuracy contrast. Minimum margins -0.0321333110/+0.1315777004. No independent language/task generalization. Synthetic ranker tuning closed.
-- C152 PASS, 322 tests: 24 frozen heads/two layouts, full replay; 82944 real exact64 reads with correct selected identity/provenance/payload/cost. Source semantics 20727/layout versus 20736/layout.
-- C153 PASS, 346 tests: 82944 retrievals, 580608 deliveries; 414720 malformed/stale rejections, 82944 valid request admissions and duplicate rejections each. Immutable diagnostic inbox, not durable publication.
-- C154 PASS, 363 tests: 82944 entries -> 3072 ADDED, 79872 ALREADY_PRESENT; 3072 provenance conflicts rejected. 48 actual EvidenceStates x 64 refs, no payload. Classification caveat remains in the PC-ALM review addendum.
-- C155 PASS, 388 tests: 12288 resolver cases, 3072 each RESOLVED/SOURCE_UNBOUND/SNAPSHOT_MISMATCH/RECORD_UNBOUND; 3072 reads/196608 vectors. Zero/one 1296/1776, no mutations/failures.
-- C156 PASS, 412 tests: 82944 requests x four conditions = 331776 views. Real WorkingState/signed channels, no stale value or external clock change; 82944 reads/5308416 vectors, 331776 internal debits.
-- C157 PASS, 440 tests: three C113-recipe routers, seeds 20261741..20261743, 900 CPU updates each; 1990656 recorded-input decisions over six patterns. All actions/margins/input/weight checks pass; minimum logit margin 5.344475269317627.
-- C158 PASS, 475 tests: all 1990656 prior decisions replayed; 1920 live episodes/3456 decisions, 768 acquisitions, 384 restored refs, 1536 exact64 calls/98304 vectors. ANSWER_ACTION 768 / STOP 1152, values zero 324/one 444. All three frozen routers and five registered conditions pass. Denied/exhausted branches dispatch nothing. No generated answer or dynamic-world epoch.
-- C159 ACCEPTED PASS, 508/508 tests; execution commit `741ca66e93e389ffc7e90688dc924e04695da778`. 1920 stored terminals -> 6528 emissions: ANSWERED 768, UNRESOLVED 1152. All 4608 registered controls rejected; no failures/mutations/serialization failures.
-- **C160 ACCEPTED VALID NEGATIVE**, 546/546 tests; execution commit `d2c1468a19e9a13a8fa47fafe3aad5fa01597aec`. Full 82944 live query episodes, 5308416 candidate scores, 165888 Controller decisions, 82944 acquisitions/publications, 165888 exact64 calls / 10616832 vectors. Minimum margin 6.142457485198975; 27648 episodes/router. Nevertheless ANSWERED=0 and failed_episodes=82944. Execution and source protections passed.
-- **C161 ACCEPTED PASS**, 558/558 tests; execution commit `97e26b5dfa71ac7998138050942bbfd107f3c46e`. Read-only analysis of 48 C160 traces: all 82944 stored cycle assessments passed; all outputs REJECTED/MALFORMED_EVIDENCE; no false cycle checks, all unbound but serialization-valid. Not an independent live rerun or revalidation of every stored evaluator assertion.
-- **C162 ACCEPTED PASS**, 588/588 tests; execution commit `32c6ceb4dd3748ea0d89a065f8ecd004cc20f117`. Offline 82944 tuple/list differential pairs, all reconstructed-state digests/counts match. 82944 native rejections reproduced; list-only copies yield 82944 bound/source-payload-correct outputs, zero failed pairs/mutations/content changes. All 768 guard cases passed across 128 snapshot/record bindings. Values zero/one=34992/47952; semantic counts exact at 20727 WITHIN_FACTOR / 20736 GLOBAL_CONCEPT per layout. All 104 consumed inputs, protected C37/fixture, tree/HEAD and historical source blobs preserved.
+- C147 VALID NEGATIVE frozen composition (11->4, three new errors); C148 VALID NEGATIVE train consistency (11->12, no rescue). C149 PASS arithmetic attribution, not unique causality or permission to remove cross terms.
+- C150 PASS original synthetic split. C151 PASS, 298 tests: four replacement splits x three paired initializations. WITHIN_FACTOR 20727/20736, GLOBAL_CONCEPT 20736/20736; nine control errors in S2/20261726, no accuracy contrast on other splits. Minimum margins -0.0321333110/+0.1315777004. Synthetic ranker tuning closed; no independent task/language generalization.
+- C152 PASS, 322 tests: 24 frozen heads/two layouts, full replay, 82944 real exact64 reads, selected identity/provenance/payload/cost preserved. C153 PASS, 346 tests: 82944 reads, 580608 deliveries, 414720 invalid rejections, 82944 valid admissions and duplicate rejections each; immutable diagnostic inbox, not durable publication.
+- C154 PASS, 363 tests: 82944 entries -> 3072 ADDED, 79872 ALREADY_PRESENT, 3072 conflicts rejected; 48 EvidenceStates x 64 references without payload. Classification caveat remains in `experiment-ledger-addendum-c154-pcalm-review.md`.
+- C155 PASS, 388 tests: 12288 resolver cases, four status classes of 3072 each; 3072 reads/196608 vectors; zero/one 1296/1776. C156 PASS, 412 tests: 82944 requests x four conditions = 331776 views, real WorkingState/signed channels, no stale payload/clock advance; 82944 reads/5308416 vectors, 331776 internal debits.
+- C157 PASS, 440 tests: three C113-recipe Controllers, seeds 20261741..20261743, 900 CPU updates each; 1990656 recorded-input decisions; minimum margin 5.344475269317627.
+- C158 PASS, 475 tests: full 1990656-decision replay; 1920 live selected-record episodes/3456 decisions, 768 acquisitions, 384 restorations, 1536 exact64 calls/98304 vectors. ANSWER_ACTION 768/STOP 1152, values zero 324/one 444. Five conditions and all three routers passed; denied/exhausted dispatch nothing.
+- C159 PASS, 508 tests: recorded-trace emitter only, 1920 terminals -> 6528 emissions, ANSWERED 768, UNRESOLVED 1152; all 4608 fault controls rejected. No new live cycle.
+- **C160 ACCEPTED VALID NEGATIVE**, 546 tests, execution `d2c1468a19e9a13a8fa47fafe3aad5fa01597aec`: complete 82944 live query episodes, 165888 decisions, 82944 acquisitions/restorations, 165888 reads/10616832 vectors; nevertheless ANSWERED=0 and failed=82944. Valid execution; never retroactively relabel or rerun merely for PASS.
+- **C161 ACCEPTED PASS**, 558 tests, execution `97e26b5dfa71ac7998138050942bbfd107f3c46e`: all 82944 stored cycle assessments pass; all outputs REJECTED/MALFORMED_EVIDENCE. Read-only localization, not independent live revalidation.
+- **C162 ACCEPTED PASS**, 588 tests, execution `32c6ceb4dd3748ea0d89a065f8ecd004cc20f117`: 82944 digest-verified offline tuple/list pairs; native rejection reproduced, list output bound and observed-value correct, all 768 guards pass. Zero/one 34992/47952; semantic boundary preserved. Reconstructed objects, not original heap capture.
+- **C163 ACCEPTED PASS**, 614/614 tests, execution `d3cecf1c1221d2119a2e6ab172c69770bde46788`: all **82944 fresh live query cycles** yield bound typed ANSWERED after observations-only normalization. On those same cycles all 82944 native controls still reject MALFORMED_EVIDENCE. 5308416 candidate scores, 165888 Controller decisions, 82944 acquisitions/restorations, 165888 exact64 calls/10616832 vectors; 27648 episodes/router. Margin 6.142457485198975, zero mutations/serialization failures, all 768 guards pass. Zero/one 34992/47952. All 494 consumed inputs, historical source blobs, tracked tree and execution HEAD preserved.
 
-C162 supports the observations-container explanation on reconstructed records through the unchanged emitter. EvidenceState is tuple-backed; C159 expects the JSON-loaded list form. The direct C160 live handoff lacked this conversion. **Live integration with the adapter is not yet measured**. C160 remains a valid negative with zero ANSWERED, not an INVALID retry or retroactive PASS. No checkpoint/threshold/case changes or repair of the known nine errors/layout (18 repeated instances) are allowed. Gate E stays NOT PASSED.
+C163 establishes the diagnostic raw-query -> frozen selection -> live authorized recovery -> adapted typed observed-bit path on the fixed synthetic task. Each arm/layout has 20736 bound outputs; semantic_correct is WITHIN_FACTOR 20727 and GLOBAL_CONCEPT 20736. The known nine errors repeated over two layouts remain 18 instances, not new error types. No truth/target repair, threshold change, new checkpoint or fresh training is allowed.
+
+The original C160 failure remains accepted. Authoritative EvidenceState remains tuple-backed; the diagnostic adapter changes only the outgoing observations container. Historical C158/C159/C160/core and C161/C162 are untouched. C163 does not measure failed-delivery query cycles, permission/budget-denied query cycles, learned/generated answers, relevance abstention, initially empty worlds, changing epochs, durable publication or production rollout. Repeated episodes are not independent task generalization; exact64 costs and diagnostic allocator/timing fields are not production performance. **Gate E remains NOT PASSED.**
 
 ## Accepted artifact chain
 
+**C163:** `runs/c163-v5e-live-container-bridge-113788996bc74a1886db817fd95dceae/summary.json`.
+SHA256 `7afc8838d152e791ed33f87e7a9d64d5e4802f9c57ef49b911ca47c4691efd60`.
+Plan `884e5f63ef4a462bc228fde19a24be5d96e843bcd4ab692ae2cfad693969ffa9`.
+Controls `d165b06f2ba1bec5205e336c697b2a5bc5dc2d69e1602d786c416dea03ae9e3d`.
+Uploaded-log SHA256 `7dc7cb7d151fd82f3cbd094ca4e3e4c5eeedade25e2a1b857da78ac8d560c15c`.
 **C162:** `runs/c162-v5e-evidence-container-a9f04a81882346c99d11c1cafa6f771c/summary.json`.
 SHA256 `0da31284af3a58ba052ba9629e321520f7f2dbb9352a32c52c3892adff65cdac`.
-Plan `3c3c9049dd7ebd24c9c0a101d1dbe395f41721fc6440bac9f8786a6cdbc03f43`.
-Guard controls `9270ebf5c21d2c9ee2e62d8e6fbaac93fcddf1bafe66a644dbe2d52e25b98373`.
-Uploaded-log SHA256 `e055d84e43267a526f3db6de8982b4b4375e69e70b561f4e0d9671630c3a265d`.
-C162 console omits records: no reviewer reconstruction of the full report hash or independent replay of local differential files is claimed.
-
 **C161:** `runs/c161-v5e-c160-failure-localization-794f97af76da46c3b7b919f0f278f214/summary.json`.
 SHA256 `2cb356e36dde0e9d8ef87146b3e3d31eacc1afbb2743bee17815f1eb11958f38`.
 **C160:** `runs/c160-v5e-live-query-result-80754c5ca25f4970aa1ceeb5d3a8b04b/summary.json`.
 SHA256 `1c99ab5395e67c859a7730e1a9111d4595e2668b85cb56d0a31dfff79aea4bbd`.
-Query plan `656b53b55db3ed756a6421f767527857f8d71886c8e976735f3734d7160beb13`.
 **C159:** `runs/c159-v5e-terminal-result-9e2b2e3e1f9c42bda1f33d7d49fa3cd7/summary.json`.
 SHA256 `522a6ce4d8792e4e659fc7262928f9d610d814c2ffccff47cc658f6b49e069e6`.
 **C158:** `runs/c158-v5e-live-recovery-0285f65942c14db8997f7c910dd94a4f/summary.json`.
 SHA256 `6c49a3e681313208881743f1c2991325e4826d4970cb65d5df9cfcebd65173c8`.
-Episode plan `0f9d0703a28efc5d9e52a11e261fe58c83411fd75994d81428c4f217b3017f8c`.
 **C157:** `runs/c157-v5e-controller-bridge-e68cc92a350145b983d123acad386982/summary.json`.
 SHA256 `b521eafc61fedaf3b9d2f78fb9c591de654b95cfa6689938c8c042fbc200b934`.
 **C156:** `runs/c156-v5e-request-reobservation-0d0d4cb6c1704c4987ebf8651fc683e0/summary.json`.
@@ -78,34 +77,17 @@ SHA256 `cddf360fc2211302d1dab0abd8d96038bb3d39ab273f9dea336da348d70d3a78`.
 SHA256 `d70b57b6d7c0aa8876c0647ab1d858ec2808fd3478cf12c02b3d83be8cf2d844`.
 **C151:** `runs/c151-v5e-cross-split-e9d383a3c4c64f9faca48eb81313d441/summary.json`.
 SHA256 `d2b48acb36d28f0422d09067cc23af882c812d020a00ccfc8c6e8286fd896afa`.
-Manifest `5a19de10d8152ac262846682a79a13bb942eeacd7dca979afb09b70170ebdd65`.
-Split plan `db65d4754e465c55bfc19438f9d50324bb49e928911a53643deddc531625f4c0`.
+Manifest `5a19de10d8152ac262846682a79a13bb942eeacd7dca979afb09b70170ebdd65`; split plan `db65d4754e465c55bfc19438f9d50324bb49e928911a53643deddc531625f4c0`.
 
-Current verdict/preregistration: **`docs/experiment-ledger-addendum-c162-c163.md`**.
-Earlier registrations remain unchanged in `experiment-ledger-addendum-c161-c162.md`, `experiment-ledger-addendum-c160-c161.md`, `experiment-ledger-addendum-c159-c160.md` and chained addenda. Verdicts use uploaded console logs plus inspected source/registered gates; local artifacts are verified by subsequent user runs, not claimed independently replayed by the reviewer.
+Current verdict: **`docs/experiment-ledger-addendum-c163-c164.md`**.
+Historical registrations/verdicts stay in `experiment-ledger-addendum-c162-c163.md`, `experiment-ledger-addendum-c161-c162.md`, `experiment-ledger-addendum-c160-c161.md`, `experiment-ledger-addendum-c159-c160.md` and earlier chained addenda. Verdicts use uploaded console logs plus inspected source and preregistered gates. C163 console omits `records`: no reconstructed full report hash or independent reviewer trace replay is claimed.
 
-## Active C163 — Live evidence-container bridge
+## Next experiment
 
-`C163-v5e-live-evidence-container-bridge`; `V5-E-LIVE-EVIDENCE-CONTAINER-BRIDGE`.
-**ACTIVE / NOT YET JUDGED. No C164 registered.**
-
-One question: does an observations-only tuple -> list adapter at the live terminal boundary make the unchanged frozen C160-style composition return bound typed bits, while native controls on the same fresh cycles reproduce the original rejection?
-
-All 24 frozen C151 rankers, three C157 Controllers, two original C152 layouts, 1728 original queries, modulo-three router assignment, COLD_RECOVER, permission, budget(3,1), source ordering and clocks remain fixed. Zero training/fresh seeds. The new C163 request namespace carries identity only. No saved selected address or output substitutes for live inference. Preserve C158/C159/C160/core and C161/C162 source blobs. New adapter is diagnostic-only; no production rollout.
-
-Pin C162 and C160 summaries above, C162 pair/guard files and all source hashes. This hash check is not a replay of C162's full differential. Reuse C160 prerequisite chain and 6528 old C159 emitter replays, 41472+288 ranker replays, same checkpoint loading. Do not repeat the old 1990656 C157 action replay or regenerate missing sources.
-
-Expected NEW LIVE scope: **82944 episodes; 5308416 candidate scores; 165888 Controller decisions; 82944 acquisitions/restorations; 165888 exact64 calls / 10616832 vectors; 27648 episodes/router**. Every live native result yields one unadapted control and one adapted candidate: **82944+82944 emitter calls**, plus **768 guard calls** on 128 snapshot/record identities. Old 6528 emitter replay calls remain separate.
-
-PASS requires the original C160 gate without threshold changes, all native controls MALFORMED_EVIDENCE, all adapted outputs bound/ANSWERED, content/input preservation, all six guard probes effective, and zero failure/mutation. Values zero/one=34992/47952. Per layout semantic_correct remains **20727 WITHIN_FACTOR / 20736 GLOBAL_CONCEPT** with 20736 bound outputs/arm. Save all new live traces/controls and rehash inputs/code at the end. Diagnostic timing includes controls, not production latency.
-
-Finite behavior/guard/count/output defects with valid sources yield saved FAIL / VALID NEGATIVE. Wrong sources/schema/checkpoints/replays/code, nonfinite arithmetic or execution/postcheck failure yield INVALID / RETRY C163. Never rewrite C160/C161/C162 results. A PASS supports this controlled live adapter path only; Gate E remains NOT PASSED.
-
-Files: `fold_lm/v05_benchmarks/gate_e_c163_live_container_bridge.py`, `tests_lm/test_v05_c163_live_container_bridge.py`, `tools/run_c163.ps1`.
-Focused regression **614 = 588 previous + 26 new**. Reviewer passed **26 helper tests and Python compilation** using local excerpts of inspected dependency definitions (not a full checkout); the wiring test uses a controlled cycle callback. Full 614 tests, real artifact-backed CUDA/CPU integration and Windows PowerShell NOT reviewer-executed. No C163 result yet.
+C163 is judged and recorded. **C164 is not yet registered in this verdict commit.** No new experiment is run automatically. Next design must remove one remaining integration constraint, without editing the old accepted runs or production code.
 
 ## Independent reports / non-claims
 
-Multi-Axis/MA-1 and PC-ALM/FHLC/PA-0..PA-6 remain separate, unimplemented candidates. PC-ALM report on main: `fold/docs/pcalm-layer-local-credit-hypothesis-report.md` at `903e31f1e509c92877206741672918e7bacc701b`. Review conditions (finite-iteration timing, same-state gradients, immutable evidence, full accounting and quantified gates) stay in `experiment-ledger-addendum-c154-pcalm-review.md`. No hypothesis report is merged or rewritten here.
+Multi-Axis/MA-1 and PC-ALM/FHLC/PA-0..PA-6 remain separate, unimplemented candidates. PC-ALM report on main: `fold/docs/pcalm-layer-local-credit-hypothesis-report.md` at `903e31f1e509c92877206741672918e7bacc701b`. Review conditions (finite-iteration timing, same-state gradients, immutable evidence, full accounting and quantified gates) remain in `experiment-ledger-addendum-c154-pcalm-review.md`. No hypothesis report is merged or rewritten here.
 
-Shared-Basis partition, Multi-Axis, local credit, KV/context work, ranking, retrieval, admission, EvidenceState, readback, reobservation, Controller, typed return and learned ANSWER are distinct claims. Epoch/generation mappings are diagnostic, not final production clocks. Cross-source namespaces, revisions/retractions, durable publication and recovery remain separate. `fold/fold_memory.py` is a QuadraticMemory reference, not the V5-E store.
+Shared-Basis partition, Multi-Axis, local credit, KV/context, ranking, retrieval, admission, EvidenceState, readback, reobservation, Controller, typed return and learned ANSWER are distinct claims. Diagnostic epoch/generation mappings are not final production clocks. Cross-source namespaces, revisions/retractions, durable publication and recovery remain separate. `fold/fold_memory.py` is a QuadraticMemory reference, not the V5-E store.
