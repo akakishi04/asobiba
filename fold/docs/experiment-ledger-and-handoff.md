@@ -9,7 +9,7 @@
 - C37 `runs/chatgpt-last-result.json`: `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`.
 - Fixture `runs/fixtures/v05-c-composition-20260921.pt`: `A52F8209703149407580F7E2965B61B78653030EE992AF6D759865736741CA9E`.
 - Read `AGENTS.md`, `docs/experiment-conversation-handoff-protocol.md`, this handoff and the current addendum before work. Judge -> record ledger/handoff -> next C. One question per C; invalid execution retries the same number; valid negatives remain recorded.
-- Latest accepted execution: C163 at `d3cecf1c1221d2119a2e6ab172c69770bde46788`. Documentation commits after that are not the original execution HEAD.
+- Latest accepted execution: C163 at `d3cecf1c1221d2119a2e6ab172c69770bde46788`. Verdict recorded in `5b462d453ed1c6f826787c08be1cb1cebe15f847` before C164 registration. C164's runner requires its current registration HEAD, not the old execution HEAD.
 
 ## Gate status / architecture boundaries
 
@@ -80,11 +80,28 @@ SHA256 `d2b48acb36d28f0422d09067cc23af882c812d020a00ccfc8c6e8286fd896afa`.
 Manifest `5a19de10d8152ac262846682a79a13bb942eeacd7dca979afb09b70170ebdd65`; split plan `db65d4754e465c55bfc19438f9d50324bb49e928911a53643deddc531625f4c0`.
 
 Current verdict: **`docs/experiment-ledger-addendum-c163-c164.md`**.
+Current preregistration: **`docs/experiment-ledger-addendum-c164-preregistration.md`**.
 Historical registrations/verdicts stay in `experiment-ledger-addendum-c162-c163.md`, `experiment-ledger-addendum-c161-c162.md`, `experiment-ledger-addendum-c160-c161.md`, `experiment-ledger-addendum-c159-c160.md` and earlier chained addenda. Verdicts use uploaded console logs plus inspected source and preregistered gates. C163 console omits `records`: no reconstructed full report hash or independent reviewer trace replay is claimed.
 
-## Next experiment
+## Active C164 — Live query missing delivery
 
-C163 is judged and recorded. **C164 is not yet registered in this verdict commit.** No new experiment is run automatically. Next design must remove one remaining integration constraint, without editing the old accepted runs or production code.
+`C164-v5e-live-query-missing-delivery`; `V5-E-LIVE-QUERY-MISSING-DELIVERY`.
+**ACTIVE / NOT YET JUDGED. No C165 registered.**
+
+Question: does a real acquisition whose evidence is removed during delivery produce payload-free typed UNRESOLVED through the frozen query-originating path, while matched normal delivery still answers?
+
+Only the transport callback changes: normal returns the actual Delivery; missing returns `replace(fetched, evidence=None)` after real fetch, preserving the envelope. It is not a bare None envelope, nonexistent target, retrieval miss, permission denial, budget change or semantic abstention. C163's diagnostic tuple/list adapter, C159 emitter, C158 cycle, all 24 rankers, three Controllers, two layouts, clocks, initial budget(3,1), stale bit and 63 other references stay fixed. Zero training/fresh seeds, no production/historical source changes. Request namespace includes condition for disjoint identity, not as a learned feature.
+
+Run **82944 fresh ranking prefixes / 5308416 candidate scores**. Each live selection feeds normal and missing-delivery cold continuations with fresh independent state/inbox/budget; normal first. This is **165888 branch episodes**, not twice as many independent queries or cached historical predictions. Expected totals: **331776 decisions, 165888 actual acquisitions, 82944 restorations, 248832 exact64 calls / 15925248 vectors**. Each Controller handles 27648 episodes per condition (55296 total). Raw actions: RETRIEVE 165888, ANSWER 82944, STOP 82944.
+
+Normal output: 82944 ANSWERED, zero/one 34992/47952, per-layout WITHIN_FACTOR semantic20727 and GLOBAL_CONCEPT20736 with all20736 bindings intact. Missing output: 82944 UNRESOLVED/MISSING_DELIVERY with value/key/source/time/revision allNone, no publication/readback, stale presence/payload cleared. Missing semantic_correct is null/notapplicable; unresolved is not zero or proof of absence. The known nine errors/layout are not corrected.
+
+Use unchanged C163 AuditedEmitter: 165888 native controls, 165888 candidate calls, 768 guards on first normal source-record identities. New emitter total332544; old C1596528 replay calls separate. Save 48 gzip traces x3456rows plus controls. Pin accepted C163 summary/all source and trace hashes, then existing C15141472+288 ranker replay and C159 recorded-output replay; no new C157 large action replay. Rehash inputs/code at end and independently in the runner.
+
+PASS requires the unchanged original C160 success gate on the matched normal branch, all existing C158 missing-delivery checks and exact typed no-payload contract, positive finite margins, exact coverage/actions/budgets/costs and independent meter agreement, native rejection/type/content/preservation checks and all guards. Valid finite defects are saved FAIL/VALID NEGATIVE; source/schema/hash/code/replay/numeric/execution/postcheck invalidity retries C164 without changing its science. Never rewrite C160/C163 runs. Gate E stays NOT PASSED.
+
+Files: `fold_lm/v05_benchmarks/gate_e_c164_live_missing_delivery.py`, `tests_lm/test_v05_c164_live_missing_delivery.py`, `tools/run_c164.ps1`.
+Focused regression **638 = 614 previous + 24 new**. Reviewer compiled both Python files and passed **19 dependency-light tests** using inspected excerpts/test doubles. Five actual C158-cycle/adapter wiring test methods were not reviewer-executed; no complete historical dependency import/full638/realCUDA-CPU/PowerShell run is claimed. Formal C164 has no result yet. Stop after execution for judgment and ledger update before C165.
 
 ## Independent reports / non-claims
 
