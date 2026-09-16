@@ -9,7 +9,7 @@
 - C37 `runs/chatgpt-last-result.json`: `FD4A8DA897BDAEA9D103A252E30212C7FF842D23300D7C837333E146DEE51931`.
 - Fixture `runs/fixtures/v05-c-composition-20260921.pt`: `A52F8209703149407580F7E2965B61B78653030EE992AF6D759865736741CA9E`.
 - Read `AGENTS.md`, `docs/experiment-conversation-handoff-protocol.md`, this handoff and the current addendum before work. Judge -> record ledger/handoff -> next C. One question per C; invalid execution retries the same number; accepted valid negatives remain recorded.
-- Latest accepted execution: **C164** at `c3ee72d7ad7b7112fb45c6601899b69a96cf4969`. Verdict is `docs/experiment-ledger-addendum-c164-c165.md`.
+- Latest accepted execution: **C164** at `c3ee72d7ad7b7112fb45c6601899b69a96cf4969`. Verdict is `docs/experiment-ledger-addendum-c164-c165.md`. C165 is registered by subsequent diagnostic code/tests/runner/preregistration commits and must use the final registration HEAD as ExpectedHead.
 
 ## Gate status / architecture boundaries
 
@@ -70,11 +70,28 @@ Uploaded-log SHA256 `8b1a735e212cb10f2c72bcc3e58a69045f0cdba6a3c1badccc7730aca53
 **C151:** SHA256 `d2b48acb36d28f0422d09067cc23af882c812d020a00ccfc8c6e8286fd896afa`; manifest `5a19de10d8152ac262846682a79a13bb942eeacd7dca979afb09b70170ebdd65`; split plan `db65d4754e465c55bfc19438f9d50324bb49e928911a53643deddc531625f4c0`.
 
 Current verdict: **`docs/experiment-ledger-addendum-c164-c165.md`**.
+Current preregistration: **`docs/experiment-ledger-addendum-c165-preregistration.md`**.
 Earlier registrations/verdicts remain in the chained C159-C164 addenda.
 
-## Next experiment
+## Active C165 — Live query runtime permission denial
 
-C164 is formally judged and recorded. **C165 is not yet registered in this verdict state.** The next C must remove one remaining V5-E integration constraint without changing accepted historical runs.
+`C165-v5e-live-query-permission-denied`; `V5-E-LIVE-QUERY-PERMISSION-DENIED`.
+**ACTIVE / NOT YET JUDGED. No C166 registered.**
+
+One question: when the learned Controller proposes RETRIEVE for a raw-query-selected missing reference, does `Permission(False)` block all adapter acquisition/search and preserve acquisition budget, after which the frozen Controller stops and the typed result becomes payload-free `UNRESOLVED / PERMISSION_DENIED`?
+
+Changed variable is **runtime permission only**. The C160 helper still constructs its ordinary `Permission(True)`; C165's local diagnostic wrapper verifies that base condition and substitutes True or False at the C158 cycle boundary while forwarding every other argument and identity delivery unchanged. No global patch, model action override or evaluator target enters the cycle.
+
+Run 82,944 fresh ranking prefixes / 5,308,416 candidate scores. Each prefix feeds two independent fresh cold continuations: allowed and denied. Expected totals: 165,888 branch episodes, 331,776 Controller decisions, 82,944 executed acquisitions/publications, 165,888 exact64 adapter calls / 10,616,832 vectors. Denied branch must have **zero adapter calls, zero executed acquisitions, zero publication/readback and no acquisition-budget debit**. Each Controller handles 27,648 episodes per condition. Raw actions remain RETRIEVE=165,888, ANSWER=82,944, STOP=82,944.
+
+Allowed output remains 82,944 ANSWERED with zero/one 34,992/47,952 and frozen semantic boundary WITHIN_FACTOR 20,727 / GLOBAL_CONCEPT 20,736 per layout. Denied output must be 82,944 `UNRESOLVED / PERMISSION_DENIED`, request/scope-bound but payload-free; semantic correctness is null/not-applicable.
+
+Use unchanged C163 AuditedEmitter for 165,888 native tuple controls and 165,888 adapted candidates plus 768 first-normal-identity guards. Pin C164 SHA `42df47fe4c03d24df064ff47eecf5b3c84b8df2f36d6a47b7f861ac14778fed2`, all its records/plan/controls/consumed input hashes and historical source blobs; then reuse the established C151/C159 prerequisite replays and frozen artifact chain. Save 48 gzip traces x 3,456 rows plus controls and a preregistered permission plan.
+
+PASS requires all allowed-control gates plus all 82,944 denied first-step authorities exactly `PERMISSION_DENIED`, positive finite `[2,5]` action margins, zero unpermitted fetch/search, zero acquisition debit, zero publication/readback, preserved budget, exact typed no-payload terminal results, all emitter/guard/source/input/tree/HEAD protections and zero measured mutation/serialization defects. Valid finite defects are saved FAIL/VALID NEGATIVE. Invalid source/hash/schema/replay/numeric/outer execution failures retry **C165 unchanged**.
+
+Files: `fold_lm/v05_benchmarks/gate_e_c165_live_permission_denied.py`, `tests_lm/test_v05_c165_live_permission_denied.py`, `tools/run_c165.ps1`.
+Focused regression **665 expected = 638 previous + 27 new**. Source review completed; formal complete-import regression and real CUDA/CPU/PowerShell run are not claimed. Stop after C165 execution for formal judgment before any C166 design.
 
 ## Independent reports / non-claims
 
