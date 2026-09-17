@@ -69,10 +69,6 @@ def _enable_drag_and_drop(app_ai) -> bool:
     except ImportError:
         return False
 
-    # app_ai.main() creates tk.Tk(). Replace only that constructor; the rest of
-    # tkinter/ttk remains untouched.
-    app_ai.tk.Tk = TkinterDnD.Tk
-
     original_init = app_ai.App.__init__
     original_path_row = app_ai.App._path_row
 
@@ -145,10 +141,20 @@ def _enable_drag_and_drop(app_ai) -> bool:
         if self.info.get() == "動画を選択してください。":
             self.info.set("動画を選択するか、このウィンドウへD&Dしてください。")
 
+    def dnd_main() -> None:
+        # Important: do NOT assign TkinterDnD.Tk to app_ai.tk.Tk. app_ai.tk is
+        # the actual tkinter module object, which tkinterdnd2 itself references.
+        # Replacing tkinter.Tk globally makes TkinterDnD.Tk.__init__ recursively
+        # call itself until RecursionError. Create the DnD root directly instead.
+        root = TkinterDnD.Tk()
+        app_ai.App(root)
+        root.mainloop()
+
     app_ai.App._set_input_video = set_input_video
     app_ai.App._on_drop_video = on_drop
     app_ai.App._path_row = path_row_with_dnd
     app_ai.App.__init__ = init_with_dnd
+    app_ai.main = dnd_main
     return True
 
 
