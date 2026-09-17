@@ -11,6 +11,9 @@ from vsrvrt.model_configs import get_config
 from vsrvrt.rvrt_core import RVRTInference
 
 
+PROGRESS_PREFIX = "APP_PROGRESS"
+
+
 def _frame_files(input_dir: Path) -> list[Path]:
     files = sorted(input_dir.glob("*.png"))
     if not files:
@@ -94,8 +97,6 @@ def _infer_chunk(
         )
     output = output[:, :original, ...].float().cpu()
 
-    # Some RVRT implementations pad the spatial edge to a window multiple. The
-    # deblur models are 1x, so crop any padding back to the exact input geometry.
     height, width = input_hw
     if output.shape[-2] != height or output.shape[-1] != width:
         print(
@@ -141,6 +142,7 @@ def run(
     )
     inference = RVRTInference(config, use_fp16=True, device=torch.device("cuda"))
     chunks = _chunk_ranges(len(files), chunk_size, overlap)
+    print(f"{PROGRESS_PREFIX}|RVRT|0|{len(chunks)}", flush=True)
 
     pending_start: int | None = None
     pending: torch.Tensor | None = None
@@ -158,6 +160,7 @@ def run(
         if pending is None or pending_start is None:
             pending_start = start
             pending = current
+            print(f"{PROGRESS_PREFIX}|RVRT|{chunk_no}|{len(chunks)}", flush=True)
             continue
 
         pending_end = pending_start + pending.shape[1]
@@ -168,6 +171,7 @@ def run(
             _write_pending(output_dir, pending_start, pending)
             pending_start = start
             pending = current
+            print(f"{PROGRESS_PREFIX}|RVRT|{chunk_no}|{len(chunks)}", flush=True)
             continue
 
         direct_count = pending.shape[1] - actual_overlap
@@ -183,6 +187,7 @@ def run(
         pending_start = start + actual_overlap
         pending = current[:, actual_overlap:].contiguous()
         del current
+        print(f"{PROGRESS_PREFIX}|RVRT|{chunk_no}|{len(chunks)}", flush=True)
 
     if pending is not None and pending_start is not None:
         _write_pending(output_dir, pending_start, pending)
