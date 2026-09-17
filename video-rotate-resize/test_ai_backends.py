@@ -25,7 +25,7 @@ class AIBackendTests(unittest.TestCase):
         (repo / "inference_cli.py").write_text("# stub\n", encoding="utf-8")
         return repo, self._fake_python(root, "seed")
 
-    def test_seedvr2_command_defaults_to_native_short_side(self):
+    def test_seedvr2_command_uses_memory_safe_chunk_runner(self):
         with tempfile.TemporaryDirectory() as temp_name:
             root = Path(temp_name)
             repo, python = self._fake_seed_engine(root)
@@ -34,15 +34,20 @@ class AIBackendTests(unittest.TestCase):
                 seedvr2_python=str(python),
                 seedvr2_batch_size=5,
                 seedvr2_blocks_to_swap=20,
+                seedvr2_chunk_size=45,
+                seedvr2_chunk_overlap=5,
             )
             validate_for_mode(cfg, AI_SEEDVR2)
             cmd, cwd = build_seedvr2_command(cfg, "input.mp4", "out", 1080)
-            self.assertEqual(cwd, repo)
-            self.assertIn("--resolution", cmd)
+            self.assertEqual(cmd[0], str(python))
+            self.assertTrue(cmd[1].endswith("seedvr2_runner.py"))
+            self.assertEqual(cwd, Path(cmd[1]).parent)
             self.assertEqual(cmd[cmd.index("--resolution") + 1], "1080")
-            self.assertEqual(cmd[cmd.index("--batch_size") + 1], "5")
-            self.assertEqual(cmd[cmd.index("--blocks_to_swap") + 1], "20")
-            self.assertIn("--vae_tiling_enabled", cmd)
+            self.assertEqual(cmd[cmd.index("--batch-size") + 1], "5")
+            self.assertEqual(cmd[cmd.index("--blocks-to-swap") + 1], "20")
+            self.assertEqual(cmd[cmd.index("--chunk-size") + 1], "45")
+            self.assertEqual(cmd[cmd.index("--chunk-overlap") + 1], "5")
+            self.assertIn("--vae-tiling", cmd)
 
     def test_seedvr2_resolution_override(self):
         with tempfile.TemporaryDirectory() as temp_name:
@@ -55,6 +60,19 @@ class AIBackendTests(unittest.TestCase):
             )
             cmd, _ = build_seedvr2_command(cfg, "input.mp4", "out", 2160)
             self.assertEqual(cmd[cmd.index("--resolution") + 1], "1072")
+
+    def test_seedvr2_invalid_chunk_overlap_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp_name:
+            root = Path(temp_name)
+            repo, python = self._fake_seed_engine(root)
+            cfg = AIConfig(
+                seedvr2_repo=str(repo),
+                seedvr2_python=str(python),
+                seedvr2_chunk_size=45,
+                seedvr2_chunk_overlap=45,
+            )
+            with self.assertRaises(Exception):
+                validate_for_mode(cfg, AI_SEEDVR2)
 
     def test_rvrt_command_uses_managed_runner_and_one_x_task(self):
         with tempfile.TemporaryDirectory() as temp_name:
@@ -107,12 +125,16 @@ class AIBackendTests(unittest.TestCase):
                 rvrt_chunk_size=12,
                 seedvr2_batch_size=7,
                 seedvr2_resolution_override=1440,
+                seedvr2_chunk_size=37,
+                seedvr2_chunk_overlap=5,
             )
             cfg.save(path)
             restored = AIConfig.load(path)
             self.assertEqual(restored.rvrt_chunk_size, 12)
             self.assertEqual(restored.seedvr2_batch_size, 7)
             self.assertEqual(restored.seedvr2_resolution_override, 1440)
+            self.assertEqual(restored.seedvr2_chunk_size, 37)
+            self.assertEqual(restored.seedvr2_chunk_overlap, 5)
 
     def test_normalize_png_sequence(self):
         with tempfile.TemporaryDirectory() as temp_name:
