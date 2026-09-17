@@ -17,7 +17,9 @@ SEEDVR2_REPO_URL = "https://github.com/comfyorg/comfyui_seedvr2.git"
 SEEDVR2_REVISION = "6d50cf04803aa6d27300ccf2724d5471d366eb12"
 VSRVRT_VERSION = "1.1.3"
 
-RVRT_TORCH_PACKAGES = ("torch==2.8.0", "torchvision==0.23.0")
+# vsrvrt's published wheels are built/tested against PyTorch 2.7.1 + cu128.
+# Keep that exact torch ABI rather than silently upgrading to a newer release.
+RVRT_TORCH_PACKAGES = ("torch==2.7.1", "torchvision")
 RVRT_TORCH_INDEX = "https://download.pytorch.org/whl/cu128"
 SEEDVR2_TORCH_PACKAGES = (
     "torch==2.6.0",
@@ -94,7 +96,7 @@ def _python_from_probe(command: list[str]) -> Optional[Path]:
 
 
 def find_python312() -> Optional[Path]:
-    """Find a 64-bit Python 3.12 interpreter suitable for the managed AI venvs."""
+    """Find a Python 3.12 interpreter suitable for the managed AI venvs."""
     if sys.version_info[:2] == (3, 12):
         current = Path(sys.executable)
         if current.is_file():
@@ -191,7 +193,16 @@ def _ensure_venv(
     if not python.is_file():
         raise VideoToolError(f"{label} の仮想環境を作成できませんでした: {venv}")
     run(
-        [str(python), "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"],
+        [
+            str(python),
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "pip",
+            "setuptools",
+            "wheel",
+        ],
         f"Update {label} pip",
         None,
     )
@@ -210,13 +221,25 @@ def _ensure_seedvr2_repo(paths: AISetupPaths, run: RunCommand, log: LogLine) -> 
                 f"SeedVR2の管理先が空ではありません: {repo}\nフォルダを退避または削除して再実行してください。"
             )
         repo.parent.mkdir(parents=True, exist_ok=True)
-        run([git, "clone", SEEDVR2_REPO_URL, str(repo)], "Clone SeedVR2", paths.engines)
+        run(
+            [git, "clone", SEEDVR2_REPO_URL, str(repo)],
+            "Clone SeedVR2",
+            paths.engines,
+        )
     else:
-        run([git, "-C", str(repo), "fetch", "origin"], "Update SeedVR2 refs", paths.base)
+        run(
+            [git, "-C", str(repo), "fetch", "origin"],
+            "Update SeedVR2 refs",
+            paths.base,
+        )
 
     # Use a known-compatible standalone CLI revision. This folder is managed and
     # git-ignored by asobiba, so detached HEAD here is intentional.
-    run([git, "-C", str(repo), "checkout", "--detach", SEEDVR2_REVISION], "Pin SeedVR2", paths.base)
+    run(
+        [git, "-C", str(repo), "checkout", "--detach", SEEDVR2_REVISION],
+        "Pin SeedVR2",
+        paths.base,
+    )
     marker = repo / "inference_cli.py"
     if not marker.is_file():
         raise VideoToolError(f"SeedVR2 inference_cli.py が見つかりません: {marker}")
