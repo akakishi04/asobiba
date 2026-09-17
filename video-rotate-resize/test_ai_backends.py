@@ -14,18 +14,21 @@ from ai_backends import (
 
 
 class AIBackendTests(unittest.TestCase):
-    def _fake_engine(self, root: Path, name: str, marker: str) -> tuple[Path, Path]:
-        repo = root / name
-        repo.mkdir()
-        (repo / marker).write_text("# stub\n", encoding="utf-8")
+    def _fake_python(self, root: Path, name: str) -> Path:
         python = root / f"{name}_python.exe"
         python.write_text("", encoding="utf-8")
-        return repo, python
+        return python
+
+    def _fake_seed_engine(self, root: Path) -> tuple[Path, Path]:
+        repo = root / "seed"
+        repo.mkdir()
+        (repo / "inference_cli.py").write_text("# stub\n", encoding="utf-8")
+        return repo, self._fake_python(root, "seed")
 
     def test_seedvr2_command_defaults_to_native_short_side(self):
         with tempfile.TemporaryDirectory() as temp_name:
             root = Path(temp_name)
-            repo, python = self._fake_engine(root, "seed", "inference_cli.py")
+            repo, python = self._fake_seed_engine(root)
             cfg = AIConfig(
                 seedvr2_repo=str(repo),
                 seedvr2_python=str(python),
@@ -38,12 +41,13 @@ class AIBackendTests(unittest.TestCase):
             self.assertIn("--resolution", cmd)
             self.assertEqual(cmd[cmd.index("--resolution") + 1], "1080")
             self.assertEqual(cmd[cmd.index("--batch_size") + 1], "5")
+            self.assertEqual(cmd[cmd.index("--blocks_to_swap") + 1], "20")
             self.assertIn("--vae_tiling_enabled", cmd)
 
     def test_seedvr2_resolution_override(self):
         with tempfile.TemporaryDirectory() as temp_name:
             root = Path(temp_name)
-            repo, python = self._fake_engine(root, "seed", "inference_cli.py")
+            repo, python = self._fake_seed_engine(root)
             cfg = AIConfig(
                 seedvr2_repo=str(repo),
                 seedvr2_python=str(python),
@@ -52,24 +56,61 @@ class AIBackendTests(unittest.TestCase):
             cmd, _ = build_seedvr2_command(cfg, "input.mp4", "out", 2160)
             self.assertEqual(cmd[cmd.index("--resolution") + 1], "1072")
 
-    def test_rvrt_command_uses_one_x_deblur_task(self):
+    def test_rvrt_command_uses_managed_runner_and_one_x_task(self):
         with tempfile.TemporaryDirectory() as temp_name:
             root = Path(temp_name)
-            repo, python = self._fake_engine(root, "rvrt", "main_test_rvrt.py")
-            cfg = AIConfig(rvrt_repo=str(repo), rvrt_python=str(python))
+            python = self._fake_python(root, "rvrt")
+            runner = root / "rvrt_runner.py"
+            runner.write_text("# stub\n", encoding="utf-8")
+            cfg = AIConfig(
+                rvrt_python=str(python),
+                rvrt_chunk_size=16,
+                rvrt_chunk_overlap=4,
+            )
             validate_for_mode(cfg, AI_RVRT)
-            cmd, cwd = build_rvrt_command(cfg, "frames")
-            self.assertEqual(cwd, repo)
-            self.assertIn("005_RVRT_videodeblurring_GoPro_16frames", cmd)
-            self.assertIn("--save_result", cmd)
-            self.assertIn("--num_workers", cmd)
+            cmd, cwd = build_rvrt_command(cfg, "frames_in", "frames_out", runner)
+            self.assertEqual(cwd, root)
+            self.assertEqual(cmd[0], str(python))
+            self.assertEqual(cmd[1], str(runner.resolve()))
+            self.assertEqual(
+                cmd[cmd.index("--task") + 1],
+                "005_RVRT_videodeblurring_GoPro_16frames",
+            )
+            self.assertEqual(cmd[cmd.index("--chunk-size") + 1], "16")
+            self.assertEqual(cmd[cmd.index("--chunk-overlap") + 1], "4")
+            self.assertEqual(cmd[cmd.index("--input-dir") + 1], "frames_in")
+            self.assertEqual(cmd[cmd.index("--output-dir") + 1], "frames_out")
+
+    def test_rvrt_does_not_require_external_repo(self):
+        with tempfile.TemporaryDirectory() as temp_name:
+            root = Path(temp_name)
+            python = self._fake_python(root, "rvrt")
+            cfg = AIConfig(rvrt_python=str(python), rvrt_repo="")
+            validate_for_mode(cfg, AI_RVRT)
+
+    def test_rvrt_invalid_overlap_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp_name:
+            root = Path(temp_name)
+            python = self._fake_python(root, "rvrt")
+            cfg = AIConfig(
+                rvrt_python=str(python),
+                rvrt_chunk_size=16,
+                rvrt_chunk_overlap=16,
+            )
+            with self.assertRaises(Exception):
+                validate_for_mode(cfg, AI_RVRT)
 
     def test_config_round_trip(self):
         with tempfile.TemporaryDirectory() as temp_name:
             path = Path(temp_name) / "ai_config.json"
-            cfg = AIConfig(seedvr2_batch_size=7, seedvr2_resolution_override=1440)
+            cfg = AIConfig(
+                rvrt_chunk_size=12,
+                seedvr2_batch_size=7,
+                seedvr2_resolution_override=1440,
+            )
             cfg.save(path)
             restored = AIConfig.load(path)
+            self.assertEqual(restored.rvrt_chunk_size, 12)
             self.assertEqual(restored.seedvr2_batch_size, 7)
             self.assertEqual(restored.seedvr2_resolution_override, 1440)
 
