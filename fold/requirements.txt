@@ -1,2 +1,0 @@
-# Version used for the committed reference run, not a claim of latest release.
-numpy==2.3.5
