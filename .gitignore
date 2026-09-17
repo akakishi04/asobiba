@@ -1,2 +1,6 @@
-
 /fold/
+/video-rotate-resize/ai_config.json
+/video-rotate-resize/__pycache__/
+/video-rotate-resize/ai_engines/
+/video-rotate-resize/.venv*/
+/video-rotate-resize/*.pyc
