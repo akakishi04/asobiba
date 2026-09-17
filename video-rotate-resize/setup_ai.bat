@@ -2,6 +2,10 @@
 setlocal
 cd /d "%~dp0"
 
+rem Force UTF-8 for Python subprocesses. SeedVR2 prints Unicode/emoji during CLI startup.
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
+
 echo ========================================
 echo  Video Tool AI Environment Setup
 echo ========================================
