@@ -30,9 +30,13 @@ DEFAULT_SEEDVR2_MODEL = "seedvr2_ema_3b_fp8_e4m3fn.safetensors"
 
 @dataclass
 class AIConfig:
+    # rvrt_repo is kept only so older ai_config.json files continue loading. The
+    # managed backend uses the PyPI vsrvrt package and rvrt_runner.py instead.
     rvrt_repo: str = ""
     rvrt_python: str = ""
     rvrt_task: str = "005_RVRT_videodeblurring_GoPro_16frames"
+    rvrt_chunk_size: int = 16
+    rvrt_chunk_overlap: int = 4
     seedvr2_repo: str = ""
     seedvr2_python: str = ""
     seedvr2_model: str = DEFAULT_SEEDVR2_MODEL
@@ -94,10 +98,13 @@ def _require_repo(repo_value: str, marker: str, engine_name: str) -> Path:
 
 def validate_for_mode(config: AIConfig, mode: str) -> None:
     if mode in {AI_RVRT, AI_RVRT_SEEDVR2}:
-        _require_repo(config.rvrt_repo, "main_test_rvrt.py", "RVRT")
         resolve_python(config.rvrt_python)
         if config.rvrt_task not in set(RVRT_TASKS.values()):
             raise VideoToolError(f"未対応のRVRTタスクです: {config.rvrt_task}")
+        if config.rvrt_chunk_size < 4:
+            raise VideoToolError("RVRT chunk size は4以上にしてください。")
+        if config.rvrt_chunk_overlap < 0 or config.rvrt_chunk_overlap >= config.rvrt_chunk_size:
+            raise VideoToolError("RVRT chunk overlap は0以上かつ chunk size 未満にしてください。")
 
     if mode in {AI_SEEDVR2, AI_RVRT_SEEDVR2}:
         _require_repo(config.seedvr2_repo, "inference_cli.py", "SeedVR2")
@@ -120,30 +127,29 @@ def validate_for_mode(config: AIConfig, mode: str) -> None:
 
 def build_rvrt_command(
     config: AIConfig,
-    folder_lq_root: str | Path,
+    input_dir: str | Path,
+    output_dir: str | Path,
+    runner_script: str | Path,
 ) -> tuple[list[str], Path]:
-    repo = _require_repo(config.rvrt_repo, "main_test_rvrt.py", "RVRT")
     python_bin = resolve_python(config.rvrt_python)
+    runner = Path(runner_script).resolve()
+    if not runner.is_file():
+        raise VideoToolError(f"RVRT runner が見つかりません: {runner}")
     command = [
         python_bin,
-        str(repo / "main_test_rvrt.py"),
+        str(runner),
+        "--input-dir",
+        str(input_dir),
+        "--output-dir",
+        str(output_dir),
         "--task",
         config.rvrt_task,
-        "--folder_lq",
-        str(folder_lq_root),
-        "--tile",
-        "0",
-        "256",
-        "256",
-        "--tile_overlap",
-        "2",
-        "20",
-        "20",
-        "--num_workers",
-        "0",
-        "--save_result",
+        "--chunk-size",
+        str(config.rvrt_chunk_size),
+        "--chunk-overlap",
+        str(config.rvrt_chunk_overlap),
     ]
-    return command, repo
+    return command, runner.parent
 
 
 def build_seedvr2_command(
@@ -209,8 +215,3 @@ def normalize_png_sequence(
         target = destination / f"frame{index:06d}.png"
         shutil.copy2(item, target)
     return len(files)
-
-
-def rvrt_result_dir(config: AIConfig, clip_name: str) -> Path:
-    repo = Path(config.rvrt_repo)
-    return repo / "results" / config.rvrt_task / clip_name
