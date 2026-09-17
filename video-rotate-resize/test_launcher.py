@@ -1,3 +1,4 @@
+import inspect
 import os
 import unittest
 
@@ -19,6 +20,11 @@ class LauncherTests(unittest.TestCase):
     def test_child_python_processes_are_forced_to_utf8(self):
         self.assertEqual(os.environ.get("PYTHONUTF8"), "1")
         self.assertEqual(os.environ.get("PYTHONIOENCODING"), "utf-8")
+
+    def test_dnd_does_not_replace_global_tk_constructor(self):
+        source = inspect.getsource(launcher._enable_drag_and_drop)
+        self.assertNotIn("app_ai.tk.Tk =", source)
+        self.assertIn("TkinterDnD.Tk()", source)
 
 
 if __name__ == "__main__":
