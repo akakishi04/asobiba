@@ -2,11 +2,18 @@ from __future__ import annotations
 
 import os
 import subprocess
+import tempfile
 import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+from ai_restoration import (
+    AI_MODES,
+    RestorationConfig,
+    load_engine_config,
+    run_restoration_pipeline,
+)
 from video_tool import (
     VideoToolError,
     build_ffmpeg_command,
@@ -32,6 +39,14 @@ RESOLUTION_CHOICES = {
     "カスタム": "custom",
 }
 
+AI_CHOICES = {label: key for key, label in AI_MODES.items()}
+
+RVRT_TASK_CHOICES = {
+    "Deblur / GoPro (推奨)": "005_RVRT_videodeblurring_GoPro_16frames",
+    "Deblur / DVD": "004_RVRT_videodeblurring_DVD_16frames",
+    "Denoise / DAVIS": "006_RVRT_videodenoising_DAVIS_16frames",
+}
+
 PROGRESS_KEYS = {
     "frame",
     "fps",
@@ -51,9 +66,9 @@ PROGRESS_KEYS = {
 class VideoTransformApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("Video Rotate & Resize")
-        self.root.geometry("760x590")
-        self.root.minsize(700, 540)
+        self.root.title("Video Transform & AI Restore")
+        self.root.geometry("820x760")
+        self.root.minsize(740, 680)
 
         self.process: subprocess.Popen[str] | None = None
         self.duration_seconds: float | None = None
@@ -67,6 +82,8 @@ class VideoTransformApp:
         self.custom_width_var = tk.StringVar(value="1920")
         self.custom_height_var = tk.StringVar(value="1080")
         self.encoder_var = tk.StringVar(value="自動（NVENC優先）")
+        self.ai_mode_var = tk.StringVar(value=AI_MODES["off"])
+        self.rvrt_task_var = tk.StringVar(value="Deblur / GoPro (推奨)")
         self.status_var = tk.StringVar(value="待機中")
         self.progress_var = tk.DoubleVar(value=0.0)
 
@@ -77,43 +94,35 @@ class VideoTransformApp:
         outer = ttk.Frame(self.root, padding=16)
         outer.pack(fill="both", expand=True)
         outer.columnconfigure(1, weight=1)
-        outer.rowconfigure(8, weight=1)
+        outer.rowconfigure(10, weight=1)
 
         ttk.Label(outer, text="入力動画").grid(row=0, column=0, sticky="w", pady=4)
-        ttk.Entry(outer, textvariable=self.input_var).grid(
-            row=0, column=1, sticky="ew", padx=(8, 8), pady=4
-        )
-        ttk.Button(outer, text="参照...", command=self._choose_input).grid(
-            row=0, column=2, pady=4
-        )
+        ttk.Entry(outer, textvariable=self.input_var).grid(row=0, column=1, sticky="ew", padx=8, pady=4)
+        ttk.Button(outer, text="参照...", command=self._choose_input).grid(row=0, column=2, pady=4)
 
         ttk.Label(outer, textvariable=self.info_var, foreground="#555555").grid(
             row=1, column=1, columnspan=2, sticky="w", padx=(8, 0), pady=(0, 10)
         )
 
         ttk.Label(outer, text="出力先").grid(row=2, column=0, sticky="w", pady=4)
-        ttk.Entry(outer, textvariable=self.output_var).grid(
-            row=2, column=1, sticky="ew", padx=(8, 8), pady=4
-        )
-        ttk.Button(outer, text="参照...", command=self._choose_output).grid(
-            row=2, column=2, pady=4
-        )
+        ttk.Entry(outer, textvariable=self.output_var).grid(row=2, column=1, sticky="ew", padx=8, pady=4)
+        ttk.Button(outer, text="参照...", command=self._choose_output).grid(row=2, column=2, pady=4)
 
-        settings = ttk.LabelFrame(outer, text="変換設定", padding=12)
-        settings.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(12, 8))
-        settings.columnconfigure(1, weight=1)
+        transform = ttk.LabelFrame(outer, text="変換設定", padding=12)
+        transform.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(12, 8))
+        transform.columnconfigure(1, weight=1)
 
-        ttk.Label(settings, text="回転").grid(row=0, column=0, sticky="w", pady=4)
+        ttk.Label(transform, text="回転").grid(row=0, column=0, sticky="w", pady=4)
         ttk.Combobox(
-            settings,
+            transform,
             textvariable=self.rotation_var,
             values=list(ROTATION_CHOICES),
             state="readonly",
         ).grid(row=0, column=1, sticky="ew", padx=(12, 0), pady=4)
 
-        ttk.Label(settings, text="解像度").grid(row=1, column=0, sticky="w", pady=4)
+        ttk.Label(transform, text="解像度").grid(row=1, column=0, sticky="w", pady=4)
         resolution_box = ttk.Combobox(
-            settings,
+            transform,
             textvariable=self.resolution_var,
             values=list(RESOLUTION_CHOICES),
             state="readonly",
@@ -121,7 +130,7 @@ class VideoTransformApp:
         resolution_box.grid(row=1, column=1, sticky="ew", padx=(12, 0), pady=4)
         resolution_box.bind("<<ComboboxSelected>>", lambda _event: self._update_custom_state())
 
-        custom_frame = ttk.Frame(settings)
+        custom_frame = ttk.Frame(transform)
         custom_frame.grid(row=2, column=1, sticky="w", padx=(12, 0), pady=4)
         self.custom_width_entry = ttk.Entry(custom_frame, width=8, textvariable=self.custom_width_var)
         self.custom_width_entry.pack(side="left")
@@ -130,42 +139,68 @@ class VideoTransformApp:
         self.custom_height_entry.pack(side="left")
         ttk.Label(custom_frame, text=" px").pack(side="left")
 
-        ttk.Label(settings, text="エンコーダー").grid(row=3, column=0, sticky="w", pady=4)
+        ttk.Label(transform, text="エンコーダー").grid(row=3, column=0, sticky="w", pady=4)
         ttk.Combobox(
-            settings,
+            transform,
             textvariable=self.encoder_var,
             values=["自動（NVENC優先）", "NVIDIA NVENC", "CPU (libx264)"],
             state="readonly",
         ).grid(row=3, column=1, sticky="ew", padx=(12, 0), pady=4)
 
         ttk.Label(
-            settings,
-            text="解像度変更時はアスペクト比を維持し、必要なら黒帯で指定サイズに合わせます。",
+            transform,
+            text="AI有効時は、回転・リサイズを先に適用してからAI復元します。元解像度維持も選べます。",
             foreground="#555555",
         ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
-        self._update_custom_state()
+        ai = ttk.LabelFrame(outer, text="AI鮮明化 / Video Restoration", padding=12)
+        ai.grid(row=4, column=0, columnspan=3, sticky="ew", pady=8)
+        ai.columnconfigure(1, weight=1)
 
-        self.progress = ttk.Progressbar(
-            outer, variable=self.progress_var, maximum=100.0, mode="determinate"
+        ttk.Label(ai, text="処理方式").grid(row=0, column=0, sticky="w", pady=4)
+        ai_box = ttk.Combobox(
+            ai,
+            textvariable=self.ai_mode_var,
+            values=list(AI_CHOICES),
+            state="readonly",
         )
-        self.progress.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(12, 4))
-        ttk.Label(outer, textvariable=self.status_var).grid(
-            row=5, column=0, columnspan=3, sticky="w", pady=(0, 8)
+        ai_box.grid(row=0, column=1, sticky="ew", padx=(12, 0), pady=4)
+        ai_box.bind("<<ComboboxSelected>>", lambda _event: self._update_ai_state())
+
+        ttk.Label(ai, text="RVRTモデル").grid(row=1, column=0, sticky="w", pady=4)
+        self.rvrt_task_box = ttk.Combobox(
+            ai,
+            textvariable=self.rvrt_task_var,
+            values=list(RVRT_TASK_CHOICES),
+            state="readonly",
         )
+        self.rvrt_task_box.grid(row=1, column=1, sticky="ew", padx=(12, 0), pady=4)
+
+        ttk.Label(
+            ai,
+            text="RVRTは忠実寄りの1x復元、SeedVR2は生成力の強い復元。併用時は RVRT → SeedVR2 の順です。",
+            foreground="#555555",
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        ttk.Label(
+            ai,
+            text="AIエンジンのrepo/環境は ai_engines.json で指定します。AIなしなら追加セットアップ不要です。",
+            foreground="#555555",
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
+
+        self.progress = ttk.Progressbar(outer, variable=self.progress_var, maximum=100.0, mode="determinate")
+        self.progress.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(12, 4))
+        ttk.Label(outer, textvariable=self.status_var).grid(row=6, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
         button_frame = ttk.Frame(outer)
-        button_frame.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(4, 8))
+        button_frame.grid(row=7, column=0, columnspan=3, sticky="ew", pady=(4, 8))
         self.start_button = ttk.Button(button_frame, text="変換開始", command=self._start)
         self.start_button.pack(side="left")
-        self.cancel_button = ttk.Button(
-            button_frame, text="キャンセル", command=self._cancel, state="disabled"
-        )
+        self.cancel_button = ttk.Button(button_frame, text="キャンセル", command=self._cancel, state="disabled")
         self.cancel_button.pack(side="left", padx=(8, 0))
 
-        ttk.Label(outer, text="ログ").grid(row=7, column=0, columnspan=3, sticky="w")
+        ttk.Label(outer, text="ログ").grid(row=9, column=0, columnspan=3, sticky="w")
         log_frame = ttk.Frame(outer)
-        log_frame.grid(row=8, column=0, columnspan=3, sticky="nsew")
+        log_frame.grid(row=10, column=0, columnspan=3, sticky="nsew")
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
 
@@ -175,18 +210,23 @@ class VideoTransformApp:
         scrollbar.grid(row=0, column=1, sticky="ns")
         self.log.configure(yscrollcommand=scrollbar.set)
 
+        self._update_custom_state()
+        self._update_ai_state()
+
     def _update_custom_state(self) -> None:
         state = "normal" if self.resolution_var.get() == "カスタム" else "disabled"
         self.custom_width_entry.configure(state=state)
         self.custom_height_entry.configure(state=state)
 
+    def _update_ai_state(self) -> None:
+        mode = AI_CHOICES[self.ai_mode_var.get()]
+        rvrt_enabled = mode in {"rvrt", "rvrt_seedvr2"}
+        self.rvrt_task_box.configure(state="readonly" if rvrt_enabled else "disabled")
+
     def _choose_input(self) -> None:
         path = filedialog.askopenfilename(
             title="入力動画を選択",
-            filetypes=[
-                ("動画ファイル", "*.mp4 *.mov *.mkv *.m4v *.avi *.webm"),
-                ("すべてのファイル", "*.*"),
-            ],
+            filetypes=[("動画ファイル", "*.mp4 *.mov *.mkv *.m4v *.avi *.webm"), ("すべてのファイル", "*.*")],
         )
         if not path:
             return
@@ -213,16 +253,9 @@ class VideoTransformApp:
             info = probe_media(path)
             self.duration_seconds = info.duration_seconds
             fps_text = f"{info.fps:.3f} fps" if info.fps else "fps不明"
-            duration_text = (
-                self._format_duration(info.duration_seconds)
-                if info.duration_seconds is not None
-                else "長さ不明"
-            )
+            duration_text = self._format_duration(info.duration_seconds) if info.duration_seconds is not None else "長さ不明"
             rotation_text = f" / 回転情報 {info.rotation}°" if info.rotation else ""
-            text = (
-                f"{info.width}×{info.height} / {info.codec} / {fps_text} / "
-                f"{duration_text}{rotation_text}"
-            )
+            text = f"{info.width}×{info.height} / {info.codec} / {fps_text} / {duration_text}{rotation_text}"
             self.root.after(0, lambda: self.info_var.set(text))
         except Exception as exc:
             self.duration_seconds = None
@@ -233,9 +266,7 @@ class VideoTransformApp:
         total = int(round(seconds))
         hours, rem = divmod(total, 3600)
         minutes, secs = divmod(rem, 60)
-        if hours:
-            return f"{hours}:{minutes:02d}:{secs:02d}"
-        return f"{minutes}:{secs:02d}"
+        return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
 
     def _target_resolution(self) -> tuple[int, int] | None:
         selected = RESOLUTION_CHOICES[self.resolution_var.get()]
@@ -266,98 +297,139 @@ class VideoTransformApp:
             destination = Path(self.output_var.get().strip())
             if not source.is_file():
                 raise VideoToolError("入力動画を選択してください。")
-            if not destination.name:
-                raise VideoToolError("出力先を指定してください。")
-            if destination.suffix.lower() != ".mp4":
-                raise VideoToolError("現在の出力形式は MP4 のみです。")
+            if not destination.name or destination.suffix.lower() != ".mp4":
+                raise VideoToolError("出力先はMP4で指定してください。")
             if not destination.parent.exists():
                 raise VideoToolError("出力先フォルダが存在しません。")
 
             rotation = ROTATION_CHOICES[self.rotation_var.get()]
             target = self._target_resolution()
-            if rotation == "none" and target is None:
-                raise VideoToolError("回転または解像度変更を指定してください。")
+            ai_mode = AI_CHOICES[self.ai_mode_var.get()]
+            if rotation == "none" and target is None and ai_mode == "off":
+                raise VideoToolError("回転・解像度変更・AI鮮明化のいずれかを指定してください。")
 
             ffmpeg_bin = find_executable("ffmpeg")
             find_executable("ffprobe")
             encoder = self._selected_encoder(ffmpeg_bin)
-            command = build_ffmpeg_command(
-                source,
-                destination,
-                rotation=rotation,
-                target=target,
-                encoder=encoder,
-                ffmpeg=ffmpeg_bin,
+            restoration = RestorationConfig(
+                mode=ai_mode,
+                rvrt_task=RVRT_TASK_CHOICES[self.rvrt_task_var.get()],
             )
+            engines = load_engine_config()
         except VideoToolError as exc:
             messagebox.showerror("設定エラー", str(exc))
             return
 
         self._set_running(True)
         self.progress_var.set(0.0)
-        self._append_log("\n--- 変換開始 ---\n")
-        self._append_log(f"Encoder: {encoder}\n")
-        self._append_log(f"Command: {subprocess.list2cmdline(command)}\n\n")
+        self.status_var.set("処理中...")
+        self._append_log("\n--- 処理開始 ---\n")
+        self._append_log(f"Encoder: {encoder}\nAI: {self.ai_mode_var.get()}\n")
         threading.Thread(
-            target=self._conversion_worker,
-            args=(command, destination),
+            target=self._pipeline_worker,
+            args=(source, destination, rotation, target, encoder, ffmpeg_bin, restoration, engines),
             daemon=True,
         ).start()
 
-    def _conversion_worker(self, command: list[str], destination: Path) -> None:
-        creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    def _pipeline_worker(
+        self,
+        source: Path,
+        destination: Path,
+        rotation: str,
+        target: tuple[int, int] | None,
+        encoder: str,
+        ffmpeg_bin: str,
+        restoration: RestorationConfig,
+        engines,
+    ) -> None:
         try:
-            self.process = subprocess.Popen(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1,
-                creationflags=creationflags,
-            )
+            if restoration.mode == "off":
+                command = build_ffmpeg_command(source, destination, rotation, target, encoder, ffmpeg_bin)
+                self._run_ffmpeg(command)
+            else:
+                with tempfile.TemporaryDirectory(prefix="video_transform_") as tmp_raw:
+                    prepared = source
+                    if rotation != "none" or target is not None:
+                        prepared = Path(tmp_raw) / "prepared.mp4"
+                        command = build_ffmpeg_command(source, prepared, rotation, target, encoder, ffmpeg_bin)
+                        self._append_from_worker("[Preprocess] 回転/リサイズ\n")
+                        self._run_ffmpeg(command)
+                    if not self.running:
+                        return
+                    self.root.after(0, lambda: self.progress.configure(mode="indeterminate"))
+                    self.root.after(0, self.progress.start)
+                    run_restoration_pipeline(
+                        prepared,
+                        destination,
+                        restoration,
+                        engines,
+                        encoder=encoder,
+                        ffmpeg=ffmpeg_bin,
+                        on_line=lambda line: self._append_from_worker(line + "\n"),
+                        register_process=self._register_process,
+                    )
+                    self.root.after(0, self.progress.stop)
+                    self.root.after(0, lambda: self.progress.configure(mode="determinate"))
 
-            assert self.process.stdout is not None
-            speed = ""
-            for raw_line in self.process.stdout:
+            if not self.running:
+                return
+            self.root.after(0, lambda: self.progress_var.set(100.0))
+            self.root.after(0, lambda: self.status_var.set("完了"))
+            self.root.after(0, lambda: self._append_log(f"\n完了: {destination}\n"))
+            self.root.after(0, lambda: messagebox.showinfo("変換完了", f"保存しました:\n{destination}"))
+        except Exception as exc:
+            if self.running:
+                self.root.after(0, lambda: self.status_var.set("エラー"))
+                self.root.after(0, lambda: self._append_log(f"\nエラー: {exc}\n"))
+                self.root.after(0, lambda: messagebox.showerror("変換エラー", str(exc)))
+        finally:
+            self.process = None
+            self.root.after(0, self.progress.stop)
+            self.root.after(0, lambda: self.progress.configure(mode="determinate"))
+            self.root.after(0, lambda: self._set_running(False))
+
+    def _run_ffmpeg(self, command: list[str]) -> None:
+        creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        self._append_from_worker(f"Command: {subprocess.list2cmdline(command)}\n")
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+            creationflags=creationflags,
+        )
+        self._register_process(process)
+        try:
+            assert process.stdout is not None
+            for raw_line in process.stdout:
                 line = raw_line.strip()
                 if not line:
                     continue
-
                 if "=" in line:
                     key, value = line.split("=", 1)
                     if key in {"out_time_us", "out_time_ms"}:
                         self._update_progress_from_microseconds(value)
                         continue
                     if key == "speed":
-                        speed = value
-                        self.root.after(0, lambda s=speed: self.status_var.set(f"変換中... {s}"))
+                        self.root.after(0, lambda s=value: self.status_var.set(f"変換中... {s}"))
                         continue
                     if key in PROGRESS_KEYS:
                         continue
-
-                self.root.after(0, lambda text=line: self._append_log(text + "\n"))
-
-            return_code = self.process.wait()
-            if return_code == 0:
-                self.root.after(0, lambda: self.progress_var.set(100.0))
-                self.root.after(0, lambda: self.status_var.set("完了"))
-                self.root.after(0, lambda: self._append_log(f"\n完了: {destination}\n"))
-                self.root.after(
-                    0,
-                    lambda: messagebox.showinfo("変換完了", f"保存しました:\n{destination}"),
-                )
-            elif self.running:
-                self.root.after(0, lambda: self.status_var.set(f"失敗 (code {return_code})"))
-                self.root.after(0, lambda: self._append_log(f"\nFFmpeg failed: {return_code}\n"))
-        except Exception as exc:
-            self.root.after(0, lambda: self.status_var.set("エラー"))
-            self.root.after(0, lambda: self._append_log(f"\nエラー: {exc}\n"))
-            self.root.after(0, lambda: messagebox.showerror("変換エラー", str(exc)))
+                self._append_from_worker(line + "\n")
+            code = process.wait()
+            if code != 0:
+                raise VideoToolError(f"FFmpeg が失敗しました (exit code {code})")
         finally:
-            self.process = None
-            self.root.after(0, lambda: self._set_running(False))
+            self._register_process(None)
+
+    def _register_process(self, process: subprocess.Popen[str] | None) -> None:
+        self.process = process
+
+    def _append_from_worker(self, text: str) -> None:
+        self.root.after(0, lambda t=text: self._append_log(t))
 
     def _update_progress_from_microseconds(self, raw_value: str) -> None:
         if not self.duration_seconds or self.duration_seconds <= 0:
@@ -370,22 +442,22 @@ class VideoTransformApp:
         self.root.after(0, lambda p=percent: self.progress_var.set(p))
 
     def _cancel(self) -> None:
+        self.running = False
         proc = self.process
-        if proc is None:
-            return
         self.status_var.set("キャンセル中...")
         self._append_log("\nキャンセル要求を送信しました。\n")
-        try:
-            proc.terminate()
-        except OSError:
-            pass
+        if proc is not None:
+            try:
+                proc.terminate()
+            except OSError:
+                pass
+        self._set_running(False)
+        self.status_var.set("キャンセルしました")
 
     def _set_running(self, running: bool) -> None:
         self.running = running
         self.start_button.configure(state="disabled" if running else "normal")
         self.cancel_button.configure(state="normal" if running else "disabled")
-        if not running and self.status_var.get() == "キャンセル中...":
-            self.status_var.set("キャンセルしました")
 
     def _append_log(self, text: str) -> None:
         self.log.configure(state="normal")
@@ -395,20 +467,16 @@ class VideoTransformApp:
 
     def _on_close(self) -> None:
         if self.process is not None:
-            if not messagebox.askyesno("終了", "変換中です。処理を停止して終了しますか？"):
+            if not messagebox.askyesno("終了", "処理中です。停止して終了しますか？"):
                 return
-            try:
-                self.process.terminate()
-            except OSError:
-                pass
+            self._cancel()
         self.root.destroy()
 
 
 def main() -> None:
     root = tk.Tk()
-    app = VideoTransformApp(root)
+    VideoTransformApp(root)
     root.mainloop()
-    del app
 
 
 if __name__ == "__main__":
