@@ -11,7 +11,7 @@
 /video-rotate-resize/venv/
 /video-rotate-resize/venv-*/
 
-# video-rotate-resize: model weights and local caches
+# video-rotate-resize: model weights, caches and temporary AI work
 /video-rotate-resize/models/
 /video-rotate-resize/model_zoo/
 /video-rotate-resize/checkpoints/
@@ -19,6 +19,7 @@
 /video-rotate-resize/.cache/
 /video-rotate-resize/huggingface/
 /video-rotate-resize/hf_cache/
+/video-rotate-resize/.video_ai_*/
 
 # Python runtime artifacts
 /video-rotate-resize/__pycache__/
