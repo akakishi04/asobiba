@@ -1,0 +1,8 @@
+{
+  "rvrt_repo": "M:/AI/RVRT",
+  "rvrt_python": "M:/AI/RVRT/.venv/Scripts/python.exe",
+  "seedvr2_repo": "M:/AI/SeedVR",
+  "seedvr2_launcher": "M:/AI/SeedVR/.venv/Scripts/torchrun.exe",
+  "seedvr2_extra_args": [],
+  "seedvr2_custom_command": []
+}
