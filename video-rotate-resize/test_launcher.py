@@ -1,3 +1,4 @@
+import os
 import unittest
 
 import launcher
@@ -14,6 +15,10 @@ class LauncherTests(unittest.TestCase):
 
     def test_tkinterdnd_version_is_pinned(self):
         self.assertEqual(launcher.TKINTERDND_VERSION, "0.6.3")
+
+    def test_child_python_processes_are_forced_to_utf8(self):
+        self.assertEqual(os.environ.get("PYTHONUTF8"), "1")
+        self.assertEqual(os.environ.get("PYTHONIOENCODING"), "utf-8")
 
 
 if __name__ == "__main__":
