@@ -47,6 +47,10 @@ class AIConfig:
     seedvr2_vae_tiling: bool = True
     seedvr2_vae_tile_size: int = 512
     seedvr2_vae_tile_overlap: int = 128
+    # The upstream standalone CLI materializes all selected frames in system RAM
+    # before inference. Keep each invocation bounded and blend neighboring chunks.
+    seedvr2_chunk_size: int = 45
+    seedvr2_chunk_overlap: int = 5
 
     @classmethod
     def load(cls, config_path: str | Path) -> "AIConfig":
@@ -123,6 +127,10 @@ def validate_for_mode(config: AIConfig, mode: str) -> None:
             raise VideoToolError("SeedVR2 resolution override は0以上にしてください。")
         if config.seedvr2_vae_tile_overlap >= config.seedvr2_vae_tile_size:
             raise VideoToolError("SeedVR2 VAE tile overlap は tile size より小さくしてください。")
+        if config.seedvr2_chunk_size < 5:
+            raise VideoToolError("SeedVR2 chunk size は5以上にしてください。")
+        if config.seedvr2_chunk_overlap < 0 or config.seedvr2_chunk_overlap >= config.seedvr2_chunk_size:
+            raise VideoToolError("SeedVR2 chunk overlap は0以上かつ chunk size 未満にしてください。")
 
 
 def build_rvrt_command(
@@ -164,39 +172,45 @@ def build_seedvr2_command(
     if resolution <= 0:
         raise VideoToolError("SeedVR2の処理解像度を決定できません。")
 
+    runner = Path(__file__).with_name("seedvr2_runner.py").resolve()
+    if not runner.is_file():
+        raise VideoToolError(f"SeedVR2 runner が見つかりません: {runner}")
+
     command = [
         python_bin,
-        str(repo / "inference_cli.py"),
-        "--video_path",
+        str(runner),
+        "--repo",
+        str(repo),
+        "--video-path",
         str(input_video),
+        "--output-dir",
+        str(output_dir),
         "--resolution",
         str(resolution),
-        "--batch_size",
+        "--batch-size",
         str(config.seedvr2_batch_size),
         "--model",
         config.seedvr2_model,
-        "--output",
-        str(output_dir),
-        "--output_format",
-        "png",
-        "--color_correction",
-        "wavelet",
-        "--blocks_to_swap",
+        "--blocks-to-swap",
         str(config.seedvr2_blocks_to_swap),
-        "--temporal_overlap",
+        "--temporal-overlap",
         str(config.seedvr2_temporal_overlap),
-        "--preserve_vram",
-        "--offload_io_components",
+        "--chunk-size",
+        str(config.seedvr2_chunk_size),
+        "--chunk-overlap",
+        str(config.seedvr2_chunk_overlap),
+        "--color-correction",
+        "wavelet",
     ]
     if config.seedvr2_vae_tiling:
         command += [
-            "--vae_tiling_enabled",
-            "--vae_tile_size",
+            "--vae-tiling",
+            "--vae-tile-size",
             str(config.seedvr2_vae_tile_size),
-            "--vae_tile_overlap",
+            "--vae-tile-overlap",
             str(config.seedvr2_vae_tile_overlap),
         ]
-    return command, repo
+    return command, runner.parent
 
 
 def normalize_png_sequence(
