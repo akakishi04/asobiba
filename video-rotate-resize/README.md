@@ -6,6 +6,7 @@ Windows向けのGUI動画変換ツールです。従来の**実ピクセル回�
 
 ### 通常変換
 
+- 動画ファイルをウィンドウまたは「入力動画」欄へDrag & Drop
 - 回転: なし / 時計回り90° / 反時計回り90° / 180°
 - 解像度: 元の解像度 / 1080p / 720p / 4K / カスタム
 - NVIDIA NVENC (`h264_nvenc`) を自動検出して優先
@@ -15,6 +16,29 @@ Windows向けのGUI動画変換ツールです。従来の**実ピクセル回�
 - ログ、進捗、キャンセル
 
 AIを「なし」にすれば従来どおりFFmpegだけで処理します。
+
+### Drag & Drop
+
+`run.bat` から起動した場合、動画をGUIへ直接ドロップできます。
+
+対応拡張子:
+
+- `.mp4`
+- `.mov`
+- `.mkv`
+- `.m4v`
+- `.avi`
+- `.webm`
+
+複数ファイルを同時にドロップした場合は、現在の単一入力設計に合わせて最初の対応動画を入力へ設定します。スペースを含むWindowsパスにも対応します。
+
+D&Dには `tkinterdnd2` を利用します。未導入の場合、`launcher.py` が現在のアプリ用Pythonを使って次のローカルフォルダへ自動導入します。
+
+```text
+video-rotate-resize/.app_deps/
+```
+
+`.app_deps/` はGit管理対象外です。D&D依存関係の導入に失敗した場合でも、アプリ自体は従来の「参照...」ボタンを使える状態で起動します。
 
 ### RVRT
 
@@ -102,11 +126,12 @@ video-rotate-resize/
 │  └─ SeedVR2/          # cloneしたSeedVR2
 ├─ .venv-rvrt/          # RVRT専用環境
 ├─ .venv-seedvr2/       # SeedVR2専用環境
+├─ .app_deps/           # D&Dなど軽量GUI依存
 ├─ ai_config.json       # ローカル設定
 └─ ...                  # Git管理するアプリ本体
 ```
 
-`ai_engines/`、`.venv-*`、`ai_config.json`、モデル/キャッシュ類は `.gitignore` 対象です。**AI本体・仮想環境・ダウンロードモデルがasobibaのGitへ追加されることはありません。**
+`ai_engines/`、`.venv-*`、`.app_deps/`、`ai_config.json`、モデル/キャッシュ類は `.gitignore` 対象です。**AI本体・仮想環境・ダウンロードモデル・ローカルGUI依存がasobibaのGitへ追加されることはありません。**
 
 RVRT weightは `vsrvrt` のユーザーキャッシュへ、SeedVR2 weightはSeedVR2側のモデルディレクトリへ初回使用時に自動取得されます。
 
@@ -118,6 +143,7 @@ RVRT weightは `vsrvrt` のユーザーキャッシュへ、SeedVR2 weightはSee
 - Python 3.10以降（Tkinterを含むWindows版）
 - `ffmpeg`
 - `ffprobe`
+- インターネット接続（D&D用 `tkinterdnd2` の初回自動導入時のみ。D&D不要ならなくても通常の参照操作は可能）
 
 AI自動セットアップ:
 
@@ -161,22 +187,28 @@ VFR動画はAI処理上フレーム列へ変換されるため、厳密な各フ
 
 ## 起動
 
-エクスプローラーから `run.bat` をダブルクリックするか、PowerShellで:
+D&Dを含む通常起動は `run.bat` を使用してください。
 
 ```powershell
 cd video-rotate-resize
-python app_ai.py
+.\run.bat
 ```
 
-`run.bat` も `app_ai.py` を起動します。
+PowerShellからPythonで直接起動する場合:
+
+```powershell
+python launcher.py
+```
+
+`launcher.py` はD&D依存関係を `.app_deps/` へ必要時だけ導入した後、既存の `app_ai.py` を起動します。`python app_ai.py` で直接起動した場合はAI/回転/リサイズ機能は使えますが、D&D拡張は注入されません。
 
 ## 初回操作
 
 1. `run.bat` で起動。
-2. `AI自動セットアップ` を押す。
-3. セットアップ完了後、入力動画を選択。
+2. 必要なら `AI自動セットアップ` を押す。
+3. 動画をウィンドウへD&Dするか「参照...」から入力動画を選択。
 4. 回転・解像度を設定。
-5. `AI鮮明化` から `RVRT / SeedVR2 / RVRT → SeedVR2` を選択。
+5. `AI鮮明化` から `なし / RVRT / SeedVR2 / RVRT → SeedVR2` を選択。
 6. `変換開始`。
 
 **元解像度のまま鮮明化だけしたい場合**は、`回転 = なし`、`解像度 = 元の解像度` にしてAI方式だけ選択します。
@@ -230,10 +262,11 @@ AIモデル自体をロードせず、コマンド生成・設定・自動セッ
 python -m unittest -v
 ```
 
-実際のCUDA推論はローカルGPU上での初回テストが必要です。
+実際のD&DはWindows GUI上、実際のCUDA推論はローカルGPU上での初回テストが必要です。
 
 ## 注意
 
+- 初回D&D起動時は `tkinterdnd2` を `.app_deps/` へ取得します。
 - 初回AIセットアップは大きなPyTorch wheel等を取得するため時間と通信量を使います。
 - AI処理は通常変換より大幅に時間がかかります。
 - SeedVR2は存在しなかった細部を生成する場合があります。
