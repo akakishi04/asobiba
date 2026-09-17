@@ -173,6 +173,48 @@ def build_video_filter(rotation: str, target: tuple[int, int] | None) -> str:
     return ",".join(filters)
 
 
+def transformed_dimensions(
+    info: ProbeInfo,
+    rotation: str,
+    target: tuple[int, int] | None,
+) -> tuple[int, int]:
+    validate_target_resolution(target)
+    if target is not None:
+        return target
+
+    width, height = info.width, info.height
+    if abs(info.rotation) % 180 == 90:
+        width, height = height, width
+
+    if rotation in {"cw90", "ccw90"}:
+        return height, width
+    if rotation in {"none", "180"}:
+        return width, height
+    raise VideoToolError(f"未対応の回転指定です: {rotation}")
+
+
+def _append_encoder(command: list[str], encoder: str) -> None:
+    if encoder == "nvenc":
+        command += [
+            "-c:v",
+            "h264_nvenc",
+            "-preset",
+            "p6",
+            "-tune",
+            "hq",
+            "-rc",
+            "vbr",
+            "-cq",
+            "18",
+            "-b:v",
+            "0",
+        ]
+    elif encoder == "libx264":
+        command += ["-c:v", "libx264", "-preset", "medium", "-crf", "18"]
+    else:
+        raise VideoToolError(f"未対応のエンコーダーです: {encoder}")
+
+
 def build_ffmpeg_command(
     input_path: str | Path,
     output_path: str | Path,
@@ -208,24 +250,7 @@ def build_ffmpeg_command(
     if vf:
         command += ["-vf", vf]
 
-    if encoder == "nvenc":
-        command += [
-            "-c:v",
-            "h264_nvenc",
-            "-preset",
-            "p6",
-            "-tune",
-            "hq",
-            "-rc",
-            "vbr",
-            "-cq",
-            "18",
-            "-b:v",
-            "0",
-        ]
-    else:
-        command += ["-c:v", "libx264", "-preset", "medium", "-crf", "18"]
-
+    _append_encoder(command, encoder)
     command += [
         "-pix_fmt",
         "yuv420p",
@@ -239,5 +264,164 @@ def build_ffmpeg_command(
         "pipe:1",
         "-nostats",
         str(destination),
+    ]
+    return command
+
+
+def build_lossless_transform_command(
+    input_path: str | Path,
+    output_path: str | Path,
+    rotation: str,
+    target: tuple[int, int] | None,
+    ffmpeg: str | None = None,
+) -> list[str]:
+    """Build a lossless, video-only intermediate for AI processing."""
+    source = Path(input_path)
+    destination = Path(output_path)
+    if source.resolve() == destination.resolve():
+        raise VideoToolError("AI中間ファイルは入力動画とは別の名前にしてください。")
+    ffmpeg_bin = ffmpeg or find_executable("ffmpeg")
+    vf = build_video_filter(rotation, target)
+
+    command = [
+        ffmpeg_bin,
+        "-y",
+        "-hide_banner",
+        "-i",
+        str(source),
+        "-map",
+        "0:v:0",
+        "-map_metadata",
+        "0",
+    ]
+    if vf:
+        command += ["-vf", vf]
+    command += [
+        "-an",
+        "-c:v",
+        "ffv1",
+        "-level",
+        "3",
+        "-pix_fmt",
+        "yuv444p",
+        "-metadata:s:v:0",
+        "rotate=0",
+        str(destination),
+    ]
+    return command
+
+
+def build_extract_png_command(
+    input_path: str | Path,
+    output_pattern: str | Path,
+    rotation: str = "none",
+    target: tuple[int, int] | None = None,
+    ffmpeg: str | None = None,
+) -> list[str]:
+    """Extract all video frames to lossless PNGs, optionally transforming them."""
+    ffmpeg_bin = ffmpeg or find_executable("ffmpeg")
+    vf = build_video_filter(rotation, target)
+    command = [
+        ffmpeg_bin,
+        "-y",
+        "-hide_banner",
+        "-i",
+        str(input_path),
+        "-map",
+        "0:v:0",
+    ]
+    if vf:
+        command += ["-vf", vf]
+    command += [
+        "-fps_mode",
+        "passthrough",
+        "-start_number",
+        "0",
+        str(output_pattern),
+    ]
+    return command
+
+
+def build_frames_to_lossless_video_command(
+    frames_pattern: str | Path,
+    fps: float,
+    output_path: str | Path,
+    ffmpeg: str | None = None,
+) -> list[str]:
+    if fps <= 0:
+        raise VideoToolError("FPSは正の値である必要があります。")
+    ffmpeg_bin = ffmpeg or find_executable("ffmpeg")
+    return [
+        ffmpeg_bin,
+        "-y",
+        "-hide_banner",
+        "-framerate",
+        f"{fps:.8f}",
+        "-start_number",
+        "0",
+        "-i",
+        str(frames_pattern),
+        "-an",
+        "-c:v",
+        "ffv1",
+        "-level",
+        "3",
+        "-pix_fmt",
+        "yuv444p",
+        str(output_path),
+    ]
+
+
+def build_frames_to_video_command(
+    frames_pattern: str | Path,
+    fps: float,
+    audio_source: str | Path,
+    output_path: str | Path,
+    encoder: str,
+    exact_resolution: tuple[int, int] | None = None,
+    ffmpeg: str | None = None,
+) -> list[str]:
+    """Encode restored PNG frames and remux the original audio/metadata."""
+    if fps <= 0:
+        raise VideoToolError("FPSは正の値である必要があります。")
+    validate_target_resolution(exact_resolution)
+    ffmpeg_bin = ffmpeg or find_executable("ffmpeg")
+
+    command = [
+        ffmpeg_bin,
+        "-y",
+        "-hide_banner",
+        "-framerate",
+        f"{fps:.8f}",
+        "-start_number",
+        "0",
+        "-i",
+        str(frames_pattern),
+        "-i",
+        str(audio_source),
+        "-map",
+        "0:v:0",
+        "-map",
+        "1:a?",
+        "-map_metadata",
+        "1",
+    ]
+
+    if exact_resolution is not None:
+        width, height = exact_resolution
+        command += ["-vf", f"scale={width}:{height}:flags=lanczos,setsar=1"]
+
+    _append_encoder(command, encoder)
+    command += [
+        "-pix_fmt",
+        "yuv420p",
+        "-metadata:s:v:0",
+        "rotate=0",
+        "-c:a",
+        "copy",
+        "-shortest",
+        "-movflags",
+        "+faststart",
+        str(output_path),
     ]
     return command
