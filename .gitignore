@@ -21,6 +21,9 @@
 /video-rotate-resize/hf_cache/
 /video-rotate-resize/.video_ai_*/
 
+# video-rotate-resize: locally bootstrapped GUI dependencies
+/video-rotate-resize/.app_deps/
+
 # Python runtime artifacts
 /video-rotate-resize/__pycache__/
 /video-rotate-resize/*.pyc
