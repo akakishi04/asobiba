@@ -51,7 +51,6 @@ def _install_local_dnd() -> bool:
         print("D&D依存関係の導入に失敗しました。通常のファイル選択で起動します。")
         return False
 
-    # pip may have populated a directory that Python has already searched once.
     import importlib
 
     importlib.invalidate_caches()
@@ -116,8 +115,6 @@ def _enable_drag_and_drop(app_ai) -> bool:
             self.status.set("D&D: 動画を入力に設定しました。")
 
     def path_row_with_dnd(self, parent, row, label, var, command):
-        # Keep the existing layout exactly the same, but retain the input Entry
-        # so it can be registered as a native Windows drop target.
         if label != "入力動画":
             return original_path_row(self, parent, row, label, var, command)
 
@@ -144,8 +141,6 @@ def _enable_drag_and_drop(app_ai) -> bool:
     def dnd_main() -> None:
         # Important: do NOT assign TkinterDnD.Tk to app_ai.tk.Tk. app_ai.tk is
         # the actual tkinter module object, which tkinterdnd2 itself references.
-        # Replacing tkinter.Tk globally makes TkinterDnD.Tk.__init__ recursively
-        # call itself until RecursionError. Create the DnD root directly instead.
         root = TkinterDnD.Tk()
         app_ai.App(root)
         root.mainloop()
@@ -162,6 +157,11 @@ def main() -> None:
     dnd_ready = _install_local_dnd()
 
     import app_ai
+    from eta_support import enable_eta
+
+    # ETA patches the worker/progress handling first. D&D then wraps the already
+    # patched App.__init__, so both features compose without replacing tkinter.Tk.
+    enable_eta(app_ai)
 
     if dnd_ready and _enable_drag_and_drop(app_ai):
         print("Drag & Drop: enabled")
