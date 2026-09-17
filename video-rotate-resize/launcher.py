@@ -158,10 +158,11 @@ def main() -> None:
 
     import app_ai
     from eta_support import enable_eta
+    from rvrt_streaming import enable_rvrt_streaming
     from settings_extension import enable_seedvr2_chunk_settings
 
-    # Keep UI extensions separate from the conversion core so they can evolve
-    # without destabilizing the existing FFmpeg / AI pipeline.
+    # Conversion extension first, then ETA/UI wrappers around the resulting App.
+    enable_rvrt_streaming(app_ai)
     enable_seedvr2_chunk_settings(app_ai)
     enable_eta(app_ai)
 
