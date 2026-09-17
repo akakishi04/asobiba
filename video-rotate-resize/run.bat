@@ -2,8 +2,8 @@
 cd /d "%~dp0"
 where py >nul 2>nul
 if %errorlevel%==0 (
-  py -3 app_ai.py
+  py -3 launcher.py
 ) else (
-  python app_ai.py
+  python launcher.py
 )
 if errorlevel 1 pause
