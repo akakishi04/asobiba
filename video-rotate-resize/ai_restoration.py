@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -25,9 +26,9 @@ class EngineConfig:
     rvrt_repo: Optional[Path] = None
     rvrt_python: Optional[Path] = None
     seedvr2_repo: Optional[Path] = None
-    seedvr2_python: Optional[Path] = None
     seedvr2_launcher: str = "torchrun"
     seedvr2_extra_args: tuple[str, ...] = ()
+    seedvr2_custom_command: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,13 @@ def _read_optional_path(value: object) -> Optional[Path]:
     return Path(str(value)).expanduser()
 
 
+def _read_string_list(payload: dict, key: str) -> tuple[str, ...]:
+    value = payload.get(key, [])
+    if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
+        raise VideoToolError(f"{key} は文字列配列にしてください。")
+    return tuple(value)
+
+
 def load_engine_config(config_path: str | Path | None = None) -> EngineConfig:
     path = Path(config_path) if config_path else Path(__file__).with_name("ai_engines.json")
     if not path.exists():
@@ -61,17 +69,13 @@ def load_engine_config(config_path: str | Path | None = None) -> EngineConfig:
     except (OSError, json.JSONDecodeError) as exc:
         raise VideoToolError(f"AI設定を読み込めません: {path}\n{exc}") from exc
 
-    seed_extra = payload.get("seedvr2_extra_args", [])
-    if not isinstance(seed_extra, list) or not all(isinstance(x, str) for x in seed_extra):
-        raise VideoToolError("seedvr2_extra_args は文字列配列にしてください。")
-
     return EngineConfig(
         rvrt_repo=_read_optional_path(payload.get("rvrt_repo")),
         rvrt_python=_read_optional_path(payload.get("rvrt_python")),
         seedvr2_repo=_read_optional_path(payload.get("seedvr2_repo")),
-        seedvr2_python=_read_optional_path(payload.get("seedvr2_python")),
         seedvr2_launcher=str(payload.get("seedvr2_launcher", "torchrun")),
-        seedvr2_extra_args=tuple(seed_extra),
+        seedvr2_extra_args=_read_string_list(payload, "seedvr2_extra_args"),
+        seedvr2_custom_command=_read_string_list(payload, "seedvr2_custom_command"),
     )
 
 
@@ -103,11 +107,7 @@ def _require_repo(path: Optional[Path], marker: str, engine_name: str) -> Path:
     return path
 
 
-def build_rvrt_step(
-    engine: EngineConfig,
-    config: RestorationConfig,
-    frames_root: Path,
-) -> PipelineStep:
+def build_rvrt_step(engine: EngineConfig, config: RestorationConfig, frames_root: Path) -> PipelineStep:
     repo = _require_repo(engine.rvrt_repo, "main_test_rvrt.py", "RVRT")
     python = _python_path(engine.rvrt_python)
     command = (
@@ -126,6 +126,28 @@ def build_rvrt_step(
     return PipelineStep("RVRT", tuple(command), repo)
 
 
+def _expand_seedvr2_custom_command(
+    template: tuple[str, ...],
+    *,
+    input_dir: Path,
+    output_dir: Path,
+    width: int,
+    height: int,
+    seed: int,
+) -> tuple[str, ...]:
+    values = {
+        "input_dir": str(input_dir),
+        "output_dir": str(output_dir),
+        "width": str(width),
+        "height": str(height),
+        "seed": str(seed),
+    }
+    try:
+        return tuple(part.format(**values) for part in template)
+    except KeyError as exc:
+        raise VideoToolError(f"seedvr2_custom_command に未知のプレースホルダーがあります: {exc}") from exc
+
+
 def build_seedvr2_step(
     engine: EngineConfig,
     config: RestorationConfig,
@@ -134,13 +156,21 @@ def build_seedvr2_step(
     width: int,
     height: int,
 ) -> PipelineStep:
+    if engine.seedvr2_custom_command:
+        command = _expand_seedvr2_custom_command(
+            engine.seedvr2_custom_command,
+            input_dir=input_dir,
+            output_dir=output_dir,
+            width=width,
+            height=height,
+            seed=config.seed,
+        )
+        cwd = engine.seedvr2_repo.resolve() if engine.seedvr2_repo else Path.cwd()
+        return PipelineStep("SeedVR2(custom)", command, cwd)
+
     repo = _require_repo(engine.seedvr2_repo, "projects/inference_seedvr2_3b.py", "SeedVR2")
-    python = _python_path(engine.seedvr2_python)
     launcher = engine.seedvr2_launcher.strip() or "torchrun"
-    if Path(launcher).is_absolute():
-        launcher_bin = launcher
-    else:
-        launcher_bin = find_executable(launcher)
+    launcher_bin = launcher if Path(launcher).is_absolute() else find_executable(launcher)
     command = (
         launcher_bin,
         "--nproc-per-node=1",
@@ -159,10 +189,6 @@ def build_seedvr2_step(
         "1",
         *engine.seedvr2_extra_args,
     )
-    # torchrun normally selects the current environment's Python. Keeping the explicit
-    # Python path in EngineConfig is useful for RVRT and future custom launchers; official
-    # SeedVR2 itself is launched through torchrun.
-    del python
     return PipelineStep("SeedVR2", tuple(command), repo)
 
 
@@ -254,8 +280,12 @@ def encode_frames(
     run_step(PipelineStep("Encode", tuple(command), output_path.parent), on_line=on_line, register_process=register_process)
 
 
+def rvrt_output_dir(repo: Path, task: str, clip_name: str = "clip") -> Path:
+    return repo / "results" / task / clip_name
+
+
 def find_rvrt_output(repo: Path, task: str, clip_name: str = "clip") -> Path:
-    candidate = repo / "results" / task / clip_name
+    candidate = rvrt_output_dir(repo, task, clip_name)
     if candidate.is_dir() and any(candidate.glob("*.png")):
         return candidate
     raise VideoToolError(f"RVRT出力が見つかりません: {candidate}")
@@ -313,9 +343,11 @@ def run_restoration_pipeline(
                 register_process=register_process,
             )
             step = build_rvrt_step(engine, config, frames_root)
+            output_dir = rvrt_output_dir(step.cwd, config.rvrt_task)
+            if output_dir.exists():
+                shutil.rmtree(output_dir)
             run_step(step, on_line=on_line, register_process=register_process)
-            assert engine.rvrt_repo is not None
-            rvrt_frames = find_rvrt_output(engine.rvrt_repo.resolve(), config.rvrt_task)
+            rvrt_frames = find_rvrt_output(step.cwd, config.rvrt_task)
             rvrt_video = tmp / "rvrt.mp4"
             encode_frames(
                 rvrt_frames,
@@ -330,23 +362,24 @@ def run_restoration_pipeline(
             current_video = rvrt_video
 
         if config.mode in {"seedvr2", "rvrt_seedvr2"}:
+            current_info = probe_media(current_video)
             seed_input = tmp / "seedvr2_input"
             seed_output = tmp / "seedvr2_output"
             seed_input.mkdir(parents=True, exist_ok=True)
             seed_output.mkdir(parents=True, exist_ok=True)
             staged = seed_input / current_video.name
-            staged.write_bytes(current_video.read_bytes())
+            shutil.copy2(current_video, staged)
             step = build_seedvr2_step(
                 engine,
                 config,
                 seed_input,
                 seed_output,
-                info.width,
-                info.height,
+                current_info.width,
+                current_info.height,
             )
             run_step(step, on_line=on_line, register_process=register_process)
             current_video = find_seedvr2_video(seed_output)
 
         destination.parent.mkdir(parents=True, exist_ok=True)
         if current_video.resolve() != destination:
-            destination.write_bytes(current_video.read_bytes())
+            shutil.copy2(current_video, destination)
