@@ -3,6 +3,7 @@ import os
 import unittest
 
 import launcher
+import settings_extension
 
 
 class LauncherTests(unittest.TestCase):
@@ -25,6 +26,12 @@ class LauncherTests(unittest.TestCase):
         source = inspect.getsource(launcher._enable_drag_and_drop)
         self.assertNotIn("app_ai.tk.Tk =", source)
         self.assertIn("TkinterDnD.Tk()", source)
+
+    def test_seedvr2_chunk_controls_are_exposed(self):
+        source = inspect.getsource(settings_extension.enable_seedvr2_chunk_settings)
+        self.assertIn("seedvr2_chunk_size", source)
+        self.assertIn("seedvr2_chunk_overlap", source)
+        self.assertIn("長尺動画 / RAM", source)
 
 
 if __name__ == "__main__":
