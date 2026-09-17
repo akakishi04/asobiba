@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
+
+# SeedVR2 prints Unicode/emoji during CLI startup. Windows Japanese locales can
+# otherwise expose cp932 to piped child processes and fail before inference.
+os.environ["PYTHONUTF8"] = "1"
+os.environ["PYTHONIOENCODING"] = "utf-8"
 
 BASE = Path(__file__).resolve().parent
 LOCAL_DEPS = BASE / ".app_deps"
