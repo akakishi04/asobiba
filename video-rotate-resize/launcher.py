@@ -158,9 +158,11 @@ def main() -> None:
 
     import app_ai
     from eta_support import enable_eta
+    from settings_extension import enable_seedvr2_chunk_settings
 
-    # ETA patches the worker/progress handling first. D&D then wraps the already
-    # patched App.__init__, so both features compose without replacing tkinter.Tk.
+    # Keep UI extensions separate from the conversion core so they can evolve
+    # without destabilizing the existing FFmpeg / AI pipeline.
+    enable_seedvr2_chunk_settings(app_ai)
     enable_eta(app_ai)
 
     if dnd_ready and _enable_drag_and_drop(app_ai):
