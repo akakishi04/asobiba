@@ -416,13 +416,26 @@ def run(
 
             pacer.begin()
             current = _infer_chunk(inference, clip, (height, width))
-            delay = pacer.pace()
-            if delay >= 0.5:
-                print(
-                    f"RVRT: resource pacing {delay:.1f}s idle "
-                    f"(target duty {gpu_duty}%)",
-                    flush=True,
+
+            pause_requested = bool(pause_file and Path(pause_file).exists())
+            if pause_requested:
+                paused = wait_if_paused(
+                    pause_file,
+                    "RVRT",
+                    before_wait=offload_model,
+                    after_wait=restore_model,
                 )
+                if paused:
+                    pacer.begin()
+                delay = 0.0
+            else:
+                delay = pacer.pace()
+                if delay >= 0.5:
+                    print(
+                        f"RVRT: resource pacing {delay:.1f}s idle "
+                        f"(target duty {gpu_duty}%)",
+                        flush=True,
+                    )
 
             input_tail = next_tail
             del clip
