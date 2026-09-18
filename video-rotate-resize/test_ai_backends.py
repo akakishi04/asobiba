@@ -109,7 +109,7 @@ class AIBackendTests(unittest.TestCase):
             )
             validate_for_mode(cfg, AI_RVRT)
             cmd, cwd = build_rvrt_command(cfg, "frames_in", "frames_out", runner)
-            self.assertEqual(cwd, root)
+            self.assertEqual(cwd, runner.resolve().parent)
             self.assertEqual(cmd[0], str(python))
             self.assertEqual(cmd[1], str(runner.resolve()))
             self.assertEqual(
