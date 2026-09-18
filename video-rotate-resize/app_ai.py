@@ -712,4 +712,18 @@ def main():
 
 
 if __name__ == "__main__":
+    # Direct execution keeps the optimized AI pipeline too. Drag & Drop still
+    # requires launcher.py / run.bat because tkinterdnd2 owns the root window.
+    import sys
+
+    from eta_support import enable_eta
+    from rvrt_streaming import enable_rvrt_streaming
+    from seedvr2_streaming import enable_seedvr2_streaming
+    from settings_extension import enable_seedvr2_chunk_settings
+
+    module = sys.modules[__name__]
+    enable_seedvr2_streaming(module)
+    enable_rvrt_streaming(module)
+    enable_seedvr2_chunk_settings(module)
+    enable_eta(module)
     main()
