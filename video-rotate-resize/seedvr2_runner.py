@@ -2,241 +2,475 @@ from __future__ import annotations
 
 import argparse
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import cv2
-from PIL import Image
+import numpy as np
+import torch
+
+from resource_policy import DutyPacer, PROFILE_BACKGROUND, PROFILE_BALANCED
 
 
 PROGRESS_PREFIX = "APP_PROGRESS"
 
 
-def _video_frame_count(path: Path) -> int:
-    cap = cv2.VideoCapture(str(path))
-    if not cap.isOpened():
-        raise RuntimeError(f"Cannot open video: {path}")
-    try:
-        count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    finally:
-        cap.release()
-    if count <= 0:
-        raise RuntimeError(f"Cannot determine frame count: {path}")
-    return count
-
-
-def _chunk_ranges(total: int, chunk_size: int, overlap: int) -> list[tuple[int, int]]:
-    if chunk_size < 5:
-        raise ValueError("chunk_size must be >= 5")
-    if overlap < 0 or overlap >= chunk_size:
-        raise ValueError("overlap must satisfy 0 <= overlap < chunk_size")
+def _chunk_count(total: int, chunk_size: int, overlap: int) -> int:
     if total <= chunk_size:
-        return [(0, total)]
-
+        return 1
     stride = chunk_size - overlap
-    ranges: list[tuple[int, int]] = []
-    start = 0
-    while start < total:
-        end = min(total, start + chunk_size)
-        ranges.append((start, end))
-        if end >= total:
+    return 1 + (max(0, total - chunk_size) + stride - 1) // stride
+
+
+def _apply_temporal_overlap_blending(
+    frames_tensor: torch.Tensor,
+    batch_size: int,
+    overlap: int,
+) -> torch.Tensor:
+    """Equivalent to the pinned upstream CLI post-pass, kept local for stability."""
+    total = frames_tensor.shape[0]
+    if overlap <= 0 or batch_size <= overlap or total <= batch_size:
+        return frames_tensor
+
+    output = frames_tensor[:batch_size]
+    input_pos = batch_size
+    while input_pos < total:
+        remaining = total - input_pos
+        current_size = min(batch_size, remaining)
+        if current_size <= overlap:
             break
-        start += stride
-    return ranges
+        current = frames_tensor[input_pos : input_pos + current_size]
+        prev_tail = output[-overlap:]
+        cur_head = current[:overlap]
 
-
-def _png_files(path: Path) -> list[Path]:
-    files = sorted(path.glob("*.png"))
-    if not files:
-        raise RuntimeError(f"SeedVR2 produced no PNG frames: {path}")
-    return files
-
-
-def _copy_frame(source: Path, output_dir: Path, index: int) -> None:
-    shutil.copy2(source, output_dir / f"frame{index:06d}.png")
-
-
-def _blend_frames(a: Path, b: Path, output: Path, alpha: float) -> None:
-    with Image.open(a) as ia, Image.open(b) as ib:
-        left = ia.convert("RGB")
-        right = ib.convert("RGB")
-        if left.size != right.size:
-            raise RuntimeError(
-                f"SeedVR2 chunk geometry mismatch: {left.size} != {right.size}"
+        if overlap >= 3:
+            t = torch.linspace(
+                0.0, 1.0, steps=overlap, dtype=frames_tensor.dtype
             )
-        Image.blend(left, right, alpha).save(output, format="PNG", compress_level=1)
+            u = ((t - 1.0 / 3.0) / (1.0 / 3.0)).clamp(0.0, 1.0)
+            w_prev = (0.5 + 0.5 * torch.cos(torch.pi * u)).view(
+                overlap, 1, 1, 1
+            )
+        else:
+            w_prev = torch.linspace(
+                1.0, 0.0, steps=overlap, dtype=frames_tensor.dtype
+            ).view(overlap, 1, 1, 1)
+        blended = prev_tail * w_prev + cur_head * (1.0 - w_prev)
+        output = torch.cat([output[:-overlap], blended], dim=0)
+        if overlap < current_size:
+            output = torch.cat([output, current[overlap:]], dim=0)
+        input_pos += current_size
+    return output
 
 
-def _run_child(command: list[str], cwd: Path) -> None:
-    env = os.environ.copy()
-    env["PYTHONUTF8"] = "1"
-    env["PYTHONIOENCODING"] = "utf-8"
-    creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-    process = subprocess.Popen(
-        command,
-        cwd=str(cwd),
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        bufsize=1,
-        creationflags=creationflags,
+class SequentialVideoReader:
+    """Read the source once; never re-scan earlier frames for later chunks."""
+
+    def __init__(self, path: Path):
+        self.cap = cv2.VideoCapture(str(path))
+        if not self.cap.isOpened():
+            raise RuntimeError(f"Cannot open video: {path}")
+        self.total = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        self.fps = float(self.cap.get(cv2.CAP_PROP_FPS) or 0.0)
+        self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        if self.total <= 0 or self.width <= 0 or self.height <= 0:
+            self.cap.release()
+            raise RuntimeError(f"Cannot determine video geometry/frame count: {path}")
+
+    def read_chunk(
+        self,
+        tail: torch.Tensor | None,
+        chunk_size: int,
+        overlap: int,
+    ) -> tuple[torch.Tensor | None, torch.Tensor | None, int]:
+        tail_len = 0 if tail is None else int(tail.shape[0])
+        wanted_new = chunk_size - tail_len
+        frames = torch.empty(
+            (chunk_size, self.height, self.width, 3),
+            dtype=torch.float16,
+        )
+        if tail is not None and tail_len:
+            frames[:tail_len].copy_(tail)
+
+        new_count = 0
+        for i in range(wanted_new):
+            ok, frame = self.cap.read()
+            if not ok:
+                break
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            target = frames[tail_len + i]
+            target.copy_(torch.from_numpy(rgb))
+            target.mul_(1.0 / 255.0)
+            new_count += 1
+
+        if new_count == 0:
+            return None, None, 0
+
+        actual = tail_len + new_count
+        frames = frames[:actual].contiguous()
+        keep = min(overlap, actual)
+        next_tail = frames[actual - keep : actual].clone() if keep else None
+        return frames, next_tail, new_count
+
+    def close(self) -> None:
+        self.cap.release()
+
+
+class LosslessVideoWriter:
+    def __init__(self, path: Path, fps: float, width: int, height: int):
+        self.path = path
+        self.count = 0
+        self.closed = False
+        ffmpeg = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+        command = [
+            ffmpeg,
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-s",
+            f"{width}x{height}",
+            "-r",
+            f"{fps:.8f}",
+            "-i",
+            "pipe:0",
+            "-an",
+            "-c:v",
+            "ffv1",
+            "-level",
+            "3",
+            "-pix_fmt",
+            "yuv444p",
+            str(path),
+        ]
+        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        self.proc = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            creationflags=flags,
+        )
+
+    def write(self, frames: torch.Tensor) -> None:
+        if self.proc.stdin is None:
+            raise RuntimeError("FFV1 writer stdin is unavailable")
+        array = (
+            frames.detach()
+            .float()
+            .clamp_(0.0, 1.0)
+            .mul_(255.0)
+            .round_()
+            .to(torch.uint8)
+            .cpu()
+            .numpy()
+        )
+        for frame in array:
+            self.proc.stdin.write(frame.tobytes())
+            self.count += 1
+
+    def close(self, check: bool = True) -> None:
+        if self.closed:
+            return
+        self.closed = True
+        if self.proc.stdin is not None and not self.proc.stdin.closed:
+            self.proc.stdin.close()
+        stderr = b""
+        if self.proc.stderr is not None:
+            stderr = self.proc.stderr.read()
+        code = self.proc.wait()
+        if check and code:
+            detail = stderr.decode("utf-8", errors="replace").strip()
+            raise RuntimeError(detail or f"FFV1 writer failed (code {code})")
+
+
+def _configure_cpu_threads(profile: str) -> None:
+    if profile == PROFILE_BACKGROUND:
+        torch.set_num_threads(2)
+    elif profile == PROFILE_BALANCED:
+        torch.set_num_threads(min(4, max(1, os.cpu_count() or 1)))
+
+
+def _load_seed_modules(repo: Path):
+    repo_text = str(repo)
+    if repo_text not in sys.path:
+        sys.path.insert(0, repo_text)
+
+    from src.core.generation import (
+        decode_all_batches,
+        encode_all_batches,
+        prepare_generation_context,
+        prepare_runner,
+        setup_device_environment,
+        upscale_all_batches,
     )
-    assert process.stdout is not None
-    for line in process.stdout:
-        if line.strip():
-            print(line.rstrip(), flush=True)
-    code = process.wait()
-    if code:
-        raise RuntimeError(f"SeedVR2 chunk process failed (code {code})")
+    from src.optimization.memory_manager import complete_cleanup
+    from src.utils.debug import Debug
+    from src.utils.downloads import download_weight
+
+    return {
+        "decode": decode_all_batches,
+        "encode": encode_all_batches,
+        "prepare_context": prepare_generation_context,
+        "prepare_runner": prepare_runner,
+        "setup_device": setup_device_environment,
+        "upscale": upscale_all_batches,
+        "cleanup": complete_cleanup,
+        "Debug": Debug,
+        "download_weight": download_weight,
+    }
 
 
 def run(args: argparse.Namespace) -> None:
     video = args.video_path.resolve()
     repo = args.repo.resolve()
-    output_dir = args.output_dir.resolve()
-    cli = repo / "inference_cli.py"
+    output_video = args.output_video.resolve()
     if not video.is_file():
         raise RuntimeError(f"Input video not found: {video}")
-    if not cli.is_file():
-        raise RuntimeError(f"SeedVR2 CLI not found: {cli}")
+    if not (repo / "inference_cli.py").is_file():
+        raise RuntimeError(f"SeedVR2 repo is invalid: {repo}")
+    if args.chunk_size < 5 or args.chunk_overlap < 0:
+        raise ValueError("Invalid SeedVR2 chunk settings")
+    if args.chunk_overlap >= args.chunk_size:
+        raise ValueError("chunk overlap must be smaller than chunk size")
 
-    total = _video_frame_count(video)
-    ranges = _chunk_ranges(total, args.chunk_size, args.chunk_overlap)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    for stale in output_dir.glob("*.png"):
-        stale.unlink()
+    os.environ["PYTHONUTF8"] = "1"
+    os.environ["PYTHONIOENCODING"] = "utf-8"
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "backend:cudaMallocAsync")
+    _configure_cpu_threads(args.resource_profile)
 
-    work = output_dir / ".seed_chunks"
-    shutil.rmtree(work, ignore_errors=True)
-    work.mkdir(parents=True, exist_ok=True)
+    modules = _load_seed_modules(repo)
+    debug = modules["Debug"](enabled=False)
+    model_dir = repo / "seedvr2_models"
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    reader = SequentialVideoReader(video)
+    total = reader.total
+    fps = reader.fps if reader.fps > 0 else args.fps
+    if fps <= 0:
+        reader.close()
+        raise RuntimeError("SeedVR2 requires a positive FPS")
+    chunks = _chunk_count(total, args.chunk_size, args.chunk_overlap)
 
     print(
-        f"SeedVR2 chunked runner: {total} frames / {len(ranges)} chunks / "
-        f"chunk={args.chunk_size} overlap={args.chunk_overlap}",
+        f"SeedVR2 persistent runner: {total} frames / {chunks} chunks / "
+        f"chunk={args.chunk_size} overlap={args.chunk_overlap} / "
+        f"batch={args.batch_size} / BlockSwap={args.blocks_to_swap} / "
+        f"duty={args.gpu_duty}% / profile={args.resource_profile}",
         flush=True,
     )
-    print(f"{PROGRESS_PREFIX}|SeedVR2|0|{len(ranges)}", flush=True)
+    print(f"{PROGRESS_PREFIX}|SeedVR2|0|{chunks}", flush=True)
 
-    previous_tail: list[Path] = []
-    previous_tail_start = 0
+    # Download once, load once, reuse the same runner for every outer chunk.
+    modules["download_weight"](args.model, str(model_dir))
+    device = modules["setup_device"]("cuda:0", debug)
+    runner, _ = modules["prepare_runner"](
+        args.model,
+        str(model_dir),
+        True,
+        debug,
+        cache_model=True,
+        block_swap_config={
+            "blocks_to_swap": args.blocks_to_swap,
+            "use_none_blocking": False,
+            "offload_io_components": True,
+            "cache_model": True,
+        },
+        vae_tiling_enabled=args.vae_tiling,
+        vae_tile_size=(args.vae_tile_size, args.vae_tile_size),
+        vae_tile_overlap=(args.vae_tile_overlap, args.vae_tile_overlap),
+        cached_runner=None,
+    )
 
-    try:
-        for chunk_no, (start, end) in enumerate(ranges, start=1):
-            chunk_dir = work / f"chunk_{chunk_no:04d}"
-            chunk_dir.mkdir(parents=True, exist_ok=True)
-            length = end - start
+    pacer = DutyPacer(args.gpu_duty)
+    writer: LosslessVideoWriter | None = None
+    input_tail: torch.Tensor | None = None
+    pending: torch.Tensor | None = None
+    pending_start: int | None = None
+    unique_read = 0
+    chunk_no = 0
+
+    def pace_callback(current: int, total_batches: int, frames: int, phase: str):
+        delay = pacer.pace()
+        if delay >= 0.5:
             print(
-                f"SeedVR2: chunk {chunk_no}/{len(ranges)} frames {start}-{end - 1}",
+                f"SeedVR2: resource pacing {delay:.1f}s idle after "
+                f"{phase} {current}/{total_batches} (target duty {args.gpu_duty}%)",
                 flush=True,
             )
 
-            command = [
-                sys.executable,
-                str(cli),
-                "--video_path",
-                str(video),
-                "--skip_first_frames",
-                str(start),
-                "--load_cap",
-                str(length),
-                "--resolution",
-                str(args.resolution),
-                "--batch_size",
-                str(args.batch_size),
-                "--model",
-                args.model,
-                "--output",
-                str(chunk_dir),
-                "--output_format",
-                "png",
-                "--color_correction",
-                args.color_correction,
-                "--blocks_to_swap",
-                str(args.blocks_to_swap),
-                "--temporal_overlap",
-                str(args.temporal_overlap),
-                "--preserve_vram",
-                "--offload_io_components",
-            ]
-            if args.vae_tiling:
-                command += [
-                    "--vae_tiling_enabled",
-                    "--vae_tile_size",
-                    str(args.vae_tile_size),
-                    "--vae_tile_overlap",
-                    str(args.vae_tile_overlap),
-                ]
+    try:
+        while True:
+            tail_len = 0 if input_tail is None else int(input_tail.shape[0])
+            start = unique_read - tail_len
+            frames, next_tail, new_count = reader.read_chunk(
+                input_tail,
+                args.chunk_size,
+                args.chunk_overlap,
+            )
+            if frames is None or new_count <= 0:
+                break
+            unique_read += new_count
+            chunk_no += 1
 
-            _run_child(command, repo)
-            files = _png_files(chunk_dir)
-            if len(files) != length:
+            print(
+                f"SeedVR2: chunk {chunk_no}/{max(chunks, chunk_no)} "
+                f"frames {start}-{start + frames.shape[0] - 1}",
+                flush=True,
+            )
+
+            ctx = modules["prepare_context"](device=device, debug=debug)
+
+            pacer.begin()
+            ctx = modules["encode"](
+                runner,
+                ctx=ctx,
+                images=frames,
+                batch_size=args.batch_size,
+                preserve_vram=True,
+                debug=debug,
+                progress_callback=pace_callback,
+                temporal_overlap=args.temporal_overlap,
+                res_w=args.resolution,
+                input_noise_scale=0.0,
+                color_correction=args.color_correction,
+            )
+
+            pacer.begin()
+            ctx = modules["upscale"](
+                runner,
+                ctx=ctx,
+                preserve_vram=True,
+                debug=debug,
+                progress_callback=pace_callback,
+                cfg_scale=1.0,
+                seed=100,
+                latent_noise_scale=0.0,
+            )
+
+            pacer.begin()
+            ctx = modules["decode"](
+                runner,
+                ctx=ctx,
+                preserve_vram=True,
+                debug=debug,
+                progress_callback=pace_callback,
+                color_correction=args.color_correction,
+            )
+
+            current = ctx["final_video"]
+            current = _apply_temporal_overlap_blending(
+                current,
+                args.batch_size,
+                args.temporal_overlap,
+            )
+            if current.shape[0] < frames.shape[0]:
                 raise RuntimeError(
-                    f"SeedVR2 chunk frame count mismatch: {len(files)} != {length} "
-                    f"for frames {start}-{end - 1}"
+                    f"SeedVR2 returned too few frames: {current.shape[0]} < {frames.shape[0]}"
+                )
+            if current.shape[0] > frames.shape[0]:
+                current = current[: frames.shape[0]].contiguous()
+
+            input_tail = next_tail
+            del frames, ctx
+            torch.cuda.empty_cache()
+
+            if writer is None:
+                h, w = int(current.shape[1]), int(current.shape[2])
+                writer = LosslessVideoWriter(output_video, fps, w, h)
+
+            if pending is None or pending_start is None:
+                pending = current
+                pending_start = start
+            else:
+                pending_end = pending_start + pending.shape[0]
+                actual_overlap = max(0, pending_end - start)
+                actual_overlap = min(
+                    actual_overlap, pending.shape[0], current.shape[0]
                 )
 
-            is_last = chunk_no == len(ranges)
-            if chunk_no == 1:
-                keep_tail = min(args.chunk_overlap, len(files)) if not is_last else 0
-                direct = len(files) - keep_tail
-                for offset in range(direct):
-                    _copy_frame(files[offset], output_dir, start + offset)
-                if keep_tail:
-                    previous_tail = files[-keep_tail:]
-                    previous_tail_start = end - keep_tail
+                if actual_overlap == 0:
+                    writer.write(pending)
+                    pending = current
+                    pending_start = start
                 else:
-                    for offset in range(direct, len(files)):
-                        _copy_frame(files[offset], output_dir, start + offset)
-            else:
-                actual_overlap = max(0, previous_tail_start + len(previous_tail) - start)
-                actual_overlap = min(actual_overlap, len(previous_tail), len(files))
-                if actual_overlap:
-                    prev_offset = len(previous_tail) - actual_overlap
-                    for j in range(actual_overlap):
-                        alpha = (j + 1) / (actual_overlap + 1)
-                        _blend_frames(
-                            previous_tail[prev_offset + j],
-                            files[j],
-                            output_dir / f"frame{start + j:06d}.png",
-                            alpha,
-                        )
+                    direct_count = pending.shape[0] - actual_overlap
+                    if direct_count:
+                        writer.write(pending[:direct_count])
+                    alpha = torch.linspace(
+                        1.0 / (actual_overlap + 1),
+                        actual_overlap / (actual_overlap + 1),
+                        steps=actual_overlap,
+                        dtype=current.dtype,
+                    ).view(actual_overlap, 1, 1, 1)
+                    blended = (
+                        pending[direct_count : direct_count + actual_overlap]
+                        * (1.0 - alpha)
+                        + current[:actual_overlap] * alpha
+                    )
+                    writer.write(blended)
+                    pending = current[actual_overlap:].contiguous()
+                    pending_start = start + actual_overlap
 
-                current_pos = actual_overlap
-                keep_tail = min(args.chunk_overlap, len(files) - current_pos) if not is_last else 0
-                direct_end = len(files) - keep_tail
-                for offset in range(current_pos, direct_end):
-                    _copy_frame(files[offset], output_dir, start + offset)
+            print(
+                f"{PROGRESS_PREFIX}|SeedVR2|{chunk_no}|{max(chunks, chunk_no)}",
+                flush=True,
+            )
 
-                if keep_tail:
-                    previous_tail = files[-keep_tail:]
-                    previous_tail_start = end - keep_tail
-                else:
-                    previous_tail = []
-                    previous_tail_start = end
-                    for offset in range(direct_end, len(files)):
-                        _copy_frame(files[offset], output_dir, start + offset)
+            wanted_new = (
+                args.chunk_size if chunk_no == 1 else args.chunk_size - args.chunk_overlap
+            )
+            if new_count < wanted_new:
+                break
 
-            print(f"{PROGRESS_PREFIX}|SeedVR2|{chunk_no}|{len(ranges)}", flush=True)
+        if writer is None:
+            raise RuntimeError("SeedVR2 produced no output")
+        if pending is not None:
+            writer.write(pending)
+        writer.close(check=True)
+        produced = writer.count
+        writer = None
 
-        produced = len(list(output_dir.glob("frame*.png")))
         if produced != total:
-            raise RuntimeError(f"SeedVR2 output frame count mismatch: {produced} != {total}")
-        print(f"SeedVR2: completed {produced} frames", flush=True)
+            raise RuntimeError(
+                f"SeedVR2 output frame count mismatch: {produced} != {total}"
+            )
+        print(
+            f"SeedVR2 persistent streaming completed: {produced} frames -> {output_video}",
+            flush=True,
+        )
     finally:
-        shutil.rmtree(work, ignore_errors=True)
+        reader.close()
+        if writer is not None:
+            try:
+                writer.close(check=False)
+            except Exception:
+                pass
+        try:
+            modules["cleanup"](
+                runner=runner,
+                debug=debug,
+                keep_models_in_ram=False,
+            )
+        except Exception:
+            pass
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Memory-safe chunked SeedVR2 runner")
+    parser = argparse.ArgumentParser(
+        description="Persistent, bounded-memory SeedVR2 video restoration runner"
+    )
     parser.add_argument("--repo", required=True, type=Path)
     parser.add_argument("--video-path", required=True, type=Path)
-    parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--output-video", required=True, type=Path)
     parser.add_argument("--resolution", required=True, type=int)
+    parser.add_argument("--fps", required=True, type=float)
     parser.add_argument("--batch-size", type=int, default=5)
     parser.add_argument("--model", required=True)
     parser.add_argument("--blocks-to-swap", type=int, default=20)
@@ -247,6 +481,8 @@ def main() -> None:
     parser.add_argument("--vae-tiling", action="store_true")
     parser.add_argument("--vae-tile-size", type=int, default=512)
     parser.add_argument("--vae-tile-overlap", type=int, default=128)
+    parser.add_argument("--gpu-duty", type=int, default=100)
+    parser.add_argument("--resource-profile", default="max")
     run(parser.parse_args())
 
 
