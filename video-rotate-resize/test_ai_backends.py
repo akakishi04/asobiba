@@ -36,9 +36,11 @@ class AIBackendTests(unittest.TestCase):
                 seedvr2_blocks_to_swap=20,
                 seedvr2_chunk_size=45,
                 seedvr2_chunk_overlap=5,
+                resource_profile="background",
+                gpu_duty_cycle_percent=55,
             )
             validate_for_mode(cfg, AI_SEEDVR2)
-            cmd, cwd = build_seedvr2_command(cfg, "input.mp4", "out", 1080)
+            cmd, cwd = build_seedvr2_command(cfg, "input.mp4", "out.mkv", 1080, 30.0)
             self.assertEqual(cmd[0], str(python))
             self.assertTrue(cmd[1].endswith("seedvr2_runner.py"))
             self.assertEqual(cwd, Path(cmd[1]).parent)
@@ -47,6 +49,8 @@ class AIBackendTests(unittest.TestCase):
             self.assertEqual(cmd[cmd.index("--blocks-to-swap") + 1], "20")
             self.assertEqual(cmd[cmd.index("--chunk-size") + 1], "45")
             self.assertEqual(cmd[cmd.index("--chunk-overlap") + 1], "5")
+            self.assertEqual(cmd[cmd.index("--output-video") + 1], "out.mkv")
+            self.assertEqual(cmd[cmd.index("--fps") + 1], "30.00000000")
             self.assertIn("--vae-tiling", cmd)
 
     def test_seedvr2_resolution_override(self):
@@ -58,7 +62,7 @@ class AIBackendTests(unittest.TestCase):
                 seedvr2_python=str(python),
                 seedvr2_resolution_override=1072,
             )
-            cmd, _ = build_seedvr2_command(cfg, "input.mp4", "out", 2160)
+            cmd, _ = build_seedvr2_command(cfg, "input.mp4", "out.mkv", 2160, 30.0)
             self.assertEqual(cmd[cmd.index("--resolution") + 1], "1072")
 
     def test_seedvr2_invalid_chunk_overlap_is_rejected(self):
@@ -73,6 +77,26 @@ class AIBackendTests(unittest.TestCase):
             )
             with self.assertRaises(Exception):
                 validate_for_mode(cfg, AI_SEEDVR2)
+
+
+    def test_background_profile_increases_seed_offload_and_sets_duty(self):
+        with tempfile.TemporaryDirectory() as temp_name:
+            root = Path(temp_name)
+            repo, python = self._fake_seed_engine(root)
+            cfg = AIConfig(
+                seedvr2_repo=str(repo),
+                seedvr2_python=str(python),
+                seedvr2_blocks_to_swap=20,
+                resource_profile="background",
+            )
+            cmd, _ = build_seedvr2_command(
+                cfg, "input.mp4", "out.mkv", 1080, 30.0
+            )
+            self.assertEqual(cmd[cmd.index("--blocks-to-swap") + 1], "28")
+            self.assertEqual(cmd[cmd.index("--gpu-duty") + 1], "50")
+            self.assertEqual(
+                cmd[cmd.index("--resource-profile") + 1], "background"
+            )
 
     def test_rvrt_command_uses_managed_runner_and_one_x_task(self):
         with tempfile.TemporaryDirectory() as temp_name:
@@ -135,6 +159,8 @@ class AIBackendTests(unittest.TestCase):
             self.assertEqual(restored.seedvr2_resolution_override, 1440)
             self.assertEqual(restored.seedvr2_chunk_size, 37)
             self.assertEqual(restored.seedvr2_chunk_overlap, 5)
+            self.assertEqual(restored.resource_profile, "background")
+            self.assertEqual(restored.gpu_duty_cycle_percent, 55)
 
     def test_normalize_png_sequence(self):
         with tempfile.TemporaryDirectory() as temp_name:
