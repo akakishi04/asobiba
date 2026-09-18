@@ -36,8 +36,6 @@ class AIBackendTests(unittest.TestCase):
                 seedvr2_blocks_to_swap=20,
                 seedvr2_chunk_size=45,
                 seedvr2_chunk_overlap=5,
-                resource_profile="background",
-                gpu_duty_cycle_percent=55,
             )
             validate_for_mode(cfg, AI_SEEDVR2)
             cmd, cwd = build_seedvr2_command(cfg, "input.mp4", "out.mkv", 1080, 30.0)
@@ -151,6 +149,8 @@ class AIBackendTests(unittest.TestCase):
                 seedvr2_resolution_override=1440,
                 seedvr2_chunk_size=37,
                 seedvr2_chunk_overlap=5,
+                resource_profile="background",
+                gpu_duty_cycle_percent=55,
             )
             cfg.save(path)
             restored = AIConfig.load(path)
