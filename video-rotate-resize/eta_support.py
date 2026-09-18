@@ -6,6 +6,8 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from resource_policy import child_creation_flags
+
 
 PROGRESS_PREFIX = "APP_PROGRESS|"
 
@@ -156,7 +158,7 @@ def enable_eta(app_ai) -> None:
         if self.cancelled:
             raise app_ai.Cancelled()
         self._log_async(f"\n[{label}]\n{subprocess.list2cmdline(cmd)}\n")
-        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        flags = child_creation_flags(self.config)
         p = subprocess.Popen(
             cmd,
             cwd=str(cwd) if cwd else None,
