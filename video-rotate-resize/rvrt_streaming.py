@@ -7,13 +7,10 @@ from ai_backends import (
     AI_RVRT,
     AI_RVRT_SEEDVR2,
     build_seedvr2_command,
-    normalize_png_sequence,
     resolve_python,
 )
-from video_tool import (
-    build_frames_to_video_command,
-    build_video_filter,
-)
+from resource_policy import effective_gpu_duty_percent
+from video_tool import build_video_filter
 
 
 def _append_encoder(command: list[str], encoder: str) -> None:
@@ -91,13 +88,17 @@ def _build_rvrt_stream_command(
     rot: str,
     target: tuple[int, int] | None,
     fps: float,
+    dims: tuple[int, int],
     ffmpeg: str,
 ) -> tuple[list[str], Path]:
     runner = Path(__file__).with_name("rvrt_stream_runner.py").resolve()
     if not runner.is_file():
-        raise app_ai.VideoToolError(f"RVRT streaming runner が見つかりません: {runner}")
+        raise app_ai.VideoToolError(
+            f"RVRT streaming runner が見つかりません: {runner}"
+        )
     ffprobe = app_ai.find_executable("ffprobe")
     vf = build_video_filter(rot, target)
+    width, height = dims
     command = [
         resolve_python(config.rvrt_python),
         str(runner),
@@ -117,6 +118,12 @@ def _build_rvrt_stream_command(
         ffprobe,
         "--fps",
         f"{fps:.8f}",
+        "--width",
+        str(width),
+        "--height",
+        str(height),
+        "--gpu-duty",
+        str(effective_gpu_duty_percent(config)),
     ]
     if vf:
         command += ["--vf", vf]
@@ -124,15 +131,19 @@ def _build_rvrt_stream_command(
 
 
 def enable_rvrt_streaming(app_ai) -> None:
-    """Replace the RVRT branch with bounded per-chunk extraction and FFV1 streaming."""
+    """Use pipe-streamed RVRT and lossless-video handoff instead of PNG sequences."""
     original_ai_worker = app_ai.App._ai_worker
 
     def ai_worker_streaming(self, src, dst, rot, target, mode, enc, fps, dims, ffmpeg):
         if mode not in {AI_RVRT, AI_RVRT_SEEDVR2}:
-            return original_ai_worker(self, src, dst, rot, target, mode, enc, fps, dims, ffmpeg)
+            return original_ai_worker(
+                self, src, dst, rot, target, mode, enc, fps, dims, ffmpeg
+            )
 
         try:
-            with tempfile.TemporaryDirectory(prefix=".video_ai_", dir=dst.parent) as td:
+            with tempfile.TemporaryDirectory(
+                prefix=".video_ai_", dir=dst.parent
+            ) as td:
                 t = Path(td)
                 rvrt_video = t / "rvrt_restored.mkv"
 
@@ -145,6 +156,7 @@ def enable_rvrt_streaming(app_ai) -> None:
                     rot,
                     target,
                     fps,
+                    dims,
                     ffmpeg,
                 )
                 self._run(cmd, "RVRT", cwd)
@@ -165,31 +177,28 @@ def enable_rvrt_streaming(app_ai) -> None:
                     self._done(dst)
                     return
 
+                seed_video = t / "seedvr2_restored.mkv"
                 self._stage(62, "SeedVR2復元中...")
-                out = t / "seed_out"
-                out.mkdir()
                 cmd, cwd = build_seedvr2_command(
                     self.config,
                     rvrt_video,
-                    out,
+                    seed_video,
                     min(dims),
+                    fps,
                 )
                 self._run(cmd, "SeedVR2", cwd)
-                frames = t / "seed_norm"
-                normalize_png_sequence(out, frames)
 
                 self._stage(92, "最終MP4作成中...")
                 self._run(
-                    build_frames_to_video_command(
-                        frames / "frame%06d.png",
-                        fps,
+                    _final_from_lossless_command(
+                        ffmpeg,
+                        seed_video,
                         src,
                         dst,
                         enc,
                         dims,
-                        ffmpeg,
                     ),
-                    "Final encode",
+                    "FFmpeg",
                 )
                 self._done(dst)
         except app_ai.Cancelled:
