@@ -40,6 +40,7 @@ class LauncherTests(unittest.TestCase):
         source = inspect.getsource(settings_extension.enable_seedvr2_chunk_settings)
         self.assertIn("seedvr2_chunk_size", source)
         self.assertIn("seedvr2_chunk_overlap", source)
+        self.assertIn("空間Tile", source)
         self.assertIn("長尺動画 / RAM", source)
         self.assertIn("実行負荷", source)
         self.assertIn("GPUデューティ目標", source)
