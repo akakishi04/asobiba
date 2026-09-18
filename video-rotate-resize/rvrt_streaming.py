@@ -93,6 +93,7 @@ def _build_rvrt_stream_command(
     fps: float,
     dims: tuple[int, int],
     ffmpeg: str,
+    pause_file: Path | None = None,
 ) -> tuple[list[str], Path]:
     runner = Path(__file__).with_name("rvrt_stream_runner.py").resolve()
     if not runner.is_file():
@@ -130,6 +131,8 @@ def _build_rvrt_stream_command(
     ]
     if vf:
         command += ["--vf", vf]
+    if pause_file:
+        command += ["--pause-file", str(pause_file)]
     return command, runner.parent
 
 
@@ -161,6 +164,7 @@ def enable_rvrt_streaming(app_ai) -> None:
                     fps,
                     dims,
                     ffmpeg,
+                    getattr(self, "_pause_file", None),
                 )
                 self._run(cmd, "RVRT", cwd)
 
@@ -189,6 +193,7 @@ def enable_rvrt_streaming(app_ai) -> None:
                     seed_video,
                     min(dims),
                     fps,
+                    getattr(self, "_pause_file", None),
                 )
                 self._run(cmd, "SeedVR2", cwd)
 
