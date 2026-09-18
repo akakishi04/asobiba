@@ -55,6 +55,7 @@ class AIConfig:
     seedvr2_vae_tiling: bool = True
     seedvr2_vae_tile_size: int = 512
     seedvr2_vae_tile_overlap: int = 128
+    seedvr2_color_correction: str = "wavelet"
     seedvr2_chunk_size: int = 45
     seedvr2_chunk_overlap: int = 5
 
@@ -145,6 +146,10 @@ def validate_for_mode(config: AIConfig, mode: str) -> None:
             raise VideoToolError("SeedVR2 model が設定されていません。")
         if config.seedvr2_batch_size <= 0:
             raise VideoToolError("SeedVR2 batch size は1以上にしてください。")
+        if config.seedvr2_batch_size % 4 != 1:
+            raise VideoToolError(
+                "SeedVR2 batch size は4n+1（1, 5, 9, 13, ...）にしてください。"
+            )
         if not 0 <= config.seedvr2_temporal_overlap < config.seedvr2_batch_size:
             raise VideoToolError(
                 "SeedVR2 temporal overlap は0以上かつ batch size 未満にしてください。"
@@ -153,9 +158,17 @@ def validate_for_mode(config: AIConfig, mode: str) -> None:
             raise VideoToolError("SeedVR2 blocks_to_swap は0以上にしてください。")
         if config.seedvr2_resolution_override < 0:
             raise VideoToolError("SeedVR2 resolution override は0以上にしてください。")
+        if config.seedvr2_vae_tile_size <= 0:
+            raise VideoToolError("SeedVR2 VAE tile size は1以上にしてください。")
+        if config.seedvr2_vae_tile_overlap < 0:
+            raise VideoToolError("SeedVR2 VAE tile overlap は0以上にしてください。")
         if config.seedvr2_vae_tile_overlap >= config.seedvr2_vae_tile_size:
             raise VideoToolError(
                 "SeedVR2 VAE tile overlap は tile size より小さくしてください。"
+            )
+        if config.seedvr2_color_correction not in {"wavelet", "adain", "none"}:
+            raise VideoToolError(
+                f"未対応のSeedVR2色補正です: {config.seedvr2_color_correction}"
             )
         if config.seedvr2_chunk_size < max(5, config.seedvr2_batch_size):
             raise VideoToolError(
@@ -242,7 +255,7 @@ def build_seedvr2_command(
         "--chunk-overlap",
         str(config.seedvr2_chunk_overlap),
         "--color-correction",
-        "wavelet",
+        config.seedvr2_color_correction,
         "--gpu-duty",
         str(effective_gpu_duty_percent(config)),
         "--resource-profile",
