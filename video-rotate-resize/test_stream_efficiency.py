@@ -13,6 +13,17 @@ class StreamingEfficiencyTests(unittest.TestCase):
         self.assertNotIn("frame%06d.png", source)
         self.assertNotIn("TemporaryDirectory", source)
 
+    def test_rvrt_decoder_uses_passthrough_and_decoded_count_is_authoritative(self):
+        source = (BASE / "rvrt_stream_runner.py").read_text(encoding="utf-8")
+        self.assertIn('"-fps_mode"', source)
+        self.assertIn('"passthrough"', source)
+        self.assertIn("produced != unique_read", source)
+        self.assertIn("using decoded count as authoritative", source)
+        self.assertNotIn(
+            "RVRT output frame count mismatch: {produced} != {total_frames}",
+            source,
+        )
+
     def test_seedvr2_keeps_model_loaded_and_does_not_rescan_cli_chunks(self):
         source = (BASE / "seedvr2_runner.py").read_text(encoding="utf-8")
         self.assertIn('cache_model=True', source)
