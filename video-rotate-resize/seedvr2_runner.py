@@ -20,6 +20,29 @@ from resource_policy import DutyPacer, PROFILE_BACKGROUND, PROFILE_BALANCED
 PROGRESS_PREFIX = "APP_PROGRESS"
 
 
+def _aligned_outer_chunk_size(
+    configured: int,
+    batch_size: int,
+    temporal_overlap: int,
+    outer_overlap: int,
+) -> int:
+    """Choose the largest <= configured size aligned to inner SeedVR2 batches."""
+    step = batch_size - temporal_overlap
+    if step <= 0:
+        return configured
+    minimum = max(5, batch_size, outer_overlap + 1)
+    for candidate in range(configured, minimum - 1, -1):
+        # Full inner batches cover batch_size + n*step frames. Keeping the
+        # outer stride aligned avoids creating a padded partial batch at every
+        # chunk boundary.
+        if (
+            (candidate - batch_size) % step == 0
+            and (candidate - outer_overlap) % step == 0
+        ):
+            return candidate
+    return configured
+
+
 def _chunk_count(total: int, chunk_size: int, overlap: int) -> int:
     if total <= chunk_size:
         return 1
@@ -271,11 +294,25 @@ def run(args: argparse.Namespace) -> None:
     if fps <= 0:
         reader.close()
         raise RuntimeError("SeedVR2 requires a positive FPS")
-    chunks = _chunk_count(total, args.chunk_size, args.chunk_overlap)
+    effective_chunk_size = _aligned_outer_chunk_size(
+        args.chunk_size,
+        args.batch_size,
+        args.temporal_overlap,
+        args.chunk_overlap,
+    )
+    chunks = _chunk_count(total, effective_chunk_size, args.chunk_overlap)
+
+    if effective_chunk_size != args.chunk_size:
+        print(
+            f"SeedVR2: optimized outer chunk {args.chunk_size} -> "
+            f"{effective_chunk_size} frames to avoid padded inner batches",
+            flush=True,
+        )
 
     print(
         f"SeedVR2 persistent runner: {total} frames / {chunks} chunks / "
-        f"chunk={args.chunk_size} overlap={args.chunk_overlap} / "
+        f"chunk={effective_chunk_size} (limit={args.chunk_size}) "
+        f"overlap={args.chunk_overlap} / "
         f"batch={args.batch_size} / BlockSwap={args.blocks_to_swap} / "
         f"duty={args.gpu_duty}% / profile={args.resource_profile}",
         flush=True,
@@ -404,7 +441,7 @@ def run(args: argparse.Namespace) -> None:
             start = unique_read - tail_len
             frames, next_tail, new_count = reader.read_chunk(
                 input_tail,
-                args.chunk_size,
+                effective_chunk_size,
                 args.chunk_overlap,
             )
             if frames is None or new_count <= 0:
@@ -496,9 +533,9 @@ def run(args: argparse.Namespace) -> None:
                 writer = LosslessVideoWriter(output_video, fps, w, h)
 
             wanted_new = (
-                args.chunk_size
+                effective_chunk_size
                 if chunk_no == 1
-                else args.chunk_size - args.chunk_overlap
+                else effective_chunk_size - args.chunk_overlap
             )
             is_final_short = new_count < wanted_new
 
