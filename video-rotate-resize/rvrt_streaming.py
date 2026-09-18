@@ -42,6 +42,7 @@ def _final_from_lossless_command(
     output_path: Path,
     encoder: str,
     exact_resolution: tuple[int, int],
+    scale_output: bool = True,
 ) -> list[str]:
     width, height = exact_resolution
     command = [
@@ -58,9 +59,11 @@ def _final_from_lossless_command(
         "1:a?",
         "-map_metadata",
         "1",
-        "-vf",
-        f"scale={width}:{height}:flags=lanczos,setsar=1",
     ]
+    if scale_output:
+        command += ["-vf", f"scale={width}:{height}:flags=lanczos,setsar=1"]
+    else:
+        command += ["-vf", "setsar=1"]
     _append_encoder(command, encoder)
     command += [
         "-pix_fmt",
@@ -171,6 +174,7 @@ def enable_rvrt_streaming(app_ai) -> None:
                             dst,
                             enc,
                             dims,
+                            scale_output=False,
                         ),
                         "FFmpeg",
                     )
