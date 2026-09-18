@@ -44,6 +44,7 @@ class RVRTStreamingTests(unittest.TestCase):
             self.assertEqual(cmd[cmd.index("--width") + 1], "1920")
             self.assertEqual(cmd[cmd.index("--height") + 1], "1080")
             self.assertEqual(cmd[cmd.index("--gpu-duty") + 1], "100")
+            self.assertEqual(cmd[cmd.index("--spatial-tile") + 1], "0")
             self.assertEqual(
                 cmd[cmd.index("--pause-file") + 1],
                 str(root / "pause.flag"),
