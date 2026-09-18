@@ -82,6 +82,89 @@ def _probe_frame_count(
     return max(1, int(round(duration * fps))), fps, False
 
 
+def _axis_tile_count(length: int, tile: int, overlap: int) -> int:
+    if length <= tile:
+        return 1
+    stride = tile - overlap
+    if stride <= 0:
+        return 1
+    return len(list(range(0, length - tile, stride)) + [length - tile])
+
+
+def _select_throughput_tile(
+    inference: RVRTInference,
+    temporal_frames: int,
+    width: int,
+    height: int,
+    gpu_duty: int,
+    requested_spatial: int,
+) -> tuple[int, int, int]:
+    """Pick a temporal/spatial tile combination with few model invocations.
+
+    Uses vsrvrt's own calibrated memory estimator, but searches several spatial
+    tile sizes instead of hard-coding 256px. Lower-duty profiles deliberately
+    reserve more VRAM for other applications.
+    """
+    available = inference._get_available_vram()
+    if requested_spatial:
+        candidates = [requested_spatial]
+        budget_ratio = 0.80
+    elif gpu_duty >= 90:
+        candidates = [512, 448, 384, 320, 256]
+        budget_ratio = 0.70
+    elif gpu_duty >= 65:
+        candidates = [448, 384, 320, 256]
+        budget_ratio = 0.58
+    else:
+        candidates = [384, 320, 256]
+        budget_ratio = 0.45
+
+    budget = max(1, int(available * budget_ratio))
+    best: tuple[int, int, int] | None = None
+    best_score: tuple[int, int, int] | None = None
+
+    for spatial in candidates:
+        if spatial < 128 or spatial % 8:
+            continue
+        temporal = inference._find_max_temporal_frames(
+            spatial,
+            budget,
+            temporal_frames,
+        )
+        estimate = inference._estimate_tile_memory(temporal, spatial, spatial)
+        if estimate > budget:
+            continue
+
+        temporal_calls = _axis_tile_count(temporal_frames, temporal, 2)
+        h_calls = _axis_tile_count(height, spatial, 20)
+        w_calls = _axis_tile_count(width, spatial, 20)
+        calls = temporal_calls * h_calls * w_calls
+
+        # Primary goal: fewer model invocations. Tie-break with lower estimated
+        # memory, then larger spatial tile.
+        score = (calls, estimate, -spatial)
+        if best_score is None or score < best_score:
+            best_score = score
+            best = (temporal, spatial, spatial)
+
+    if best is None:
+        best = inference._get_auto_tile_size(
+            torch.empty(
+                (1, temporal_frames, 3, max(8, min(height, 8)), max(8, min(width, 8))),
+                dtype=torch.float16,
+            )
+        )
+        best_score = (0, 0, 0)
+
+    print(
+        f"RVRT: throughput tile {best} / estimated model calls "
+        f"{best_score[0] if best_score else '?'} / VRAM budget "
+        f"{budget / 1e9:.1f} GB",
+        flush=True,
+    )
+    return best
+
+
 def _chunk_count(total_frames: int, chunk_size: int, overlap: int) -> int:
     if total_frames <= chunk_size:
         return 1
@@ -337,6 +420,7 @@ def run(
     width: int,
     height: int,
     gpu_duty: int,
+    spatial_tile: int,
     pause_file: Path | None,
 ) -> None:
     if chunk_size < 4:
@@ -483,21 +567,35 @@ def run(
                 flush=True,
             )
 
-            # Maximum-speed mode can reuse the first auto-tile decision.
-            # Lower-duty profiles stay adaptive so another application taking
-            # VRAM can cause RVRT to choose a smaller temporal tile later.
+            # Search temporal x spatial tiling for throughput instead of
+            # vsrvrt's conservative fixed 256px spatial tile.
             if inference is None:
                 raise RuntimeError("RVRT model is not loaded")
             if gpu_duty >= 100:
                 if cached_tile_size is None:
-                    cached_tile_size = inference._get_auto_tile_size(clip)
+                    cached_tile_size = _select_throughput_tile(
+                        inference,
+                        int(clip.shape[1]),
+                        width,
+                        height,
+                        gpu_duty,
+                        spatial_tile,
+                    )
                     print(
-                        f"RVRT: cached auto tile {cached_tile_size} for max-speed mode",
+                        f"RVRT: cached throughput tile {cached_tile_size} "
+                        "for max-speed mode",
                         flush=True,
                     )
                 active_tile_size = cached_tile_size
             else:
-                active_tile_size = None
+                active_tile_size = _select_throughput_tile(
+                    inference,
+                    int(clip.shape[1]),
+                    width,
+                    height,
+                    gpu_duty,
+                    spatial_tile,
+                )
 
             pacer.begin()
             current = _infer_chunk(
@@ -635,6 +733,7 @@ def main() -> None:
     parser.add_argument("--width", required=True, type=int)
     parser.add_argument("--height", required=True, type=int)
     parser.add_argument("--gpu-duty", type=int, default=100)
+    parser.add_argument("--spatial-tile", type=int, default=0)
     parser.add_argument("--pause-file", type=Path, default=None)
     args = parser.parse_args()
     run(
@@ -650,6 +749,7 @@ def main() -> None:
         args.width,
         args.height,
         args.gpu_duty,
+        args.spatial_tile,
         args.pause_file,
     )
 
