@@ -260,12 +260,13 @@ def _infer_chunk(
     inference: RVRTInference,
     clip: torch.Tensor,
     input_hw: tuple[int, int],
+    tile_size: tuple[int, int, int] | None = None,
 ) -> torch.Tensor:
     padded, original = _pad_temporal(clip)
     with torch.no_grad():
         output = inference.inference(
             padded,
-            tile_size=None,
+            tile_size=tile_size,
             tile_overlap=(2, 20, 20),
         )
     output = output[:, :original, ...].float().cpu()
@@ -289,7 +290,9 @@ def _read_chunk(
 ) -> tuple[torch.Tensor | None, torch.Tensor | None, int]:
     tail_len = 0 if tail is None else int(tail.shape[1])
     wanted_new = chunk_size - tail_len
-    clip = torch.empty((1, chunk_size, 3, height, width), dtype=torch.float32)
+    # RVRT is FP16 on CUDA; keeping the CPU staging tensor in FP16 halves RAM
+    # and host-to-device transfer volume without discarding model precision.
+    clip = torch.empty((1, chunk_size, 3, height, width), dtype=torch.float16)
     if tail is not None and tail_len:
         clip[:, :tail_len].copy_(tail)
 
@@ -391,6 +394,7 @@ def run(
     unique_read = 0
     chunk_no = 0
     normal_reader_close = False
+    cached_tile_size: tuple[int, int, int] | None = None
 
     try:
         while True:
@@ -414,8 +418,27 @@ def run(
                 flush=True,
             )
 
+            # Maximum-speed mode can reuse the first auto-tile decision.
+            # Lower-duty profiles stay adaptive so another application taking
+            # VRAM can cause RVRT to choose a smaller temporal tile later.
+            if gpu_duty >= 100:
+                if cached_tile_size is None:
+                    cached_tile_size = inference._get_auto_tile_size(clip)
+                    print(
+                        f"RVRT: cached auto tile {cached_tile_size} for max-speed mode",
+                        flush=True,
+                    )
+                active_tile_size = cached_tile_size
+            else:
+                active_tile_size = None
+
             pacer.begin()
-            current = _infer_chunk(inference, clip, (height, width))
+            current = _infer_chunk(
+                inference,
+                clip,
+                (height, width),
+                tile_size=active_tile_size,
+            )
 
             pause_requested = bool(pause_file and Path(pause_file).exists())
             if pause_requested:
@@ -439,7 +462,9 @@ def run(
 
             input_tail = next_tail
             del clip
-            torch.cuda.empty_cache()
+            if gpu_duty < 100:
+                # In coexistence modes return allocator cache to other apps.
+                torch.cuda.empty_cache()
 
             wanted_new = chunk_size if chunk_no == 1 else chunk_size - overlap
             is_final_short = new_count < wanted_new
