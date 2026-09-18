@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import math
 import subprocess
@@ -12,7 +13,7 @@ import torch
 from vsrvrt.model_configs import get_config
 from vsrvrt.rvrt_core import RVRTInference
 
-from pause_control import wait_if_paused
+from pause_control import PAUSE_DEEP, PAUSE_SOFT, get_pause_mode, wait_if_paused
 from resource_policy import DutyPacer
 
 
@@ -365,23 +366,71 @@ def run(
         flush=True,
     )
 
-    # One model load and one decoder process for the entire video.
-    inference = RVRTInference(config, use_fp16=True, device=torch.device("cuda"))
+    # One model load for the whole video unless a full-memory pause explicitly
+    # unloads it. Full pause reloads the same weights from disk on resume.
+    cached_tile_size: tuple[int, int, int] | None = None
+    inference: RVRTInference | None = RVRTInference(
+        config, use_fp16=True, device=torch.device("cuda")
+    )
 
     def offload_model() -> None:
+        if inference is None or inference.model is None:
+            return
         inference.model = inference.model.to("cpu")
         torch.cuda.empty_cache()
 
     def restore_model() -> None:
+        if inference is None or inference.model is None:
+            return
         inference.model = inference.model.to(inference.device)
 
+    def deep_unload_model() -> None:
+        nonlocal inference, cached_tile_size
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        # vsrvrt also keeps a class-level model cache. Remove that reference or
+        # the weight tensors remain alive in process RAM after deleting inference.
+        try:
+            RVRTInference._model_cache.pop(config.task, None)
+        except Exception:
+            pass
+        if inference is not None:
+            inference.model = None
+        inference = None
+        cached_tile_size = None
+        gc.collect()
+        torch.cuda.empty_cache()
+        print("RVRT: model fully unloaded from GPU/CPU memory", flush=True)
+
+    def deep_reload_model() -> None:
+        nonlocal inference
+        print("RVRT: reloading model after full pause...", flush=True)
+        inference = RVRTInference(
+            config, use_fp16=True, device=torch.device("cuda")
+        )
+
+    def handle_pause() -> bool:
+        mode = get_pause_mode(pause_file)
+        if mode == PAUSE_DEEP:
+            return wait_if_paused(
+                pause_file,
+                "RVRT",
+                before_wait=deep_unload_model,
+                after_wait=deep_reload_model,
+                accepted_modes={PAUSE_DEEP},
+            )
+        if mode == PAUSE_SOFT:
+            return wait_if_paused(
+                pause_file,
+                "RVRT",
+                before_wait=offload_model,
+                after_wait=restore_model,
+                accepted_modes={PAUSE_SOFT},
+            )
+        return False
+
     # Honor a pause request made immediately after the stage started.
-    wait_if_paused(
-        pause_file,
-        "RVRT",
-        before_wait=offload_model,
-        after_wait=restore_model,
-    )
+    handle_pause()
 
     reader = RawVideoPipeReader(video_path, ffmpeg, width, height, vf)
     writer = LosslessVideoWriter(output_video, ffmpeg, fps, width, height)
@@ -394,7 +443,6 @@ def run(
     unique_read = 0
     chunk_no = 0
     normal_reader_close = False
-    cached_tile_size: tuple[int, int, int] | None = None
 
     try:
         while True:
@@ -421,6 +469,8 @@ def run(
             # Maximum-speed mode can reuse the first auto-tile decision.
             # Lower-duty profiles stay adaptive so another application taking
             # VRAM can cause RVRT to choose a smaller temporal tile later.
+            if inference is None:
+                raise RuntimeError("RVRT model is not loaded")
             if gpu_duty >= 100:
                 if cached_tile_size is None:
                     cached_tile_size = inference._get_auto_tile_size(clip)
@@ -440,14 +490,9 @@ def run(
                 tile_size=active_tile_size,
             )
 
-            pause_requested = bool(pause_file and Path(pause_file).exists())
+            pause_requested = get_pause_mode(pause_file) is not None
             if pause_requested:
-                paused = wait_if_paused(
-                    pause_file,
-                    "RVRT",
-                    before_wait=offload_model,
-                    after_wait=restore_model,
-                )
+                paused = handle_pause()
                 if paused:
                     pacer.begin()
                 delay = 0.0
@@ -514,13 +559,6 @@ def run(
 
             shown_total = max(estimated_chunks, chunk_no)
             print(f"{PROGRESS_PREFIX}|RVRT|{chunk_no}|{shown_total}", flush=True)
-
-            wait_if_paused(
-                pause_file,
-                "RVRT",
-                before_wait=offload_model,
-                after_wait=restore_model,
-            )
 
             # A short final chunk means the decoder reached EOF.
             if is_final_short:
