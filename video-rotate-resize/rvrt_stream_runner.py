@@ -5,6 +5,7 @@ import gc
 import json
 import math
 import subprocess
+import time
 from fractions import Fraction
 from pathlib import Path
 
@@ -592,6 +593,7 @@ def run(
     unique_read = 0
     chunk_no = 0
     normal_reader_close = False
+    inference_seconds = 0.0
 
     try:
         while True:
@@ -646,12 +648,20 @@ def run(
                 )
 
             pacer.begin()
+            inference_started = time.perf_counter()
             current, used_tile_size = _infer_with_auto_oom_fallback(
                 inference,
                 clip,
                 (height, width),
                 active_tile_size,
                 auto_spatial=(spatial_tile == 0),
+            )
+            inference_elapsed = time.perf_counter() - inference_started
+            inference_seconds += inference_elapsed
+            print(
+                f"RVRT timing: chunk {chunk_no} inference={inference_elapsed:.2f}s "
+                f"tile={used_tile_size}",
+                flush=True,
             )
             if used_tile_size != active_tile_size and gpu_duty >= 100:
                 cached_tile_size = used_tile_size
@@ -750,6 +760,12 @@ def run(
             print(
                 f"RVRT: container frame count was {total_frames}, decoded "
                 f"{unique_read}; using decoded count as authoritative",
+                flush=True,
+            )
+        if chunk_no:
+            print(
+                f"RVRT timing summary: inference={inference_seconds:.1f}s / "
+                f"avg={inference_seconds / chunk_no:.2f}s per chunk",
                 flush=True,
             )
         print(
