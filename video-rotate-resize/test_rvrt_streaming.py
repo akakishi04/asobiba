@@ -33,6 +33,7 @@ class RVRTStreamingTests(unittest.TestCase):
                 30.0,
                 (1920, 1080),
                 "ffmpeg",
+                root / "pause.flag",
             )
             self.assertEqual(cwd.name, "video-rotate-resize")
             self.assertIn("--video-path", cmd)
@@ -43,6 +44,10 @@ class RVRTStreamingTests(unittest.TestCase):
             self.assertEqual(cmd[cmd.index("--width") + 1], "1920")
             self.assertEqual(cmd[cmd.index("--height") + 1], "1080")
             self.assertEqual(cmd[cmd.index("--gpu-duty") + 1], "100")
+            self.assertEqual(
+                cmd[cmd.index("--pause-file") + 1],
+                str(root / "pause.flag"),
+            )
             self.assertNotIn("--input-dir", cmd)
 
     def test_final_encode_reads_single_lossless_video_and_original_audio(self):
