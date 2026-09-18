@@ -61,7 +61,14 @@ def _final_from_lossless_command(
         "1",
     ]
     if scale_output:
-        command += ["-vf", f"scale={width}:{height}:flags=lanczos,setsar=1"]
+        command += [
+            "-vf",
+            (
+                f"scale={width}:{height}:force_original_aspect_ratio=decrease:"
+                f"flags=lanczos,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,"
+                "setsar=1"
+            ),
+        ]
     else:
         command += ["-vf", "setsar=1"]
     _append_encoder(command, encoder)
@@ -155,6 +162,17 @@ def enable_rvrt_streaming(app_ai) -> None:
                 t = Path(td)
                 rvrt_video = t / "rvrt_restored.mkv"
 
+                # RVRT is a 1x restoration model. Running it after a large
+                # Lanczos upscale wastes most of its compute. Restore at the
+                # source's post-rotation native geometry; SeedVR2/final encode
+                # handles the requested output resolution later.
+                source_info = app_ai.probe_media(src)
+                rvrt_dims = app_ai.transformed_dimensions(
+                    source_info,
+                    rot,
+                    None,
+                )
+
                 self._stage(20, "RVRT復元中...")
                 cmd, cwd = _build_rvrt_stream_command(
                     app_ai,
@@ -162,9 +180,9 @@ def enable_rvrt_streaming(app_ai) -> None:
                     src,
                     rvrt_video,
                     rot,
-                    target,
+                    None,
                     fps,
-                    dims,
+                    rvrt_dims,
                     ffmpeg,
                     getattr(self, "_pause_file", None),
                 )
@@ -180,7 +198,7 @@ def enable_rvrt_streaming(app_ai) -> None:
                             dst,
                             enc,
                             dims,
-                            scale_output=False,
+                            scale_output=(rvrt_dims != dims),
                         ),
                         "FFmpeg",
                     )
