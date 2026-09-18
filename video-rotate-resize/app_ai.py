@@ -717,6 +717,7 @@ if __name__ == "__main__":
     import sys
 
     from eta_support import enable_eta
+    from pause_support import enable_pause_support
     from rvrt_streaming import enable_rvrt_streaming
     from seedvr2_streaming import enable_seedvr2_streaming
     from settings_extension import enable_seedvr2_chunk_settings
@@ -726,4 +727,5 @@ if __name__ == "__main__":
     enable_rvrt_streaming(module)
     enable_seedvr2_chunk_settings(module)
     enable_eta(module)
+    enable_pause_support(module)
     main()
