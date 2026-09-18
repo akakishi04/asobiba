@@ -291,8 +291,7 @@ def run(args: argparse.Namespace) -> None:
     pacer = DutyPacer(args.gpu_duty)
     writer: LosslessVideoWriter | None = None
     input_tail: torch.Tensor | None = None
-    pending: torch.Tensor | None = None
-    pending_start: int | None = None
+    output_tail: torch.Tensor | None = None
     unique_read = 0
     chunk_no = 0
 
@@ -385,54 +384,70 @@ def run(args: argparse.Namespace) -> None:
                 h, w = int(current.shape[1]), int(current.shape[2])
                 writer = LosslessVideoWriter(output_video, fps, w, h)
 
-            if pending is None or pending_start is None:
-                pending = current
-                pending_start = start
-            else:
-                pending_end = pending_start + pending.shape[0]
-                actual_overlap = max(0, pending_end - start)
-                actual_overlap = min(
-                    actual_overlap, pending.shape[0], current.shape[0]
-                )
+            wanted_new = (
+                args.chunk_size
+                if chunk_no == 1
+                else args.chunk_size - args.chunk_overlap
+            )
+            is_final_short = new_count < wanted_new
 
-                if actual_overlap == 0:
-                    writer.write(pending)
-                    pending = current
-                    pending_start = start
+            # Keep only the outer overlap in RAM; stream all finalized frames
+            # directly into FFV1 as soon as they are available.
+            if output_tail is None:
+                if is_final_short or args.chunk_overlap == 0:
+                    writer.write(current)
+                    output_tail = None
                 else:
-                    direct_count = pending.shape[0] - actual_overlap
-                    if direct_count:
-                        writer.write(pending[:direct_count])
+                    keep = min(args.chunk_overlap, current.shape[0])
+                    direct = current.shape[0] - keep
+                    if direct:
+                        writer.write(current[:direct])
+                    output_tail = current[direct:].contiguous()
+            else:
+                actual_overlap = min(
+                    output_tail.shape[0],
+                    current.shape[0],
+                    args.chunk_overlap,
+                )
+                if actual_overlap:
+                    tail = output_tail[-actual_overlap:]
+                    head = current[:actual_overlap]
                     alpha = torch.linspace(
                         1.0 / (actual_overlap + 1),
                         actual_overlap / (actual_overlap + 1),
                         steps=actual_overlap,
                         dtype=current.dtype,
                     ).view(actual_overlap, 1, 1, 1)
-                    blended = (
-                        pending[direct_count : direct_count + actual_overlap]
-                        * (1.0 - alpha)
-                        + current[:actual_overlap] * alpha
+                    writer.write(tail * (1.0 - alpha) + head * alpha)
+                else:
+                    writer.write(output_tail)
+
+                remainder = current[actual_overlap:]
+                if is_final_short or args.chunk_overlap == 0:
+                    if remainder.shape[0]:
+                        writer.write(remainder)
+                    output_tail = None
+                else:
+                    keep = min(args.chunk_overlap, remainder.shape[0])
+                    direct = remainder.shape[0] - keep
+                    if direct:
+                        writer.write(remainder[:direct])
+                    output_tail = (
+                        remainder[direct:].contiguous() if keep else None
                     )
-                    writer.write(blended)
-                    pending = current[actual_overlap:].contiguous()
-                    pending_start = start + actual_overlap
 
             print(
                 f"{PROGRESS_PREFIX}|SeedVR2|{chunk_no}|{max(chunks, chunk_no)}",
                 flush=True,
             )
 
-            wanted_new = (
-                args.chunk_size if chunk_no == 1 else args.chunk_size - args.chunk_overlap
-            )
-            if new_count < wanted_new:
+            if is_final_short:
                 break
 
         if writer is None:
             raise RuntimeError("SeedVR2 produced no output")
-        if pending is not None:
-            writer.write(pending)
+        if output_tail is not None:
+            writer.write(output_tail)
         writer.close(check=True)
         produced = writer.count
         writer = None
