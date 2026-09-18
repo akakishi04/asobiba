@@ -58,6 +58,7 @@ def enable_seedvr2_streaming(app_ai) -> None:
                     seed_video,
                     min(dims),
                     fps,
+                    getattr(self, "_pause_file", None),
                 )
                 self._run(cmd, "SeedVR2", cwd)
 
