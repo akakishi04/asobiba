@@ -194,6 +194,16 @@ class LosslessVideoWriter:
             raise RuntimeError(detail or f"FFV1 writer failed (code {code})")
 
 
+def _move_text_embeddings(
+    embeddings: dict[str, list[torch.Tensor]],
+    device: str | torch.device,
+) -> dict[str, list[torch.Tensor]]:
+    return {
+        key: [tensor.detach().to(device) for tensor in tensors]
+        for key, tensors in embeddings.items()
+    }
+
+
 def _configure_cpu_threads(profile: str) -> None:
     if profile == PROFILE_BACKGROUND:
         torch.set_num_threads(2)
@@ -317,6 +327,7 @@ def run(args: argparse.Namespace) -> None:
     writer: LosslessVideoWriter | None = None
     input_tail: torch.Tensor | None = None
     output_tail: torch.Tensor | None = None
+    cached_text_embeds_cpu: dict[str, list[torch.Tensor]] | None = None
     unique_read = 0
     chunk_no = 0
 
@@ -335,6 +346,10 @@ def run(args: argparse.Namespace) -> None:
                 debug=debug,
                 runner=runner,
             )
+            if model_name == "DiT" and ctx.get("text_embeds") is not None:
+                ctx["text_embeds"] = _move_text_embeddings(
+                    ctx["text_embeds"], "cpu"
+                )
             torch.cuda.empty_cache()
 
         def restore_active() -> None:
@@ -346,6 +361,10 @@ def run(args: argparse.Namespace) -> None:
                 debug=debug,
                 runner=runner,
             )
+            if model_name == "DiT" and ctx.get("text_embeds") is not None:
+                ctx["text_embeds"] = _move_text_embeddings(
+                    ctx["text_embeds"], device
+                )
 
         pause_requested = bool(
             args.pause_file and Path(args.pause_file).exists()
@@ -417,6 +436,10 @@ def run(args: argparse.Namespace) -> None:
             )
 
             wait_if_paused(args.pause_file, "SeedVR2")
+            if cached_text_embeds_cpu is not None:
+                ctx["text_embeds"] = _move_text_embeddings(
+                    cached_text_embeds_cpu, device
+                )
             pacer.begin()
             ctx = modules["upscale"](
                 runner,
@@ -428,6 +451,15 @@ def run(args: argparse.Namespace) -> None:
                 seed=100,
                 latent_noise_scale=0.0,
             )
+
+            if ctx.get("text_embeds") is not None:
+                if cached_text_embeds_cpu is None:
+                    cached_text_embeds_cpu = _move_text_embeddings(
+                        ctx["text_embeds"], "cpu"
+                    )
+                # Decoding does not use text embeddings. Drop the per-chunk GPU
+                # reference and reuse the CPU cache next chunk.
+                ctx["text_embeds"] = None
 
             wait_if_paused(args.pause_file, "SeedVR2")
             pacer.begin()
@@ -455,7 +487,9 @@ def run(args: argparse.Namespace) -> None:
 
             input_tail = next_tail
             del frames, ctx
-            torch.cuda.empty_cache()
+            if args.gpu_duty < 100:
+                # Coexistence modes return cached allocations to other apps.
+                torch.cuda.empty_cache()
 
             if writer is None:
                 h, w = int(current.shape[1]), int(current.shape[2])
