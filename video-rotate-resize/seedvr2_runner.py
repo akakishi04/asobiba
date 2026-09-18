@@ -321,14 +321,6 @@ def run(args: argparse.Namespace) -> None:
     chunk_no = 0
 
     def pace_callback(current: int, total_batches: int, frames: int, phase: str):
-        delay = pacer.pace()
-        if delay >= 0.5:
-            print(
-                f"SeedVR2: resource pacing {delay:.1f}s idle after "
-                f"{phase} {current}/{total_batches} (target duty {args.gpu_duty}%)",
-                flush=True,
-            )
-
         if "Upscaling" in phase:
             active_model, model_name = runner.dit, "DiT"
         else:
@@ -355,6 +347,29 @@ def run(args: argparse.Namespace) -> None:
                 runner=runner,
             )
 
+        pause_requested = bool(
+            args.pause_file and Path(args.pause_file).exists()
+        )
+        if pause_requested:
+            paused = wait_if_paused(
+                args.pause_file,
+                "SeedVR2",
+                before_wait=offload_active,
+                after_wait=restore_active,
+            )
+            if paused:
+                pacer.begin()
+            return
+
+        delay = pacer.pace()
+        if delay >= 0.5:
+            print(
+                f"SeedVR2: resource pacing {delay:.1f}s idle after "
+                f"{phase} {current}/{total_batches} (target duty {args.gpu_duty}%)",
+                flush=True,
+            )
+
+        # Catch a pause request that arrived while the duty-cycle sleep ran.
         paused = wait_if_paused(
             args.pause_file,
             "SeedVR2",
@@ -362,7 +377,6 @@ def run(args: argparse.Namespace) -> None:
             after_wait=restore_active,
         )
         if paused:
-            # Paused wall time must not become part of the duty-cycle sample.
             pacer.begin()
 
     try:
