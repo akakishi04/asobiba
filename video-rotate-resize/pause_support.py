@@ -4,6 +4,8 @@ import tempfile
 import uuid
 from pathlib import Path
 
+from pause_control import PAUSE_DEEP, PAUSE_SOFT
+
 
 def enable_pause_support(app_ai) -> None:
     """Add cooperative Pause/Resume controls for AI inference stages."""
@@ -27,10 +29,11 @@ def enable_pause_support(app_ai) -> None:
         if button is None:
             return
         state = "normal" if enabled else "disabled"
-        self.root.after(
-            0,
-            lambda: button.configure(state=state, text=text),
-        )
+        self.root.after(0, lambda: button.configure(state=state, text=text))
+        checkbox = getattr(self, "deep_pause_check", None)
+        if checkbox is not None:
+            check_state = "normal" if enabled and not self._pause_requested else "disabled"
+            self.root.after(0, lambda: checkbox.configure(state=check_state))
 
     def init_with_pause(self, root):
         original_init(self, root)
@@ -41,6 +44,8 @@ def enable_pause_support(app_ai) -> None:
         self._pause_requested = False
         self._pause_active = False
         self._pause_stage_supported = False
+        self._pause_mode = None
+        self.deep_pause = app_ai.tk.BooleanVar(value=True)
 
         self.pause_button = app_ai.ttk.Button(
             self.stop.master,
@@ -49,6 +54,13 @@ def enable_pause_support(app_ai) -> None:
             state="disabled",
         )
         self.pause_button.pack(side="left", padx=(8, 0))
+        self.deep_pause_check = app_ai.ttk.Checkbutton(
+            self.stop.master,
+            text="RAMも解放",
+            variable=self.deep_pause,
+            state="disabled",
+        )
+        self.deep_pause_check.pack(side="left", padx=(8, 0))
 
     def toggle_pause(self):
         if not self.running or not self._pause_stage_supported:
@@ -64,32 +76,41 @@ def enable_pause_support(app_ai) -> None:
             self.status.set("再開要求中...")
             _set_pause_button(self, True, "一時停止")
         else:
+            mode = PAUSE_DEEP if self.deep_pause.get() else PAUSE_SOFT
             try:
                 marker.parent.mkdir(parents=True, exist_ok=True)
-                marker.touch(exist_ok=True)
+                marker.write_text(mode, encoding="utf-8")
             except OSError as exc:
                 self.status.set(f"一時停止要求に失敗: {exc}")
                 return
             self._pause_requested = True
-            self.status.set(
-                "一時停止要求中...（現在のAI処理単位が終わると停止します）"
-            )
+            self._pause_mode = mode
+            if mode == PAUSE_DEEP:
+                self.status.set(
+                    "完全一時停止要求中...（安全な境界でモデルをRAMからも解放します）"
+                )
+            else:
+                self.status.set(
+                    "一時停止要求中...（現在のAI処理単位が終わると停止します）"
+                )
             _set_pause_button(self, True, "再開")
 
-    def child_pause_state(self, state: str, engine: str):
+    def child_pause_state(self, state: str, engine: str, mode: str = PAUSE_SOFT):
+        deep = mode == PAUSE_DEEP
         if state == "paused":
             self._pause_active = True
             self._pause_requested = True
-            self.root.after(
-                0,
-                lambda: self.status.set(
-                    f"{engine}: 一時停止中（モデルをCPUへ退避 / VRAM解放）"
-                ),
-            )
+            self._pause_mode = mode
+            if deep:
+                message = f"{engine}: 完全一時停止中（VRAM / モデルRAM解放）"
+            else:
+                message = f"{engine}: 一時停止中（モデルをCPUへ退避 / VRAM解放）"
+            self.root.after(0, lambda: self.status.set(message))
             _set_pause_button(self, True, "再開")
         elif state == "resumed":
             self._pause_active = False
             self._pause_requested = False
+            self._pause_mode = None
             self.root.after(
                 0,
                 lambda: self.status.set(f"{engine}: 再開しました / ETA再計測中"),
@@ -101,14 +122,13 @@ def enable_pause_support(app_ai) -> None:
         self._pause_requested = False
         self._pause_active = False
         self._pause_stage_supported = False
+        self._pause_mode = None
         _set_pause_button(self, False)
         return original_launch(self, worker, *args)
 
     def stage_with_pause(self, n, text):
         result = original_stage(self, n, text)
-        supported = any(
-            key in text for key in ("RVRT復元", "SeedVR2復元")
-        )
+        supported = any(key in text for key in ("RVRT復元", "SeedVR2復元"))
         self._pause_stage_supported = supported
         if supported:
             marker = Path(self._pause_file)
@@ -117,10 +137,10 @@ def enable_pause_support(app_ai) -> None:
             else:
                 _set_pause_button(self, True, "一時停止")
         else:
-            # A pause marker should never leak into a non-AI stage.
             _cleanup_pause_marker(self)
             self._pause_requested = False
             self._pause_active = False
+            self._pause_mode = None
             _set_pause_button(self, False)
         return result
 
@@ -129,6 +149,7 @@ def enable_pause_support(app_ai) -> None:
         self._pause_requested = False
         self._pause_active = False
         self._pause_stage_supported = False
+        self._pause_mode = None
         _set_pause_button(self, False)
         return original_idle(self)
 
@@ -136,6 +157,7 @@ def enable_pause_support(app_ai) -> None:
         _cleanup_pause_marker(self)
         self._pause_requested = False
         self._pause_active = False
+        self._pause_mode = None
         return original_cancel(self)
 
     def close_with_pause(self):
