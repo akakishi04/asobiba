@@ -53,6 +53,15 @@ Windowsで古いRVRT公式コードのCUDA拡張をローカルビルドする�
 
 長い動画は既定で16フレーム単位・4フレームオーバーラップに分割し、境界をブレンドします。入力動画はFFmpegを1回だけ起動して `rawvideo` pipeで連続供給するため、チャンクごとのFFmpeg再起動や全動画PNG展開は行いません。復元済みフレームも確定したものからFFV1へ順次書き込み、RAMには境界Overlap分だけを残します。
 
+RVRTの `空間Tile=0` は速度向けAuto-Tuneです。固定256pxではなく、現在のChunk長・解像度・空きVRAM・実行負荷プロファイルから 256 / 320 / 384 / 448 / 512px を候補にし、vsrvrt自身のVRAM推定を使いながら**時間Tile×空間Tileのモデル呼び出し回数が少ない構成**を選びます。最大速度ほど大きなVRAM予算を使い、他作業優先ではVRAMを多めに残します。
+
+RVRT Chunk / Overlap の速度比較用目安:
+- 標準: `16 / 4`
+- 高速候補: `32 / 4`
+- 攻めた候補: `64 / 4`
+
+Chunkを大きくすると固定オーバーヘッドと外側Overlapの重複計算を減らせます。ただし実機ではモデル・解像度によって最速点が変わるため、まず短い動画で比較してください。
+
 ### SeedVR2
 
 生成力の強いVideo Restorationです。`comfyorg/comfyui_seedvr2` の固定revisionを利用します。セットアップ時の互換確認にはStandalone CLIを使いますが、実際の長尺処理は同revisionのgeneration APIを直接利用し、モデルを1回だけロードしたまま全チャンクを処理します。
@@ -271,6 +280,7 @@ RVRT:
 - RVRT Python
 - GoPro / DVD Deblurモデル
 - Chunk / Overlap（フレーム数）
+- 空間Tile（0=速度/VRAM Auto-Tune、手動時は128以上の8の倍数）
 
 SeedVR2:
 
