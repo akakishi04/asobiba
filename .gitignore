@@ -1,2 +1,29 @@
-
 /fold/
+
+# video-rotate-resize: local AI configuration
+/video-rotate-resize/ai_config.json
+/video-rotate-resize/ai_engines.json
+
+# video-rotate-resize: downloaded/cloned AI engines and Python environments
+/video-rotate-resize/ai_engines/
+/video-rotate-resize/.venv/
+/video-rotate-resize/.venv-*/
+/video-rotate-resize/venv/
+/video-rotate-resize/venv-*/
+
+# video-rotate-resize: model weights, caches and temporary AI work
+/video-rotate-resize/models/
+/video-rotate-resize/model_zoo/
+/video-rotate-resize/checkpoints/
+/video-rotate-resize/weights/
+/video-rotate-resize/.cache/
+/video-rotate-resize/huggingface/
+/video-rotate-resize/hf_cache/
+/video-rotate-resize/.video_ai_*/
+
+# video-rotate-resize: locally bootstrapped GUI dependencies
+/video-rotate-resize/.app_deps/
+
+# Python runtime artifacts
+/video-rotate-resize/__pycache__/
+/video-rotate-resize/*.pyc
