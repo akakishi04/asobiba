@@ -31,6 +31,7 @@ class RVRTStreamingTests(unittest.TestCase):
                 "none",
                 None,
                 30.0,
+                (1920, 1080),
                 "ffmpeg",
             )
             self.assertEqual(cwd.name, "video-rotate-resize")
@@ -39,6 +40,9 @@ class RVRTStreamingTests(unittest.TestCase):
             self.assertIn("--chunk-size", cmd)
             self.assertEqual(cmd[cmd.index("--chunk-size") + 1], "16")
             self.assertEqual(cmd[cmd.index("--chunk-overlap") + 1], "4")
+            self.assertEqual(cmd[cmd.index("--width") + 1], "1920")
+            self.assertEqual(cmd[cmd.index("--height") + 1], "1080")
+            self.assertEqual(cmd[cmd.index("--gpu-duty") + 1], "100")
             self.assertNotIn("--input-dir", cmd)
 
     def test_final_encode_reads_single_lossless_video_and_original_audio(self):
