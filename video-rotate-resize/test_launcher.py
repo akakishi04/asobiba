@@ -3,6 +3,7 @@ import os
 import unittest
 
 import launcher
+import pause_support
 import settings_extension
 
 
@@ -26,6 +27,12 @@ class LauncherTests(unittest.TestCase):
         source = inspect.getsource(launcher._enable_drag_and_drop)
         self.assertNotIn("app_ai.tk.Tk =", source)
         self.assertIn("TkinterDnD.Tk()", source)
+
+    def test_pause_button_is_exposed(self):
+        source = inspect.getsource(pause_support.enable_pause_support)
+        self.assertIn("一時停止", source)
+        self.assertIn("再開", source)
+        self.assertIn("_pause_file", source)
 
     def test_seedvr2_chunk_controls_are_exposed(self):
         source = inspect.getsource(settings_extension.enable_seedvr2_chunk_settings)
