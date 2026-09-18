@@ -6,6 +6,12 @@ from resource_policy import (
     RESOURCE_PROFILE_CHOICES,
 )
 
+COLOR_CORRECTION_CHOICES = {
+    "Wavelet（高品質 / 標準）": "wavelet",
+    "AdaIN（高速）": "adain",
+    "なし（最速 / 色補正なし）": "none",
+}
+
 
 def enable_seedvr2_chunk_settings(app_ai) -> None:
     """Replace the AI settings dialog with resource + long-video controls."""
@@ -14,8 +20,8 @@ def enable_seedvr2_chunk_settings(app_ai) -> None:
     def settings(self):
         w = app_ai.tk.Toplevel(self.root)
         w.title("AI設定")
-        w.geometry("900x720")
-        w.minsize(860, 680)
+        w.geometry("940x800")
+        w.minsize(900, 760)
         w.grab_set()
         f = app_ai.ttk.Frame(w, padding=14)
         f.pack(fill="both", expand=True)
@@ -31,7 +37,10 @@ def enable_seedvr2_chunk_settings(app_ai) -> None:
             "sm": app_ai.tk.StringVar(value=self.config.seedvr2_model),
             "sb": app_ai.tk.StringVar(value=str(self.config.seedvr2_batch_size)),
             "ss": app_ai.tk.StringVar(value=str(self.config.seedvr2_blocks_to_swap)),
+            "st": app_ai.tk.StringVar(value=str(self.config.seedvr2_temporal_overlap)),
             "sx": app_ai.tk.StringVar(value=str(self.config.seedvr2_resolution_override)),
+            "vt": app_ai.tk.StringVar(value=str(self.config.seedvr2_vae_tile_size)),
+            "vo": app_ai.tk.StringVar(value=str(self.config.seedvr2_vae_tile_overlap)),
             "sc": app_ai.tk.StringVar(value=str(self.config.seedvr2_chunk_size)),
             "so": app_ai.tk.StringVar(value=str(self.config.seedvr2_chunk_overlap)),
             "duty": app_ai.tk.StringVar(value=str(self.config.gpu_duty_cycle_percent)),
@@ -40,6 +49,14 @@ def enable_seedvr2_chunk_settings(app_ai) -> None:
         rev = {v: k for k, v in app_ai.RVRT_TASKS.items()}
         rt = app_ai.tk.StringVar(
             value=rev.get(self.config.rvrt_task, next(iter(app_ai.RVRT_TASKS)))
+        )
+
+        color_rev = {v: k for k, v in COLOR_CORRECTION_CHOICES.items()}
+        color_label = app_ai.tk.StringVar(
+            value=color_rev.get(
+                self.config.seedvr2_color_correction,
+                "Wavelet（高品質 / 標準）",
+            )
         )
 
         profile_rev = {v: k for k, v in RESOURCE_PROFILE_CHOICES.items()}
@@ -175,11 +192,33 @@ def enable_seedvr2_chunk_settings(app_ai) -> None:
                 side="left", padx=(3, 10)
             )
 
+        tune = app_ai.ttk.Frame(f)
+        tune.grid(row=13, column=1, sticky="w", padx=8, pady=6)
+        for label, key in [
+            ("Temporal overlap", "st"),
+            ("VAE Tile", "vt"),
+            ("VAE Overlap", "vo"),
+        ]:
+            app_ai.ttk.Label(tune, text=label).pack(side="left")
+            app_ai.ttk.Entry(tune, width=7, textvariable=vals[key]).pack(
+                side="left", padx=(3, 10)
+            )
+
+        app_ai.ttk.Label(f, text="色補正").grid(
+            row=14, column=0, sticky="w", pady=3
+        )
+        app_ai.ttk.Combobox(
+            f,
+            textvariable=color_label,
+            values=list(COLOR_CORRECTION_CHOICES),
+            state="readonly",
+        ).grid(row=14, column=1, sticky="ew", padx=8, pady=3)
+
         app_ai.ttk.Label(f, text="長尺動画 / RAM").grid(
-            row=13, column=0, sticky="w", pady=3
+            row=15, column=0, sticky="w", pady=3
         )
         cadv = app_ai.ttk.Frame(f)
-        cadv.grid(row=13, column=1, sticky="w", padx=8, pady=6)
+        cadv.grid(row=15, column=1, sticky="w", padx=8, pady=6)
         app_ai.ttk.Label(cadv, text="Chunk（フレーム）").pack(side="left")
         app_ai.ttk.Entry(cadv, width=7, textvariable=vals["sc"]).pack(
             side="left", padx=(3, 10)
@@ -198,12 +237,13 @@ def enable_seedvr2_chunk_settings(app_ai) -> None:
             f,
             text=(
                 "SeedVR2はモデルを1回だけロードし、動画を順次チャンク処理します。"
-                " Batchは主にVRAM、長尺Chunkは主にシステムRAMへ影響します。"
-                " 他作業優先では入力解像度やBatchを勝手に下げず、BlockSwapと休止で余力を作ります。"
+                " Batchは4n+1（5/9/13...）が必須で、24GB未満では5が安全側です。"
+                " Temporal overlapを2→1/0に下げると速くなりますが境界の時間的一貫性が弱くなる可能性があります。"
+                " AdaIN/色補正なしはWaveletより高速です。VAE Tileを大きくすると速くなる場合がありますがVRAMを多く使います。"
             ),
             foreground="#555",
             wraplength=840,
-        ).grid(row=14, column=0, columnspan=3, sticky="w", pady=(4, 8))
+        ).grid(row=16, column=0, columnspan=3, sticky="w", pady=(4, 8))
 
         def save():
             try:
@@ -212,7 +252,10 @@ def enable_seedvr2_chunk_settings(app_ai) -> None:
                 rtile = int(vals["rtile"].get())
                 batch = int(vals["sb"].get())
                 swap = int(vals["ss"].get())
+                temporal = int(vals["st"].get())
                 res = int(vals["sx"].get())
+                vae_tile = int(vals["vt"].get())
+                vae_overlap = int(vals["vo"].get())
                 schunk = int(vals["sc"].get())
                 sover = int(vals["so"].get())
                 duty = int(vals["duty"].get())
@@ -224,8 +267,14 @@ def enable_seedvr2_chunk_settings(app_ai) -> None:
                     or rtile < 0
                     or (rtile != 0 and (rtile < 128 or rtile % 8 != 0))
                     or batch < 1
+                    or batch % 4 != 1
                     or swap < 0
+                    or temporal < 0
+                    or temporal >= batch
                     or res < 0
+                    or vae_tile <= 0
+                    or vae_overlap < 0
+                    or vae_overlap >= vae_tile
                     or schunk < 5
                     or schunk < batch
                     or sover < 0
@@ -239,8 +288,8 @@ def enable_seedvr2_chunk_settings(app_ai) -> None:
                     "AI設定",
                     (
                         "RVRT: Chunk>=4 / 0<=Overlap<Chunk\n"
-                        "SeedVR2: Batch>=1 / Chunk>=max(5, Batch) / 0<=Overlap<Chunk\n"
-                        "BlockSwap・処理短辺は0以上、カスタムGPUデューティは20～100の整数にしてください。"
+                        "SeedVR2: Batchは4n+1 / 0<=Temporal<Batch / Chunk>=max(5, Batch) / 0<=Overlap<Chunk\n"
+                        "VAE Tile>0 / 0<=VAE Overlap<Tile。BlockSwap・処理短辺は0以上、GPUデューティは20～100にしてください。"
                     ),
                     parent=w,
                 )
@@ -258,11 +307,12 @@ def enable_seedvr2_chunk_settings(app_ai) -> None:
                 seedvr2_model=vals["sm"].get().strip(),
                 seedvr2_batch_size=batch,
                 seedvr2_blocks_to_swap=swap,
-                seedvr2_temporal_overlap=self.config.seedvr2_temporal_overlap,
+                seedvr2_temporal_overlap=temporal,
                 seedvr2_resolution_override=res,
                 seedvr2_vae_tiling=True,
-                seedvr2_vae_tile_size=self.config.seedvr2_vae_tile_size,
-                seedvr2_vae_tile_overlap=self.config.seedvr2_vae_tile_overlap,
+                seedvr2_vae_tile_size=vae_tile,
+                seedvr2_vae_tile_overlap=vae_overlap,
+                seedvr2_color_correction=COLOR_CORRECTION_CHOICES[color_label.get()],
                 seedvr2_chunk_size=schunk,
                 seedvr2_chunk_overlap=sover,
                 resource_profile=profile,
@@ -273,7 +323,7 @@ def enable_seedvr2_chunk_settings(app_ai) -> None:
             w.destroy()
 
         bar = app_ai.ttk.Frame(f)
-        bar.grid(row=15, column=0, columnspan=3, sticky="e", pady=(10, 0))
+        bar.grid(row=17, column=0, columnspan=3, sticky="e", pady=(10, 0))
         app_ai.ttk.Button(bar, text="キャンセル", command=w.destroy).pack(
             side="right"
         )
