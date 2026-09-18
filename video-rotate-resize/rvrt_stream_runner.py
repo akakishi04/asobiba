@@ -447,7 +447,8 @@ def run(
             print(f"{PROGRESS_PREFIX}|RVRT|{chunk_no}|{shown_total}", flush=True)
 
             # A short final chunk means the decoder reached EOF.
-            if new_count < chunk_size - (0 if input_tail is None else input_tail.shape[1]):
+            wanted_new = chunk_size if chunk_no == 1 else chunk_size - overlap
+            if new_count < wanted_new:
                 break
 
         if pending is not None:
