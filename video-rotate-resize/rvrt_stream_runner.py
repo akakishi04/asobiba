@@ -120,6 +120,11 @@ class RawVideoPipeReader:
         if vf:
             command += ["-vf", vf]
         command += [
+            # Preserve one output frame per decoded source frame. Without this,
+            # FFmpeg's automatic sync policy can duplicate/drop frames for MOV
+            # files whose timestamps and nb_frames metadata disagree slightly.
+            "-fps_mode",
+            "passthrough",
             "-f",
             "rawvideo",
             "-pix_fmt",
@@ -584,9 +589,19 @@ def run(
         writer.close(check=True)
 
         produced = writer.count
-        if count_is_exact and produced != total_frames:
+        # The decoder is authoritative. Container nb_frames is frequently only
+        # metadata and can disagree with what FFmpeg actually emits (notably MOV
+        # edit lists / timestamp quirks). A real pipeline error is produced vs
+        # decoded unique frames, not metadata vs decoded frames.
+        if produced != unique_read:
             raise RuntimeError(
-                f"RVRT output frame count mismatch: {produced} != {total_frames}"
+                f"RVRT writer frame count mismatch: {produced} != decoded {unique_read}"
+            )
+        if unique_read != total_frames:
+            print(
+                f"RVRT: container frame count was {total_frames}, decoded "
+                f"{unique_read}; using decoded count as authoritative",
+                flush=True,
             )
         print(
             f"RVRT pipe streaming completed: {produced} frames -> {output_video}",
