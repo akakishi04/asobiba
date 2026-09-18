@@ -31,6 +31,15 @@ class StreamingEfficiencyTests(unittest.TestCase):
         self.assertIn("一時停止", pause_ui)
         self.assertNotIn("SuspendThread", rvrt + seed + pause_ui)
 
+    def test_full_pause_releases_model_ram_and_can_reload(self):
+        rvrt = (BASE / "rvrt_stream_runner.py").read_text(encoding="utf-8")
+        seed = (BASE / "seedvr2_runner.py").read_text(encoding="utf-8")
+        self.assertIn("_model_cache.pop", rvrt)
+        self.assertIn("model fully unloaded from GPU/CPU memory", rvrt)
+        self.assertIn('keep_models_in_ram=False', seed)
+        self.assertIn("deep_reload_runner", seed)
+        self.assertIn("create_runner()", seed)
+
     def test_streaming_modules_compile(self):
         for name in (
             "resource_policy.py",
