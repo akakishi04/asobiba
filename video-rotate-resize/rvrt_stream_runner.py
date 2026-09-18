@@ -12,6 +12,7 @@ import torch
 from vsrvrt.model_configs import get_config
 from vsrvrt.rvrt_core import RVRTInference
 
+from pause_control import wait_if_paused
 from resource_policy import DutyPacer
 
 
@@ -327,6 +328,7 @@ def run(
     width: int,
     height: int,
     gpu_duty: int,
+    pause_file: Path | None,
 ) -> None:
     if chunk_size < 4:
         raise ValueError("chunk_size must be >= 4")
@@ -362,6 +364,22 @@ def run(
 
     # One model load and one decoder process for the entire video.
     inference = RVRTInference(config, use_fp16=True, device=torch.device("cuda"))
+
+    def offload_model() -> None:
+        inference.model = inference.model.to("cpu")
+        torch.cuda.empty_cache()
+
+    def restore_model() -> None:
+        inference.model = inference.model.to(inference.device)
+
+    # Honor a pause request made immediately after the stage started.
+    wait_if_paused(
+        pause_file,
+        "RVRT",
+        before_wait=offload_model,
+        after_wait=restore_model,
+    )
+
     reader = RawVideoPipeReader(video_path, ffmpeg, width, height, vf)
     writer = LosslessVideoWriter(output_video, ffmpeg, fps, width, height)
     pacer = DutyPacer(gpu_duty)
@@ -459,6 +477,13 @@ def run(
             shown_total = max(estimated_chunks, chunk_no)
             print(f"{PROGRESS_PREFIX}|RVRT|{chunk_no}|{shown_total}", flush=True)
 
+            wait_if_paused(
+                pause_file,
+                "RVRT",
+                before_wait=offload_model,
+                after_wait=restore_model,
+            )
+
             # A short final chunk means the decoder reached EOF.
             if is_final_short:
                 break
@@ -507,6 +532,7 @@ def main() -> None:
     parser.add_argument("--width", required=True, type=int)
     parser.add_argument("--height", required=True, type=int)
     parser.add_argument("--gpu-duty", type=int, default=100)
+    parser.add_argument("--pause-file", type=Path, default=None)
     args = parser.parse_args()
     run(
         args.video_path,
@@ -521,6 +547,7 @@ def main() -> None:
         args.width,
         args.height,
         args.gpu_duty,
+        args.pause_file,
     )
 
 
