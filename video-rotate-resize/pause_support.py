@@ -13,7 +13,6 @@ def enable_pause_support(app_ai) -> None:
     original_stage = app_ai.App._stage
     original_idle = app_ai.App._idle
     original_cancel = app_ai.App._cancel
-    original_close = app_ai.App._close
 
     def _cleanup_pause_marker(self) -> None:
         marker = getattr(self, "_pause_file", None)
@@ -140,8 +139,15 @@ def enable_pause_support(app_ai) -> None:
         return original_cancel(self)
 
     def close_with_pause(self):
+        if self.running and not app_ai.messagebox.askyesno(
+            "終了", "実行中の処理を停止して終了しますか？"
+        ):
+            return
         _cleanup_pause_marker(self)
-        return original_close(self)
+        self.cancelled = True
+        if self.proc:
+            self._kill(self.proc)
+        self.root.destroy()
 
     app_ai.App._toggle_pause = toggle_pause
     app_ai.App._child_pause_state = child_pause_state
