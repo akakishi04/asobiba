@@ -24,6 +24,13 @@ class StreamingEfficiencyTests(unittest.TestCase):
             source,
         )
 
+    def test_rvrt_searches_throughput_tiles(self):
+        source = (BASE / "rvrt_stream_runner.py").read_text(encoding="utf-8")
+        self.assertIn("_select_throughput_tile", source)
+        self.assertIn("[512, 448, 384, 320, 256]", source)
+        self.assertIn("estimated model calls", source)
+        self.assertIn("_estimate_tile_memory", source)
+
     def test_seedvr2_keeps_model_loaded_and_does_not_rescan_cli_chunks(self):
         source = (BASE / "seedvr2_runner.py").read_text(encoding="utf-8")
         self.assertIn('cache_model=True', source)
