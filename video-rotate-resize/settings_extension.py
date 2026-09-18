@@ -25,6 +25,7 @@ def enable_seedvr2_chunk_settings(app_ai) -> None:
             "rp": app_ai.tk.StringVar(value=self.config.rvrt_python),
             "rc": app_ai.tk.StringVar(value=str(self.config.rvrt_chunk_size)),
             "ro": app_ai.tk.StringVar(value=str(self.config.rvrt_chunk_overlap)),
+            "rtile": app_ai.tk.StringVar(value=str(self.config.rvrt_spatial_tile)),
             "sr": app_ai.tk.StringVar(value=self.config.seedvr2_repo),
             "sp": app_ai.tk.StringVar(value=self.config.seedvr2_python),
             "sm": app_ai.tk.StringVar(value=self.config.seedvr2_model),
@@ -132,11 +133,16 @@ def enable_seedvr2_chunk_settings(app_ai) -> None:
         app_ai.ttk.Entry(radv, width=7, textvariable=vals["ro"]).pack(
             side="left", padx=(3, 10)
         )
+        app_ai.ttk.Label(radv, text="空間Tile(0=自動)").pack(side="left")
+        app_ai.ttk.Entry(radv, width=7, textvariable=vals["rtile"]).pack(
+            side="left", padx=(3, 10)
+        )
         app_ai.ttk.Label(
             f,
             text=(
                 "RVRTはFFmpeg rawvideo pipeで連続入力し、PNGを介さず処理します。"
-                " 他作業優先時もモデル品質設定は変更しません。"
+                " 空間Tile=0ではVRAM予算内で256〜512からモデル呼び出し回数が少ない構成を自動選択します。"
+                " 速度比較用の目安: 標準16/4・高速32/4・攻め64/4。"
             ),
             foreground="#555",
             wraplength=840,
@@ -203,6 +209,7 @@ def enable_seedvr2_chunk_settings(app_ai) -> None:
             try:
                 rchunk = int(vals["rc"].get())
                 rover = int(vals["ro"].get())
+                rtile = int(vals["rtile"].get())
                 batch = int(vals["sb"].get())
                 swap = int(vals["ss"].get())
                 res = int(vals["sx"].get())
@@ -214,6 +221,8 @@ def enable_seedvr2_chunk_settings(app_ai) -> None:
                     rchunk < 4
                     or rover < 0
                     or rover >= rchunk
+                    or rtile < 0
+                    or (rtile != 0 and (rtile < 128 or rtile % 8 != 0))
                     or batch < 1
                     or swap < 0
                     or res < 0
@@ -243,6 +252,7 @@ def enable_seedvr2_chunk_settings(app_ai) -> None:
                 rvrt_task=app_ai.RVRT_TASKS[rt.get()],
                 rvrt_chunk_size=rchunk,
                 rvrt_chunk_overlap=rover,
+                rvrt_spatial_tile=rtile,
                 seedvr2_repo=vals["sr"].get().strip(),
                 seedvr2_python=vals["sp"].get().strip(),
                 seedvr2_model=vals["sm"].get().strip(),
