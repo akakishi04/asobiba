@@ -6,6 +6,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from pause_control import PAUSE_PREFIX
 from resource_policy import child_creation_flags
 
 
@@ -184,6 +185,18 @@ def enable_eta(app_ai) -> None:
                             )
                         except ValueError:
                             pass
+                    continue
+
+                if text.startswith(PAUSE_PREFIX + "|"):
+                    parts = text.split("|", 2)
+                    if len(parts) == 3:
+                        state, engine = parts[1], parts[2]
+                        # Paused wall time must not pollute inference ETA samples.
+                        self._eta_last_tick = None
+                        handler = getattr(self, "_child_pause_state", None)
+                        if handler is not None:
+                            handler(state, engine)
+                    self._log_async(line)
                     continue
 
                 if ffmpeg_duration and text.startswith("out_time_us="):
