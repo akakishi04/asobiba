@@ -158,6 +158,7 @@ def main() -> None:
 
     import app_ai
     from eta_support import enable_eta
+    from pause_support import enable_pause_support
     from rvrt_streaming import enable_rvrt_streaming
     from seedvr2_streaming import enable_seedvr2_streaming
     from settings_extension import enable_seedvr2_chunk_settings
@@ -167,6 +168,7 @@ def main() -> None:
     enable_rvrt_streaming(app_ai)
     enable_seedvr2_chunk_settings(app_ai)
     enable_eta(app_ai)
+    enable_pause_support(app_ai)
 
     if dnd_ready and _enable_drag_and_drop(app_ai):
         print("Drag & Drop: enabled")
