@@ -128,6 +128,8 @@ def _build_rvrt_stream_command(
         str(height),
         "--gpu-duty",
         str(effective_gpu_duty_percent(config)),
+        "--spatial-tile",
+        str(config.rvrt_spatial_tile),
     ]
     if vf:
         command += ["--vf", vf]
