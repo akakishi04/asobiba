@@ -189,6 +189,7 @@ def build_seedvr2_command(
     output_video: str | Path,
     native_short_side: int,
     fps: float,
+    pause_file: str | Path | None = None,
 ) -> tuple[list[str], Path]:
     """Build the persistent single-model SeedVR2 streaming runner command."""
     repo = _require_repo(config.seedvr2_repo, "inference_cli.py", "SeedVR2")
@@ -243,6 +244,8 @@ def build_seedvr2_command(
             "--vae-tile-overlap",
             str(config.seedvr2_vae_tile_overlap),
         ]
+    if pause_file:
+        command += ["--pause-file", str(pause_file)]
     return command, runner.parent
 
 
