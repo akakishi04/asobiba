@@ -51,6 +51,12 @@ class RVRTStreamingTests(unittest.TestCase):
             )
             self.assertNotIn("--input-dir", cmd)
 
+    def test_streaming_worker_restores_rvrt_before_target_upscale(self):
+        source = Path("rvrt_streaming.py").read_text(encoding="utf-8")
+        self.assertIn("rvrt_dims = app_ai.transformed_dimensions", source)
+        self.assertIn("source_info", source)
+        self.assertIn("rot,\n                    None,", source)
+
     def test_final_encode_reads_single_lossless_video_and_original_audio(self):
         cmd = _final_from_lossless_command(
             "ffmpeg",
@@ -64,6 +70,9 @@ class RVRTStreamingTests(unittest.TestCase):
         self.assertIn("source.mp4", cmd)
         self.assertIn("h264_nvenc", cmd)
         self.assertIn("-progress", cmd)
+        vf = cmd[cmd.index("-vf") + 1]
+        self.assertIn("force_original_aspect_ratio=decrease", vf)
+        self.assertIn("pad=1920:1080", vf)
         self.assertNotIn("frame%06d.png", cmd)
 
 
