@@ -188,14 +188,15 @@ def enable_eta(app_ai) -> None:
                     continue
 
                 if text.startswith(PAUSE_PREFIX + "|"):
-                    parts = text.split("|", 2)
-                    if len(parts) == 3:
+                    parts = text.split("|")
+                    if len(parts) >= 3:
                         state, engine = parts[1], parts[2]
+                        mode = parts[3] if len(parts) >= 4 else "soft"
                         # Paused wall time must not pollute inference ETA samples.
                         self._eta_last_tick = None
                         handler = getattr(self, "_child_pause_state", None)
                         if handler is not None:
-                            handler(state, engine)
+                            handler(state, engine, mode)
                     self._log_async(line)
                     continue
 
