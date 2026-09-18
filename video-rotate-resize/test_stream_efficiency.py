@@ -22,9 +22,20 @@ class StreamingEfficiencyTests(unittest.TestCase):
         self.assertNotIn("--load_cap", source)
         self.assertNotIn("shutil.copy2", source)
 
+    def test_ai_runners_use_cooperative_pause_not_process_suspend(self):
+        rvrt = (BASE / "rvrt_stream_runner.py").read_text(encoding="utf-8")
+        seed = (BASE / "seedvr2_runner.py").read_text(encoding="utf-8")
+        pause_ui = (BASE / "pause_support.py").read_text(encoding="utf-8")
+        self.assertIn("wait_if_paused", rvrt)
+        self.assertIn("wait_if_paused", seed)
+        self.assertIn("一時停止", pause_ui)
+        self.assertNotIn("SuspendThread", rvrt + seed + pause_ui)
+
     def test_streaming_modules_compile(self):
         for name in (
             "resource_policy.py",
+            "pause_control.py",
+            "pause_support.py",
             "ai_backends.py",
             "app_ai.py",
             "eta_support.py",
