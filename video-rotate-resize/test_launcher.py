@@ -33,6 +33,8 @@ class LauncherTests(unittest.TestCase):
         self.assertIn("一時停止", source)
         self.assertIn("再開", source)
         self.assertIn("_pause_file", source)
+        self.assertIn("RAMも解放", source)
+        self.assertIn("PAUSE_DEEP", source)
 
     def test_seedvr2_chunk_controls_are_exposed(self):
         source = inspect.getsource(settings_extension.enable_seedvr2_chunk_settings)
