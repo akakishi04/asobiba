@@ -32,6 +32,8 @@ class LauncherTests(unittest.TestCase):
         self.assertIn("seedvr2_chunk_size", source)
         self.assertIn("seedvr2_chunk_overlap", source)
         self.assertIn("長尺動画 / RAM", source)
+        self.assertIn("実行負荷", source)
+        self.assertIn("GPUデューティ目標", source)
 
 
 if __name__ == "__main__":
