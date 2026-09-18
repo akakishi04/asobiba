@@ -113,14 +113,28 @@ GPUデューティ目標はドライバ側のハードな使用率制限では�
 
 RVRT / SeedVR2 のAI復元中は **一時停止** ボタンを利用できます。OSレベルでCUDAプロセスを強制Suspendするのではなく、安全な推論境界で協調停止します。
 
+GUIには `RAMも解放` チェックがあります。既定はONです。
+
+### RAMも解放 = OFF（高速Pause）
+
 - RVRT: 現在のChunk完了後に停止
 - SeedVR2: 現在の内部BatchまたはPhase境界で停止
-- 停止中は可能な範囲で現在のAIモデルをGPUからCPUへ退避し、`torch.cuda.empty_cache()` でVRAMを返却
-- 再開時は必要なモデルだけGPUへ戻して、その位置から処理継続
-- Pause中の待ち時間はETA速度サンプルに含めない
-- キャンセルはPauseとは別で、従来どおり処理を終了
+- モデルはGPUからCPU RAMへ退避
+- VRAMを返却するが、モデルweightはシステムRAMに残す
+- 再開が速い
 
-ボタンを押した直後は「一時停止要求中」と表示されます。GPUカーネルの途中では停止しないため、現在のChunk/Batchが重い場合は実際に「一時停止中」へ移るまで時間がかかることがあります。停止中はモデルをCPUへ退避するため、システムRAM使用量は増える場合があります。
+### RAMも解放 = ON（完全Pause / 既定）
+
+- RVRT: 現在のChunk完了後に停止し、vsrvrt内部モデルキャッシュを含めモデル参照を破棄
+- SeedVR2: 安全な外側Chunk境界まで進んだ後、上流のfull cleanupでDiT / VAE / BlockSwap / runtime cacheを破棄
+- `gc.collect()`、CUDA cache解放、Windows working-set trimを実行
+- モデル本体をVRAMだけでなくCPU RAMからもアンロード
+- 再開時はローカルweightをディスクから再ロードして処理を継続
+- モデル再ロードが必要なため高速Pauseより再開が遅い
+
+完全PauseでもPython / PyTorchランタイム、数フレームのOverlap、動画reader/writerなどの小さな処理状態は残ります。そのためプロセスRAMが0になるわけではありません。
+
+Pause中の待ち時間はETA速度サンプルに含めません。キャンセルはPauseとは別で、従来どおり処理を終了します。ボタンを押した直後は「一時停止要求中」または「完全一時停止要求中」と表示されます。GPUカーネル途中では停止しないため、現在のChunk/Batchが重い場合は実際の停止まで時間がかかることがあります。
 
 ## AI自動セットアップ
 
