@@ -369,8 +369,7 @@ def run(
     print(f"{PROGRESS_PREFIX}|RVRT|0|{estimated_chunks}", flush=True)
 
     input_tail: torch.Tensor | None = None
-    pending_start: int | None = None
-    pending: torch.Tensor | None = None
+    output_tail: torch.Tensor | None = None
     unique_read = 0
     chunk_no = 0
     normal_reader_close = False
@@ -411,48 +410,61 @@ def run(
             del clip
             torch.cuda.empty_cache()
 
-            if pending is None or pending_start is None:
-                pending_start = int(start)
-                pending = current
-            else:
-                pending_end = pending_start + pending.shape[1]
-                actual_overlap = max(0, pending_end - int(start))
-                actual_overlap = min(
-                    actual_overlap, pending.shape[1], current.shape[1]
-                )
+            wanted_new = chunk_size if chunk_no == 1 else chunk_size - overlap
+            is_final_short = new_count < wanted_new
 
-                if actual_overlap == 0:
-                    writer.write(pending)
-                    pending_start = int(start)
-                    pending = current
+            # Write everything except the outer overlap immediately. Only the
+            # boundary tail stays in RAM for blending with the next chunk.
+            if output_tail is None:
+                if is_final_short or overlap == 0:
+                    writer.write(current)
+                    output_tail = None
                 else:
-                    direct_count = pending.shape[1] - actual_overlap
-                    if direct_count:
-                        writer.write(pending[:, :direct_count])
-
+                    keep = min(overlap, current.shape[1])
+                    direct = current.shape[1] - keep
+                    if direct:
+                        writer.write(current[:, :direct])
+                    output_tail = current[:, direct:].contiguous()
+            else:
+                actual_overlap = min(
+                    output_tail.shape[1], current.shape[1], overlap
+                )
+                if actual_overlap:
                     blended = []
+                    tail_offset = output_tail.shape[1] - actual_overlap
                     for j in range(actual_overlap):
                         alpha = (j + 1) / (actual_overlap + 1)
                         blended.append(
-                            pending[0, direct_count + j] * (1.0 - alpha)
+                            output_tail[0, tail_offset + j] * (1.0 - alpha)
                             + current[0, j] * alpha
                         )
-                    if blended:
-                        writer.write(torch.stack(blended, dim=0).unsqueeze(0))
-                    pending_start = int(start) + actual_overlap
-                    pending = current[:, actual_overlap:].contiguous()
-                    del current
+                    writer.write(torch.stack(blended, dim=0).unsqueeze(0))
+                else:
+                    writer.write(output_tail)
+
+                remainder = current[:, actual_overlap:]
+                if is_final_short or overlap == 0:
+                    if remainder.shape[1]:
+                        writer.write(remainder)
+                    output_tail = None
+                else:
+                    keep = min(overlap, remainder.shape[1])
+                    direct = remainder.shape[1] - keep
+                    if direct:
+                        writer.write(remainder[:, :direct])
+                    output_tail = (
+                        remainder[:, direct:].contiguous() if keep else None
+                    )
 
             shown_total = max(estimated_chunks, chunk_no)
             print(f"{PROGRESS_PREFIX}|RVRT|{chunk_no}|{shown_total}", flush=True)
 
             # A short final chunk means the decoder reached EOF.
-            wanted_new = chunk_size if chunk_no == 1 else chunk_size - overlap
-            if new_count < wanted_new:
+            if is_final_short:
                 break
 
-        if pending is not None:
-            writer.write(pending)
+        if output_tail is not None:
+            writer.write(output_tail)
 
         reader.close(check=True)
         normal_reader_close = True
