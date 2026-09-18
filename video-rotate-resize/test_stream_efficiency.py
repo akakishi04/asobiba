@@ -60,6 +60,14 @@ class StreamingEfficiencyTests(unittest.TestCase):
         self.assertIn("deep_reload_runner", seed)
         self.assertIn("create_runner()", seed)
 
+    def test_ai_runners_report_phase_timings(self):
+        rvrt = (BASE / "rvrt_stream_runner.py").read_text(encoding="utf-8")
+        seed = (BASE / "seedvr2_runner.py").read_text(encoding="utf-8")
+        self.assertIn("RVRT timing summary", rvrt)
+        self.assertIn("SeedVR2 timing summary", seed)
+        self.assertIn("encode_elapsed", seed)
+        self.assertIn("decode_elapsed", seed)
+
     def test_streaming_modules_compile(self):
         for name in (
             "resource_policy.py",
