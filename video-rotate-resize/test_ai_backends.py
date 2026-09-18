@@ -53,6 +53,7 @@ class AIBackendTests(unittest.TestCase):
             self.assertEqual(cmd[cmd.index("--output-video") + 1], "out.mkv")
             self.assertEqual(cmd[cmd.index("--fps") + 1], "30.00000000")
             self.assertEqual(cmd[cmd.index("--pause-file") + 1], str(pause))
+            self.assertEqual(cmd[cmd.index("--color-correction") + 1], "wavelet")
             self.assertIn("--vae-tiling", cmd)
 
     def test_seedvr2_resolution_override(self):
@@ -66,6 +67,32 @@ class AIBackendTests(unittest.TestCase):
             )
             cmd, _ = build_seedvr2_command(cfg, "input.mp4", "out.mkv", 2160, 30.0)
             self.assertEqual(cmd[cmd.index("--resolution") + 1], "1072")
+
+    def test_seedvr2_batch_must_be_four_n_plus_one(self):
+        with tempfile.TemporaryDirectory() as temp_name:
+            root = Path(temp_name)
+            repo, python = self._fake_seed_engine(root)
+            cfg = AIConfig(
+                seedvr2_repo=str(repo),
+                seedvr2_python=str(python),
+                seedvr2_batch_size=6,
+            )
+            with self.assertRaises(Exception):
+                validate_for_mode(cfg, AI_SEEDVR2)
+
+    def test_seedvr2_color_correction_is_configurable(self):
+        with tempfile.TemporaryDirectory() as temp_name:
+            root = Path(temp_name)
+            repo, python = self._fake_seed_engine(root)
+            cfg = AIConfig(
+                seedvr2_repo=str(repo),
+                seedvr2_python=str(python),
+                seedvr2_color_correction="adain",
+            )
+            cmd, _ = build_seedvr2_command(
+                cfg, "input.mp4", "out.mkv", 1080, 30.0
+            )
+            self.assertEqual(cmd[cmd.index("--color-correction") + 1], "adain")
 
     def test_seedvr2_invalid_chunk_overlap_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp_name:
@@ -163,6 +190,9 @@ class AIBackendTests(unittest.TestCase):
                 rvrt_spatial_tile=384,
                 seedvr2_batch_size=7,
                 seedvr2_resolution_override=1440,
+                seedvr2_vae_tile_size=640,
+                seedvr2_vae_tile_overlap=96,
+                seedvr2_color_correction="adain",
                 seedvr2_chunk_size=37,
                 seedvr2_chunk_overlap=5,
                 resource_profile="background",
@@ -174,6 +204,9 @@ class AIBackendTests(unittest.TestCase):
             self.assertEqual(restored.rvrt_spatial_tile, 384)
             self.assertEqual(restored.seedvr2_batch_size, 7)
             self.assertEqual(restored.seedvr2_resolution_override, 1440)
+            self.assertEqual(restored.seedvr2_vae_tile_size, 640)
+            self.assertEqual(restored.seedvr2_vae_tile_overlap, 96)
+            self.assertEqual(restored.seedvr2_color_correction, "adain")
             self.assertEqual(restored.seedvr2_chunk_size, 37)
             self.assertEqual(restored.seedvr2_chunk_overlap, 5)
             self.assertEqual(restored.resource_profile, "background")
