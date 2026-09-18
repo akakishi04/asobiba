@@ -25,6 +25,11 @@ class StreamingEfficiencyTests(unittest.TestCase):
     def test_streaming_modules_compile(self):
         for name in (
             "resource_policy.py",
+            "ai_backends.py",
+            "app_ai.py",
+            "eta_support.py",
+            "settings_extension.py",
+            "launcher.py",
             "rvrt_stream_runner.py",
             "seedvr2_runner.py",
             "seedvr2_streaming.py",
