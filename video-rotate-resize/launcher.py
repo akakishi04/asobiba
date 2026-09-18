@@ -159,9 +159,11 @@ def main() -> None:
     import app_ai
     from eta_support import enable_eta
     from rvrt_streaming import enable_rvrt_streaming
+    from seedvr2_streaming import enable_seedvr2_streaming
     from settings_extension import enable_seedvr2_chunk_settings
 
-    # Conversion extension first, then ETA/UI wrappers around the resulting App.
+    # Conversion extensions first, then ETA/UI wrappers around the resulting App.
+    enable_seedvr2_streaming(app_ai)
     enable_rvrt_streaming(app_ai)
     enable_seedvr2_chunk_settings(app_ai)
     enable_eta(app_ai)
