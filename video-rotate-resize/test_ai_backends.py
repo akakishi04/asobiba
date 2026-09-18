@@ -38,7 +38,10 @@ class AIBackendTests(unittest.TestCase):
                 seedvr2_chunk_overlap=5,
             )
             validate_for_mode(cfg, AI_SEEDVR2)
-            cmd, cwd = build_seedvr2_command(cfg, "input.mp4", "out.mkv", 1080, 30.0)
+            pause = root / "pause.flag"
+            cmd, cwd = build_seedvr2_command(
+                cfg, "input.mp4", "out.mkv", 1080, 30.0, pause
+            )
             self.assertEqual(cmd[0], str(python))
             self.assertTrue(cmd[1].endswith("seedvr2_runner.py"))
             self.assertEqual(cwd, Path(cmd[1]).parent)
@@ -49,6 +52,7 @@ class AIBackendTests(unittest.TestCase):
             self.assertEqual(cmd[cmd.index("--chunk-overlap") + 1], "5")
             self.assertEqual(cmd[cmd.index("--output-video") + 1], "out.mkv")
             self.assertEqual(cmd[cmd.index("--fps") + 1], "30.00000000")
+            self.assertEqual(cmd[cmd.index("--pause-file") + 1], str(pause))
             self.assertIn("--vae-tiling", cmd)
 
     def test_seedvr2_resolution_override(self):
