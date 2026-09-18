@@ -400,6 +400,18 @@ def run(
         cached_tile_size = None
         gc.collect()
         torch.cuda.empty_cache()
+        # Hint Windows to trim the process working set after the large model
+        # tensors have been freed, matching SeedVR2's deep cleanup behavior.
+        try:
+            import ctypes
+            import sys
+
+            if sys.platform == "win32":
+                kernel32 = ctypes.windll.kernel32
+                handle = kernel32.GetCurrentProcess()
+                kernel32.SetProcessWorkingSetSize(handle, -1, -1)
+        except Exception:
+            pass
         print("RVRT: model fully unloaded from GPU/CPU memory", flush=True)
 
     def deep_reload_model() -> None:
