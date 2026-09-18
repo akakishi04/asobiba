@@ -33,13 +33,11 @@ def _aligned_outer_chunk_size(
         return configured
     minimum = max(5, batch_size, outer_overlap + 1)
     for candidate in range(configured, minimum - 1, -1):
-        # Full inner batches cover batch_size + n*step frames. Keeping the
-        # outer stride aligned avoids creating a padded partial batch at every
-        # chunk boundary.
-        if (
-            (candidate - batch_size) % step == 0
-            and (candidate - outer_overlap) % step == 0
-        ):
+        # Upstream starts inner batches every (batch_size-temporal_overlap)
+        # frames. A chunk is padding-free when its tail lands exactly on a full
+        # inner batch. The outer-chunk stride does not need to share that
+        # cadence because each outer chunk is processed independently.
+        if (candidate - batch_size) % step == 0:
             return candidate
     return configured
 
