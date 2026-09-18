@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import os
 import subprocess
 import sys
@@ -13,7 +14,7 @@ import cv2
 import numpy as np
 import torch
 
-from pause_control import wait_if_paused
+from pause_control import PAUSE_DEEP, PAUSE_SOFT, get_pause_mode, wait_if_paused
 from resource_policy import DutyPacer, PROFILE_BACKGROUND, PROFILE_BALANCED
 
 
@@ -319,29 +320,40 @@ def run(args: argparse.Namespace) -> None:
     )
     print(f"{PROGRESS_PREFIX}|SeedVR2|0|{chunks}", flush=True)
 
-    # Download once, load once, reuse the same runner for every outer chunk.
+    # Download once. The runner stays loaded across chunks unless a full-memory
+    # pause explicitly destroys it and reloads it from the local model files.
     modules["download_weight"](args.model, str(model_dir))
     device = modules["setup_device"]("cuda:0", debug)
-    runner, _ = modules["prepare_runner"](
-        args.model,
-        str(model_dir),
-        True,
-        debug,
-        cache_model=True,
-        block_swap_config={
-            "blocks_to_swap": args.blocks_to_swap,
-            "use_none_blocking": False,
-            "offload_io_components": True,
-            "cache_model": True,
-        },
-        vae_tiling_enabled=args.vae_tiling,
-        vae_tile_size=(args.vae_tile_size, args.vae_tile_size),
-        vae_tile_overlap=(args.vae_tile_overlap, args.vae_tile_overlap),
-        cached_runner=None,
-    )
+    cached_text_embeds_cpu: dict[str, list[torch.Tensor]] | None = None
+
+    def create_runner():
+        created, _ = modules["prepare_runner"](
+            args.model,
+            str(model_dir),
+            True,
+            debug,
+            cache_model=True,
+            block_swap_config={
+                "blocks_to_swap": args.blocks_to_swap,
+                "use_none_blocking": False,
+                "offload_io_components": True,
+                "cache_model": True,
+            },
+            vae_tiling_enabled=args.vae_tiling,
+            vae_tile_size=(args.vae_tile_size, args.vae_tile_size),
+            vae_tile_overlap=(args.vae_tile_overlap, args.vae_tile_overlap),
+            cached_runner=None,
+        )
+        return created
+
+    runner = create_runner()
 
     def offload_all_models() -> None:
+        if runner is None:
+            return
         for model, name in ((runner.vae, "VAE"), (runner.dit, "DiT")):
+            if model is None:
+                continue
             modules["manage_model_device"](
                 model=model,
                 target_device="cpu",
@@ -352,23 +364,64 @@ def run(args: argparse.Namespace) -> None:
             )
         torch.cuda.empty_cache()
 
-    # If pause was requested while the model was loading, stop before decoding
-    # any video frames and release model VRAM first.
-    wait_if_paused(
-        args.pause_file,
-        "SeedVR2",
-        before_wait=offload_all_models,
-    )
+    def deep_unload_runner() -> None:
+        nonlocal runner, cached_text_embeds_cpu
+        if runner is not None:
+            modules["cleanup"](
+                runner=runner,
+                debug=debug,
+                keep_models_in_ram=False,
+            )
+        runner = None
+        cached_text_embeds_cpu = None
+        gc.collect()
+        torch.cuda.empty_cache()
+        print("SeedVR2: model fully unloaded from GPU/CPU memory", flush=True)
+
+    def deep_reload_runner() -> None:
+        nonlocal runner
+        print("SeedVR2: reloading model after full pause...", flush=True)
+        runner = create_runner()
+
+    def handle_outer_pause() -> bool:
+        mode = get_pause_mode(args.pause_file)
+        if mode == PAUSE_DEEP:
+            return wait_if_paused(
+                args.pause_file,
+                "SeedVR2",
+                before_wait=deep_unload_runner,
+                after_wait=deep_reload_runner,
+                accepted_modes={PAUSE_DEEP},
+            )
+        if mode == PAUSE_SOFT:
+            return wait_if_paused(
+                args.pause_file,
+                "SeedVR2",
+                before_wait=offload_all_models,
+                accepted_modes={PAUSE_SOFT},
+            )
+        return False
+
+    # A full pause requested during model load can release it before decoding.
+    handle_outer_pause()
 
     pacer = DutyPacer(args.gpu_duty)
     writer: LosslessVideoWriter | None = None
     input_tail: torch.Tensor | None = None
     output_tail: torch.Tensor | None = None
-    cached_text_embeds_cpu: dict[str, list[torch.Tensor]] | None = None
     unique_read = 0
     chunk_no = 0
 
     def pace_callback(current: int, total_batches: int, frames: int, phase: str):
+        if runner is None:
+            raise RuntimeError("SeedVR2 runner is not loaded")
+
+        # Full-memory pause cannot destroy a runner while an upstream phase
+        # function is still using it. Defer it to the outer chunk boundary.
+        mode = get_pause_mode(args.pause_file)
+        if mode == PAUSE_DEEP:
+            return
+
         if "Upscaling" in phase:
             active_model, model_name = runner.dit, "DiT"
         else:
@@ -403,15 +456,13 @@ def run(args: argparse.Namespace) -> None:
                     ctx["text_embeds"], device
                 )
 
-        pause_requested = bool(
-            args.pause_file and Path(args.pause_file).exists()
-        )
-        if pause_requested:
+        if mode == PAUSE_SOFT:
             paused = wait_if_paused(
                 args.pause_file,
                 "SeedVR2",
                 before_wait=offload_active,
                 after_wait=restore_active,
+                accepted_modes={PAUSE_SOFT},
             )
             if paused:
                 pacer.begin()
@@ -425,15 +476,17 @@ def run(args: argparse.Namespace) -> None:
                 flush=True,
             )
 
-        # Catch a pause request that arrived while the duty-cycle sleep ran.
-        paused = wait_if_paused(
-            args.pause_file,
-            "SeedVR2",
-            before_wait=offload_active,
-            after_wait=restore_active,
-        )
-        if paused:
-            pacer.begin()
+        # Catch a soft pause request that arrived while the pacing sleep ran.
+        if get_pause_mode(args.pause_file) == PAUSE_SOFT:
+            paused = wait_if_paused(
+                args.pause_file,
+                "SeedVR2",
+                before_wait=offload_active,
+                after_wait=restore_active,
+                accepted_modes={PAUSE_SOFT},
+            )
+            if paused:
+                pacer.begin()
 
     try:
         while True:
@@ -455,6 +508,8 @@ def run(args: argparse.Namespace) -> None:
                 flush=True,
             )
 
+            if runner is None:
+                raise RuntimeError("SeedVR2 runner is not loaded")
             ctx = modules["prepare_context"](device=device, debug=debug)
 
             pacer.begin()
@@ -472,7 +527,11 @@ def run(args: argparse.Namespace) -> None:
                 color_correction=args.color_correction,
             )
 
-            wait_if_paused(args.pause_file, "SeedVR2")
+            wait_if_paused(
+                args.pause_file,
+                "SeedVR2",
+                accepted_modes={PAUSE_SOFT},
+            )
             if cached_text_embeds_cpu is not None:
                 ctx["text_embeds"] = _move_text_embeddings(
                     cached_text_embeds_cpu, device
@@ -498,7 +557,11 @@ def run(args: argparse.Namespace) -> None:
                 # reference and reuse the CPU cache next chunk.
                 ctx["text_embeds"] = None
 
-            wait_if_paused(args.pause_file, "SeedVR2")
+            wait_if_paused(
+                args.pause_file,
+                "SeedVR2",
+                accepted_modes={PAUSE_SOFT},
+            )
             pacer.begin()
             ctx = modules["decode"](
                 runner,
@@ -589,9 +652,9 @@ def run(args: argparse.Namespace) -> None:
                 flush=True,
             )
 
-            # At an outer-chunk boundary preserve_vram has already moved the
-            # phase models back to CPU, so this pause consumes minimal VRAM.
-            wait_if_paused(args.pause_file, "SeedVR2")
+            # Full-memory pause is safe here: no upstream generation phase is
+            # holding the runner on its call stack, so the model can be deleted.
+            handle_outer_pause()
 
             if is_final_short:
                 break
@@ -626,11 +689,12 @@ def run(args: argparse.Namespace) -> None:
             except Exception:
                 pass
         try:
-            modules["cleanup"](
-                runner=runner,
-                debug=debug,
-                keep_models_in_ram=False,
-            )
+            if runner is not None:
+                modules["cleanup"](
+                    runner=runner,
+                    debug=debug,
+                    keep_models_in_ram=False,
+                )
         except Exception:
             pass
 
