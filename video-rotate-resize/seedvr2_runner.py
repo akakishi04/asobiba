@@ -5,6 +5,7 @@ import gc
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 # Must be set before torch is imported so cudaMallocAsync is actually selected.
@@ -409,6 +410,7 @@ def run(args: argparse.Namespace) -> None:
     output_tail: torch.Tensor | None = None
     unique_read = 0
     chunk_no = 0
+    phase_totals = {"encode": 0.0, "dit": 0.0, "decode": 0.0}
 
     def pace_callback(current: int, total_batches: int, frames: int, phase: str):
         if runner is None:
@@ -511,6 +513,7 @@ def run(args: argparse.Namespace) -> None:
             ctx = modules["prepare_context"](device=device, debug=debug)
 
             pacer.begin()
+            encode_started = time.perf_counter()
             ctx = modules["encode"](
                 runner,
                 ctx=ctx,
@@ -524,6 +527,8 @@ def run(args: argparse.Namespace) -> None:
                 input_noise_scale=0.0,
                 color_correction=args.color_correction,
             )
+            encode_elapsed = time.perf_counter() - encode_started
+            phase_totals["encode"] += encode_elapsed
 
             wait_if_paused(
                 args.pause_file,
@@ -535,6 +540,7 @@ def run(args: argparse.Namespace) -> None:
                     cached_text_embeds_cpu, device
                 )
             pacer.begin()
+            dit_started = time.perf_counter()
             ctx = modules["upscale"](
                 runner,
                 ctx=ctx,
@@ -545,6 +551,8 @@ def run(args: argparse.Namespace) -> None:
                 seed=100,
                 latent_noise_scale=0.0,
             )
+            dit_elapsed = time.perf_counter() - dit_started
+            phase_totals["dit"] += dit_elapsed
 
             if ctx.get("text_embeds") is not None:
                 if cached_text_embeds_cpu is None:
@@ -561,6 +569,7 @@ def run(args: argparse.Namespace) -> None:
                 accepted_modes={PAUSE_SOFT},
             )
             pacer.begin()
+            decode_started = time.perf_counter()
             ctx = modules["decode"](
                 runner,
                 ctx=ctx,
@@ -568,6 +577,14 @@ def run(args: argparse.Namespace) -> None:
                 debug=debug,
                 progress_callback=pace_callback,
                 color_correction=args.color_correction,
+            )
+            decode_elapsed = time.perf_counter() - decode_started
+            phase_totals["decode"] += decode_elapsed
+            print(
+                f"SeedVR2 timing: chunk {chunk_no} "
+                f"encode={encode_elapsed:.1f}s dit={dit_elapsed:.1f}s "
+                f"decode={decode_elapsed:.1f}s",
+                flush=True,
             )
 
             current = ctx["final_video"]
@@ -673,6 +690,18 @@ def run(args: argparse.Namespace) -> None:
             print(
                 f"SeedVR2: container frame count was {total}, decoded {unique_read}; "
                 "using decoded count as authoritative",
+                flush=True,
+            )
+        measured_total = sum(phase_totals.values())
+        if measured_total > 0:
+            print(
+                "SeedVR2 timing summary: "
+                f"encode={phase_totals['encode']:.1f}s "
+                f"({phase_totals['encode'] / measured_total * 100:.1f}%) / "
+                f"dit={phase_totals['dit']:.1f}s "
+                f"({phase_totals['dit'] / measured_total * 100:.1f}%) / "
+                f"decode={phase_totals['decode']:.1f}s "
+                f"({phase_totals['decode'] / measured_total * 100:.1f}%)",
                 flush=True,
             )
         print(
