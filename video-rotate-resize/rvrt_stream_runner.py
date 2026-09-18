@@ -345,6 +345,54 @@ def _pad_temporal(clip: torch.Tensor, minimum: int = 4) -> tuple[torch.Tensor, i
     return torch.cat([clip, last.repeat(1, target - original, 1, 1, 1)], dim=1), original
 
 
+def _infer_with_auto_oom_fallback(
+    inference: RVRTInference,
+    clip: torch.Tensor,
+    input_hw: tuple[int, int],
+    tile_size: tuple[int, int, int],
+    *,
+    auto_spatial: bool,
+) -> tuple[torch.Tensor, tuple[int, int, int]]:
+    current_tile = tile_size
+    fallback_spatial = [512, 448, 384, 320, 256, 192, 128]
+
+    while True:
+        try:
+            return (
+                _infer_chunk(
+                    inference,
+                    clip,
+                    input_hw,
+                    tile_size=current_tile,
+                ),
+                current_tile,
+            )
+        except torch.cuda.OutOfMemoryError:
+            if not auto_spatial:
+                raise
+            torch.cuda.empty_cache()
+            current_spatial = current_tile[1]
+            smaller = next(
+                (value for value in fallback_spatial if value < current_spatial),
+                None,
+            )
+            if smaller is None:
+                raise
+
+            available = int(inference._get_available_vram() * 0.70)
+            temporal = inference._find_max_temporal_frames(
+                smaller,
+                available,
+                int(clip.shape[1]),
+            )
+            current_tile = (temporal, smaller, smaller)
+            print(
+                f"RVRT: OOM with tile {tile_size}; retrying current chunk "
+                f"with {current_tile}",
+                flush=True,
+            )
+
+
 def _infer_chunk(
     inference: RVRTInference,
     clip: torch.Tensor,
@@ -598,12 +646,15 @@ def run(
                 )
 
             pacer.begin()
-            current = _infer_chunk(
+            current, used_tile_size = _infer_with_auto_oom_fallback(
                 inference,
                 clip,
                 (height, width),
-                tile_size=active_tile_size,
+                active_tile_size,
+                auto_spatial=(spatial_tile == 0),
             )
+            if used_tile_size != active_tile_size and gpu_duty >= 100:
+                cached_tile_size = used_tile_size
 
             pause_requested = get_pause_mode(pause_file) is not None
             if pause_requested:
