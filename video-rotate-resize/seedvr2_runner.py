@@ -6,6 +6,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Must be set before torch is imported so cudaMallocAsync is actually selected.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "backend:cudaMallocAsync")
+
 import cv2
 import numpy as np
 import torch
