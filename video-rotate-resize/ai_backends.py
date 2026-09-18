@@ -5,6 +5,12 @@ import shutil
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from resource_policy import (
+    PROFILE_CUSTOM,
+    effective_gpu_duty_percent,
+    effective_seedvr2_blocks_to_swap,
+    validate_resource_profile,
+)
 from video_tool import VideoToolError
 
 
@@ -51,6 +57,9 @@ class AIConfig:
     # before inference. Keep each invocation bounded and blend neighboring chunks.
     seedvr2_chunk_size: int = 45
     seedvr2_chunk_overlap: int = 5
+    # Resource policy. Presets do not lower image resolution or quality settings.
+    resource_profile: str = "max"
+    gpu_duty_cycle_percent: int = 100
 
     @classmethod
     def load(cls, config_path: str | Path) -> "AIConfig":
@@ -101,6 +110,13 @@ def _require_repo(repo_value: str, marker: str, engine_name: str) -> Path:
 
 
 def validate_for_mode(config: AIConfig, mode: str) -> None:
+    try:
+        validate_resource_profile(
+            config.resource_profile,
+            config.gpu_duty_cycle_percent,
+        )
+    except ValueError as exc:
+        raise VideoToolError(str(exc)) from exc
     if mode in {AI_RVRT, AI_RVRT_SEEDVR2}:
         resolve_python(config.rvrt_python)
         if config.rvrt_task not in set(RVRT_TASKS.values()):
@@ -148,8 +164,8 @@ def build_rvrt_command(
         str(runner),
         "--input-dir",
         str(input_dir),
-        "--output-dir",
-        str(output_dir),
+        "--output-video",
+        str(output_video),
         "--task",
         config.rvrt_task,
         "--chunk-size",
@@ -163,7 +179,7 @@ def build_rvrt_command(
 def build_seedvr2_command(
     config: AIConfig,
     input_video: str | Path,
-    output_dir: str | Path,
+    output_video: str | Path,
     native_short_side: int,
 ) -> tuple[list[str], Path]:
     repo = _require_repo(config.seedvr2_repo, "inference_cli.py", "SeedVR2")
@@ -192,7 +208,7 @@ def build_seedvr2_command(
         "--model",
         config.seedvr2_model,
         "--blocks-to-swap",
-        str(config.seedvr2_blocks_to_swap),
+        str(effective_seedvr2_blocks_to_swap(config)),
         "--temporal-overlap",
         str(config.seedvr2_temporal_overlap),
         "--chunk-size",
@@ -201,6 +217,10 @@ def build_seedvr2_command(
         str(config.seedvr2_chunk_overlap),
         "--color-correction",
         "wavelet",
+        "--gpu-duty",
+        str(effective_gpu_duty_percent(config)),
+        "--resource-profile",
+        config.resource_profile,
     ]
     if config.seedvr2_vae_tiling:
         command += [
