@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 import torch
 
+from pause_control import wait_if_paused
 from resource_policy import DutyPacer, PROFILE_BACKGROUND, PROFILE_BALANCED
 
 
@@ -213,7 +214,7 @@ def _load_seed_modules(repo: Path):
         setup_device_environment,
         upscale_all_batches,
     )
-    from src.optimization.memory_manager import complete_cleanup
+    from src.optimization.memory_manager import complete_cleanup, manage_model_device
     from src.utils.debug import Debug
     from src.utils.downloads import download_weight
 
@@ -225,6 +226,7 @@ def _load_seed_modules(repo: Path):
         "setup_device": setup_device_environment,
         "upscale": upscale_all_batches,
         "cleanup": complete_cleanup,
+        "manage_model_device": manage_model_device,
         "Debug": Debug,
         "download_weight": download_weight,
     }
@@ -291,6 +293,26 @@ def run(args: argparse.Namespace) -> None:
         cached_runner=None,
     )
 
+    def offload_all_models() -> None:
+        for model, name in ((runner.vae, "VAE"), (runner.dit, "DiT")):
+            modules["manage_model_device"](
+                model=model,
+                target_device="cpu",
+                model_name=name,
+                preserve_vram=True,
+                debug=debug,
+                runner=runner,
+            )
+        torch.cuda.empty_cache()
+
+    # If pause was requested while the model was loading, stop before decoding
+    # any video frames and release model VRAM first.
+    wait_if_paused(
+        args.pause_file,
+        "SeedVR2",
+        before_wait=offload_all_models,
+    )
+
     pacer = DutyPacer(args.gpu_duty)
     writer: LosslessVideoWriter | None = None
     input_tail: torch.Tensor | None = None
@@ -306,6 +328,42 @@ def run(args: argparse.Namespace) -> None:
                 f"{phase} {current}/{total_batches} (target duty {args.gpu_duty}%)",
                 flush=True,
             )
+
+        if "Upscaling" in phase:
+            active_model, model_name = runner.dit, "DiT"
+        else:
+            active_model, model_name = runner.vae, "VAE"
+
+        def offload_active() -> None:
+            modules["manage_model_device"](
+                model=active_model,
+                target_device="cpu",
+                model_name=model_name,
+                preserve_vram=True,
+                debug=debug,
+                runner=runner,
+            )
+            torch.cuda.empty_cache()
+
+        def restore_active() -> None:
+            modules["manage_model_device"](
+                model=active_model,
+                target_device=str(device),
+                model_name=model_name,
+                preserve_vram=False,
+                debug=debug,
+                runner=runner,
+            )
+
+        paused = wait_if_paused(
+            args.pause_file,
+            "SeedVR2",
+            before_wait=offload_active,
+            after_wait=restore_active,
+        )
+        if paused:
+            # Paused wall time must not become part of the duty-cycle sample.
+            pacer.begin()
 
     try:
         while True:
@@ -344,6 +402,7 @@ def run(args: argparse.Namespace) -> None:
                 color_correction=args.color_correction,
             )
 
+            wait_if_paused(args.pause_file, "SeedVR2")
             pacer.begin()
             ctx = modules["upscale"](
                 runner,
@@ -356,6 +415,7 @@ def run(args: argparse.Namespace) -> None:
                 latent_noise_scale=0.0,
             )
 
+            wait_if_paused(args.pause_file, "SeedVR2")
             pacer.begin()
             ctx = modules["decode"](
                 runner,
@@ -444,6 +504,10 @@ def run(args: argparse.Namespace) -> None:
                 flush=True,
             )
 
+            # At an outer-chunk boundary preserve_vram has already moved the
+            # phase models back to CPU, so this pause consumes minimal VRAM.
+            wait_if_paused(args.pause_file, "SeedVR2")
+
             if is_final_short:
                 break
 
@@ -507,6 +571,7 @@ def main() -> None:
     parser.add_argument("--vae-tile-overlap", type=int, default=128)
     parser.add_argument("--gpu-duty", type=int, default=100)
     parser.add_argument("--resource-profile", default="max")
+    parser.add_argument("--pause-file", type=Path, default=None)
     run(parser.parse_args())
 
 
