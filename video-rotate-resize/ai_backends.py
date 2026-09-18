@@ -41,6 +41,9 @@ class AIConfig:
     rvrt_task: str = "005_RVRT_videodeblurring_GoPro_16frames"
     rvrt_chunk_size: int = 16
     rvrt_chunk_overlap: int = 4
+    # 0 = profile/VRAM-aware automatic selection. Manual values must be
+    # multiples of 8 because RVRT's spatial window requires that alignment.
+    rvrt_spatial_tile: int = 0
 
     seedvr2_repo: str = ""
     seedvr2_python: str = ""
@@ -124,6 +127,15 @@ def validate_for_mode(config: AIConfig, mode: str) -> None:
         if not 0 <= config.rvrt_chunk_overlap < config.rvrt_chunk_size:
             raise VideoToolError(
                 "RVRT chunk overlap は0以上かつ chunk size 未満にしてください。"
+            )
+        if config.rvrt_spatial_tile < 0:
+            raise VideoToolError("RVRT spatial tile は0以上にしてください。")
+        if config.rvrt_spatial_tile and (
+            config.rvrt_spatial_tile < 128
+            or config.rvrt_spatial_tile % 8 != 0
+        ):
+            raise VideoToolError(
+                "RVRT spatial tile は0(自動)または128以上の8の倍数にしてください。"
             )
 
     if mode in {AI_SEEDVR2, AI_RVRT_SEEDVR2}:
