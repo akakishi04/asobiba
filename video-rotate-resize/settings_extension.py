@@ -9,6 +9,7 @@ from resource_policy import (
 
 def enable_seedvr2_chunk_settings(app_ai) -> None:
     """Replace the AI settings dialog with resource + long-video controls."""
+    original_refresh_ai_state = app_ai.App._refresh_ai_state
 
     def settings(self):
         w = app_ai.tk.Toplevel(self.root)
@@ -270,4 +271,11 @@ def enable_seedvr2_chunk_settings(app_ai) -> None:
             side="right", padx=8
         )
 
+    def refresh_ai_state(self):
+        original_refresh_ai_state(self)
+        reverse = {value: label for label, value in RESOURCE_PROFILE_CHOICES.items()}
+        label = reverse.get(self.config.resource_profile, self.config.resource_profile)
+        self.ai_state.set(f"{self.ai_state.get()} / 実行負荷: {label}")
+
     app_ai.App._settings = settings
+    app_ai.App._refresh_ai_state = refresh_ai_state
