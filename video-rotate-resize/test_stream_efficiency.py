@@ -30,6 +30,8 @@ class StreamingEfficiencyTests(unittest.TestCase):
         self.assertIn("[512, 448, 384, 320, 256]", source)
         self.assertIn("estimated model calls", source)
         self.assertIn("_estimate_tile_memory", source)
+        self.assertIn("_infer_with_auto_oom_fallback", source)
+        self.assertIn("retrying current chunk", source)
 
     def test_seedvr2_keeps_model_loaded_and_does_not_rescan_cli_chunks(self):
         source = (BASE / "seedvr2_runner.py").read_text(encoding="utf-8")
