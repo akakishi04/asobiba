@@ -6,7 +6,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from resource_policy import (
-    PROFILE_CUSTOM,
     effective_gpu_duty_percent,
     effective_seedvr2_blocks_to_swap,
     validate_resource_profile,
@@ -36,13 +35,13 @@ DEFAULT_SEEDVR2_MODEL = "seedvr2_ema_3b_fp8_e4m3fn.safetensors"
 
 @dataclass
 class AIConfig:
-    # rvrt_repo is kept only so older ai_config.json files continue loading. The
-    # managed backend uses the PyPI vsrvrt package and rvrt_runner.py instead.
+    # Kept for compatibility with older ai_config.json files.
     rvrt_repo: str = ""
     rvrt_python: str = ""
     rvrt_task: str = "005_RVRT_videodeblurring_GoPro_16frames"
     rvrt_chunk_size: int = 16
     rvrt_chunk_overlap: int = 4
+
     seedvr2_repo: str = ""
     seedvr2_python: str = ""
     seedvr2_model: str = DEFAULT_SEEDVR2_MODEL
@@ -53,11 +52,10 @@ class AIConfig:
     seedvr2_vae_tiling: bool = True
     seedvr2_vae_tile_size: int = 512
     seedvr2_vae_tile_overlap: int = 128
-    # The upstream standalone CLI materializes all selected frames in system RAM
-    # before inference. Keep each invocation bounded and blend neighboring chunks.
     seedvr2_chunk_size: int = 45
     seedvr2_chunk_overlap: int = 5
-    # Resource policy. Presets do not lower image resolution or quality settings.
+
+    # Resource policy. Presets preserve resolution/quality settings.
     resource_profile: str = "max"
     gpu_duty_cycle_percent: int = 100
 
@@ -71,13 +69,12 @@ class AIConfig:
         except (OSError, json.JSONDecodeError) as exc:
             raise VideoToolError(f"AI設定を読み込めません: {path}") from exc
 
-        known = {field_name for field_name in cls.__dataclass_fields__}
+        known = set(cls.__dataclass_fields__)
         values = {key: value for key, value in payload.items() if key in known}
         return cls(**values)
 
     def save(self, config_path: str | Path) -> None:
-        path = Path(config_path)
-        path.write_text(
+        Path(config_path).write_text(
             json.dumps(asdict(self), ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
@@ -117,14 +114,17 @@ def validate_for_mode(config: AIConfig, mode: str) -> None:
         )
     except ValueError as exc:
         raise VideoToolError(str(exc)) from exc
+
     if mode in {AI_RVRT, AI_RVRT_SEEDVR2}:
         resolve_python(config.rvrt_python)
         if config.rvrt_task not in set(RVRT_TASKS.values()):
             raise VideoToolError(f"未対応のRVRTタスクです: {config.rvrt_task}")
         if config.rvrt_chunk_size < 4:
             raise VideoToolError("RVRT chunk size は4以上にしてください。")
-        if config.rvrt_chunk_overlap < 0 or config.rvrt_chunk_overlap >= config.rvrt_chunk_size:
-            raise VideoToolError("RVRT chunk overlap は0以上かつ chunk size 未満にしてください。")
+        if not 0 <= config.rvrt_chunk_overlap < config.rvrt_chunk_size:
+            raise VideoToolError(
+                "RVRT chunk overlap は0以上かつ chunk size 未満にしてください。"
+            )
 
     if mode in {AI_SEEDVR2, AI_RVRT_SEEDVR2}:
         _require_repo(config.seedvr2_repo, "inference_cli.py", "SeedVR2")
@@ -133,20 +133,26 @@ def validate_for_mode(config: AIConfig, mode: str) -> None:
             raise VideoToolError("SeedVR2 model が設定されていません。")
         if config.seedvr2_batch_size <= 0:
             raise VideoToolError("SeedVR2 batch size は1以上にしてください。")
-        if config.seedvr2_temporal_overlap >= config.seedvr2_batch_size:
-            raise VideoToolError("SeedVR2 temporal overlap は batch size より小さくしてください。")
+        if not 0 <= config.seedvr2_temporal_overlap < config.seedvr2_batch_size:
+            raise VideoToolError(
+                "SeedVR2 temporal overlap は0以上かつ batch size 未満にしてください。"
+            )
         if config.seedvr2_blocks_to_swap < 0:
             raise VideoToolError("SeedVR2 blocks_to_swap は0以上にしてください。")
-        if config.seedvr2_temporal_overlap < 0:
-            raise VideoToolError("SeedVR2 temporal overlap は0以上にしてください。")
         if config.seedvr2_resolution_override < 0:
             raise VideoToolError("SeedVR2 resolution override は0以上にしてください。")
         if config.seedvr2_vae_tile_overlap >= config.seedvr2_vae_tile_size:
-            raise VideoToolError("SeedVR2 VAE tile overlap は tile size より小さくしてください。")
-        if config.seedvr2_chunk_size < 5:
-            raise VideoToolError("SeedVR2 chunk size は5以上にしてください。")
-        if config.seedvr2_chunk_overlap < 0 or config.seedvr2_chunk_overlap >= config.seedvr2_chunk_size:
-            raise VideoToolError("SeedVR2 chunk overlap は0以上かつ chunk size 未満にしてください。")
+            raise VideoToolError(
+                "SeedVR2 VAE tile overlap は tile size より小さくしてください。"
+            )
+        if config.seedvr2_chunk_size < max(5, config.seedvr2_batch_size):
+            raise VideoToolError(
+                "SeedVR2 chunk size は max(5, batch size) 以上にしてください。"
+            )
+        if not 0 <= config.seedvr2_chunk_overlap < config.seedvr2_chunk_size:
+            raise VideoToolError(
+                "SeedVR2 chunk overlap は0以上かつ chunk size 未満にしてください。"
+            )
 
 
 def build_rvrt_command(
@@ -155,6 +161,7 @@ def build_rvrt_command(
     output_dir: str | Path,
     runner_script: str | Path,
 ) -> tuple[list[str], Path]:
+    """Legacy PNG-sequence RVRT command kept for direct app_ai.py fallback."""
     python_bin = resolve_python(config.rvrt_python)
     runner = Path(runner_script).resolve()
     if not runner.is_file():
@@ -164,8 +171,8 @@ def build_rvrt_command(
         str(runner),
         "--input-dir",
         str(input_dir),
-        "--output-video",
-        str(output_video),
+        "--output-dir",
+        str(output_dir),
         "--task",
         config.rvrt_task,
         "--chunk-size",
@@ -181,12 +188,16 @@ def build_seedvr2_command(
     input_video: str | Path,
     output_video: str | Path,
     native_short_side: int,
+    fps: float,
 ) -> tuple[list[str], Path]:
+    """Build the persistent single-model SeedVR2 streaming runner command."""
     repo = _require_repo(config.seedvr2_repo, "inference_cli.py", "SeedVR2")
     python_bin = resolve_python(config.seedvr2_python)
     resolution = config.seedvr2_resolution_override or native_short_side
     if resolution <= 0:
         raise VideoToolError("SeedVR2の処理解像度を決定できません。")
+    if fps <= 0:
+        raise VideoToolError("SeedVR2のFPSを決定できません。")
 
     runner = Path(__file__).with_name("seedvr2_runner.py").resolve()
     if not runner.is_file():
@@ -199,10 +210,12 @@ def build_seedvr2_command(
         str(repo),
         "--video-path",
         str(input_video),
-        "--output-dir",
-        str(output_dir),
+        "--output-video",
+        str(output_video),
         "--resolution",
         str(resolution),
+        "--fps",
+        f"{fps:.8f}",
         "--batch-size",
         str(config.seedvr2_batch_size),
         "--model",
@@ -237,7 +250,7 @@ def normalize_png_sequence(
     source_dir: str | Path,
     destination_dir: str | Path,
 ) -> int:
-    """Copy/rename PNGs to frame000000.png... for deterministic FFmpeg input."""
+    """Legacy helper for direct app_ai.py fallback."""
     source = Path(source_dir)
     destination = Path(destination_dir)
     files = sorted(source.glob("*.png"))
@@ -246,6 +259,5 @@ def normalize_png_sequence(
 
     destination.mkdir(parents=True, exist_ok=True)
     for index, item in enumerate(files):
-        target = destination / f"frame{index:06d}.png"
-        shutil.copy2(item, target)
+        shutil.copy2(item, destination / f"frame{index:06d}.png")
     return len(files)
