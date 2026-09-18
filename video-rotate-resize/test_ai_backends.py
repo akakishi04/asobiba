@@ -132,6 +132,17 @@ class AIBackendTests(unittest.TestCase):
             cfg = AIConfig(rvrt_python=str(python), rvrt_repo="")
             validate_for_mode(cfg, AI_RVRT)
 
+    def test_rvrt_invalid_spatial_tile_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp_name:
+            root = Path(temp_name)
+            python = self._fake_python(root, "rvrt")
+            cfg = AIConfig(
+                rvrt_python=str(python),
+                rvrt_spatial_tile=300,
+            )
+            with self.assertRaises(Exception):
+                validate_for_mode(cfg, AI_RVRT)
+
     def test_rvrt_invalid_overlap_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp_name:
             root = Path(temp_name)
@@ -149,6 +160,7 @@ class AIBackendTests(unittest.TestCase):
             path = Path(temp_name) / "ai_config.json"
             cfg = AIConfig(
                 rvrt_chunk_size=12,
+                rvrt_spatial_tile=384,
                 seedvr2_batch_size=7,
                 seedvr2_resolution_override=1440,
                 seedvr2_chunk_size=37,
@@ -159,6 +171,7 @@ class AIBackendTests(unittest.TestCase):
             cfg.save(path)
             restored = AIConfig.load(path)
             self.assertEqual(restored.rvrt_chunk_size, 12)
+            self.assertEqual(restored.rvrt_spatial_tile, 384)
             self.assertEqual(restored.seedvr2_batch_size, 7)
             self.assertEqual(restored.seedvr2_resolution_override, 1440)
             self.assertEqual(restored.seedvr2_chunk_size, 37)
