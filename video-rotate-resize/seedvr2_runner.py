@@ -455,9 +455,15 @@ def run(args: argparse.Namespace) -> None:
         produced = writer.count
         writer = None
 
-        if produced != total:
+        if produced != unique_read:
             raise RuntimeError(
-                f"SeedVR2 output frame count mismatch: {produced} != {total}"
+                f"SeedVR2 output frame count mismatch: {produced} != {unique_read}"
+            )
+        if unique_read != total:
+            print(
+                f"SeedVR2: container frame count was {total}, decoded {unique_read}; "
+                "using decoded count as authoritative",
+                flush=True,
             )
         print(
             f"SeedVR2 persistent streaming completed: {produced} frames -> {output_video}",
