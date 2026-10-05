@@ -226,3 +226,26 @@ Initial scope:
 - New houses/workspaces should be incremental additions, not instant village regeneration.
 
 Design constraint: the system should make villages feel self-sustaining and capable of modest growth, not become a colony-management game or fully autonomous megacity builder.
+
+
+### Carpenter Villager Profession
+Add a dedicated carpenter/builder villager profession as the visible executor for village construction.
+
+Initial responsibilities:
+- Read village build jobs created by the autonomous-growth planner.
+- Pull required blocks from village storage rather than spawning materials.
+- Carry a small work inventory for the current construction step.
+- Walk to the build site and place blocks progressively.
+- Repair damaged village structures using stored materials.
+- Help with post-fire reconstruction.
+- Prefer nearby safe scaffolding/path positions and stop work at night or during danger.
+
+Possible workstation:
+- A vanilla-adjacent workstation should be preferred where practical; otherwise add one very small carpenter workbench block rather than a whole machine system.
+
+Possible trades:
+- Buy logs, planks, stone, bricks and common construction materials.
+- Sell scaffolding, ladders, doors, fences, signs and small batches of building blocks.
+- Higher levels can sell decorative building materials or village-style blueprint/map items without bypassing exploration.
+
+Design constraint: carpenter AI should execute construction jobs, not independently decide village strategy. Planning stays in a village-level system so individual villagers remain simple and debuggable.
