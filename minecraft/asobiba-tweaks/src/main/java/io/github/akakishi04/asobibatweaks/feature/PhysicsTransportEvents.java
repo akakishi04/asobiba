@@ -22,7 +22,8 @@ import net.neoforged.neoforge.event.tick.EntityTickEvent;
 
 public final class PhysicsTransportEvents {
     private static final String LINK_SELECT = "asobibatweaks_cart_link_select";
-    private static final String LINK = "asobibatweaks_cart_link";
+    private static final String LINK_A = "asobibatweaks_cart_link_a";
+    private static final String LINK_B = "asobibatweaks_cart_link_b";
 
     @SubscribeEvent
     public void onCartInteract(PlayerInteractEvent.EntityInteract event) {
@@ -59,8 +60,14 @@ public final class PhysicsTransportEvents {
             return;
         }
 
-        firstCart.getPersistentData().putString(LINK, cart.getUUID().toString());
-        cart.getPersistentData().putString(LINK, firstCart.getUUID().toString());
+        if (!addLink(firstCart, cart.getUUID()) || !addLink(cart, firstCart.getUUID())) {
+            removeLink(firstCart, cart.getUUID());
+            removeLink(cart, firstCart.getUUID());
+            player.displayClientMessage(Component.literal("One of those minecarts already has two couplings.")
+                    .withStyle(ChatFormatting.YELLOW), true);
+            succeed(event);
+            return;
+        }
         if (!player.getAbilities().instabuild) {
             event.getItemStack().shrink(1);
         }
@@ -120,35 +127,62 @@ public final class PhysicsTransportEvents {
     }
 
     private static void tickCoupling(AbstractMinecart cart) {
-        String partnerId = cart.getPersistentData().getString(LINK);
-        if (partnerId.isEmpty() || !(cart.level() instanceof ServerLevel level)) return;
+        if (!(cart.level() instanceof ServerLevel level)) return;
+        for (String key : new String[]{LINK_A, LINK_B}) {
+            String partnerId = cart.getPersistentData().getString(key);
+            if (partnerId.isEmpty()) continue;
 
-        Entity otherEntity;
-        try {
-            otherEntity = level.getEntity(UUID.fromString(partnerId));
-        } catch (IllegalArgumentException ex) {
-            cart.getPersistentData().remove(LINK);
-            return;
-        }
-        if (!(otherEntity instanceof AbstractMinecart other) || !other.isAlive()) return;
+            Entity otherEntity;
+            UUID uuid;
+            try {
+                uuid = UUID.fromString(partnerId);
+                otherEntity = level.getEntity(uuid);
+            } catch (IllegalArgumentException ex) {
+                cart.getPersistentData().remove(key);
+                continue;
+            }
+            if (!(otherEntity instanceof AbstractMinecart other) || !other.isAlive()) continue;
 
-        Vec3 delta = other.position().subtract(cart.position());
-        double distance = delta.length();
-        if (distance > 16.0D) {
-            cart.getPersistentData().remove(LINK);
-            other.getPersistentData().remove(LINK);
-            return;
-        }
+            Vec3 delta = other.position().subtract(cart.position());
+            double distance = delta.length();
+            if (distance > 16.0D) {
+                cart.getPersistentData().remove(key);
+                removeLink(other, cart.getUUID());
+                continue;
+            }
 
-        Vec3 average = cart.getDeltaMovement().add(other.getDeltaMovement()).scale(0.5D);
-        if (distance > 1.8D && distance > 0.001D) {
-            Vec3 pull = delta.normalize().scale(Math.min(0.12D, (distance - 1.8D) * 0.05D));
-            cart.setDeltaMovement(cart.getDeltaMovement().scale(0.88D).add(average.scale(0.12D)).add(pull));
-        } else if (distance < 1.1D && distance > 0.001D) {
-            cart.setDeltaMovement(cart.getDeltaMovement().add(delta.normalize().scale(-0.03D)));
-        } else {
-            cart.setDeltaMovement(cart.getDeltaMovement().scale(0.94D).add(average.scale(0.06D)));
+            Vec3 average = cart.getDeltaMovement().add(other.getDeltaMovement()).scale(0.5D);
+            if (distance > 1.8D && distance > 0.001D) {
+                Vec3 pull = delta.normalize().scale(Math.min(0.12D, (distance - 1.8D) * 0.05D));
+                cart.setDeltaMovement(cart.getDeltaMovement().scale(0.88D).add(average.scale(0.12D)).add(pull));
+            } else if (distance < 1.1D && distance > 0.001D) {
+                cart.setDeltaMovement(cart.getDeltaMovement().add(delta.normalize().scale(-0.03D)));
+            } else {
+                cart.setDeltaMovement(cart.getDeltaMovement().scale(0.94D).add(average.scale(0.06D)));
+            }
         }
+    }
+
+    private static boolean addLink(AbstractMinecart cart, UUID partner) {
+        String id = partner.toString();
+        var data = cart.getPersistentData();
+        if (id.equals(data.getString(LINK_A)) || id.equals(data.getString(LINK_B))) return true;
+        if (data.getString(LINK_A).isEmpty()) {
+            data.putString(LINK_A, id);
+            return true;
+        }
+        if (data.getString(LINK_B).isEmpty()) {
+            data.putString(LINK_B, id);
+            return true;
+        }
+        return false;
+    }
+
+    private static void removeLink(AbstractMinecart cart, UUID partner) {
+        String id = partner.toString();
+        var data = cart.getPersistentData();
+        if (id.equals(data.getString(LINK_A))) data.remove(LINK_A);
+        if (id.equals(data.getString(LINK_B))) data.remove(LINK_B);
     }
 
     private static void tickCollision(AbstractMinecart cart) {
