@@ -1,5 +1,9 @@
 name: Minecraft Mods CI
 
+concurrency:
+  group: minecraft-mods-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 on:
   pull_request:
     paths:
