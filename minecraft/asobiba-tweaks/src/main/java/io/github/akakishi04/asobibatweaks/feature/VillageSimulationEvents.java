@@ -15,7 +15,7 @@ import net.minecraft.tags.FluidTags;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.entity.living.BabyEntitySpawnEvent;
+import net.neoforged.neoforge.event.entity.living.BabyEntitySpawnEvent;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.entity.npc.VillagerProfession;
 import net.minecraft.world.item.Item;
@@ -121,7 +121,7 @@ public final class VillageSimulationEvents {
     public void onRegionalTrade(TradeWithVillagerEvent event) {
         if (!AsobibaTweaksConfig.REGIONAL_TRADE_VALUE_ENABLED.getAsBoolean()) return;
 
-        ServerPlayer player = (ServerPlayer)event.getEntity();
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
         Villager villager = event.getAbstractVillager() instanceof Villager v ? v : null;
         if (villager == null) return;
 
