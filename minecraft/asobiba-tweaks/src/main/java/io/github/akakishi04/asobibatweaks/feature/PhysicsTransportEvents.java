@@ -92,7 +92,12 @@ public final class PhysicsTransportEvents {
         }
 
         Vec3 center = event.getExplosion().center();
-        double radius = Math.max(3.0D, event.getExplosion().radius() * 2.25D);
+        double sourceMultiplier = 1.0D;
+        Entity direct = event.getExplosion().getDirectSourceEntity();
+        if (direct != null && direct.getPersistentData().contains("asobibatweaks_tnt_wind")) {
+            sourceMultiplier = Math.max(0.1D, direct.getPersistentData().getDouble("asobibatweaks_tnt_wind"));
+        }
+        double radius = Math.max(3.0D, event.getExplosion().radius() * 2.25D * Math.sqrt(sourceMultiplier));
         List<Entity> entities = event.getLevel().getEntities(
                 event.getExplosion().getDirectSourceEntity(),
                 new AABB(center, center).inflate(radius)
@@ -104,8 +109,8 @@ public final class PhysicsTransportEvents {
             double distance = Math.max(0.75D, delta.length());
             if (distance > radius) continue;
 
-            double strength = (1.0D - distance / radius) * event.getExplosion().radius() * 0.18D;
-            strength *= massFactor(entity);
+            double strength = (1.0D - distance / radius) * event.getExplosion().radius() * 0.18D * sourceMultiplier;
+            strength *= massFactor(entity) * windResistanceFactor(entity);
             if (strength <= 0.01D) continue;
 
             Vec3 impulse = delta.normalize().scale(strength).add(0.0D, strength * 0.22D, 0.0D);
@@ -184,7 +189,7 @@ public final class PhysicsTransportEvents {
             double side = Math.abs(relative.x * -forward.z + relative.z * forward.x);
             if (side > 2.1D) continue;
 
-            double strength = Math.min(0.55D, (speed - 0.8D) * 0.12D) * massFactor(entity);
+            double strength = Math.min(0.55D, (speed - 0.8D) * 0.12D) * massFactor(entity) * windResistanceFactor(entity);
             entity.setDeltaMovement(entity.getDeltaMovement().add(forward.scale(strength)));
             entity.hurtMarked = true;
         }
@@ -193,6 +198,23 @@ public final class PhysicsTransportEvents {
     private static double massFactor(Entity entity) {
         double area = Math.max(0.25D, entity.getBbWidth() * entity.getBbHeight());
         return 1.0D / Math.max(0.65D, Math.sqrt(area));
+    }
+
+    private static double windResistanceFactor(Entity entity) {
+        if (!AsobibaTweaksConfig.WIND_PRESSURE_RESISTANCE_ENABLED.getAsBoolean()
+                || !(entity instanceof LivingEntity living)) {
+            return 1.0D;
+        }
+
+        int total = 0;
+        for (var armor : living.getArmorSlots()) {
+            for (var entry : net.minecraft.world.item.enchantment.EnchantmentHelper.getEnchantmentsForCrafting(armor).entrySet()) {
+                if ("asobibatweaks:wind_pressure_resistance".equals(EnchantmentMasteryData.id(entry.getKey()))) {
+                    total += entry.getIntValue();
+                }
+            }
+        }
+        return 1.0D / (1.0D + total * 0.32D);
     }
 
     private static void succeed(PlayerInteractEvent.EntityInteract event) {
