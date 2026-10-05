@@ -426,3 +426,34 @@ Village and player-built spaces should support lightweight contextual use by mob
 - occupancy of recognized interiors
 
 Design constraint: this feature family should stop before becoming a full colony-management game. The player may influence villages through building, trade and supply, but should not need to micromanage schedules, worker assignment or production graphs.
+
+
+## Accepted utility / interaction tweaks
+
+### Expanded Fishing Rod
+Treat the fishing rod as a lightweight remote-interaction tool rather than only a fishing item.
+Planned uses may include:
+- pulling dropped items
+- tugging mobs
+- retrieving thrown weapons
+- interacting with selected simple world objects at range where sensible
+- pulling dangerous or useful objects toward the player
+
+Keep this physical and imperfect; it should not become a universal remote-control wand.
+
+### Extinguish Primed Creepers
+Allow a currently ignited creeper to be interrupted by a fast player action, such as hitting it with a water bottle or another explicit extinguishing interaction. The goal is a skillful emergency save, not a permanent creeper nerf.
+
+### Temporary Ender Pearl Return Point
+Allow an ender pearl to be placed/anchored temporarily instead of immediately thrown. A later action can consume or activate it to return to that point. The anchor expires and must remain limited enough that beds, lodestones and normal travel still matter.
+
+### Firework Propulsion for Objects
+Allow firework rockets to be attached to or used on selected entities/objects to create temporary uncontrolled propulsion.
+Potential targets:
+- boats
+- dropped items
+- small mobs
+- TNT
+- minecarts where safe enough
+
+This feature should preserve a meaningful risk of bad outcomes rather than becoming precision transportation.
