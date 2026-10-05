@@ -5,80 +5,97 @@ import net.neoforged.neoforge.common.ModConfigSpec;
 public final class AsobibaTweaksConfig {
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
-    public static final ModConfigSpec.BooleanValue GROWING_ITEMS_ENABLED = BUILDER
-            .comment("Enable per-item growth XP and levels for damageable items.")
-            .define("growingItems.enabled", true);
+    public static final ModConfigSpec.BooleanValue GROWING_ITEMS_ENABLED = bool("growingItems.enabled", true, "Enable per-item growth XP and levels for damageable items.");
+    public static final ModConfigSpec.IntValue GROWING_ITEMS_MAX_LEVEL = BUILDER.defineInRange("growingItems.maxLevel", 10, 1, 100);
+    public static final ModConfigSpec.IntValue GROWING_ITEMS_BASE_XP = BUILDER.defineInRange("growingItems.baseXp", 20, 1, 100000);
+    public static final ModConfigSpec.DoubleValue GROWING_ITEMS_REPAIR_CHANCE_PER_LEVEL = BUILDER.defineInRange("growingItems.repairChancePerLevel", 0.02D, 0.0D, 1.0D);
+    public static final ModConfigSpec.DoubleValue GROWING_ITEMS_MINING_TIER_UPGRADE_CHANCE = BUILDER.defineInRange("growingItems.miningTierUpgradeChance", 0.12D, 0.0D, 1.0D);
+    public static final ModConfigSpec.IntValue GROWING_ITEMS_MAX_MINING_TIER_BONUS = BUILDER.defineInRange("growingItems.maxMiningTierBonus", 2, 0, 4);
 
-    public static final ModConfigSpec.IntValue GROWING_ITEMS_MAX_LEVEL = BUILDER
-            .comment("Maximum growth level.")
-            .defineInRange("growingItems.maxLevel", 10, 1, 100);
+    public static final ModConfigSpec.BooleanValue DAILY_FAVOR_ENABLED = bool("dailyFavor.enabled", true, "Enable one small deterministic activity bonus per Minecraft day.");
+    public static final ModConfigSpec.DoubleValue DAILY_FAVOR_REWARD_CHANCE = BUILDER.defineInRange("dailyFavor.rewardChance", 0.25D, 0.0D, 1.0D);
+    public static final ModConfigSpec.IntValue DAILY_FAVOR_XP = BUILDER.defineInRange("dailyFavor.rewardXp", 1, 0, 100);
 
-    public static final ModConfigSpec.IntValue GROWING_ITEMS_BASE_XP = BUILDER
-            .comment("XP scale. The next level threshold is baseXp * currentLevel^2.")
-            .defineInRange("growingItems.baseXp", 20, 1, 100000);
+    public static final ModConfigSpec.BooleanValue UNIVERSAL_BOND_ENABLED = bool("universalBond.enabled", true, "Allow any Mob to build bond with a player.");
+    public static final ModConfigSpec.IntValue UNIVERSAL_BOND_PER_GIFT = BUILDER.defineInRange("universalBond.bondPerGift", 25, 1, 100);
+    public static final ModConfigSpec.BooleanValue UNIVERSAL_BOND_FOLLOW = bool("universalBond.followOwner", true, "Allow bonded pathfinding mobs in Follow mode to navigate toward their owner.");
+    public static final ModConfigSpec.BooleanValue UNIVERSAL_BOND_FRIENDLY_FIRE = bool("universalBond.friendlyFire", false, "Allow owner and bonded mob to damage each other.");
+    public static final ModConfigSpec.BooleanValue UNIVERSAL_BOND_ALLOW_BOSSES = bool("universalBond.allowBosses", false, "Allow Ender Dragon and Wither to participate in Universal Bond.");
 
-    public static final ModConfigSpec.DoubleValue GROWING_ITEMS_REPAIR_CHANCE_PER_LEVEL = BUILDER
-            .comment("Chance per level to repair one durability point whenever growth XP is earned.")
-            .defineInRange("growingItems.repairChancePerLevel", 0.02D, 0.0D, 1.0D);
+    public static final ModConfigSpec.BooleanValue PLAY_TIME_LIMIT_ENABLED = bool("playTimeLimit.enabled", false, "Enable a per-login-session play time limit.");
+    public static final ModConfigSpec.IntValue PLAY_TIME_LIMIT_MINUTES = BUILDER.defineInRange("playTimeLimit.limitMinutes", 120, 1, 10080);
+    public static final ModConfigSpec.IntValue PLAY_TIME_WARNING_MINUTES = BUILDER.defineInRange("playTimeLimit.warningMinutes", 10, 0, 1440);
+    public static final ModConfigSpec.ConfigValue<String> PLAY_TIME_LIMIT_MODE = BUILDER.define("playTimeLimit.mode", "WARN_ONLY", value ->
+            value instanceof String s && (s.equalsIgnoreCase("WARN_ONLY") || s.equalsIgnoreCase("DISCONNECT")));
 
-    public static final ModConfigSpec.DoubleValue GROWING_ITEMS_MINING_TIER_UPGRADE_CHANCE = BUILDER
-            .comment("Chance when a pickaxe levels up to gain +1 effective mining tier.")
-            .defineInRange("growingItems.miningTierUpgradeChance", 0.12D, 0.0D, 1.0D);
+    public static final ModConfigSpec.BooleanValue WORLD_FOLKLORE_ENABLED = bool("worldFolklore.enabled", true, "Enable seed-specific hidden folklore rules and tiny ritual responses.");
 
-    public static final ModConfigSpec.IntValue GROWING_ITEMS_MAX_MINING_TIER_BONUS = BUILDER
-            .comment("Maximum bonus mining tiers an individual pickaxe can gain.")
-            .defineInRange("growingItems.maxMiningTierBonus", 2, 0, 4);
+    public static final ModConfigSpec.BooleanValue WALL_KICK_ENABLED = bool("movement.wallKick", true, "Enable lightweight wall kicks.");
+    public static final ModConfigSpec.BooleanValue SLIDING_ENABLED = bool("movement.sliding", true, "Enable sprint-crouch sliding.");
+    public static final ModConfigSpec.BooleanValue LEDGE_CLIMB_ENABLED = bool("movement.ledgeClimb", true, "Enable short automatic ledge climbs.");
+    public static final ModConfigSpec.BooleanValue FIELD_REPAIR_ENABLED = bool("interaction.fieldRepair", true, "Enable inefficient field repairs with matching material.");
+    public static final ModConfigSpec.BooleanValue WEAPON_THROWING_ENABLED = bool("interaction.weaponThrowing", true, "Enable throwing swords and axes.");
+    public static final ModConfigSpec.BooleanValue TORCH_THROWING_ENABLED = bool("interaction.torchThrowing", true, "Enable throwing torches to place them.");
+    public static final ModConfigSpec.BooleanValue CARRY_SMALL_MOBS_ENABLED = bool("interaction.carrySmallMobs", true, "Enable carrying small mobs.");
+    public static final ModConfigSpec.BooleanValue EXPANDED_FISHING_ROD_ENABLED = bool("interaction.expandedFishingRod", true, "Allow fishing rods to pull nearby dropped items.");
+    public static final ModConfigSpec.BooleanValue EXTINGUISH_CREEPERS_ENABLED = bool("interaction.extinguishCreepers", true, "Allow water bottles to interrupt primed creepers.");
+    public static final ModConfigSpec.BooleanValue ENDER_PEARL_ANCHOR_ENABLED = bool("interaction.enderPearlAnchor", true, "Enable temporary ender-pearl return points.");
+    public static final ModConfigSpec.IntValue ENDER_PEARL_ANCHOR_MINUTES = BUILDER.defineInRange("interaction.enderPearlAnchorMinutes", 10, 1, 120);
+    public static final ModConfigSpec.BooleanValue FIREWORK_PROPULSION_ENABLED = bool("interaction.fireworkPropulsion", true, "Allow fireworks to propel selected entities.");
 
-    public static final ModConfigSpec.BooleanValue DAILY_FAVOR_ENABLED = BUILDER
-            .comment("Enable one small deterministic activity bonus per Minecraft day.")
-            .define("dailyFavor.enabled", true);
+    public static final ModConfigSpec.BooleanValue ARMOR_STAND_SWAP_ENABLED = bool("vanilla.armorStandLoadoutSwap", true, "Enable whole-armor loadout swapping with armor stands.");
+    public static final ModConfigSpec.BooleanValue LINKED_DOUBLE_DOORS_ENABLED = bool("vanilla.linkedDoubleDoors", true, "Open matching adjacent double doors together.");
+    public static final ModConfigSpec.BooleanValue ENDERMAN_MICRO_BUILD_ENABLED = bool("oddities.endermanMicroBuilding", true, "Allow extremely rare tiny Enderman block arrangements.");
+    public static final ModConfigSpec.BooleanValue PARROT_PERCHES_ENABLED = bool("vanilla.parrotPerches", true, "Allow parrots to perch on narrow vanilla blocks.");
+    public static final ModConfigSpec.BooleanValue MOB_GATHERINGS_ENABLED = bool("oddities.mobGatherings", true, "Enable rare unexplained same-species mob gatherings.");
+    public static final ModConfigSpec.DoubleValue MOB_GATHERING_CHANCE = BUILDER.defineInRange("oddities.mobGatheringChancePerCheck", 0.002D, 0.0D, 1.0D);
+    public static final ModConfigSpec.BooleanValue ARMOR_STAND_POSE_DRIFT_ENABLED = bool("oddities.armorStandPoseDrift", true, "Allow very rare subtle armor-stand pose changes.");
+    public static final ModConfigSpec.DoubleValue ARMOR_STAND_POSE_DRIFT_CHANCE = BUILDER.defineInRange("oddities.armorStandPoseDriftChancePerCheck", 0.0005D, 0.0D, 1.0D);
 
-    public static final ModConfigSpec.DoubleValue DAILY_FAVOR_REWARD_CHANCE = BUILDER
-            .comment("Chance for a matching action to grant the daily favor reward.")
-            .defineInRange("dailyFavor.rewardChance", 0.25D, 0.0D, 1.0D);
+    public static final ModConfigSpec.BooleanValue DISPENSER_ENDER_PEARLS_ENABLED = bool("redstone.dispenserEnderPearls", true, "Allow dispensers to fire real Ender Pearls.");
+    public static final ModConfigSpec.BooleanValue HIGH_SPEED_MINECARTS_ENABLED = bool("transport.highSpeedMinecarts", true, "Enable high-speed minecart behavior.");
+    public static final ModConfigSpec.BooleanValue MINECART_COLLISION_ENABLED = bool("transport.minecartCollisionDamage", true, "Scale minecart collision damage with speed.");
+    public static final ModConfigSpec.BooleanValue MINECART_DISMOUNT_ENABLED = bool("transport.minecartMomentumDismount", true, "Preserve minecart momentum when jumping out.");
+    public static final ModConfigSpec.BooleanValue MINECART_COUPLING_ENABLED = bool("transport.minecartCoupling", true, "Allow minecarts to be linked with chains.");
+    public static final ModConfigSpec.BooleanValue WIND_PRESSURE_ENABLED = bool("physics.windPressure", true, "Enable blast/slipstream wind pressure.");
+    public static final ModConfigSpec.BooleanValue WIND_PRESSURE_RESISTANCE_ENABLED = bool("physics.windPressureResistance", true, "Enable wind-pressure resistance from marked armor.");
 
-    public static final ModConfigSpec.IntValue DAILY_FAVOR_XP = BUILDER
-            .comment("Experience points granted when the daily favor reward triggers.")
-            .defineInRange("dailyFavor.rewardXp", 1, 0, 100);
+    public static final ModConfigSpec.BooleanValue GROWING_ENCHANTMENTS_ENABLED = bool("enchantments.growingEnchantments", true, "Enable per-enchantment mastery.");
+    public static final ModConfigSpec.BooleanValue ENCHANTMENT_BRANCHES_ENABLED = bool("enchantments.growthBranches", true, "Enable side-grade mastery branches.");
+    public static final ModConfigSpec.BooleanValue CURSE_GROWTH_ENABLED = bool("enchantments.curseGrowth", true, "Allow curses to gain mastery and compensating quirks.");
+    public static final ModConfigSpec.BooleanValue ENCHANTMENT_SWITCHING_ENABLED = bool("enchantments.exclusiveSwitching", true, "Allow selected exclusive enchantments to coexist with one active mode.");
+    public static final ModConfigSpec.BooleanValue ENCHANTMENT_INHERITANCE_ENABLED = bool("enchantments.masteryInheritance", true, "Allow partial enchantment mastery inheritance.");
+    public static final ModConfigSpec.BooleanValue UNCAPPED_ANVIL_ENABLED = bool("enchantments.uncappedAnvil", true, "Remove the survival Too Expensive rejection while preserving cost.");
 
-    public static final ModConfigSpec.BooleanValue UNIVERSAL_BOND_ENABLED = BUILDER
-            .comment("Allow any Mob to build bond with a player using sneak-interact gifts.")
-            .define("universalBond.enabled", true);
+    public static final ModConfigSpec.BooleanValue POTION_MIXING_ENABLED = bool("alchemy.potionMixing", true, "Allow weaker multi-effect potion mixtures.");
+    public static final ModConfigSpec.BooleanValue TNT_DESIGN_ENABLED = bool("explosives.tntDesign", true, "Enable configurable TNT behavior.");
+    public static final ModConfigSpec.BooleanValue FLETCHING_TABLE_ENABLED = bool("crafting.fletchingTableExpansion", true, "Give the vanilla Fletching Table survival uses.");
 
-    public static final ModConfigSpec.IntValue UNIVERSAL_BOND_PER_GIFT = BUILDER
-            .comment("Bond gained for each accepted gift. 100 bond completes bonding.")
-            .defineInRange("universalBond.bondPerGift", 25, 1, 100);
+    public static final ModConfigSpec.BooleanValue GIANT_CROPS_ENABLED = bool("organisms.giantCrops", true, "Enable very rare giant crop outcomes.");
+    public static final ModConfigSpec.DoubleValue GIANT_CROP_CHANCE = BUILDER.defineInRange("organisms.giantCropChance", 0.002D, 0.0D, 1.0D);
+    public static final ModConfigSpec.BooleanValue GIANT_MOBS_ENABLED = bool("organisms.giantMobs", true, "Enable rare oversized mob variants.");
+    public static final ModConfigSpec.DoubleValue GIANT_MOB_CHANCE = BUILDER.defineInRange("organisms.giantMobChance", 0.0005D, 0.0D, 1.0D);
 
-    public static final ModConfigSpec.BooleanValue UNIVERSAL_BOND_FOLLOW = BUILDER
-            .comment("Allow bonded pathfinding mobs in Follow mode to navigate toward their owner.")
-            .define("universalBond.followOwner", true);
+    public static final ModConfigSpec.BooleanValue EXPANDED_RIDING_ENABLED = bool("riding.expandedRiding", true, "Allow saddles on more suitable mobs.");
+    public static final ModConfigSpec.BooleanValue MOB_ON_MOB_RIDING_ENABLED = bool("riding.mobOnMobRiding", true, "Allow rare small-mob-on-large-mob riding.");
+    public static final ModConfigSpec.BooleanValue NETHER_FISHING_ENABLED = bool("nether.lavaFishing", true, "Enable lava fishing and Nether fish catches.");
 
-    public static final ModConfigSpec.BooleanValue UNIVERSAL_BOND_FRIENDLY_FIRE = BUILDER
-            .comment("Allow owner and bonded mob to damage each other.")
-            .define("universalBond.friendlyFire", false);
+    public static final ModConfigSpec.BooleanValue VILLAGE_SIMULATION_ENABLED = bool("village.simulation", true, "Enable lightweight autonomous village simulation.");
+    public static final ModConfigSpec.BooleanValue REGIONAL_TRADE_VALUE_ENABLED = bool("village.regionalTradeValue", true, "Enable simple distance/region trade-value bonuses.");
+    public static final ModConfigSpec.BooleanValue FOREST_REGENERATION_ENABLED = bool("world.forestRegeneration", true, "Enable very slow natural forest-edge regeneration.");
 
-    public static final ModConfigSpec.BooleanValue UNIVERSAL_BOND_ALLOW_BOSSES = BUILDER
-            .comment("Allow Ender Dragon and Wither to participate in Universal Bond. Experimental.")
-            .define("universalBond.allowBosses", false);
+    public static final ModConfigSpec.BooleanValue CONTINENTAL_WORLDGEN_ENABLED = bool("worldgen.continentalOceans", false, "Enable optional continent/ocean-biased world generation hooks for new worlds.");
+    public static final ModConfigSpec.BooleanValue LARGE_BOATS_ENABLED = bool("ocean.largeBoats", true, "Enable large cargo-boat behavior.");
+    public static final ModConfigSpec.BooleanValue OCEAN_DEBRIS_ENABLED = bool("ocean.driftDebris", true, "Enable sparse ocean drift debris.");
 
-    public static final ModConfigSpec.BooleanValue PLAY_TIME_LIMIT_ENABLED = BUILDER
-            .comment("Enable a per-login-session play time limit.")
-            .define("playTimeLimit.enabled", false);
-
-    public static final ModConfigSpec.IntValue PLAY_TIME_LIMIT_MINUTES = BUILDER
-            .comment("Session time limit in minutes.")
-            .defineInRange("playTimeLimit.limitMinutes", 120, 1, 10080);
-
-    public static final ModConfigSpec.IntValue PLAY_TIME_WARNING_MINUTES = BUILDER
-            .comment("Show a warning this many minutes before the limit.")
-            .defineInRange("playTimeLimit.warningMinutes", 10, 0, 1440);
-
-    public static final ModConfigSpec.ConfigValue<String> PLAY_TIME_LIMIT_MODE = BUILDER
-            .comment("WARN_ONLY or DISCONNECT.")
-            .define("playTimeLimit.mode", "WARN_ONLY", value ->
-                    value instanceof String s && (s.equalsIgnoreCase("WARN_ONLY") || s.equalsIgnoreCase("DISCONNECT")));
+    public static final ModConfigSpec.BooleanValue MAP_WALLS_ENABLED = bool("display.autoConnectedMapWalls", true, "Improve adjacency behavior for map walls.");
+    public static final ModConfigSpec.BooleanValue ELYTRA_DISPLAY_ENABLED = bool("display.elytraArmorStandDisplay", true, "Enable opened-Elytra presentation on armor stands.");
 
     public static final ModConfigSpec SPEC = BUILDER.build();
+
+    private static ModConfigSpec.BooleanValue bool(String key, boolean value, String comment) {
+        return BUILDER.comment(comment).define(key, value);
+    }
 
     private AsobibaTweaksConfig() {
     }
