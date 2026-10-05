@@ -68,7 +68,7 @@ public final class FolkloreAndMoonEvents {
 
         if (item.tickCount < 15 || item.getDeltaMovement().y <= 0.05D) return;
 
-        Level level = item.level();
+        net.minecraft.server.level.ServerLevel level = (net.minecraft.server.level.ServerLevel)item.level();
         long dayTime = Math.floorMod(level.getDayTime(), 24000L);
         long day = Math.floorDiv(level.getDayTime(), 24000L);
         int moonPhase = level.getMoonPhase();
