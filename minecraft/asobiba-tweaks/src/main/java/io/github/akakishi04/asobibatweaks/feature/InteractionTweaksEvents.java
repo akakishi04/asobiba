@@ -169,6 +169,19 @@ public final class InteractionTweaksEvents {
                     item.hurtMarked = true;
                 }
             }
+
+            for (Mob mob : player.serverLevel().getEntitiesOfClass(
+                    Mob.class,
+                    player.fishing.getBoundingBox().inflate(0.85D),
+                    m -> m.isAlive() && !m.isPassenger())) {
+                Vec3 pull = target.subtract(mob.position());
+                if (pull.lengthSqr() > 0.04D) {
+                    double mass = Math.max(1.0D, mob.getBbWidth() * mob.getBbHeight());
+                    double strength = 0.34D / Math.sqrt(mass);
+                    mob.setDeltaMovement(mob.getDeltaMovement().add(pull.normalize().scale(strength)));
+                    mob.hurtMarked = true;
+                }
+            }
         }
     }
 
