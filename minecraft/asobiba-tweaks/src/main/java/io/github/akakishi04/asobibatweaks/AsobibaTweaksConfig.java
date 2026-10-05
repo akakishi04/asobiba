@@ -85,6 +85,10 @@ public final class AsobibaTweaksConfig {
     public static final ModConfigSpec.BooleanValue FOREST_REGENERATION_ENABLED = bool("world.forestRegeneration", true, "Enable very slow natural forest-edge regeneration.");
 
     public static final ModConfigSpec.BooleanValue CONTINENTAL_WORLDGEN_ENABLED = bool("worldgen.continentalOceans", false, "Enable optional continent/ocean-biased world generation hooks for new worlds.");
+    public static final ModConfigSpec.IntValue CONTINENT_SCALE = BUILDER.defineInRange("worldgen.continentScale", 1536, 384, 8192);
+    public static final ModConfigSpec.IntValue ISLAND_SCALE = BUILDER.defineInRange("worldgen.islandScale", 288, 96, 2048);
+    public static final ModConfigSpec.DoubleValue OCEAN_BIAS = BUILDER.defineInRange("worldgen.oceanBias", 0.04D, -0.45D, 0.45D);
+    public static final ModConfigSpec.DoubleValue ISLAND_THRESHOLD = BUILDER.defineInRange("worldgen.islandThreshold", 0.68D, 0.40D, 0.95D);
     public static final ModConfigSpec.BooleanValue LARGE_BOATS_ENABLED = bool("ocean.largeBoats", true, "Enable large cargo-boat behavior.");
     public static final ModConfigSpec.BooleanValue OCEAN_DEBRIS_ENABLED = bool("ocean.driftDebris", true, "Enable sparse ocean drift debris.");
 
