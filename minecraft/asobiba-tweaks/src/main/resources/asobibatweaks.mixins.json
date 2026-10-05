@@ -4,7 +4,8 @@
   "package": "io.github.akakishi04.asobibatweaks.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "AbstractMinecartMixin"
+    "AbstractMinecartMixin",
+    "AnvilMenuMixin"
   ],
   "injectors": {
     "defaultRequire": 1
