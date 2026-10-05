@@ -522,3 +522,33 @@ Examples:
 - Mending mastery may waste less XP when only tiny repairs are needed.
 
 Design constraint: enchantment growth should create attachment and specialization, not infinite vertical power scaling.
+
+
+### Enchantment Growth Branches
+At major mastery milestones, selected enchantments can specialize into side-grade branches rather than only increasing their vanilla level.
+Examples include Feather Falling becoming safer landing, impact landing, or aerial recovery; Fortune becoming ore-, crop-, or high-variance-focused.
+Branches should change play style more than raw DPS/mining output.
+
+### Curse Growth
+Curses also accumulate mastery/history and may mutate through long-term use.
+The curse remains a meaningful drawback, but veteran cursed gear can develop unusual compensating behavior instead of remaining pure trash.
+Examples may include Binding becoming harder to lose on death, or Vanishing evolving into a delayed-return behavior.
+
+### Mutually Exclusive Enchantment Switching
+Permit selected normally-exclusive enchantments to coexist on one item while only one is active at a time.
+Example: Fortune and Silk Touch can both be stored, but only the selected mode applies.
+Switching may require XP, cooldown, anvil work, or another explicit cost so one item does not become a free universal solution.
+
+### Enchantment Mastery Inheritance
+Retiring/sacrificing veteran enchanted gear can transfer only part of an enchantment's mastery/history to a replacement.
+The enchantment itself and the mastery are separate resources: inheritance should preserve attachment without making gear upgrades free.
+
+### Uncapped Anvil Experience Cost
+Remove the hard anvil experience ceiling / "Too Expensive!" rejection for normal survival use.
+- High-cost operations remain expensive.
+- Prior-work and enchantment combination costs may continue to scale.
+- If the player actually has the required levels, the operation should be allowed.
+- This is required for high-mastery enchantment transfer, switching and late-game item history systems.
+- Any separate anti-abuse limits should be explicit configuration, not a hidden vanilla-style hard stop.
+
+Design constraint: anvil changes should remove arbitrary rejection, not make merging/repairing cheap.
