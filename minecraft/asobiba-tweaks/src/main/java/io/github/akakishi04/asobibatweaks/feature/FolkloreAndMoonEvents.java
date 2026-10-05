@@ -32,14 +32,30 @@ public final class FolkloreAndMoonEvents {
                 || !AsobibaTweaksConfig.WORLD_FOLKLORE_ENABLED.getAsBoolean()) return;
 
         long seed = player.serverLevel().getSeed();
-        int rule = Math.floorMod(Long.hashCode(seed ^ 0x52A5F1A7D34BL), 5);
+        int trueRule = Math.floorMod(Long.hashCode(seed ^ 0x52A5F1A7D34BL), 5);
         if (player.getRandom().nextDouble() < 0.28D) {
-            String rumor = switch (rule) {
-                case 0 -> "Old rumor: red beds are said to sleep more quietly during storms.";
-                case 1 -> "Old rumor: bells rung before dawn sometimes bring better luck underground.";
-                case 2 -> "Old rumor: bread left near a campfire is said to keep wanderers from getting lost.";
-                case 3 -> "Old rumor: flowers placed beside a lodestone are said to point travelers home.";
-                default -> "Old rumor: some worlds seem to favor those who greet the moon with an empty hand.";
+            int rumorRule = trueRule;
+            double honesty = player.getRandom().nextDouble();
+            if (honesty > 0.62D) {
+                rumorRule = Math.floorMod(trueRule + 1 + player.getRandom().nextInt(4), 5);
+            }
+
+            String rumor = switch (rumorRule) {
+                case 0 -> honesty < 0.82D
+                        ? "Old rumor: red beds are said to sleep more quietly during storms."
+                        : "Old rumor: beds of a certain color matter when thunder is near.";
+                case 1 -> honesty < 0.82D
+                        ? "Old rumor: bells rung before dawn sometimes bring better luck underground."
+                        : "Old rumor: a bell and the early morning are connected somehow.";
+                case 2 -> honesty < 0.82D
+                        ? "Old rumor: bread left near a campfire is said to keep wanderers from getting lost."
+                        : "Old rumor: travelers used to carry bread to warm fires for a reason.";
+                case 3 -> honesty < 0.82D
+                        ? "Old rumor: flowers placed beside a lodestone are said to point travelers home."
+                        : "Old rumor: lodestones supposedly like company.";
+                default -> honesty < 0.82D
+                        ? "Old rumor: some worlds seem to favor those who greet the moon with an empty hand."
+                        : "Old rumor: the full moon notices small gestures.";
             };
             player.sendSystemMessage(Component.literal(rumor).withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.ITALIC));
         }
