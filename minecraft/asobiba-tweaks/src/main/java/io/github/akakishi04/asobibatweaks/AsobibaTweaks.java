@@ -5,6 +5,7 @@ import io.github.akakishi04.asobibatweaks.feature.GrowingItemsEvents;
 import io.github.akakishi04.asobibatweaks.feature.InteractionTweaksEvents;
 import io.github.akakishi04.asobibatweaks.feature.MovementTweaksEvents;
 import io.github.akakishi04.asobibatweaks.feature.PlayTimeLimitEvents;
+import io.github.akakishi04.asobibatweaks.feature.PhysicsTransportEvents;
 import io.github.akakishi04.asobibatweaks.feature.TransportTweaksEvents;
 import io.github.akakishi04.asobibatweaks.feature.UniversalBondEvents;
 import io.github.akakishi04.asobibatweaks.feature.WorldOddityEvents;
@@ -26,6 +27,7 @@ public final class AsobibaTweaks {
         NeoForge.EVENT_BUS.register(new MovementTweaksEvents());
         NeoForge.EVENT_BUS.register(new InteractionTweaksEvents());
         NeoForge.EVENT_BUS.register(new TransportTweaksEvents());
+        NeoForge.EVENT_BUS.register(new PhysicsTransportEvents());
         NeoForge.EVENT_BUS.register(new WorldOddityEvents());
         InteractionTweaksEvents.registerDispenserBehaviors();
     }
