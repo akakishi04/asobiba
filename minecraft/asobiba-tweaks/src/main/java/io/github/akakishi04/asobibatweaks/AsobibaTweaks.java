@@ -8,6 +8,7 @@ import io.github.akakishi04.asobibatweaks.feature.GiantOrganismEvents;
 import io.github.akakishi04.asobibatweaks.feature.GrowingItemsEvents;
 import io.github.akakishi04.asobibatweaks.feature.InteractionTweaksEvents;
 import io.github.akakishi04.asobibatweaks.feature.MovementTweaksEvents;
+import io.github.akakishi04.asobibatweaks.feature.OceanAndDisplayEvents;
 import io.github.akakishi04.asobibatweaks.feature.PlayTimeLimitEvents;
 import io.github.akakishi04.asobibatweaks.feature.PhysicsTransportEvents;
 import io.github.akakishi04.asobibatweaks.feature.TransportTweaksEvents;
@@ -37,6 +38,7 @@ public final class AsobibaTweaks {
         NeoForge.EVENT_BUS.register(new TransportTweaksEvents());
         NeoForge.EVENT_BUS.register(new PhysicsTransportEvents());
         NeoForge.EVENT_BUS.register(new WorldOddityEvents());
+        NeoForge.EVENT_BUS.register(new OceanAndDisplayEvents());
         InteractionTweaksEvents.registerDispenserBehaviors();
     }
 }
