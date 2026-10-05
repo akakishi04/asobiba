@@ -84,16 +84,6 @@ public final class OceanAndDisplayEvents {
     }
 
     @SubscribeEvent
-    public void onSize(EntityEvent.Size event) {
-        if (!AsobibaTweaksConfig.LARGE_BOATS_ENABLED.getAsBoolean()
-                || !(event.getEntity() instanceof Boat boat)
-                || !boat.getPersistentData().getBoolean(LARGE_BOAT)) {
-            return;
-        }
-        event.setNewSize(event.getNewSize().scale(1.28F, 1.08F));
-    }
-
-    @SubscribeEvent
     public void onPlayerTick(PlayerTickEvent.Post event) {
         if (!(event.getEntity() instanceof ServerPlayer player)
                 || !AsobibaTweaksConfig.OCEAN_DEBRIS_ENABLED.getAsBoolean()
