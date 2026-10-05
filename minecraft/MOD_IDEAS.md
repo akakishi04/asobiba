@@ -457,3 +457,19 @@ Potential targets:
 - minecarts where safe enough
 
 This feature should preserve a meaningful risk of bad outcomes rather than becoming precision transportation.
+
+
+### High-Speed Minecarts and Collision Damage
+Promote minecarts from mostly transportation objects into true momentum-based vehicles.
+
+Planned behavior:
+- Remove the normal artificial top-speed ceiling for minecarts.
+- Final speed should emerge from powered rail input, slopes, friction and braking rather than a fixed vanilla-style cap.
+- Collision damage / knockback scales with actual minecart speed.
+- High-speed carts can become dangerous to mobs and players.
+- Rail design, braking distance and track geometry therefore matter.
+- Keep minecart contents/passengers intact where possible rather than treating high speed as automatic destruction.
+- At extreme speed, prioritize safe handling of unloaded chunks and invalid collision states instead of silently clamping velocity.
+- Configurable collision lethality and derail/crash behavior can be added separately; speed itself should not be arbitrarily capped by default.
+
+Design constraint: preserve the fun of absurd engineering. Safety logic may prevent simulation corruption, but should not turn into another hidden speed limit.
