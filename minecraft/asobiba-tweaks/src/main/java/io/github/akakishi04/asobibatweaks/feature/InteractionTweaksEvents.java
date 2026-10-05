@@ -259,8 +259,15 @@ public final class InteractionTweaksEvents {
 
     @SubscribeEvent
     public void onPlayerTick(PlayerTickEvent.Post event) {
-        if (!(event.getEntity() instanceof ServerPlayer player)
-                || !AsobibaTweaksConfig.CARRY_SMALL_MOBS_ENABLED.getAsBoolean()) return;
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+
+        if (AsobibaTweaksConfig.EXPANDED_RIDING_ENABLED.getAsBoolean()
+                && player.getVehicle() instanceof Mob mount
+                && mount.getPersistentData().getBoolean("asobibatweaks_saddled")) {
+            controlExpandedMount(player, mount);
+        }
+
+        if (!AsobibaTweaksConfig.CARRY_SMALL_MOBS_ENABLED.getAsBoolean()) return;
 
         boolean carrying = false;
         long now = player.level().getGameTime();
@@ -314,6 +321,41 @@ public final class InteractionTweaksEvents {
                 item.setDeltaMovement(item.getDeltaMovement().scale(0.2D));
             }
         }
+    }
+
+    private static void controlExpandedMount(ServerPlayer player, Mob mount) {
+        float forward = player.zza;
+        float strafe = player.xxa;
+        if (Math.abs(forward) < 0.05F && Math.abs(strafe) < 0.05F) {
+            Vec3 current = mount.getDeltaMovement();
+            mount.setDeltaMovement(current.x * 0.82D, current.y, current.z * 0.82D);
+            return;
+        }
+
+        Vec3 forwardVec = new Vec3(player.getLookAngle().x, 0.0D, player.getLookAngle().z);
+        if (forwardVec.lengthSqr() < 0.001D) return;
+        forwardVec = forwardVec.normalize();
+        Vec3 right = new Vec3(-forwardVec.z, 0.0D, forwardVec.x);
+        Vec3 desired = forwardVec.scale(forward).add(right.scale(strafe * 0.65D));
+        if (desired.lengthSqr() > 1.0D) desired = desired.normalize();
+
+        double speed = mount instanceof net.minecraft.world.entity.animal.goat.Goat ? 0.28D
+                : mount instanceof net.minecraft.world.entity.animal.Pig ? 0.20D
+                : mount instanceof net.minecraft.world.entity.animal.Cow ? 0.17D
+                : mount instanceof net.minecraft.world.entity.animal.Sheep ? 0.16D
+                : mount instanceof net.minecraft.world.entity.monster.Ravager ? 0.24D
+                : 0.19D;
+
+        Vec3 current = mount.getDeltaMovement();
+        Vec3 target = desired.scale(speed);
+        mount.setDeltaMovement(
+                current.x * 0.55D + target.x * 0.45D,
+                current.y,
+                current.z * 0.55D + target.z * 0.45D
+        );
+        mount.setYRot(player.getYRot());
+        mount.setYHeadRot(player.getYRot());
+        mount.hurtMarked = true;
     }
 
     private static void handlePearlAnchor(PlayerInteractEvent.RightClickItem event, ServerPlayer player, ItemStack stack) {
