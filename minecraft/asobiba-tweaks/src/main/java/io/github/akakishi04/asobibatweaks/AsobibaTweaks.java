@@ -1,9 +1,11 @@
 package io.github.akakishi04.asobibatweaks;
 
 import io.github.akakishi04.asobibatweaks.feature.AlchemyExplosivesCraftingEvents;
+import io.github.akakishi04.asobibatweaks.feature.ContinentalWorldgenEvents;
 import io.github.akakishi04.asobibatweaks.feature.DailyFavorEvents;
 import io.github.akakishi04.asobibatweaks.feature.EnchantmentTweaksEvents;
 import io.github.akakishi04.asobibatweaks.feature.FolkloreAndMoonEvents;
+import io.github.akakishi04.asobibatweaks.feature.ForestRegenerationEvents;
 import io.github.akakishi04.asobibatweaks.feature.GiantOrganismEvents;
 import io.github.akakishi04.asobibatweaks.feature.GrowingItemsEvents;
 import io.github.akakishi04.asobibatweaks.feature.InteractionTweaksEvents;
@@ -35,6 +37,8 @@ public final class AsobibaTweaks {
         NeoForge.EVENT_BUS.register(new EnchantmentTweaksEvents());
         NeoForge.EVENT_BUS.register(new PlayTimeLimitEvents());
         NeoForge.EVENT_BUS.register(new DailyFavorEvents());
+        NeoForge.EVENT_BUS.register(new ContinentalWorldgenEvents());
+        NeoForge.EVENT_BUS.register(new ForestRegenerationEvents());
         NeoForge.EVENT_BUS.register(new AlchemyExplosivesCraftingEvents());
         NeoForge.EVENT_BUS.register(new UniversalBondEvents());
         NeoForge.EVENT_BUS.register(new MovementTweaksEvents());
