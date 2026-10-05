@@ -40,7 +40,7 @@ public final class GiantOrganismEvents {
     public void onEntityJoin(EntityJoinLevelEvent event) {
         if (!AsobibaTweaksConfig.GIANT_MOBS_ENABLED.getAsBoolean()
                 || event.getLevel().isClientSide()
-                || event.isLoadedFromDisk()
+                || event.loadedFromDisk()
                 || !(event.getEntity() instanceof Mob mob)
                 || mob instanceof EnderDragon
                 || mob instanceof WitherBoss
