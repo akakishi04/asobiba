@@ -251,7 +251,7 @@ public final class VillageSimulationEvents {
 
     private static List<BuildStep> storagePlan(ServerLevel level, BlockPos base, Villager villager) {
         List<BuildStep> steps = new ArrayList<>();
-        Block plankBlock = choosePlanks(level, base);
+        Block plankBlock = chooseBuildingPlanks(level, base, villager.blockPosition());
         Item plankItem = plankBlock.asItem();
         BlockState plank = plankBlock.defaultBlockState();
 
@@ -323,6 +323,46 @@ public final class VillageSimulationEvents {
             steps.add(new BuildStep(base.offset(3, 1, 2), Blocks.BARREL.defaultBlockState(), Items.BARREL));
         }
         return steps;
+    }
+
+    private static Block chooseBuildingPlanks(ServerLevel level, BlockPos site, BlockPos villageCenter) {
+        Item[] items = {
+                Items.OAK_PLANKS, Items.SPRUCE_PLANKS, Items.BIRCH_PLANKS,
+                Items.JUNGLE_PLANKS, Items.ACACIA_PLANKS, Items.DARK_OAK_PLANKS,
+                Items.MANGROVE_PLANKS, Items.CHERRY_PLANKS
+        };
+        Block[] blocks = {
+                Blocks.OAK_PLANKS, Blocks.SPRUCE_PLANKS, Blocks.BIRCH_PLANKS,
+                Blocks.JUNGLE_PLANKS, Blocks.ACACIA_PLANKS, Blocks.DARK_OAK_PLANKS,
+                Blocks.MANGROVE_PLANKS, Blocks.CHERRY_PLANKS
+        };
+
+        int[] counts = new int[items.length];
+        for (Container container : containers(level, villageCenter, 18)) {
+            for (int slot = 0; slot < container.getContainerSize(); slot++) {
+                ItemStack stack = container.getItem(slot);
+                for (int i = 0; i < items.length; i++) {
+                    if (stack.is(items[i])) {
+                        counts[i] += stack.getCount();
+                        break;
+                    }
+                }
+            }
+        }
+
+        int best = -1;
+        int bestCount = 0;
+        for (int i = 0; i < counts.length; i++) {
+            if (counts[i] > bestCount) {
+                bestCount = counts[i];
+                best = i;
+            }
+        }
+
+        if (best >= 0 && bestCount >= 16) {
+            return blocks[best];
+        }
+        return choosePlanks(level, site);
     }
 
     private static Block choosePlanks(ServerLevel level, BlockPos pos) {
