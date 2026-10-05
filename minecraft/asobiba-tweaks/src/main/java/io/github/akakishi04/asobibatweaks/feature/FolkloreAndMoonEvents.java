@@ -25,6 +25,7 @@ public final class FolkloreAndMoonEvents {
     private static final String RETURN_AT = "asobibatweaks_moon_return_at";
     private static final String RETURN_ITEM = "asobibatweaks_moon_return_item";
     private final Map<UUID, RitualState> rituals = new HashMap<>();
+    private final Map<UUID, Long> lastMemoryChunk = new HashMap<>();
 
     @SubscribeEvent
     public void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
@@ -68,6 +69,11 @@ public final class FolkloreAndMoonEvents {
         if (AsobibaTweaksConfig.WORLD_FOLKLORE_ENABLED.getAsBoolean()
                 && player.level().getGameTime() % 20L == Math.floorMod(player.getId(), 20)) {
             tickRitual(player);
+        }
+
+        if (AsobibaTweaksConfig.WORLD_FOLKLORE_ENABLED.getAsBoolean()
+                && player.level().getGameTime() % 200L == Math.floorMod(player.getId(), 200)) {
+            tickLocationMemory(player);
         }
 
         if (AsobibaTweaksConfig.WORLD_FOLKLORE_ENABLED.getAsBoolean()) {
@@ -145,9 +151,33 @@ public final class FolkloreAndMoonEvents {
 
         if (triggered && now - state.lastReward > 2400L) {
             state.lastReward = now;
-            player.giveExperiencePoints(1);
+            FolkloreSavedData folklore = FolkloreSavedData.get(player.serverLevel());
+            folklore.ritual(player.chunkPosition());
+            int localRituals = folklore.memory(player.chunkPosition()).rituals();
+            player.giveExperiencePoints(localRituals >= 3 && player.getRandom().nextDouble() < 0.30D ? 2 : 1);
             player.displayClientMessage(Component.literal("Something about that felt... right.")
                     .withStyle(ChatFormatting.DARK_PURPLE), true);
+        }
+    }
+
+    private void tickLocationMemory(ServerPlayer player) {
+        FolkloreSavedData data = FolkloreSavedData.get(player.serverLevel());
+        var chunk = player.chunkPosition();
+        FolkloreSavedData.LocationMemory before = data.memory(chunk);
+        boolean wasFamiliar = before.familiar();
+        FolkloreSavedData.LocationMemory after = data.visit(chunk);
+
+        long key = chunk.toLong();
+        Long previous = lastMemoryChunk.put(player.getUUID(), key);
+        if (!wasFamiliar && after.familiar()) {
+            player.sendSystemMessage(Component.literal("This place has begun to feel familiar.")
+                    .withStyle(ChatFormatting.DARK_GRAY, ChatFormatting.ITALIC));
+        } else if (previous != null && previous.longValue() != key
+                && after.familiar()
+                && player.getRandom().nextDouble() < 0.035D) {
+            player.displayClientMessage(Component.literal(
+                    after.ritualized() ? "The old habit seems to linger here." : "You know this ground."
+            ).withStyle(ChatFormatting.DARK_GRAY), true);
         }
     }
 
@@ -216,6 +246,7 @@ public final class FolkloreAndMoonEvents {
     @SubscribeEvent
     public void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         rituals.remove(event.getEntity().getUUID());
+        lastMemoryChunk.remove(event.getEntity().getUUID());
     }
 
     private static final class RitualState {
