@@ -773,3 +773,18 @@ Potential examples:
 - selected signs / rails / similar narrow surfaces
 
 Perching should primarily be behavioral and visual, not a new progression or pet-stat system.
+
+
+### Auto-Connected Map Walls
+Adjacent maps placed in item frames can recognize neighboring map tiles and present themselves as one continuous map wall.
+- preserve ordinary vanilla maps and item frames
+- reduce visual seams / orientation mistakes where practical
+- make large exploration-map rooms easier to maintain
+- no separate map-management GUI required
+
+### Displayed Elytra on Armor Stands
+Armor stands can display Elytra in an opened-wing presentation pose.
+- visual/display-only behavior
+- preserve the actual Elytra item and all of its data
+- intended for equipment rooms, trophies and museums
+- should coexist naturally with armor-stand loadout swapping
