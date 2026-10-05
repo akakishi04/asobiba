@@ -746,3 +746,30 @@ Allow the player to swap their currently equipped armor set with an armor stand'
 - optional handling for held items can be considered later, but armor is the initial scope
 
 Design constraint: armor stands should become practical equipment storage while remaining ordinary vanilla entities.
+
+
+## Accepted small vanilla-adjacent behavior tweaks
+
+### Linked Double Doors
+Adjacent matching doors can open/close together from a normal interaction.
+- sneak-interact can operate only the targeted half when needed
+- preserve redstone behavior predictably
+- avoid linking unrelated nearby doors
+
+### Enderman Micro-Building
+Endermen can very rarely place carried blocks into tiny intentional-looking arrangements rather than always placing them independently.
+- structures remain extremely small, roughly 2-5 blocks
+- use only blocks the Enderman actually carried
+- no valuable loot or progression reward
+- intended to leave strange, harmless traces in the world
+
+### Parrot Perches
+Parrots can perch on a wider set of narrow or perch-like vanilla blocks.
+Potential examples:
+- fences and walls
+- chains
+- end rods
+- armor stands where collision permits
+- selected signs / rails / similar narrow surfaces
+
+Perching should primarily be behavioral and visual, not a new progression or pet-stat system.
