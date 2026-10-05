@@ -3,6 +3,7 @@ package io.github.akakishi04.asobibatweaks;
 import io.github.akakishi04.asobibatweaks.feature.AlchemyExplosivesCraftingEvents;
 import io.github.akakishi04.asobibatweaks.feature.DailyFavorEvents;
 import io.github.akakishi04.asobibatweaks.feature.EnchantmentTweaksEvents;
+import io.github.akakishi04.asobibatweaks.feature.FolkloreAndMoonEvents;
 import io.github.akakishi04.asobibatweaks.feature.GiantOrganismEvents;
 import io.github.akakishi04.asobibatweaks.feature.GrowingItemsEvents;
 import io.github.akakishi04.asobibatweaks.feature.InteractionTweaksEvents;
@@ -25,6 +26,7 @@ public final class AsobibaTweaks {
         container.registerConfig(ModConfig.Type.COMMON, AsobibaTweaksConfig.SPEC);
         NeoForge.EVENT_BUS.register(new GrowingItemsEvents());
         NeoForge.EVENT_BUS.register(new GiantOrganismEvents());
+        NeoForge.EVENT_BUS.register(new FolkloreAndMoonEvents());
         NeoForge.EVENT_BUS.register(new EnchantmentTweaksEvents());
         NeoForge.EVENT_BUS.register(new PlayTimeLimitEvents());
         NeoForge.EVENT_BUS.register(new DailyFavorEvents());
