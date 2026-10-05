@@ -49,6 +49,8 @@ public final class VillageSimulationEvents {
     private static final String BUILD_ANCHOR_X = "asobibatweaks_build_anchor_x";
     private static final String BUILD_ANCHOR_Z = "asobibatweaks_build_anchor_z";
     private static final String BUILD_OUTPOST = "asobibatweaks_build_outpost";
+    private static final String BUILD_KIND = "asobibatweaks_build_kind";
+    private static final String SHORTAGE_STREAK = "asobibatweaks_shortage_streak";
     private static final String SETTLE_X = "asobibatweaks_settle_x";
     private static final String SETTLE_Y = "asobibatweaks_settle_y";
     private static final String SETTLE_Z = "asobibatweaks_settle_z";
@@ -159,20 +161,32 @@ public final class VillageSimulationEvents {
         AABB villageArea = villager.getBoundingBox().inflate(28.0D);
         int population = level.getEntitiesOfClass(Villager.class, villageArea).size();
         int beds = countBlocks(level, villager.blockPosition(), 24, state -> state.is(BlockTags.BEDS));
-        if (population < 4 || beds > population + 1) {
+        int stores = containers(level, villager.blockPosition(), 18).size();
+        if (population < 4) {
+            villager.getPersistentData().putLong(NEXT_BUILD, now + 12000L);
+            return;
+        }
+
+        int builderXp = villager.getPersistentData().getInt(BUILDER_XP);
+        boolean housingNeed = beds <= population + 1;
+        boolean storageNeed = stores < Math.max(2, (population + 3) / 4);
+        boolean outpost = !housingNeed && !storageNeed && population >= 6
+                && builderXp > 0 && builderXp % 4 == 3;
+
+        if (!housingNeed && !storageNeed && !outpost) {
             villager.getPersistentData().putLong(NEXT_BUILD, now + 12000L);
             return;
         }
 
         if (countStorageItems(level, villager.blockPosition(), 18, Items.OAK_PLANKS, Items.SPRUCE_PLANKS,
-                Items.BIRCH_PLANKS, Items.ACACIA_PLANKS, Items.COBBLESTONE) < 28) {
+                Items.BIRCH_PLANKS, Items.ACACIA_PLANKS, Items.JUNGLE_PLANKS, Items.MANGROVE_PLANKS,
+                Items.CHERRY_PLANKS, Items.COBBLESTONE) < 28) {
             requestMaterials(villager, "planks/cobblestone");
             villager.getPersistentData().putLong(NEXT_BUILD, now + 2400L);
             return;
         }
 
-        int builderXp = villager.getPersistentData().getInt(BUILDER_XP);
-        boolean outpost = builderXp > 0 && builderXp % 4 == 3;
+        int buildKind = storageNeed && !housingNeed ? 1 : 0;
         BlockPos site = findBuildSite(villager, level, outpost);
         if (site == null) {
             villager.getPersistentData().putLong(NEXT_BUILD, now + 12000L);
@@ -186,6 +200,7 @@ public final class VillageSimulationEvents {
         data.putInt(BUILD_STEP, 0);
         data.putBoolean(BUILD_ACTIVE, true);
         data.putBoolean(BUILD_OUTPOST, outpost);
+        data.putInt(BUILD_KIND, buildKind);
         data.putInt(BUILD_ANCHOR_X, villager.blockPosition().getX());
         data.putInt(BUILD_ANCHOR_Z, villager.blockPosition().getZ());
         villager.getNavigation().moveTo(site.getX() + 2.0D, site.getY(), site.getZ() + 2.0D, 0.7D);
@@ -196,7 +211,9 @@ public final class VillageSimulationEvents {
 
         var data = villager.getPersistentData();
         BlockPos base = new BlockPos(data.getInt(BUILD_X), data.getInt(BUILD_Y), data.getInt(BUILD_Z));
-        List<BuildStep> plan = hutPlan(level, base, villager);
+        List<BuildStep> plan = data.getInt(BUILD_KIND) == 1
+                ? storagePlan(level, base, villager)
+                : hutPlan(level, base, villager);
         int stepIndex = data.getInt(BUILD_STEP);
         if (stepIndex >= plan.size()) {
             data.putBoolean(BUILD_ACTIVE, false);
@@ -230,6 +247,36 @@ public final class VillageSimulationEvents {
 
         level.setBlock(step.pos, step.state, Block.UPDATE_ALL);
         data.putInt(BUILD_STEP, stepIndex + 1);
+    }
+
+    private static List<BuildStep> storagePlan(ServerLevel level, BlockPos base, Villager villager) {
+        List<BuildStep> steps = new ArrayList<>();
+        Block plankBlock = choosePlanks(level, base);
+        Item plankItem = plankBlock.asItem();
+        BlockState plank = plankBlock.defaultBlockState();
+
+        for (int x = 0; x < 5; x++) for (int z = 0; z < 5; z++) {
+            steps.add(new BuildStep(base.offset(x, 0, z), Blocks.COBBLESTONE.defaultBlockState(), Items.COBBLESTONE));
+        }
+
+        for (int y = 1; y <= 3; y++) {
+            for (int x = 0; x < 5; x++) for (int z = 0; z < 5; z++) {
+                boolean edge = x == 0 || x == 4 || z == 0 || z == 4;
+                boolean doorway = z == 0 && x == 2 && y <= 2;
+                if (edge && !doorway) {
+                    steps.add(new BuildStep(base.offset(x, y, z), plank, plankItem));
+                }
+            }
+        }
+
+        for (int x = 0; x < 5; x++) for (int z = 0; z < 5; z++) {
+            steps.add(new BuildStep(base.offset(x, 4, z), plank, plankItem));
+        }
+
+        steps.add(new BuildStep(base.offset(1, 1, 2), Blocks.BARREL.defaultBlockState(), Items.BARREL));
+        steps.add(new BuildStep(base.offset(3, 1, 2), Blocks.BARREL.defaultBlockState(), Items.BARREL));
+        steps.add(new BuildStep(base.offset(2, 2, 4), Blocks.TORCH.defaultBlockState(), Items.TORCH));
+        return steps;
     }
 
     private static List<BuildStep> hutPlan(ServerLevel level, BlockPos base, Villager villager) {
@@ -445,7 +492,16 @@ public final class VillageSimulationEvents {
         }
 
         int food = countStorageItems(level, villager.blockPosition(), 14, Items.BREAD, Items.CARROT, Items.POTATO, Items.BEETROOT);
-        if (food < 16) requestMaterials(villager, "food reserves");
+        if (food < 16) {
+            requestMaterials(villager, "food reserves");
+            int streak = villager.getPersistentData().getInt(SHORTAGE_STREAK) + 1;
+            villager.getPersistentData().putInt(SHORTAGE_STREAK, streak);
+            if (streak >= 4) {
+                villager.getPersistentData().putLong(DISTRESS, level.getGameTime() + 2L * 24000L);
+            }
+        } else {
+            villager.getPersistentData().remove(SHORTAGE_STREAK);
+        }
     }
 
     private static void tickQuarryWorker(Villager villager, ServerLevel level) {
