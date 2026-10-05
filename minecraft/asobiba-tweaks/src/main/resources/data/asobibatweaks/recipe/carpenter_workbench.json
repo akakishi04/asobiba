@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "PPP",
+    "CTC",
+    "C C"
+  ],
+  "key": {
+    "P": { "tag": "minecraft:planks" },
+    "C": { "item": "minecraft:oak_log" },
+    "T": { "item": "minecraft:crafting_table" }
+  },
+  "result": {
+    "id": "asobibatweaks:carpenter_workbench",
+    "count": 1
+  }
+}
