@@ -799,3 +799,17 @@ Very rarely, a small group of same-species mobs can gather in an oddly deliberat
 - frequency must remain low enough that seeing one feels unusual
 
 Design constraint: the event should create memorable unexplained moments, not become a farmable encounter type.
+
+
+### Dispenser-Fired Ender Pearls
+Allow dispensers to fire Ender Pearls as real teleport projectiles rather than merely ejecting them as items.
+
+Planned direction:
+- pearls launched from a dispenser behave like normal thrown Ender Pearls
+- ownership should be attributable to the triggering player where that is practical and unambiguous
+- when no valid owner exists, configurable neutral behavior should avoid accidental arbitrary-player teleportation
+- preserve collision, teleport damage and ordinary pearl travel rules
+- support simple redstone-built pearl launchers and transport contraptions without adding a dedicated launcher block
+- interaction with temporary pearl return points should remain explicit rather than automatically merging the two systems
+
+Design constraint: this should extend the vanilla dispenser vocabulary, not create a separate teleport-network system.
