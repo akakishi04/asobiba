@@ -63,7 +63,9 @@ public final class AlchemyExplosivesCraftingEvents {
     @SubscribeEvent
     public void onBreak(BlockEvent.BreakEvent event) {
         if (!event.getState().is(Blocks.TNT)) return;
-        designMap(event.getLevel().dimension().location().toString()).remove(event.getPos().asLong());
+        if (event.getLevel() instanceof Level level) {
+            designMap(level.dimension().location().toString()).remove(event.getPos().asLong());
+        }
     }
 
     @SubscribeEvent
