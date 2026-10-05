@@ -584,3 +584,38 @@ Allow minecarts to be linked into trains using chains or another simple coupling
 - coupling must remain physically understandable rather than becoming invisible inventory logistics
 
 Design constraint: trains should enable engineering, transport and accidents without turning into a separate rail-management game.
+
+
+## Accepted world-generation overhaul
+
+### Continental Oceans and Isolated Islands
+Add an optional large-scale overworld generation mode inspired by older Minecraft's stronger land/ocean separation.
+
+Target characteristics:
+- genuinely vast oceans that take meaningful time to cross
+- large continents separated by real ocean basins instead of frequent narrow water gaps
+- isolated islands and small island chains far from continental coasts
+- occasional remote archipelagos worth discovering
+- stronger sense that crossing an ocean is a journey and that distant landmasses are geographically distinct
+- preserve modern biomes, caves, structures and vertical terrain where practical rather than recreating an old generator byte-for-byte
+- coastline scale should vary: some continents have long continuous coasts, others broken peninsulas and archipelagos
+- rare very large islands can function almost like miniature continents
+- avoid filling every ocean with constant land fragments; empty sea is an intentional part of the experience
+
+Integration goals:
+- ocean currents, boats, maps and long-distance trade become more meaningful
+- regional trade value benefits from real geographic separation
+- villages and future caravans/ports can develop differently across continents
+- exploration rewards should account for the greater travel commitment
+- portal travel becomes strategically important without making surface travel obsolete
+
+Configuration:
+- feature toggle
+- continent scale
+- ocean scale
+- island frequency
+- archipelago frequency
+- minimum separation bias between major landmasses
+
+Compatibility constraint:
+This mode should primarily affect newly generated chunks/worlds. Existing worlds must not silently regenerate old terrain, and worldgen changes should remain optional because they can conflict with other terrain-generation mods.
