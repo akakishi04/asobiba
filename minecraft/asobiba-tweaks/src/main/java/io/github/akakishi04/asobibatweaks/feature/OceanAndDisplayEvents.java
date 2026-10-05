@@ -4,6 +4,12 @@ import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.FloatTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtUtils;
+import net.minecraft.world.entity.Display;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.BiomeTags;
@@ -27,6 +33,8 @@ import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 
 public final class OceanAndDisplayEvents {
     public static final String LARGE_BOAT = "asobibatweaks_large_boat";
+    private static final String RAFT_VISUAL = "asobibatweaks_raft_visual";
+    private static final String RAFT_PARENT = "asobibatweaks_raft_parent";
 
     @SubscribeEvent
     public void onBoatInteract(PlayerInteractEvent.EntityInteract event) {
@@ -51,6 +59,7 @@ public final class OceanAndDisplayEvents {
         boat.getPersistentData().putBoolean(LARGE_BOAT, true);
         if (!boat.hasCustomName()) boat.setCustomName(Component.literal("Cargo Raft"));
         boat.refreshDimensions();
+        spawnRaftVisual((ServerLevel)boat.level(), boat);
         player.displayClientMessage(Component.literal("Chest boat expanded into a cargo raft.").withStyle(ChatFormatting.AQUA), true);
         event.setCancellationResult(InteractionResult.SUCCESS);
         event.setCanceled(true);
@@ -59,6 +68,12 @@ public final class OceanAndDisplayEvents {
     @SubscribeEvent
     public void onEntityTick(EntityTickEvent.Post event) {
         if (event.getEntity().level().isClientSide()) return;
+
+        if (event.getEntity() instanceof Display.BlockDisplay display
+                && display.getPersistentData().getBoolean(RAFT_VISUAL)) {
+            tickRaftVisual(display);
+            return;
+        }
 
         if (event.getEntity() instanceof Boat boat
                 && AsobibaTweaksConfig.LARGE_BOATS_ENABLED.getAsBoolean()
@@ -73,6 +88,10 @@ public final class OceanAndDisplayEvents {
             double drag = Math.max(0.965D, 0.995D - passengers * 0.004D - cargoStacks * 0.0008D);
             Vec3 movement = boat.getDeltaMovement();
             boat.setDeltaMovement(movement.x * drag, movement.y, movement.z * drag);
+            if (boat.tickCount % 200 == Math.floorMod(boat.getId(), 200)
+                    && !hasRaftVisual((ServerLevel)boat.level(), boat)) {
+                spawnRaftVisual((ServerLevel)boat.level(), boat);
+            }
         }
 
         if (event.getEntity() instanceof ItemFrame frame
@@ -94,6 +113,76 @@ public final class OceanAndDisplayEvents {
         }
 
         spawnDebris(player);
+    }
+
+    private static void spawnRaftVisual(ServerLevel level, Boat boat) {
+        if (hasRaftVisual(level, boat)) return;
+
+        CompoundTag tag = new CompoundTag();
+        tag.putString("id", "minecraft:block_display");
+        tag.put("block_state", NbtUtils.writeBlockState(Blocks.OAK_PLANKS.defaultBlockState()));
+
+        CompoundTag transform = new CompoundTag();
+        transform.put("translation", floats(-1.15F, -0.12F, -0.80F));
+        transform.put("left_rotation", floats(0.0F, 0.0F, 0.0F, 1.0F));
+        transform.put("scale", floats(2.30F, 0.16F, 1.60F));
+        transform.put("right_rotation", floats(0.0F, 0.0F, 0.0F, 1.0F));
+        tag.put("transformation", transform);
+        tag.putFloat("view_range", 1.0F);
+        tag.putFloat("shadow_radius", 0.0F);
+
+        Entity entity = EntityType.loadEntityRecursive(tag, level, e -> e);
+        if (!(entity instanceof Display.BlockDisplay display)) return;
+
+        display.setPos(boat.getX(), boat.getY() + 0.20D, boat.getZ());
+        display.setYRot(boat.getYRot());
+        display.getPersistentData().putBoolean(RAFT_VISUAL, true);
+        display.getPersistentData().putString(RAFT_PARENT, boat.getUUID().toString());
+        level.addFreshEntity(display);
+    }
+
+    private static void tickRaftVisual(Display.BlockDisplay display) {
+        if (!(display.level() instanceof ServerLevel level)) return;
+        String id = display.getPersistentData().getString(RAFT_PARENT);
+        if (id.isEmpty()) {
+            display.discard();
+            return;
+        }
+
+        Entity parent;
+        try {
+            parent = level.getEntity(java.util.UUID.fromString(id));
+        } catch (IllegalArgumentException ex) {
+            display.discard();
+            return;
+        }
+
+        if (!(parent instanceof Boat boat) || !boat.isAlive()
+                || !boat.getPersistentData().getBoolean(LARGE_BOAT)) {
+            int missing = display.getPersistentData().getInt("asobibatweaks_raft_missing") + 1;
+            display.getPersistentData().putInt("asobibatweaks_raft_missing", missing);
+            if (missing > 100) display.discard();
+            return;
+        }
+
+        display.getPersistentData().remove("asobibatweaks_raft_missing");
+        display.setPos(boat.getX(), boat.getY() + 0.20D, boat.getZ());
+        display.setYRot(boat.getYRot());
+    }
+
+    private static boolean hasRaftVisual(ServerLevel level, Boat boat) {
+        return !level.getEntitiesOfClass(
+                Display.BlockDisplay.class,
+                boat.getBoundingBox().inflate(4.0D),
+                d -> d.getPersistentData().getBoolean(RAFT_VISUAL)
+                        && boat.getUUID().toString().equals(d.getPersistentData().getString(RAFT_PARENT))
+        ).isEmpty();
+    }
+
+    private static ListTag floats(float... values) {
+        ListTag list = new ListTag();
+        for (float value : values) list.add(FloatTag.valueOf(value));
+        return list;
     }
 
     private static void alignMapFrame(ItemFrame frame) {
