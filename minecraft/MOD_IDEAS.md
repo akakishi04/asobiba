@@ -684,3 +684,17 @@ Spawn / inheritance policy:
 - frequency is configurable globally and per broad mob category
 
 Design constraint: giant organisms should create memorable emergent encounters ("why is that cow enormous?") without becoming a separate RPG rarity/level system.
+
+
+### Fletching Table Expansion
+Give the vanilla Fletching Table a real survival use without turning it into a separate crafting tree.
+
+Planned direction:
+- bulk arrow crafting
+- lightweight arrows: faster flight, slightly lower damage
+- heavy arrows: slower flight, stronger knockback / better momentum
+- utility arrow variants can reuse existing tweak systems where sensible, such as torch-placement arrows later
+- preserve vanilla arrows and tipped arrows as the baseline
+- avoid adding a large family of new materials solely for arrow crafting
+
+Design constraint: this should feel like completing an unfinished vanilla workstation, not introducing a full archery overhaul.
