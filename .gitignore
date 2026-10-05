@@ -1,2 +1,9 @@
-
 /fold/
+.gradle/
+**/.gradle/
+**/build/
+**/run/
+**/run-data/
+.idea/
+*.iml
+minecraft-data-logger/
