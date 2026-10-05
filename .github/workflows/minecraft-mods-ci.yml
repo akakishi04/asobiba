@@ -1,6 +1,12 @@
 name: Minecraft Mods CI
 
 on:
+  push:
+    branches:
+      - "feat/minecraft-mods-bootstrap"
+    paths:
+      - "minecraft/**"
+      - ".github/workflows/minecraft-mods-ci.yml"
   pull_request:
     paths:
       - "minecraft/**"
