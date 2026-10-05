@@ -6,7 +6,9 @@
   "mixins": [
     "AbstractMinecartMixin",
     "AnvilMenuMixin",
-    "PrimedTntMixin"
+    "PrimedTntMixin",
+    "BoatMixin",
+    "ArmorStandElytraMixin"
   ],
   "injectors": {
     "defaultRequire": 1
