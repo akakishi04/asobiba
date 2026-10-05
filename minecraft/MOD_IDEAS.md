@@ -152,3 +152,17 @@ Villagers generate short claims about local events. Some are true, some exaggera
 - Systems whose optimal use becomes mandatory busywork.
 
 Those should become separate mods.
+
+## World Folklore implementation candidate
+
+Accepted as a future implementation family rather than immediate v0.1 scope.
+
+Core direction:
+
+- Seed-specific hidden folklore rules that differ per world.
+- Some rumors are true, some are false, and some are incomplete versions of a real condition.
+- Repeated player habits can become recognized rituals with tiny cosmetic or mechanical effects.
+- Important locations can accumulate local memory and folklore over time.
+- The world may slowly adapt tiny behaviors to long-term player habits without exposing a visible progression meter.
+
+Design constraint: folklore should feel discoverable and arguable, not like a checklist or achievement system. Exact rules should not be dumped directly into normal UI.
