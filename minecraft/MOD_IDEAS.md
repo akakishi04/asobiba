@@ -552,3 +552,35 @@ Remove the hard anvil experience ceiling / "Too Expensive!" rejection for normal
 - Any separate anti-abuse limits should be explicit configuration, not a hidden vanilla-style hard stop.
 
 Design constraint: anvil changes should remove arbitrary rejection, not make merging/repairing cheap.
+
+
+## Accepted transport / alchemy / explosives tweaks
+
+### Potion Mixing
+Allow selected brewed potions to be combined into weaker multi-effect mixtures.
+- Mixed effects are weaker/shorter than dedicated potions.
+- Opposing effects may create special reactions instead of simply stacking.
+- Brewing remains useful; mixing is flexibility, not a strict upgrade.
+- Keep recipes/data-driven where possible.
+
+### TNT Design
+Allow TNT behavior to be customized through material composition or explicit crafting variants.
+Possible parameters:
+- blast radius
+- entity damage
+- block destruction
+- fuse duration
+- wind-pressure output
+- shaped/directional bias later
+
+The goal is not merely "bigger TNT", but choosing what kind of explosion is needed.
+
+### Coupled Minecarts
+Allow minecarts to be linked into trains using chains or another simple coupling interaction.
+- velocity and pulling forces propagate through the consist
+- cargo/passenger carts can be mixed
+- slopes, braking and high-speed collisions matter
+- integrates with uncapped minecart speed
+- coupling must remain physically understandable rather than becoming invisible inventory logistics
+
+Design constraint: trains should enable engineering, transport and accidents without turning into a separate rail-management game.
