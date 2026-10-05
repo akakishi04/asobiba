@@ -619,3 +619,27 @@ Configuration:
 
 Compatibility constraint:
 This mode should primarily affect newly generated chunks/worlds. Existing worlds must not silently regenerate old terrain, and worldgen changes should remain optional because they can conflict with other terrain-generation mods.
+
+
+### Large Boats / Cargo Rafts
+Add a larger watercraft tier between vanilla boats and full ship mods.
+Planned direction:
+- carry multiple players/mobs plus a modest amount of cargo
+- visibly slower/heavier than a normal boat when loaded
+- compatible with future currents, wind pressure and mooring
+- usable for long ocean crossings created by continental worldgen
+- remain simple enough to steer directly without a separate ship-management UI
+
+### Ocean Drift Debris
+Add sparse floating debris and drift cargo to large oceans.
+Possible contents:
+- logs/planks
+- barrels/crates
+- rope/chain-like materials
+- damaged tools
+- shipwreck-adjacent loot
+- occasional named or story-like junk
+
+Debris can slowly move with current/wind systems later and should make long crossings less empty without filling every ocean with constant rewards.
+
+Design constraint: both features should make ocean travel more playable without turning AsobibaTweaks into a full naval mod.
