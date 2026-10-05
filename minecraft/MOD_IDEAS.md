@@ -788,3 +788,14 @@ Armor stands can display Elytra in an opened-wing presentation pose.
 - preserve the actual Elytra item and all of its data
 - intended for equipment rooms, trophies and museums
 - should coexist naturally with armor-stand loadout swapping
+
+
+### Mob Gatherings
+Very rarely, a small group of same-species mobs can gather in an oddly deliberate arrangement for a short time.
+- small circles, loose lines or facing inward are preferred over random clustering
+- no loot bonus, quest marker or guaranteed secret
+- approaching the group usually breaks the gathering and returns mobs to normal behavior
+- passive/neutral mobs are the safest initial scope
+- frequency must remain low enough that seeing one feels unusual
+
+Design constraint: the event should create memorable unexplained moments, not become a farmable encounter type.
