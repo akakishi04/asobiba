@@ -19,6 +19,7 @@ import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
 import net.minecraft.world.entity.boss.wither.WitherBoss;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Slime;
+import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -39,8 +40,21 @@ public final class GiantOrganismEvents {
     @SubscribeEvent
     public void onEntityJoin(EntityJoinLevelEvent event) {
         if (!AsobibaTweaksConfig.GIANT_MOBS_ENABLED.getAsBoolean()
-                || event.getLevel().isClientSide()
-                || event.loadedFromDisk()
+                || event.getLevel().isClientSide()) {
+            return;
+        }
+
+        if (event.getEntity() instanceof AbstractArrow arrow
+                && arrow.getOwner() instanceof Mob owner
+                && owner.getPersistentData().getBoolean(GIANT_MOB)) {
+            double scale = Math.max(1.0D, owner.getPersistentData().getDouble("asobibatweaks_giant_scale"));
+            arrow.setBaseDamage(arrow.getBaseDamage() * (1.08D + (scale - 1.0D) * 0.22D));
+            arrow.setDeltaMovement(arrow.getDeltaMovement().scale(1.0D + Math.min(0.12D, (scale - 1.0D) * 0.10D)));
+            arrow.getPersistentData().putBoolean("asobibatweaks_giant_projectile", true);
+            return;
+        }
+
+        if (event.loadedFromDisk()
                 || !(event.getEntity() instanceof Mob mob)
                 || mob instanceof EnderDragon
                 || mob instanceof WitherBoss
