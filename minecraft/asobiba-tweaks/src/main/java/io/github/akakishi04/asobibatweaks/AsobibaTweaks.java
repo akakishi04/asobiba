@@ -9,6 +9,7 @@ import io.github.akakishi04.asobibatweaks.feature.ForestRegenerationEvents;
 import io.github.akakishi04.asobibatweaks.feature.GiantOrganismEvents;
 import io.github.akakishi04.asobibatweaks.feature.GrowingItemsEvents;
 import io.github.akakishi04.asobibatweaks.feature.InteractionTweaksEvents;
+import io.github.akakishi04.asobibatweaks.feature.MobBuildingUseEvents;
 import io.github.akakishi04.asobibatweaks.feature.MovementTweaksEvents;
 import io.github.akakishi04.asobibatweaks.feature.NetherFishingEvents;
 import io.github.akakishi04.asobibatweaks.feature.OceanAndDisplayEvents;
@@ -49,6 +50,7 @@ public final class AsobibaTweaks {
         NeoForge.EVENT_BUS.register(new OceanAndDisplayEvents());
         NeoForge.EVENT_BUS.register(new NetherFishingEvents());
         NeoForge.EVENT_BUS.register(new VillageSimulationEvents());
+        NeoForge.EVENT_BUS.register(new MobBuildingUseEvents());
         InteractionTweaksEvents.registerDispenserBehaviors();
     }
 }
