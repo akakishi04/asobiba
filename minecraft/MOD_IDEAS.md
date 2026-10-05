@@ -643,3 +643,44 @@ Possible contents:
 Debris can slowly move with current/wind systems later and should make long crossings less empty without filling every ocean with constant rewards.
 
 Design constraint: both features should make ocean travel more playable without turning AsobibaTweaks into a full naval mod.
+
+
+## Accepted giant-organism tweaks
+
+### Giant Crops
+Allow very rare oversized crop outcomes during ordinary farming.
+
+Planned direction:
+- selected crops can rarely mature into visibly oversized variants
+- giant crops occupy more space and take longer to finish than normal crops
+- harvest yield is meaningfully higher, but not proportional enough to replace ordinary farming
+- giant variants should be rare enough to feel like an event rather than an optimization target
+- weather, soil quality or special circumstances may influence the chance later, but no progression system is required
+- harvesting should feel physical where practical: a giant pumpkin/melon may need multiple breaks or produce several drops
+
+### Giant Mobs
+Allow very rare oversized variants of ordinary mobs.
+
+Core behavior:
+- size increase affects hitbox, reach/step height where safe, mass, knockback resistance and some movement behavior
+- health and damage scale modestly rather than linearly with volume
+- drops increase somewhat, but never enough to make forced giant-mob farming the dominant resource strategy
+- hostile giants are dangerous encounters, not full boss fights
+- passive giants can still participate in Universal Bond where their entity type is otherwise supported
+- carrying rules must reject creatures that become too large
+- wind-pressure effects treat giant mobs as heavier targets
+- some mobs get species-specific giant behavior:
+  - giant creeper: larger blast and wind pressure, but not absurd world deletion
+  - giant spider: better obstacle traversal / wider web threat later
+  - giant skeleton: stronger bow knockback and slower handling
+  - giant zombie: high mass and door-breaking pressure
+  - giant chicken: ridiculous but mostly harmless
+  - giant slime/magma cube should integrate with vanilla size mechanics instead of duplicating them
+- bosses and technically fragile entities are excluded by default
+
+Spawn / inheritance policy:
+- giantism can occur rarely on natural spawn and, optionally, at birth
+- it is not automatically hereditary by default, preventing exponential giant-animal farms
+- frequency is configurable globally and per broad mob category
+
+Design constraint: giant organisms should create memorable emergent encounters ("why is that cow enormous?") without becoming a separate RPG rarity/level system.
