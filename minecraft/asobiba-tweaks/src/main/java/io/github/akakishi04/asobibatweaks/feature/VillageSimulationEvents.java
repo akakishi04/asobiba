@@ -45,6 +45,13 @@ public final class VillageSimulationEvents {
     private static final String BUILDER_XP = "asobibatweaks_builder_xp";
     private static final String NEXT_BUILD = "asobibatweaks_next_build";
     private static final String DISTRESS = "asobibatweaks_village_distress";
+    private static final String BUILD_ANCHOR_X = "asobibatweaks_build_anchor_x";
+    private static final String BUILD_ANCHOR_Z = "asobibatweaks_build_anchor_z";
+    private static final String BUILD_OUTPOST = "asobibatweaks_build_outpost";
+    private static final String SETTLE_X = "asobibatweaks_settle_x";
+    private static final String SETTLE_Y = "asobibatweaks_settle_y";
+    private static final String SETTLE_Z = "asobibatweaks_settle_z";
+    private static final String SETTLE_UNTIL = "asobibatweaks_settle_until";
 
     @SubscribeEvent
     public void onTrades(VillagerTradesEvent event) {
@@ -78,6 +85,8 @@ public final class VillageSimulationEvents {
 
         ServerLevel level = (ServerLevel)villager.level();
         respondToFire(villager, level);
+        tickSettlementTravel(villager, level);
+        tickRefugeeMigration(villager, level);
 
         VillagerProfession profession = villager.getVillagerData().getProfession();
         if (profession == AsobibaRegistries.CARPENTER.value()) {
@@ -87,7 +96,8 @@ public final class VillageSimulationEvents {
         } else if (profession == VillagerProfession.FLETCHER) {
             tickForester(villager, level);
         } else if (profession == VillagerProfession.NONE || profession == VillagerProfession.NITWIT) {
-            tickPorter(villager, level);
+            if ((villager.getUUID().hashCode() & 3) == 0) tickQuartermaster(villager, level);
+            else tickPorter(villager, level);
         } else if (profession == VillagerProfession.FARMER) {
             exportVillagerFood(villager, level);
         }
@@ -160,7 +170,9 @@ public final class VillageSimulationEvents {
             return;
         }
 
-        BlockPos site = findBuildSite(villager, level);
+        int builderXp = villager.getPersistentData().getInt(BUILDER_XP);
+        boolean outpost = builderXp > 0 && builderXp % 4 == 3;
+        BlockPos site = findBuildSite(villager, level, outpost);
         if (site == null) {
             villager.getPersistentData().putLong(NEXT_BUILD, now + 12000L);
             return;
@@ -172,6 +184,9 @@ public final class VillageSimulationEvents {
         data.putInt(BUILD_Z, site.getZ());
         data.putInt(BUILD_STEP, 0);
         data.putBoolean(BUILD_ACTIVE, true);
+        data.putBoolean(BUILD_OUTPOST, outpost);
+        data.putInt(BUILD_ANCHOR_X, villager.blockPosition().getX());
+        data.putInt(BUILD_ANCHOR_Z, villager.blockPosition().getZ());
         villager.getNavigation().moveTo(site.getX() + 2.0D, site.getY(), site.getZ() + 2.0D, 0.7D);
     }
 
@@ -186,6 +201,12 @@ public final class VillageSimulationEvents {
             data.putBoolean(BUILD_ACTIVE, false);
             data.putLong(NEXT_BUILD, level.getGameTime() + 5L * 24000L);
             data.putInt(BUILDER_XP, data.getInt(BUILDER_XP) + 1);
+            BlockPos anchor = new BlockPos(data.getInt(BUILD_ANCHOR_X), base.getY(), data.getInt(BUILD_ANCHOR_Z));
+            buildRoadAndBridge(level, villager, base.offset(2, 0, -1), anchor);
+            if (data.getBoolean(BUILD_OUTPOST)) {
+                sendSettlers(level, villager, base.offset(2, 1, 2));
+            }
+            data.remove(BUILD_OUTPOST);
             return;
         }
 
@@ -249,6 +270,10 @@ public final class VillageSimulationEvents {
         steps.add(new BuildStep(base.offset(2, 1, 2), bedFoot, Items.WHITE_BED));
         steps.add(new BuildStep(base.offset(2, 1, 3), bedHead, null));
         steps.add(new BuildStep(base.offset(2, 2, 3), Blocks.TORCH.defaultBlockState(), Items.TORCH));
+        if (villager.getPersistentData().getBoolean(BUILD_OUTPOST)) {
+            steps.add(new BuildStep(base.offset(1, 1, 2), Blocks.BELL.defaultBlockState(), Items.BELL));
+            steps.add(new BuildStep(base.offset(3, 1, 2), Blocks.BARREL.defaultBlockState(), Items.BARREL));
+        }
         return steps;
     }
 
@@ -263,11 +288,13 @@ public final class VillageSimulationEvents {
         return Blocks.OAK_PLANKS;
     }
 
-    private static BlockPos findBuildSite(Villager villager, ServerLevel level) {
+    private static BlockPos findBuildSite(Villager villager, ServerLevel level, boolean outpost) {
         long salt = villager.getUUID().getLeastSignificantBits() ^ level.getGameTime() / 24000L;
         for (int attempt = 0; attempt < 12; attempt++) {
             double angle = ((salt + attempt * 0x9E3779B97F4A7C15L) >>> 11) * 0x1.0p-53 * Math.PI * 2.0D;
-            int radius = 10 + Math.floorMod(Long.hashCode(salt + attempt), 9);
+            int radius = outpost
+                    ? 30 + Math.floorMod(Long.hashCode(salt + attempt), 18)
+                    : 10 + Math.floorMod(Long.hashCode(salt + attempt), 9);
             int x = (int)Math.floor(villager.getX() + Math.cos(angle) * radius);
             int z = (int)Math.floor(villager.getZ() + Math.sin(angle) * radius);
             int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
@@ -288,6 +315,136 @@ public final class VillageSimulationEvents {
             if (clear) return base;
         }
         return null;
+    }
+
+    private static void buildRoadAndBridge(ServerLevel level, Villager villager, BlockPos from, BlockPos to) {
+        int dx = to.getX() - from.getX();
+        int dz = to.getZ() - from.getZ();
+        int steps = Math.min(56, Math.max(Math.abs(dx), Math.abs(dz)));
+        if (steps <= 0) return;
+
+        for (int i = 0; i <= steps; i++) {
+            double t = i / (double)steps;
+            int x = (int)Math.round(from.getX() + dx * t);
+            int z = (int)Math.round(from.getZ() + dz * t);
+            int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+            BlockPos surface = new BlockPos(x, y - 1, z);
+            if (level.getFluidState(surface).is(FluidTags.WATER)) {
+                if (takeAnyPlank(level, villager.blockPosition(), 22)) {
+                    level.setBlock(surface, choosePlanks(level, surface).defaultBlockState(), Block.UPDATE_ALL);
+                }
+            } else {
+                BlockState state = level.getBlockState(surface);
+                if (state.is(Blocks.GRASS_BLOCK) || state.is(Blocks.DIRT) || state.is(Blocks.COARSE_DIRT)) {
+                    level.setBlock(surface, Blocks.DIRT_PATH.defaultBlockState(), Block.UPDATE_ALL);
+                }
+            }
+        }
+    }
+
+    private static boolean takeAnyPlank(ServerLevel level, BlockPos center, int radius) {
+        return takeFromStorage(level, center, radius, Items.OAK_PLANKS, 1)
+                || takeFromStorage(level, center, radius, Items.SPRUCE_PLANKS, 1)
+                || takeFromStorage(level, center, radius, Items.BIRCH_PLANKS, 1)
+                || takeFromStorage(level, center, radius, Items.ACACIA_PLANKS, 1)
+                || takeFromStorage(level, center, radius, Items.JUNGLE_PLANKS, 1)
+                || takeFromStorage(level, center, radius, Items.MANGROVE_PLANKS, 1)
+                || takeFromStorage(level, center, radius, Items.CHERRY_PLANKS, 1);
+    }
+
+    private static void sendSettlers(ServerLevel level, Villager carpenter, BlockPos target) {
+        long until = level.getGameTime() + 3L * 24000L;
+        List<Villager> candidates = level.getEntitiesOfClass(
+                Villager.class,
+                carpenter.getBoundingBox().inflate(28.0D),
+                v -> v != carpenter && !v.isBaby()
+        );
+        int sent = 0;
+        for (Villager settler : candidates) {
+            VillagerProfession profession = settler.getVillagerData().getProfession();
+            if (profession != VillagerProfession.NONE && profession != VillagerProfession.NITWIT
+                    && profession != VillagerProfession.FARMER) continue;
+            var data = settler.getPersistentData();
+            data.putInt(SETTLE_X, target.getX());
+            data.putInt(SETTLE_Y, target.getY());
+            data.putInt(SETTLE_Z, target.getZ());
+            data.putLong(SETTLE_UNTIL, until);
+            settler.getNavigation().moveTo(target.getX() + 0.5D, target.getY(), target.getZ() + 0.5D, 0.75D);
+            if (++sent >= 2) break;
+        }
+    }
+
+    private static void tickSettlementTravel(Villager villager, ServerLevel level) {
+        long until = villager.getPersistentData().getLong(SETTLE_UNTIL);
+        if (until <= 0L) return;
+        if (level.getGameTime() > until) {
+            villager.getPersistentData().remove(SETTLE_UNTIL);
+            return;
+        }
+
+        BlockPos target = new BlockPos(
+                villager.getPersistentData().getInt(SETTLE_X),
+                villager.getPersistentData().getInt(SETTLE_Y),
+                villager.getPersistentData().getInt(SETTLE_Z)
+        );
+        if (villager.distanceToSqr(target.getCenter()) < 16.0D) {
+            villager.getPersistentData().remove(SETTLE_UNTIL);
+            return;
+        }
+        villager.getNavigation().moveTo(target.getX() + 0.5D, target.getY(), target.getZ() + 0.5D, 0.78D);
+    }
+
+    private static void tickRefugeeMigration(Villager villager, ServerLevel level) {
+        if (level.getGameTime() >= villager.getPersistentData().getLong(DISTRESS)
+                || villager.getPersistentData().getLong(SETTLE_UNTIL) > 0L
+                || villager.tickCount % 400 != Math.floorMod(villager.getId(), 400)) {
+            return;
+        }
+
+        int beds = countBlocks(level, villager.blockPosition(), 18, state -> state.is(BlockTags.BEDS));
+        int food = countStorageItems(level, villager.blockPosition(), 14, Items.BREAD, Items.CARROT, Items.POTATO, Items.BEETROOT);
+        if (beds > 0 && food >= 8) return;
+
+        List<Villager> possible = level.getEntitiesOfClass(
+                Villager.class,
+                villager.getBoundingBox().inflate(112.0D),
+                other -> other != villager
+                        && other.distanceToSqr(villager) > 48.0D * 48.0D
+                        && countBlocks(level, other.blockPosition(), 12, state -> state.is(BlockTags.BEDS)) > 0
+        );
+        if (possible.isEmpty()) return;
+
+        Villager targetVillager = possible.getFirst();
+        BlockPos target = targetVillager.blockPosition();
+        var data = villager.getPersistentData();
+        data.putInt(SETTLE_X, target.getX());
+        data.putInt(SETTLE_Y, target.getY());
+        data.putInt(SETTLE_Z, target.getZ());
+        data.putLong(SETTLE_UNTIL, level.getGameTime() + 2L * 24000L);
+        villager.getNavigation().moveTo(targetVillager, 0.85D);
+    }
+
+    private static void tickQuartermaster(Villager villager, ServerLevel level) {
+        if (level.getGameTime() % 240 != Math.floorMod(villager.getId(), 240)) return;
+        List<Container> stores = containers(level, villager.blockPosition(), 14);
+        for (Container store : stores) {
+            for (int i = 0; i < store.getContainerSize(); i++) {
+                ItemStack a = store.getItem(i);
+                if (a.isEmpty()) continue;
+                for (int j = i + 1; j < store.getContainerSize(); j++) {
+                    ItemStack b = store.getItem(j);
+                    if (!ItemStack.isSameItemSameComponents(a, b) || b.isEmpty()) continue;
+                    int move = Math.min(b.getCount(), a.getMaxStackSize() - a.getCount());
+                    if (move <= 0) continue;
+                    a.grow(move);
+                    b.shrink(move);
+                    store.setChanged();
+                }
+            }
+        }
+
+        int food = countStorageItems(level, villager.blockPosition(), 14, Items.BREAD, Items.CARROT, Items.POTATO, Items.BEETROOT);
+        if (food < 16) requestMaterials(villager, "food reserves");
     }
 
     private static void tickQuarryWorker(Villager villager, ServerLevel level) {
