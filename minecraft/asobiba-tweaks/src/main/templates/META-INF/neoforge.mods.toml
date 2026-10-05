@@ -8,6 +8,9 @@ version="${mod_version}"
 displayName="${mod_name}"
 description='''A grab-bag of optional Minecraft gameplay experiments with in-game configuration.'''
 
+[[mixins]]
+config="asobibatweaks.mixins.json"
+
 [[dependencies.${mod_id}]]
 modId="neoforge"
 type="required"
