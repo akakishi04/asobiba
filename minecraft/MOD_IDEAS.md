@@ -169,3 +169,24 @@ Core direction:
 - The world may slowly adapt tiny behaviors to long-term player habits without exposing a visible progression meter.
 
 Design constraint: folklore should feel discoverable and arguable, not like a checklist or achievement system. Exact rules should not be dumped directly into normal UI.
+
+## Accepted movement / interaction tweaks
+
+The following are promoted to planned implementation candidates:
+
+### Wall Kick
+A lightweight wall-jump: jump against a wall and kick away once before landing. No equipment requirement. Intended for traversal, cave movement and combat repositioning.
+
+### Sliding
+While sprinting, crouch to enter a short slide. The initial goal is movement feel and fitting through low gaps, not combat DPS.
+
+### Ledge Climb
+Allow the player to catch and climb short ledges that are just out of normal jump reach. Keep the reachable height conservative so ladders/scaffolding remain useful.
+
+### Field Repair
+Permit crude direct repairs without an anvil by consuming matching material. This must be less efficient than proper repair systems and should be useful mainly while away from base.
+
+### Weapon Throwing
+Allow selected melee weapons such as swords and axes to be thrown, land as recoverable objects, and be picked back up. Balance around giving up the held weapon temporarily rather than making it a superior ranged attack.
+
+Design constraint: these features should extend vanilla interaction vocabulary without becoming a mandatory movement/combat overhaul.
