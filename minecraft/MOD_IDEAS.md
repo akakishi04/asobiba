@@ -249,3 +249,180 @@ Possible trades:
 - Higher levels can sell decorative building materials or village-style blueprint/map items without bypassing exploration.
 
 Design constraint: carpenter AI should execute construction jobs, not independently decide village strategy. Planning stays in a village-level system so individual villagers remain simple and debuggable.
+
+
+## Village simulation scope — accepted
+
+Village simulation is now an accepted feature family. The goal is a lightweight, observable settlement simulation built from real resources and actual villager actions, not invisible structure spawning.
+
+### Village professions and logistics
+- Carpenter: executes construction and repair jobs, including post-fire reconstruction.
+- Quartermaster: manages shared village storage and exposes shortages/surpluses.
+- Forester: harvests wood conservatively and replants saplings.
+- Quarry worker: gathers stone from bounded/recognized quarry areas instead of free-form underground strip mining.
+- Porter: moves resources between farms, quarries, forests, storage and build sites; later may use llamas/donkeys.
+- Fire responder role: maintains access to water and prioritizes emergency response when fires occur.
+
+### Autonomous village growth
+- Villages gather real local/renewable materials.
+- Gathered resources enter actual village storage.
+- Construction consumes stored resources.
+- Growth is gated by population, beds, food, resources, available land and long cooldowns.
+- Buildings appear progressively as carpenters work, not instantly.
+- Construction pauses during night, attacks or emergencies.
+- Existing roads/buildings influence placement.
+- Player structures and protected/obviously artificial areas should not be harvested or bulldozed.
+
+### Outposts and satellite sites
+Villages may establish small functional sites away from the core settlement:
+- forester huts
+- quarries
+- fishing huts
+- satellite farms
+- grazing areas
+- temporary work camps
+
+These sites should remain linked to the parent settlement through logistics rather than becoming free resource generators.
+
+### Roads and bridges
+- New buildings should tend to receive paths connecting them to the settlement.
+- Satellite sites may gradually gain roads.
+- Terrain can create public-works jobs.
+- Small rivers/gaps can trigger bridge construction.
+- Roads/bridges consume real materials and should be built incrementally.
+
+### Building recognition and occupancy
+Villagers can recognize plausible player-built structures using lightweight heuristics such as:
+- roof/cover
+- usable interior space
+- door/access
+- bed or relevant workstation
+- lighting
+- path connectivity
+
+Valid empty structures may become homes/workspaces without requiring a special claim block.
+
+### Building culture
+Village architecture can drift over time based on:
+- biome
+- locally available materials
+- materials repeatedly supplied by the player
+- established local building palette
+- carpenter skill
+
+A plains village repeatedly supplied with spruce and stone brick may gradually develop a visibly different architectural identity.
+
+### Imperfect construction
+Less experienced builders may make harmless aesthetic mistakes:
+- asymmetric windows
+- mixed roof materials
+- missing decorative fence
+- unusual door placement
+- minor substitutions when exact materials run out
+
+Construction mistakes must not make buildings unusable.
+
+### Carpenter progression
+Carpenters can gain practical experience:
+- faster work
+- less material waste
+- access to more complex templates
+- better repair behavior
+- fewer cosmetic mistakes
+
+### Adaptive plans
+Village-level planning can reprioritize or revise construction when conditions change:
+- housing shortage
+- food shortage
+- storage shortage
+- fire damage
+- population spike
+- new outpost need
+
+Avoid full procedural architecture editing in the first version; modular template stages are acceptable.
+
+### Public works requests
+Real village shortages/public works can generate requests visible to the player:
+- deliver stone for a bridge
+- supply lumber for housing
+- restore food reserves
+- bring materials for fire reconstruction
+
+These are not arbitrary quests; they should originate from actual simulation needs.
+
+### Refugees and migration
+Villagers can relocate after severe local failure:
+- repeated raids
+- major fires
+- food collapse
+- loss of housing
+- settlement destruction
+
+Survivors may move to nearby villages, causing secondary housing/food pressure there.
+
+### Village fission / new settlements
+A mature or failing settlement may eventually send a small group to establish a new settlement elsewhere.
+- Requires population and supplies.
+- New group should physically travel where practical.
+- New settlement begins small.
+- Avoid uncontrolled exponential expansion via hard cooldowns/caps.
+
+### Village relocation
+If a location remains chronically nonviable, part of the population may abandon it rather than endlessly rebuilding.
+This is a rare high-level outcome, not a frequent behavior.
+
+### Villager breeding overhaul
+Replace the purely bed/food-shaped feel with settlement-aware reproduction.
+
+Candidate rules:
+- couples/households are not required, but repeated proximity and shared home usage can influence pairing.
+- reproduction rate considers food reserves, free beds, housing quality, recent disasters and village population pressure.
+- severe shortages suppress births naturally.
+- abundant food and stable housing allow gradual population growth.
+- newborns should create real future resource demand rather than appearing as free population.
+- population caps scale with available housing/infrastructure, not merely raw bed count.
+- post-disaster recovery can temporarily increase willingness to repopulate once food/housing recover.
+- avoid explicit genetic/eugenic mechanics; the feature is demographic simulation, not trait breeding.
+
+### Forest regeneration
+Forests can recover slowly without requiring every sapling to be manually placed.
+- mature forest edges can very slowly seed nearby viable ground
+- player-heavy clearcut areas recover over long timescales
+- foresters accelerate and organize regeneration
+- avoid rapid spreading or uncontrolled tree spam
+
+### Rivers as infrastructure
+Settlements can treat rivers as useful geography rather than only pathfinding obstacles:
+- water source
+- fishing area
+- settlement boundary
+- transport corridor
+- bridge location
+- possible later boat logistics
+
+### Regional economy integration
+Regional trade value, village logistics and autonomous growth should interact:
+- scarce construction goods are worth more locally
+- player imports can unblock construction
+- surplus goods can support caravans later
+- material flow should visibly affect village development
+
+### Fire emergency integration
+Major settlement fires can:
+- trigger alarms
+- interrupt normal work
+- cause evacuation
+- start firefighting behavior
+- damage housing/storage capacity
+- create reconstruction jobs
+- deplete real material reserves
+
+### Mob-use-of-buildings integration
+Village and player-built spaces should support lightweight contextual use by mobs:
+- shelter from rain
+- gathering around campfires
+- use of benches/tables heuristically
+- preference for doors/bridges/covered routes
+- occupancy of recognized interiors
+
+Design constraint: this feature family should stop before becoming a full colony-management game. The player may influence villages through building, trade and supply, but should not need to micromanage schedules, worker assignment or production graphs.
