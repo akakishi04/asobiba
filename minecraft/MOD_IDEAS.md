@@ -736,3 +736,13 @@ Possible direction:
 - avoid adding a large aquatic bestiary or separate progression tree
 
 Design constraint: Nether fish should make lava feel inhabited and support fishing, not turn the Nether into a second ocean biome.
+
+
+### Armor Stand Loadout Swap
+Allow the player to swap their currently equipped armor set with an armor stand's equipped set in one interaction.
+- preserves item durability, enchantments, trims, names and custom data
+- empty slots swap naturally rather than deleting items
+- should work as a physical loadout rack without introducing a separate loadout GUI
+- optional handling for held items can be considered later, but armor is the initial scope
+
+Design constraint: armor stands should become practical equipment storage while remaining ordinary vanilla entities.
