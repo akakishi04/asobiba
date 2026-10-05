@@ -8,6 +8,7 @@ import java.util.Locale;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.BlockTags;
@@ -689,8 +690,8 @@ public final class VillageSimulationEvents {
         if (now - last < 1200L) return;
         villager.getPersistentData().putLong("asobibatweaks_last_request", now);
 
-        ServerPlayer player = ((ServerLevel)villager.level()).getNearestPlayer(villager, 20.0D);
-        if (player != null) {
+        var nearest = ((ServerLevel)villager.level()).getNearestPlayer(villager, 20.0D);
+        if (nearest instanceof ServerPlayer player) {
             player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
                     "Village carpenter needs " + what + " for current work."
             ).withStyle(ChatFormatting.YELLOW));
