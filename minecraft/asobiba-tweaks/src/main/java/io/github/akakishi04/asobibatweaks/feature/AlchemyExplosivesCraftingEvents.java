@@ -33,7 +33,6 @@ import net.neoforged.neoforge.event.level.BlockEvent;
 public final class AlchemyExplosivesCraftingEvents {
     private static final String ARROW_PROFILE = "asobibatweaks_arrow_profile";
     private static final String NEXT_ARROW_PROFILE = "asobibatweaks_next_arrow_profile";
-    private static final Map<String, Map<Long, TntDesign>> TNT_DESIGNS = new java.util.HashMap<>();
 
     @SubscribeEvent
     public void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
@@ -63,8 +62,8 @@ public final class AlchemyExplosivesCraftingEvents {
     @SubscribeEvent
     public void onBreak(BlockEvent.BreakEvent event) {
         if (!event.getState().is(Blocks.TNT)) return;
-        if (event.getLevel() instanceof Level level) {
-            designMap(level.dimension().location().toString()).remove(event.getPos().asLong());
+        if (event.getLevel() instanceof ServerLevel level) {
+            TntDesignSavedData.get(level).remove(event.getPos().asLong());
         }
     }
 
@@ -73,8 +72,8 @@ public final class AlchemyExplosivesCraftingEvents {
         Entity entity = event.getEntity();
 
         if (entity instanceof PrimedTnt tnt && !event.getLevel().isClientSide()) {
-            Map<Long, TntDesign> designs = designMap(event.getLevel().dimension().location().toString());
-            TntDesign design = designs.remove(tnt.blockPosition().asLong());
+            TntDesignSavedData designs = TntDesignSavedData.get((ServerLevel)event.getLevel());
+            TntDesignSavedData.TntDesign design = designs.remove(tnt.blockPosition().asLong());
             if (design == null) {
                 for (BlockPos pos : BlockPos.betweenClosed(tnt.blockPosition().offset(-1, -1, -1), tnt.blockPosition().offset(1, 1, 1))) {
                     design = designs.remove(pos.asLong());
@@ -184,8 +183,8 @@ public final class AlchemyExplosivesCraftingEvents {
 
     private static boolean tuneTnt(PlayerInteractEvent.RightClickBlock event, ServerPlayer player) {
         ItemStack stack = player.getMainHandItem();
-        TntDesign design = designMap(player.level().dimension().location().toString())
-                .computeIfAbsent(event.getPos().asLong(), ignored -> new TntDesign());
+        TntDesignSavedData saved = TntDesignSavedData.get(player.serverLevel());
+        TntDesignSavedData.TntDesign design = saved.getOrCreate(event.getPos().asLong());
 
         boolean changed = true;
         if (stack.is(Items.GUNPOWDER)) {
@@ -205,6 +204,7 @@ public final class AlchemyExplosivesCraftingEvents {
         }
 
         if (!changed) return false;
+        saved.markDirty();
         if (!player.getAbilities().instabuild) stack.shrink(1);
         player.displayClientMessage(Component.literal(
                 "TNT: power " + String.format(java.util.Locale.ROOT, "%.2f", design.power)
@@ -243,21 +243,10 @@ public final class AlchemyExplosivesCraftingEvents {
         return stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag().getInt(ARROW_PROFILE);
     }
 
-    private static Map<Long, TntDesign> designMap(String dimension) {
-        return TNT_DESIGNS.computeIfAbsent(dimension, ignored -> new java.util.HashMap<>());
-    }
 
     private static void succeed(PlayerInteractEvent.RightClickBlock event) {
         event.setCancellationResult(InteractionResult.SUCCESS);
         event.setCanceled(true);
-    }
-
-    private static final class TntDesign {
-        float power = 4.0F;
-        int fuse = 80;
-        boolean preserveBlocks;
-        boolean fire;
-        double windMultiplier = 1.0D;
     }
 
     private static final class Vec3Scale {
