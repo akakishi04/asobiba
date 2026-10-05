@@ -1,3 +1,10 @@
 {
-  "enchantment.asobibatweaks.wind_pressure_resistance": "風圧耐性"
+  "enchantment.asobibatweaks.wind_pressure_resistance": "風圧耐性",
+  "block.asobibatweaks.carpenter_workbench": "大工の作業台",
+  "entity.asobibatweaks.lava_minnow": "溶岩コバナ",
+  "entity.asobibatweaks.emberfin": "火の粉ヒレ",
+  "entity.asobibatweaks.basalt_eel": "玄武岩ウナギ",
+  "item.asobibatweaks.lava_minnow": "溶岩コバナ",
+  "item.asobibatweaks.emberfin": "火の粉ヒレ",
+  "item.asobibatweaks.basalt_eel": "玄武岩ウナギ"
 }
