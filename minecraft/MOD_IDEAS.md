@@ -698,3 +698,41 @@ Planned direction:
 - avoid adding a large family of new materials solely for arrow crafting
 
 Design constraint: this should feel like completing an unfinished vanilla workstation, not introducing a full archery overhaul.
+
+
+## Accepted riding / creature interaction tweaks
+
+### Expanded Riding
+Allow saddles or simple tack to work with a broader set of suitable mobs.
+- riding behavior should remain species-specific rather than giving every mob horse controls
+- some mounts are slow, awkward, jumpy or difficult to steer
+- large/giant variants may support riding where physically sensible
+- avoid turning every tameable creature into a strictly better horse
+
+### Mob-on-Mob Riding
+Allow selected mobs to mount other suitable mobs in emergent combinations.
+- small mobs can ride larger mobs when size/AI rules permit
+- some combinations may occur naturally at low probability
+- bonded mobs can potentially be commanded into simple riding arrangements later
+- preserve readability and avoid recursive absurd stacks by default
+
+Design constraint: these systems should create funny or useful situations without becoming a full mount-breeding framework.
+
+## Accepted Nether fishing expansion
+
+### Nether / Lava Fishing
+Allow fishing in lava with a suitably prepared rod or other modest vanilla-adjacent requirement.
+- ordinary fishing gear should not trivially work in lava
+- loot tables should be distinct from overworld fishing
+- include Nether junk, materials and living catches
+- fishing remains an activity, not an infinite rare-resource exploit
+
+### Nether Fish
+Add a small set of actual lava-dwelling fish or fish-like mobs rather than making lava fishing purely item-table based.
+Possible direction:
+- 2-4 species with clear silhouettes and simple behaviors
+- some swim in open lava lakes, some hug basalt/delta edges, some are rare deep-lava catches
+- edible variants should have Nether-appropriate cooking/use quirks
+- avoid adding a large aquatic bestiary or separate progression tree
+
+Design constraint: Nether fish should make lava feel inhabited and support fishing, not turn the Nether into a second ocean biome.
