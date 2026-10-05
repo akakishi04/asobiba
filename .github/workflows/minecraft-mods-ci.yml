@@ -1,0 +1,39 @@
+name: Minecraft Mods CI
+
+on:
+  pull_request:
+    paths:
+      - "minecraft/**"
+      - ".github/workflows/minecraft-mods-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  asobiba-tweaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.2.1"
+      - name: Build Asobiba Tweaks
+        working-directory: minecraft/asobiba-tweaks
+        run: gradle build --stacktrace
+
+  minecraft-data-logger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.2.1"
+      - name: Build Minecraft Data Logger
+        working-directory: minecraft/minecraft-data-logger
+        run: gradle build --stacktrace
