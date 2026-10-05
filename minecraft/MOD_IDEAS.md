@@ -189,4 +189,12 @@ Permit crude direct repairs without an anvil by consuming matching material. Thi
 ### Weapon Throwing
 Allow selected melee weapons such as swords and axes to be thrown, land as recoverable objects, and be picked back up. Balance around giving up the held weapon temporarily rather than making it a superior ranged attack.
 
+### Torch Throwing
+Allow torches to be thrown as lightweight utility projectiles. A valid impact on a floor or wall can place the torch, making cave scouting and vertical exploration less menu-like. Prefer sharing a generic throwable-item foundation with weapon throwing.
+
+### Carry Small Mobs
+Allow the player to pick up and carry small mobs directly. Carrying occupies the player's hands and slows or otherwise constrains movement. Bonded or injured mobs may receive slightly more permissive handling. Some dangerous small mobs should remain risky rather than being made harmless while carried.
+
+Design constraint: both features should feel physical and immediate, not like opening a transport or placement GUI.
+
 Design constraint: these features should extend vanilla interaction vocabulary without becoming a mandatory movement/combat overhaul.
