@@ -813,3 +813,21 @@ Planned direction:
 - interaction with temporary pearl return points should remain explicit rather than automatically merging the two systems
 
 Design constraint: this should extend the vanilla dispenser vocabulary, not create a separate teleport-network system.
+
+
+### High-Speed Minecart Dismount
+Allow players to intentionally jump/dismount from a moving minecart while preserving much of the cart's current momentum.
+- especially relevant with uncapped minecart speed
+- resulting launch can be useful, dangerous, or ridiculous depending on speed and terrain
+- preserve fall damage / collision consequences rather than turning it into a safe movement exploit
+- should feel like a natural extension of riding physics, not a separate ability
+
+### Rare Armor Stand Pose Drift
+Armor stands can very rarely change pose slightly while nobody is directly observing them.
+- tiny head/arm/body angle changes only
+- no item movement, duplication or equipment changes
+- frequency must be extremely low
+- should look plausibly like the player may have misremembered the original pose
+- optional stronger mode can allow a small set of more noticeable poses, but default behavior should remain subtle
+
+Design constraint: this is an unexplained world oddity, not a horror system. It should create occasional "was it always like that?" moments without constant jump-scare behavior.
