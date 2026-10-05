@@ -610,14 +610,13 @@ public final class VillageSimulationEvents {
 
     private static int countStorageItems(ServerLevel level, BlockPos center, int radius, Item... items) {
         int count = 0;
-        outer:
         for (Container container : containers(level, center, radius)) {
             for (int i = 0; i < container.getContainerSize(); i++) {
                 ItemStack stack = container.getItem(i);
                 for (Item item : items) {
                     if (stack.is(item)) {
                         count += stack.getCount();
-                        continue outer;
+                        break;
                     }
                 }
             }
