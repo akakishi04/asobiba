@@ -21,6 +21,46 @@ public final class AsobibaTweaksConfig {
             .comment("Chance per level to repair one durability point whenever growth XP is earned.")
             .defineInRange("growingItems.repairChancePerLevel", 0.02D, 0.0D, 1.0D);
 
+    public static final ModConfigSpec.DoubleValue GROWING_ITEMS_MINING_TIER_UPGRADE_CHANCE = BUILDER
+            .comment("Chance when a pickaxe levels up to gain +1 effective mining tier.")
+            .defineInRange("growingItems.miningTierUpgradeChance", 0.12D, 0.0D, 1.0D);
+
+    public static final ModConfigSpec.IntValue GROWING_ITEMS_MAX_MINING_TIER_BONUS = BUILDER
+            .comment("Maximum bonus mining tiers an individual pickaxe can gain.")
+            .defineInRange("growingItems.maxMiningTierBonus", 2, 0, 4);
+
+    public static final ModConfigSpec.BooleanValue DAILY_FAVOR_ENABLED = BUILDER
+            .comment("Enable one small deterministic activity bonus per Minecraft day.")
+            .define("dailyFavor.enabled", true);
+
+    public static final ModConfigSpec.DoubleValue DAILY_FAVOR_REWARD_CHANCE = BUILDER
+            .comment("Chance for a matching action to grant the daily favor reward.")
+            .defineInRange("dailyFavor.rewardChance", 0.25D, 0.0D, 1.0D);
+
+    public static final ModConfigSpec.IntValue DAILY_FAVOR_XP = BUILDER
+            .comment("Experience points granted when the daily favor reward triggers.")
+            .defineInRange("dailyFavor.rewardXp", 1, 0, 100);
+
+    public static final ModConfigSpec.BooleanValue UNIVERSAL_BOND_ENABLED = BUILDER
+            .comment("Allow any Mob to build bond with a player using sneak-interact gifts.")
+            .define("universalBond.enabled", true);
+
+    public static final ModConfigSpec.IntValue UNIVERSAL_BOND_PER_GIFT = BUILDER
+            .comment("Bond gained for each accepted gift. 100 bond completes bonding.")
+            .defineInRange("universalBond.bondPerGift", 25, 1, 100);
+
+    public static final ModConfigSpec.BooleanValue UNIVERSAL_BOND_FOLLOW = BUILDER
+            .comment("Allow bonded pathfinding mobs in Follow mode to navigate toward their owner.")
+            .define("universalBond.followOwner", true);
+
+    public static final ModConfigSpec.BooleanValue UNIVERSAL_BOND_FRIENDLY_FIRE = BUILDER
+            .comment("Allow owner and bonded mob to damage each other.")
+            .define("universalBond.friendlyFire", false);
+
+    public static final ModConfigSpec.BooleanValue UNIVERSAL_BOND_ALLOW_BOSSES = BUILDER
+            .comment("Allow Ender Dragon and Wither to participate in Universal Bond. Experimental.")
+            .define("universalBond.allowBosses", false);
+
     public static final ModConfigSpec.BooleanValue PLAY_TIME_LIMIT_ENABLED = BUILDER
             .comment("Enable a per-login-session play time limit.")
             .define("playTimeLimit.enabled", false);
