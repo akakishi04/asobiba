@@ -28,6 +28,7 @@ import net.neoforged.neoforge.event.entity.player.AnvilRepairEvent;
 import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.level.BlockDropsEvent;
+import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 
 public final class EnchantmentTweaksEvents {
     private static final int BRANCH_THRESHOLD = 50;
@@ -88,6 +89,33 @@ public final class EnchantmentTweaksEvents {
                 } else if (branch == 2) {
                     var motion = player.getDeltaMovement();
                     player.setDeltaMovement(motion.x * 1.12D, motion.y, motion.z * 1.12D);
+                }
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public void onPlayerTick(PlayerTickEvent.Post event) {
+        if (!AsobibaTweaksConfig.GROWING_ENCHANTMENTS_ENABLED.getAsBoolean()
+                || !(event.getEntity() instanceof ServerPlayer player)
+                || player.tickCount % 1200 != Math.floorMod(player.getId(), 1200)) {
+            return;
+        }
+
+        for (ItemStack armor : player.getArmorSlots()) {
+            if (armor.isEmpty()) continue;
+            for (Holder<Enchantment> enchantment : EnchantmentMasteryData.enchantments(armor).keySet()) {
+                boolean curse = EnchantmentMasteryData.isCurse(enchantment);
+                if (curse && !AsobibaTweaksConfig.CURSE_GROWTH_ENABLED.getAsBoolean()) continue;
+                EnchantmentMasteryData.addMastery(armor, enchantment, 1);
+                int mastery = EnchantmentMasteryData.getMastery(armor, enchantment);
+
+                if (curse && mastery >= 100 && armor.isDamaged()
+                        && player.getRandom().nextDouble() < Math.min(0.12D, mastery / 2500.0D)) {
+                    armor.setDamageValue(Math.max(0, armor.getDamageValue() - 1));
+                    player.displayClientMessage(Component.literal(
+                            armor.getHoverName().getString() + "'s curse grudgingly held it together."
+                    ).withStyle(ChatFormatting.DARK_PURPLE), true);
                 }
             }
         }
