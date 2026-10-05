@@ -166,14 +166,23 @@ public final class AlchemyExplosivesCraftingEvents {
             return true;
         }
 
-        if (main.is(Items.FLINT) && off.is(Items.FEATHER) && removeOne(player, Items.STICK)) {
-            if (!player.getAbilities().instabuild) {
-                main.shrink(1);
-                off.shrink(1);
+        if (main.is(Items.FLINT) && off.is(Items.FEATHER)) {
+            int batches = 0;
+            while (batches < 16
+                    && (player.getAbilities().instabuild || (!main.isEmpty() && !off.isEmpty()))
+                    && removeOne(player, Items.STICK)) {
+                if (!player.getAbilities().instabuild) {
+                    main.shrink(1);
+                    off.shrink(1);
+                }
+                batches++;
             }
-            ItemStack arrows = new ItemStack(Items.ARROW, 4);
+            if (batches <= 0) return false;
+
+            ItemStack arrows = new ItemStack(Items.ARROW, batches * 4);
             if (!player.getInventory().add(arrows)) player.drop(arrows, false);
-            player.displayClientMessage(Component.literal("Fletched 4 arrows.").withStyle(ChatFormatting.GREEN), true);
+            player.displayClientMessage(Component.literal("Fletched " + (batches * 4) + " arrows.")
+                    .withStyle(ChatFormatting.GREEN), true);
             succeed(event);
             return true;
         }
