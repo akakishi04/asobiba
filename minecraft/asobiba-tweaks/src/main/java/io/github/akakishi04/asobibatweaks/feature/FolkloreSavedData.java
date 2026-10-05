@@ -7,13 +7,14 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.datafix.DataFixTypes;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.saveddata.SavedData;
 
 public final class FolkloreSavedData extends SavedData {
     private static final String NAME = "asobibatweaks_folklore";
     private static final Factory<FolkloreSavedData> FACTORY =
-            new Factory<>(FolkloreSavedData::new, FolkloreSavedData::load);
+            new Factory<>(FolkloreSavedData::new, FolkloreSavedData::load, DataFixTypes.SAVED_DATA_RANDOM_SEQUENCES);
 
     private final Map<Long, LocationMemory> memories = new HashMap<>();
 
