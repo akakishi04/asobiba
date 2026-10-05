@@ -473,3 +473,29 @@ Planned behavior:
 - Configurable collision lethality and derail/crash behavior can be added separately; speed itself should not be arbitrarily capped by default.
 
 Design constraint: preserve the fun of absurd engineering. Safety logic may prevent simulation corruption, but should not turn into another hidden speed limit.
+
+
+### Blast / Slipstream Wind Pressure
+Add short-lived wind-pressure impulses from high-energy events rather than a global weather simulation.
+
+Potential sources:
+- large explosions
+- extremely fast minecarts
+- dragon wing beats / large flying entities
+- selected high-speed projectiles or machinery later
+
+Effects:
+- push dropped items and lightweight entities
+- stronger impulses on small mobs, weaker on large/heavy mobs
+- players can be displaced but should retain meaningful control
+- nearby loose decorations may react where appropriate
+- magnitude falls off strongly with distance and obstruction
+
+### Wind Pressure Resistance Enchantment
+Add an armor enchantment that reduces forced displacement from wind-pressure impulses.
+- stacks across armor pieces with diminishing returns
+- does not reduce ordinary melee knockback unless explicitly configured
+- does not grant full immunity at normal levels
+- intended for high-speed rail work, explosive engineering and dangerous environments
+
+Design constraint: wind pressure should create readable physical consequences without becoming a constant annoyance or replacing vanilla knockback rules.
