@@ -7,12 +7,13 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.datafix.DataFixTypes;
 import net.minecraft.world.level.saveddata.SavedData;
 
 public final class TntDesignSavedData extends SavedData {
     private static final String NAME = "asobibatweaks_tnt_designs";
     private static final Factory<TntDesignSavedData> FACTORY =
-            new Factory<>(TntDesignSavedData::new, TntDesignSavedData::load);
+            new Factory<>(TntDesignSavedData::new, TntDesignSavedData::load, DataFixTypes.SAVED_DATA_RANDOM_SEQUENCES);
 
     private final Map<Long, TntDesign> designs = new HashMap<>();
 
