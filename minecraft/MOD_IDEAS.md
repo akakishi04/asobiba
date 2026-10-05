@@ -198,3 +198,31 @@ Allow the player to pick up and carry small mobs directly. Carrying occupies the
 Design constraint: both features should feel physical and immediate, not like opening a transport or placement GUI.
 
 Design constraint: these features should extend vanilla interaction vocabulary without becoming a mandatory movement/combat overhaul.
+
+
+## Accepted village / world simulation tweaks
+
+### Mob-Used Buildings
+Mobs should recognize and make lightweight use of player- or village-built spaces: shelter from rain, gathering around campfires, using benches/tables heuristically, preferring bridges and doors, and treating sensible interiors differently from open terrain. This is not a claim/protection system.
+
+### Regional Trade Value
+Some goods become more valuable when moved far from where they are common. Snow-region goods can fetch more in deserts, cactus/desert goods more in cold regions, etc. Keep the model simple and visible enough to reward actual transport without turning trade into an opaque economy simulator.
+
+### Fire as a Village Emergency
+Large fires in or near settlements become an event. Villagers, golems and bonded helpers can flee, alert others, move valuables and attempt simple firefighting with nearby water or available containers. Fire should become a local incident rather than passive background destruction.
+
+### Autonomous Village Growth
+Villages can slowly expand using resources they actually possess or gather.
+
+Initial scope:
+- Villagers recognize a bounded village work area.
+- Simple worker behaviors gather renewable/local materials such as logs, crops, stone/cobble and selected common blocks.
+- Harvested resources enter village storage instead of appearing from nowhere.
+- Builders consume those stored materials to construct from a small pool of vanilla-like templates.
+- Expansion is gated by population, beds, stored resources and a long cooldown measured in Minecraft days.
+- Workers replant crops and saplings where practical.
+- Natural resource gathering must avoid obvious player structures and never indiscriminately strip the entire area.
+- Existing paths/buildings influence where new structures are placed.
+- New houses/workspaces should be incremental additions, not instant village regeneration.
+
+Design constraint: the system should make villages feel self-sustaining and capable of modest growth, not become a colony-management game or fully autonomous megacity builder.
