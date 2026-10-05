@@ -499,3 +499,26 @@ Add an armor enchantment that reduces forced displacement from wind-pressure imp
 - intended for high-speed rail work, explosive engineering and dangerous environments
 
 Design constraint: wind pressure should create readable physical consequences without becoming a constant annoyance or replacing vanilla knockback rules.
+
+
+## Accepted enchantment-system tweaks
+
+### Growing Enchantments
+Enchantments can accumulate their own use history separately from the item's ordinary growth level.
+
+Core direction:
+- Each enchantment on an item can gain hidden or visible mastery through relevant use.
+- Mastery should usually improve behavior quality, consistency, or unlock a side-grade rather than simply increasing the vanilla enchantment level forever.
+- A heavily used enchantment may develop a small specialization based on how it was used.
+- Moving/replacing the item should not trivially duplicate mastery.
+- Vanilla enchanting remains useful; this system extends enchantments after acquisition instead of replacing enchanting tables/books/anvils.
+- Growth pace must be slow enough that a fresh enchantment and a veteran enchantment feel different without making early enchant rolls worthless.
+
+Examples:
+- Unbreaking mastery slightly improves its chance distribution.
+- Efficiency mastery may reduce the penalty on difficult blocks rather than raw speed stacking forever.
+- Feather Falling mastery may improve recovery after very large falls.
+- Loyalty mastery may return thrown weapons along a cleaner/safer trajectory.
+- Mending mastery may waste less XP when only tiny repairs are needed.
+
+Design constraint: enchantment growth should create attachment and specialization, not infinite vertical power scaling.
