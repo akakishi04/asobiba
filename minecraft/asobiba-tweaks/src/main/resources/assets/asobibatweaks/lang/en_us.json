@@ -1,3 +1,10 @@
 {
-  "enchantment.asobibatweaks.wind_pressure_resistance": "Wind Pressure Resistance"
+  "enchantment.asobibatweaks.wind_pressure_resistance": "Wind Pressure Resistance",
+  "block.asobibatweaks.carpenter_workbench": "Carpenter Workbench",
+  "entity.asobibatweaks.lava_minnow": "Lava Minnow",
+  "entity.asobibatweaks.emberfin": "Emberfin",
+  "entity.asobibatweaks.basalt_eel": "Basalt Eel",
+  "item.asobibatweaks.lava_minnow": "Lava Minnow",
+  "item.asobibatweaks.emberfin": "Emberfin",
+  "item.asobibatweaks.basalt_eel": "Basalt Eel"
 }
