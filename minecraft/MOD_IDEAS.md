@@ -772,7 +772,10 @@ Accepted:
 - Enchanting Table Fortune raises the maximum number of enchantments that may be applied by **+1 per Fortune level**
 - normal enchantment compatibility/conflict rules still apply; Fortune does not force mutually exclusive enchantments together
 - the table does not fabricate extra enchantments merely to hit the cap when too few valid candidates exist
-- exact Fortune scaling for extra furnace output remains to be chosen
+- Furnace / Blast Furnace / Smoker Fortune grants a **5% chance per Fortune level** to produce one additional copy of the normal recipe output
+- Fortune I = 5%, V = 25%, X = 50%
+- the bonus applies broadly to normal smelting recipes rather than an allowlist
+- one successful Fortune roll adds exactly +1 normal output item; Fortune does not multiply the entire stack
 
 ## Accepted transport / alchemy / explosives tweaks
 
