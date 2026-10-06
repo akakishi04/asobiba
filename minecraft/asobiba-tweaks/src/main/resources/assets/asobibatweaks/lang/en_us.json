@@ -17,5 +17,7 @@
   "message.asobibatweaks.atlas.duplicate": "That map is already in this atlas",
   "message.asobibatweaks.atlas.full": "Atlas is full (%s maps)",
   "message.asobibatweaks.atlas.removed": "Map removed from atlas (%s remaining)",
-  "message.asobibatweaks.atlas.empty": "The atlas has no maps"
+  "message.asobibatweaks.atlas.empty": "The atlas has no maps",
+  "block.asobibatweaks.arcane_bookshelf": "Arcane Bookshelf",
+  "button.asobibatweaks.enchantment_reroll": "Reroll (%s Lv)"
 }
