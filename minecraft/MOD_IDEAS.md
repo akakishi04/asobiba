@@ -991,6 +991,16 @@ Design constraint: pay the progression/combination cost up front, then make ordi
 
 ### Enchantment Mastery Inheritance
 Retiring/sacrificing veteran enchanted gear can transfer only part of an enchantment's mastery/history to a replacement.
+
+Accepted direction:
+- the primary/left item keeps its own mastery at 100%; using an anvil does not erase the history of the item that remains the base output
+- mastery contributed by the secondary/right donor item transfers at **50%**
+- for the same enchantment, the output keeps the higher of the primary item's existing mastery and the donor's halved mastery; the two mastery values are not added together
+- donor mastery therefore cannot be repeatedly stacked to accelerate an enchantment past normal progression
+- branch choice belongs to the surviving primary item and is not overwritten by a donor branch merely because donor mastery transfers
+- if the primary item has not chosen a branch yet, donor mastery may move it above the branch threshold, but the player still chooses the branch normally
+- historical counters that are purely descriptive may be merged separately later, but they do not increase mechanical mastery
+
 The enchantment itself and the mastery are separate resources: inheritance should preserve attachment without making gear upgrades free.
 
 ### Uncapped Anvil Experience Cost
