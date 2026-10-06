@@ -1389,6 +1389,22 @@ Accepted direction:
 
 Design constraint: avoid double-dipping identical mechanics while preserving useful launcher/ammunition combinations.
 
+#### Piercing Multi-hit Effect Resolution
+
+Accepted direction:
+- when a Piercing arrow hits multiple valid entities during one flight, **impact-triggered arrow enchantment effects are evaluated independently for every entity hit**
+- each pierced target may therefore receive the arrow's applicable Sharpness, Smite, Bane of Arthropods, Impaling, Punch, Flame, Breach, Wind Burst and Channeling behavior as appropriate
+- target-conditional effects are checked separately for each target; for example, Smite applies only to undead targets even if the same arrow later pierces a non-undead target
+- Breach is evaluated against each pierced target's own armor state
+- Punch applies to each directly hit target rather than only the first target
+- Wind Burst may trigger its impact-centered radial effect at each valid hit position
+- Channeling may trigger at each qualifying hit position when its weather/open-sky conditions are satisfied
+- Looting is evaluated independently for any target whose death is actually caused by the arrow
+- one target's failed condition does not suppress the effect on later valid targets
+- this per-hit resolution does not create additional recoverable arrow items; projectile recovery remains governed by the existing primary-projectile / Infinity / Multishot rules
+
+Design constraint: Piercing should preserve the full identity of an enchanted arrow across its penetration path rather than treating later hits as stripped-down damage-only contacts.
+
 #### Arrow Effect Decisions
 
 Accepted:
