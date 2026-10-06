@@ -1444,6 +1444,34 @@ Accepted direction:
 
 Design constraint: Piercing should preserve the full identity of an enchanted arrow across its penetration path rather than treating later hits as stripped-down damage-only contacts.
 
+#### Arrow Enchantment Level Scaling
+
+Accepted final tuning for the initial arrow-enchantment set:
+
+| Enchantment | Arrow-side level scaling |
+|---|---|
+| **Power** | Ordinary air-flight velocity decay is reduced by **8% per level**, capped by the supported X maximum: I=8%, V=40%, X=80%. Gravity and special-medium drag remain. |
+| **Sharpness** | Direct impact bonus damage follows the Java-style Sharpness progression: **1.0 + 0.5 × (level - 1)** damage. I=+1.0, V=+3.0, X=+5.5. |
+| **Smite** | Against qualifying undead, add **+2.5 damage per level**: I=+2.5, V=+12.5, X=+25.0. |
+| **Bane of Arthropods** | Against qualifying arthropods, add **+2.5 damage per level**. Preserve the ordinary Bane slowdown behavior and extend its level-based duration progression through X rather than inventing a second arrow-only formula. |
+| **Impaling** | Against targets that qualify under the accepted Impaling target rules, add **+2.5 damage per level**: I=+2.5, V=+12.5, X=+25.0. |
+| **Punch** | Preserve the ordinary feel at I-II, then use diminishing post-cap growth. Effective knockback strength is I=1.0, II=2.0, then **+0.5 per level from III onward**: III=2.5, V=3.5, X=6.0. |
+| **Flame** | Remains **level I only** under the general single-level rule. It uses ordinary flaming-arrow ignition behavior; there is no Flame II-X arrow progression. |
+| **Piercing** | A projectile may pass through **level + 1 valid entities total**: I=2, IV=5, X=11. Every valid hit continues to resolve the arrow's other impact effects independently. |
+| **Looting** | Use the ordinary Looting level directly for the kill's loot calculation and extend that normal level-based behavior through X. If another source supplies Looting, use the higher effective level rather than adding levels. |
+| **Breach** | Reduce the target's armor effectiveness by **15% per level**, capped at **100%**: I=15%, IV=60%, VI=90%, VII-X=100%. Levels above the cap do not create negative armor effectiveness. |
+| **Wind Burst** | Impact burst radius = **2.5 + 0.25 × (level - 1) blocks**: I=2.5, V=3.5, X=4.75. Radial impulse strength is **1.0x at I + 0.10x per level above I**, reaching 1.9x at X. Each Piercing hit may create its own burst. |
+| **Channeling** | Remains **level I only** under the general single-level rule. Every qualifying open-sky hit during the accepted weather condition calls the normal full lightning effect; there is no Channeling II-X scaling. |
+| **Loyalty** | Extends through X. Return delay after flight end is **max(1, 11 - level) ticks**: I=10 ticks, V=6, X=1. Return travel strength/speed is **1.0x at I + 0.15x per level above I**, reaching 2.35x at X. The returning projectile still uses homing toward its original shooter and the accepted return-destination priority. |
+
+General arrow-scaling rules:
+- the configured raised-enchantment cap still controls the highest obtainable level; X is the current default reference
+- target-specific damage enchantments may coexist on one arrow, but each contributes only when its own target condition is satisfied
+- no same-effect launcher + arrow double-dipping is introduced by these formulas; the existing launcher/ammunition stacking rules still apply
+- when a formula has an explicit cap, levels above the point that reaches the cap remain valid enchantment levels but do not push that specific effect beyond the cap
+- arrow-side single-level enchantments remain single-level unless separately redesigned later
+- these values are the initial balance baseline and may be tuned after playtesting, but their mechanical roles and scaling shape are considered decided
+
 #### Arrow Effect Decisions
 
 Accepted:
