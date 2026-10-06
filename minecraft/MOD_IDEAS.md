@@ -1195,6 +1195,21 @@ Accepted direction:
 - this copying route is intended to make recovered rare enchanted arrows valuable templates without making large stacks free
 
 
+#### Unified Bow / Crossbow Enchantment Pool
+
+Accepted direction:
+- Bows and Crossbows share the same launcher-enchantment pool rather than keeping separate vanilla-exclusive sets
+- the shared initial launcher pool is: **Power, Punch, Flame, Infinity, Quick Charge, Multishot, Piercing**
+- Power, Punch and Flame work on either launcher through their ordinary projectile-facing meanings
+- Infinity on either launcher applies to ordinary arrows; it does not make fireworks or other special projectile ammunition free
+- Quick Charge on a Bow shortens the time needed to reach full draw; on a Crossbow it shortens reload/charge time
+- Multishot on a Bow fires the same three-projectile style used by the shared Multishot system; ammo consumption follows the one-ammo-per-shot-group model unless a later explicit exception is accepted
+- Piercing on a Bow allows fired arrows to penetrate valid targets using the same Piercing count rules as Crossbow projectiles
+- normal enchantment compatibility/conflict rules remain unless explicitly redesigned later; sharing the eligible launcher pool does not automatically make every launcher enchantment mutually compatible
+- raised enchantment-level rules still apply, but any charge-time formula that would reach zero/negative duration must be clamped or given diminishing returns rather than becoming invalid
+
+Design constraint: Bow and Crossbow should differ by their weapon mechanics, not by an arbitrary wall between their enchantment pools.
+
 #### Accepted Arrow-Enchantment Candidate Set
 
 The initial set of existing enchantments to support with arrow-specific behavior is:
