@@ -619,8 +619,10 @@ Accepted direction:
 - this should extend the candidate pool rather than guarantee a specific enchantment
 - the Arcane Bookshelf requires a trade-only material rather than being craftable entirely from ordinary gathered resources
 - that material is **Arcane Folio / 秘術の書片**
-- Arcane Folio is sold by higher-level Librarians rather than obtained from normal crafting, mining or loot
-- Arcane Bookshelf crafting consumes multiple Arcane Folios, so access depends on maintaining at least one viable Librarian trading relationship
+- Arcane Folio is sold by level-4 (Expert) Librarians rather than obtained from normal crafting, mining or loot
+- the initial base trade is 12 emeralds for 1 Arcane Folio, with 6 uses before restock
+- Arcane Bookshelf crafting consumes 4 Arcane Folios plus 4 amethyst shards around a normal bookshelf
+- these values are tuning defaults and can be adjusted after playtesting without changing the progression structure
 - the trade-only material is supplied through villager trading, tying access to a functioning village economy
 - once an Arcane Bookshelf is available, its special pool can cover otherwise table-excluded enchantments broadly; individual exceptions can still be made for technical/gameplay reasons
 - compatible with raised enchantment level caps and Growing Enchantments
