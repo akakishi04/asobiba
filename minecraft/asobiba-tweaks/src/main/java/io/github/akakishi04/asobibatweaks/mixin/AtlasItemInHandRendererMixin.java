@@ -3,7 +3,6 @@ package io.github.akakishi04.asobibatweaks.mixin;
 import io.github.akakishi04.asobibatweaks.AsobibaRegistries;
 import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
 import net.minecraft.client.renderer.ItemInHandRenderer;
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -24,8 +23,7 @@ public abstract class AtlasItemInHandRendererMixin {
     private boolean asobibatweaks$renderAtlasAsFilledMap(ItemStack stack, Item testedItem) {
         if (testedItem == Items.FILLED_MAP
                 && AsobibaTweaksConfig.ATLAS_ENABLED.getAsBoolean()
-                && stack.is(AsobibaRegistries.ATLAS.get())
-                && stack.has(DataComponents.MAP_ID)) {
+                && stack.is(AsobibaRegistries.ATLAS.get())) {
             return true;
         }
         return stack.is(testedItem);
