@@ -600,6 +600,22 @@ Current accepted branch candidates:
   - Stripping: emphasizes equipment / carried-item drop chance rather than generic quantity
   - Big-Game Hunter: sacrifices some ordinary-drop improvement to emphasize rare-drop rolls
 - **Mending** is an explicit exception to the branch system: it does not choose a mastery branch at 50. Instead, mastery itself unlocks and grows an over-repair durability buffer.
+- **Silk Touch**
+  - Precision Harvest: expands Silk Touch recovery to a limited allowlist of additional blocks that are safe to obtain; progression-breaking blocks such as spawners remain excluded
+  - Batch Harvest: can Silk Touch a small connected group of the same suitable block type, aimed at glass, ice, leaves and building-material relocation rather than vein mining
+  - State Preservation: preserves safe/restorable block-state details where practical when harvesting and replacing blocks; unsupported or unsafe state is not serialized blindly
+- **Multishot**
+  - Converging Volley: narrows the horizontal spread so the three projectiles can be used more effectively against one large or mid-range target
+  - Wide Volley: increases spread for area coverage and multiple-target pressure
+  - Vertical Volley: changes the three-projectile pattern from horizontal spread to a center/up/down arrangement for vertical terrain, flying targets and narrow spaces
+- **Punch**
+  - Blowback: specializes in stronger horizontal knockback
+  - Launch: trades some horizontal displacement for stronger upward knockback
+  - Pinning Shot: greatly reduces ordinary knockback and instead applies a strong short-duration movement slowdown to hold the target near its current position
+- **Aqua Affinity**
+  - Submerged Mining: further removes underwater mining penalties, especially while not grounded
+  - Underwater Construction: improves underwater block-placement / break-workflow handling and reduces disruption while building
+  - Current Adaptation: strongly reduces water-current displacement while actively mining or placing blocks, helping the player hold a working position
 
 ### Curse Growth
 Curses also accumulate mastery/history and may mutate through long-term use.
