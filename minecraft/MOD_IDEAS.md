@@ -565,6 +565,16 @@ Design constraint: enchantment growth should create attachment and specializatio
 
 ### Enchantment Growth Branches
 At major mastery milestones, selected enchantments can specialize into side-grade branches rather than only increasing their vanilla level.
+
+Accepted mastery scale:
+- enchantment mastery performance uses a 0-100 progression scale
+- mastery 0-49: normal growth before specialization
+- mastery 50: the enchantment may select its first specialization branch
+- mastery 51-99: the selected branch continues to strengthen gradually
+- mastery 100: the selected branch reaches its intended completed strength
+- performance does not continue scaling past mastery 100
+- historical/use tracking may continue past 100 for item-history purposes even though mechanical strength is capped
+
 Examples include Feather Falling becoming safer landing, impact landing, or aerial recovery; Fortune becoming ore-, crop-, or high-variance-focused.
 Branches should change play style more than raw DPS/mining output.
 
