@@ -820,11 +820,14 @@ Accepted direction:
 Accepted:
 - **Fortune on Furnace / Blast Furnace / Smoker** applies broadly to smelting outputs rather than being restricted to ores or a hand-authored allowlist
 - Fortune may increase the resulting output quantity for any normally smeltable recipe; balancing should come from the Fortune scaling itself rather than excluding food, metals, stone, etc.
-- **Fortune on an Enchanting Table** increases how many enchantments a single enchanting operation may apply
-- Enchanting Table Efficiency and Fortune have separate roles: Efficiency raises enchanting power/level ceiling, while Fortune raises the possible enchantment count
-- Enchanting Table Fortune raises the maximum number of enchantments that may be applied by **+1 per Fortune level**
+- **Fortune on an Enchanting Table** increases how many enchantments a single enchanting operation tends to apply
+- Enchanting Table Efficiency and Fortune have separate roles: Efficiency raises enchanting power/level ceiling, while Fortune improves the vanilla-style continuation / multi-enchantment roll
+- Fortune does **not** add a simple hard maximum such as +1 enchantment per Fortune level; vanilla enchanting already has no useful fixed enchantment-count cap
+- at a high-power setup around internal enchanting level 100, with enough mutually compatible candidates available, **Fortune X should target roughly 8 enchantments on average**
+- lower Fortune levels should scale smoothly toward that endpoint rather than jumping directly to large multi-enchant rolls
+- the exact probability/decay curve is a tuning value and should be validated against real candidate-pool exhaustion and incompatibility, not only an unlimited-candidate mathematical model
 - normal enchantment compatibility/conflict rules still apply; Fortune does not force mutually exclusive enchantments together
-- the table does not fabricate extra enchantments merely to hit the cap when too few valid candidates exist
+- the table does not fabricate extra enchantments merely to hit the target average when too few valid candidates exist
 - Furnace / Blast Furnace / Smoker Fortune grants a **5% chance per Fortune level** to produce one additional copy of the normal recipe output
 - Fortune I = 5%, V = 25%, X = 50%
 - the bonus applies broadly to normal smelting recipes rather than an allowlist
