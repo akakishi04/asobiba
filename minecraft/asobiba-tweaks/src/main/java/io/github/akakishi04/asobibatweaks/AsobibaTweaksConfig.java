@@ -29,6 +29,7 @@ public final class AsobibaTweaksConfig {
             value instanceof String s && (s.equalsIgnoreCase("WARN_ONLY") || s.equalsIgnoreCase("DISCONNECT")));
 
     public static final ModConfigSpec.BooleanValue WORLD_FOLKLORE_ENABLED = bool("worldFolklore.enabled", true, "Enable seed-specific hidden folklore rules and tiny ritual responses.");
+    public static final ModConfigSpec.BooleanValue LUNAR_OFFERING_ENABLED = bool("worldFolklore.lunarOffering", true, "Enable full-moon item offerings and delayed returns.");
 
     public static final ModConfigSpec.BooleanValue WALL_KICK_ENABLED = bool("movement.wallKick", true, "Enable lightweight wall kicks.");
     public static final ModConfigSpec.BooleanValue SLIDING_ENABLED = bool("movement.sliding", true, "Enable sprint-crouch sliding.");
@@ -80,7 +81,19 @@ public final class AsobibaTweaksConfig {
     public static final ModConfigSpec.BooleanValue MOB_ON_MOB_RIDING_ENABLED = bool("riding.mobOnMobRiding", true, "Allow rare small-mob-on-large-mob riding.");
     public static final ModConfigSpec.BooleanValue NETHER_FISHING_ENABLED = bool("nether.lavaFishing", true, "Enable lava fishing and Nether fish catches.");
 
-    public static final ModConfigSpec.BooleanValue VILLAGE_SIMULATION_ENABLED = bool("village.simulation", true, "Enable lightweight autonomous village simulation.");
+    public static final ModConfigSpec.BooleanValue VILLAGE_SIMULATION_ENABLED = bool("village.simulation", true, "Master switch for lightweight village simulation features.");
+    public static final ModConfigSpec.BooleanValue VILLAGE_CARPENTER_ENABLED = bool("village.carpenter", true, "Enable carpenter trades and construction behavior.");
+    public static final ModConfigSpec.BooleanValue VILLAGE_AUTONOMOUS_GROWTH_ENABLED = bool("village.autonomousGrowth", true, "Allow villages to spend real stored resources on new buildings.");
+    public static final ModConfigSpec.BooleanValue VILLAGE_LOGISTICS_ENABLED = bool("village.logistics", true, "Enable quartermaster, porter, forester, quarry and food logistics behaviors.");
+    public static final ModConfigSpec.BooleanValue VILLAGE_FIRE_EMERGENCY_ENABLED = bool("village.fireEmergency", true, "Enable village fire alarms, evacuation and simple firefighting.");
+    public static final ModConfigSpec.BooleanValue VILLAGE_OUTPOSTS_ENABLED = bool("village.outposts", true, "Allow mature villages to build occasional satellite outposts.");
+    public static final ModConfigSpec.BooleanValue VILLAGE_ROADS_ENABLED = bool("village.roadsAndBridges", true, "Allow village construction to add paths and small bridges.");
+    public static final ModConfigSpec.BooleanValue VILLAGE_REFUGEES_ENABLED = bool("village.refugeesAndMigration", true, "Allow distressed villagers to migrate and new outposts to receive settlers.");
+    public static final ModConfigSpec.BooleanValue VILLAGE_BREEDING_ENABLED = bool("village.breedingOverhaul", true, "Use settlement food, beds and population pressure for villager reproduction.");
+    public static final ModConfigSpec.BooleanValue VILLAGE_BUILDING_CULTURE_ENABLED = bool("village.buildingCulture", true, "Let local/supplied materials influence new village architecture.");
+    public static final ModConfigSpec.BooleanValue VILLAGE_IMPERFECT_CONSTRUCTION_ENABLED = bool("village.imperfectConstruction", true, "Allow inexperienced carpenters to make harmless cosmetic substitutions.");
+    public static final ModConfigSpec.BooleanValue VILLAGE_PUBLIC_WORKS_ENABLED = bool("village.publicWorksRequests", true, "Surface real village shortages to nearby players.");
+    public static final ModConfigSpec.BooleanValue MOB_USED_BUILDINGS_ENABLED = bool("village.mobUsedBuildings", true, "Allow villagers and passive mobs to seek plausible shelter and gathering spaces.");
     public static final ModConfigSpec.BooleanValue REGIONAL_TRADE_VALUE_ENABLED = bool("village.regionalTradeValue", true, "Enable simple distance/region trade-value bonuses.");
     public static final ModConfigSpec.BooleanValue FOREST_REGENERATION_ENABLED = bool("world.forestRegeneration", true, "Enable very slow natural forest-edge regeneration.");
 
