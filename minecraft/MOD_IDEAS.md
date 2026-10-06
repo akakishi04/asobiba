@@ -739,6 +739,9 @@ Accepted:
 - **Flame**: uses vanilla flaming-arrow behavior rather than inventing a separate fire system; it ignites hit targets and interacts with vanilla fire-arrow-responsive blocks/entities normally.
 - **Channeling**: during thunderstorms, an impact under open sky calls lightning at the impact position. This may trigger on direct entity hits or on valid block impacts.
 - Flame and Channeling may coexist; a qualifying Channeling impact may also apply the normal Flame behavior.
+- **Piercing**: lets the arrow pass through multiple valid targets. Higher levels increase the number of targets that may be penetrated.
+- **Breach**: reduces or bypasses part of the directly hit target's armor-based damage mitigation. It does not increase penetration count.
+- when Piercing and Breach coexist, each target successfully penetrated by the arrow is evaluated with the arrow's Breach effect.
 
 ## Accepted transport / alchemy / explosives tweaks
 
