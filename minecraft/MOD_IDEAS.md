@@ -700,6 +700,32 @@ Accepted direction:
 - do not maintain a separate hand-authored copy-price table unless a specific enchantment later proves to need an exception
 - this copying route is intended to make recovered rare enchanted arrows valuable templates without making large stacks free
 
+
+#### Accepted Arrow-Enchantment Candidate Set
+
+The initial set of existing enchantments to support with arrow-specific behavior is:
+
+- Power
+- Punch
+- Flame
+- Piercing
+- Sharpness
+- Smite
+- Bane of Arthropods
+- Impaling
+- Looting
+- Breach
+- Density
+- Wind Burst
+- Channeling
+- Loyalty
+
+Accepted direction:
+- these are the initial supported candidates for normal, spectral and tipped arrows where technically meaningful
+- exact arrow-specific behavior for each enchantment is decided separately
+- do not force unrelated enchantments to gain artificial arrow behavior merely for completeness
+- bow/crossbow enchantments and arrow enchantments may coexist; stacking rules are decided per effect where necessary
+
 ## Accepted transport / alchemy / explosives tweaks
 
 ### Potion Mixing
