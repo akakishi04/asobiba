@@ -610,6 +610,12 @@ Accepted direction:
 
 Design constraint: default to vanilla formula continuation for existing multi-level enchantments; single-level enchantments stay single-level unless intentionally redesigned.
 
+Current explicit over-cap decisions:
+- Soul Speed IV-X: continue the existing vanilla level-scaled behavior; no bespoke post-cap mechanic is added by default
+- Swift Sneak IV-X: continue the existing vanilla level-scaled behavior; no bespoke post-cap mechanic is added by default
+- Wind Burst IV-X: continue the existing vanilla level-scaled behavior; no bespoke post-cap mechanic is added by default
+- if any of these formulas hit a hard technical cap, become meaningless, or create clearly broken behavior at high levels, clamp or special-case only that specific effect rather than redesigning the whole enchantment
+
 ### Higher-Level Mending
 
 Mending is an explicit exception to the normal single-level-enchantment rule and may extend above level I.
