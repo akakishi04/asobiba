@@ -1046,6 +1046,15 @@ Accepted direction:
 - linked-repair transfer efficiency is intentionally lossy even at the top end; Mending X caps redistributed repair efficiency at about 80% rather than reaching 100%
 - the planned IV-X transfer-efficiency curve is: IV=40%, V=50%, VI=60%, VII=65%, VIII=70%, IX=75%, X=80%
 - recipient Mending level also matters: lower-level Mending recipients are repaired less efficiently than higher-level recipients, so a full high-level Mending loadout remains meaningfully better than one Mending X item feeding many low-level pieces
+- recipient-side linked-repair efficiency multipliers are: I=50%, II=55%, III=60%, IV=66%, V=72%, VI=78%, VII=84%, VIII=90%, IX=95%, X=100%
+- effective linked-repair XP reaching a recipient is: **routed XP × source/router transfer efficiency × recipient efficiency multiplier**
+- the recipient then converts the XP that actually reaches it using its own normal Mending repair rate: I=2 durability/XP, II=3 durability/XP, III-X=4 durability/XP
+- linked-repair routing is controlled by the highest-level Mending item among currently equipped armor, main hand and off hand; ties prefer the more damaged item
+- Mending I-III do not act as multi-item routers and retain ordinary single-item behavior
+- a Mending IV-IX router can target equipped armor, main hand and off hand only
+- a Mending X router can additionally target damaged Mending items anywhere in the player's inventory
+- merely carrying a Mending X item in an ordinary inventory slot does not activate inventory-wide routing; the X item must be part of the active equipped/held router set
+- routing prioritizes the most damaged eligible recipient by durability percentage; ties prefer the higher Mending level
 - linked repair must preserve ordinary XP gain once all eligible Mending items are fully repaired
 
 Design constraint: higher-level Mending should improve XP use across a maintained equipment set, not become passive repair for every inventory item or create unlimited repair throughput.
@@ -1058,7 +1067,7 @@ Mending mastery-specific effect:
 - over-repair does not permanently increase the item's true maximum durability; it is a temporary per-item reserve
 - the buffer persists with the ItemStack across ordinary inventory movement, equip/unequip and save/reload
 - once both normal durability and the allowed over-repair buffer are full, ordinary XP handling resumes normally
-- exact interpolation between mastery 50 and 100 is a tuning value; the accepted endpoints are +5% at mastery 50 and +20% at mastery 100
+- over-repair capacity scales linearly from +5% of base maximum durability at mastery 50 to +20% at mastery 100
 
 ### Frost Walker Runtime Toggle
 
