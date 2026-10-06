@@ -53,6 +53,7 @@ public final class VillageSimulationEvents {
     private static final String BUILD_ANCHOR_X = "asobibatweaks_build_anchor_x";
     private static final String BUILD_ANCHOR_Z = "asobibatweaks_build_anchor_z";
     private static final String BUILD_OUTPOST = "asobibatweaks_build_outpost";
+    private static final String BUILD_COLONY = "asobibatweaks_build_colony";
     private static final String BUILD_KIND = "asobibatweaks_build_kind";
     private static final String SHORTAGE_STREAK = "asobibatweaks_shortage_streak";
     private static final String SETTLE_X = "asobibatweaks_settle_x";
@@ -201,11 +202,15 @@ public final class VillageSimulationEvents {
         int builderXp = villager.getPersistentData().getInt(BUILDER_XP);
         boolean housingNeed = beds <= population + 1;
         boolean storageNeed = stores < Math.max(2, (population + 3) / 4);
-        boolean outpost = AsobibaTweaksConfig.VILLAGE_OUTPOSTS_ENABLED.getAsBoolean()
+        boolean colony = AsobibaTweaksConfig.VILLAGE_FISSION_ENABLED.getAsBoolean()
+                && !housingNeed && !storageNeed && population >= 10
+                && builderXp >= 5 && builderXp % 8 == 7;
+        boolean outpost = !colony
+                && AsobibaTweaksConfig.VILLAGE_OUTPOSTS_ENABLED.getAsBoolean()
                 && !housingNeed && !storageNeed && population >= 6
                 && builderXp > 0 && builderXp % 4 == 3;
 
-        if (!housingNeed && !storageNeed && !outpost) {
+        if (!housingNeed && !storageNeed && !outpost && !colony) {
             villager.getPersistentData().putLong(NEXT_BUILD, now + 12000L);
             return;
         }
@@ -219,7 +224,7 @@ public final class VillageSimulationEvents {
         }
 
         int buildKind = storageNeed && !housingNeed ? 1 : 0;
-        BlockPos site = findBuildSite(villager, level, outpost);
+        BlockPos site = findBuildSite(villager, level, outpost, colony);
         if (site == null) {
             villager.getPersistentData().putLong(NEXT_BUILD, now + 12000L);
             return;
@@ -231,7 +236,8 @@ public final class VillageSimulationEvents {
         data.putInt(BUILD_Z, site.getZ());
         data.putInt(BUILD_STEP, 0);
         data.putBoolean(BUILD_ACTIVE, true);
-        data.putBoolean(BUILD_OUTPOST, outpost);
+        data.putBoolean(BUILD_OUTPOST, outpost || colony);
+        data.putBoolean(BUILD_COLONY, colony);
         data.putInt(BUILD_KIND, buildKind);
         data.putInt(BUILD_ANCHOR_X, villager.blockPosition().getX());
         data.putInt(BUILD_ANCHOR_Z, villager.blockPosition().getZ());
@@ -248,8 +254,9 @@ public final class VillageSimulationEvents {
                 : hutPlan(level, base, villager);
         int stepIndex = data.getInt(BUILD_STEP);
         if (stepIndex >= plan.size()) {
+            boolean colony = data.getBoolean(BUILD_COLONY);
             data.putBoolean(BUILD_ACTIVE, false);
-            data.putLong(NEXT_BUILD, level.getGameTime() + 5L * 24000L);
+            data.putLong(NEXT_BUILD, level.getGameTime() + (colony ? 10L : 5L) * 24000L);
             data.putInt(BUILDER_XP, data.getInt(BUILDER_XP) + 1);
             BlockPos anchor = new BlockPos(data.getInt(BUILD_ANCHOR_X), base.getY(), data.getInt(BUILD_ANCHOR_Z));
             if (AsobibaTweaksConfig.VILLAGE_ROADS_ENABLED.getAsBoolean()) {
@@ -257,9 +264,10 @@ public final class VillageSimulationEvents {
             }
             if (data.getBoolean(BUILD_OUTPOST)
                     && AsobibaTweaksConfig.VILLAGE_REFUGEES_ENABLED.getAsBoolean()) {
-                sendSettlers(level, villager, base.offset(2, 1, 2));
+                sendSettlers(level, villager, base.offset(2, 1, 2), colony ? 3 : 2);
             }
             data.remove(BUILD_OUTPOST);
+            data.remove(BUILD_COLONY);
             return;
         }
 
@@ -386,6 +394,10 @@ public final class VillageSimulationEvents {
             steps.add(new BuildStep(base.offset(1, 1, 3), secondBedHead, null));
             steps.add(new BuildStep(base.offset(3, 1, 2), Blocks.BARREL.defaultBlockState(), plankItem));
             steps.add(new BuildStep(base.offset(3, 1, 3), Blocks.COMPOSTER.defaultBlockState(), plankItem));
+            if (villager.getPersistentData().getBoolean(BUILD_COLONY)) {
+                steps.add(new BuildStep(base.offset(1, 1, 1),
+                        AsobibaRegistries.CARPENTER_WORKBENCH.get().defaultBlockState(), plankItem));
+            }
         }
         return steps;
     }
@@ -444,11 +456,13 @@ public final class VillageSimulationEvents {
         return Blocks.OAK_PLANKS;
     }
 
-    private static BlockPos findBuildSite(Villager villager, ServerLevel level, boolean outpost) {
+    private static BlockPos findBuildSite(Villager villager, ServerLevel level, boolean outpost, boolean colony) {
         long salt = villager.getUUID().getLeastSignificantBits() ^ level.getGameTime() / 24000L;
         for (int attempt = 0; attempt < 12; attempt++) {
             double angle = ((salt + attempt * 0x9E3779B97F4A7C15L) >>> 11) * 0x1.0p-53 * Math.PI * 2.0D;
-            int radius = outpost
+            int radius = colony
+                    ? 72 + Math.floorMod(Long.hashCode(salt + attempt), 49)
+                    : outpost
                     ? 30 + Math.floorMod(Long.hashCode(salt + attempt), 18)
                     : 10 + Math.floorMod(Long.hashCode(salt + attempt), 9);
             int x = (int)Math.floor(villager.getX() + Math.cos(angle) * radius);
@@ -508,7 +522,7 @@ public final class VillageSimulationEvents {
                 || takeFromStorage(level, center, radius, Items.CHERRY_PLANKS, 1);
     }
 
-    private static void sendSettlers(ServerLevel level, Villager carpenter, BlockPos target) {
+    private static void sendSettlers(ServerLevel level, Villager carpenter, BlockPos target, int targetCount) {
         long until = level.getGameTime() + 3L * 24000L;
         List<Villager> candidates = level.getEntitiesOfClass(
                 Villager.class,
@@ -526,7 +540,7 @@ public final class VillageSimulationEvents {
             data.putInt(SETTLE_Z, target.getZ());
             data.putLong(SETTLE_UNTIL, until);
             settler.getNavigation().moveTo(target.getX() + 0.5D, target.getY(), target.getZ() + 0.5D, 0.75D);
-            if (++sent >= 2) break;
+            if (++sent >= targetCount) break;
         }
     }
 
