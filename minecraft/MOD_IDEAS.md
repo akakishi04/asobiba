@@ -625,6 +625,14 @@ Accepted direction:
 - these values are tuning defaults and can be adjusted after playtesting without changing the progression structure
 - the trade-only material is supplied through villager trading, tying access to a functioning village economy
 - once an Arcane Bookshelf is available, its special pool can cover otherwise table-excluded enchantments broadly; individual exceptions can still be made for technical/gameplay reasons
+- an Arcane Bookshelf also contributes normal bookshelf-equivalent enchanting power; it is not a pool-only utility block
+- Arcane Bookshelf count has staged effects rather than being only a binary unlock:
+  - 1 Arcane Bookshelf: unlock the special enchantment pool
+  - 3 Arcane Bookshelves: increase special-enchantment appearance rate
+  - 5 Arcane Bookshelves: unlock rarer special-pool enchantments
+  - 10 Arcane Bookshelves: allow high-level special enchantments to begin appearing
+  - 15 Arcane Bookshelves: maximize the Arcane special-pool behavior
+- normal bookshelves remain valid enchanting-power providers; Arcane Bookshelves can replace them physically but are much more expensive
 - compatible with raised enchantment level caps and Growing Enchantments
 - bookshelf state should be readable from the actual nearby enchanting setup rather than from a global unlock
 
