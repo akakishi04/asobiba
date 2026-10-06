@@ -1199,6 +1199,26 @@ Accepted direction:
 - this copying route is intended to make recovered rare enchanted arrows valuable templates without making large stacks free
 
 
+#### Infinity Core Behavior
+
+Accepted direction:
+- Infinity remains a **single-level enchantment**; its long-term growth comes from mastery branches rather than Infinity II-X
+- Infinity is valid on both Bows and Crossbows
+- Infinity and Mending are compatible on launchers
+- base Infinity applies only to a completely ordinary, non-enchanted Arrow ammunition item
+- enchanted arrows, Spectral Arrows, Tipped Arrows, fireworks and other special ammunition are not made free by Infinity
+- ammunition is selected first using the launcher priority rules, then Infinity decides whether the selected source item is consumed
+- with base Infinity, firing an ordinary arrow still requires at least one ordinary arrow source item to exist in the selected ammunition source; the source item is not consumed
+- an ordinary projectile created by Infinity is non-recoverable and cannot become an item through embedded-arrow recovery, pickup, Loyalty-style return or similar recovery paths
+- consuming a special / enchanted arrow from an Infinity launcher does **not** make that projectile non-recoverable merely because the launcher has Infinity; if the source ammunition was actually consumed, its ordinary recovery / Loyalty rules remain valid
+- Multishot + ordinary Infinity ammunition consumes zero arrows, creates the normal Multishot projectile group, and all Infinity-generated projectile instances are non-recoverable
+- Multishot + consumable special/enchanting ammunition consumes exactly one source item; only the primary/original projectile may be recovered or returned
+- Infinity does not reduce launcher durability cost by itself; durability savings belong to the Rapid Infinity / Precision Infinity mastery branches
+- Pure Infinity mastery removes the requirement to possess a seed ordinary arrow; it generates ordinary non-recoverable ammunition even when no ordinary Arrow ItemStack exists
+- Pure Infinity never generates enchanted, spectral, tipped or other special ammunition
+
+Design constraint: Infinity makes ordinary arrows effectively inexhaustible, but it must not erase the resource value of special or enchanted ammunition.
+
 #### Quiver and Dedicated Ammo Slot
 
 Accepted direction:
