@@ -663,6 +663,35 @@ Current accepted branch candidates:
   - Underwater Construction: improves underwater block-placement / break-workflow handling and reduces disruption while building
   - Current Adaptation: strongly reduces water-current displacement while actively mining or placing blocks, helping the player hold a working position
 
+### Pending mastery-branch coverage audit
+
+The following vanilla 1.21.1 enchantments are not yet represented in the accepted-branch list above. Candidate ideas have been discussed for many of them, but they remain explicitly tracked here until their branch wording is normalized against the rule that branches should stay within the original enchantment's behavior domain:
+
+- Riptide
+- Channeling
+- Wind Burst
+- Frost Walker
+- Sharpness
+- Smite
+- Bane of Arthropods
+- Impaling
+- Density
+- Breach
+- Piercing
+- Sweeping Edge
+- Fire Aspect
+- Knockback
+- Fortune
+- Efficiency
+- Quick Charge
+- Respiration
+- Soul Speed
+- Swift Sneak
+- Depth Strider
+- Loyalty
+
+This audit list must shrink as branch sets are accepted and moved into `Current accepted branch candidates`; do not silently drop an enchantment merely because its branch design is deferred.
+
 ### Curse Growth
 Curses also accumulate mastery/history and may mutate through long-term use.
 The curse remains a meaningful drawback, but veteran cursed gear can develop unusual compensating behavior instead of remaining pure trash.
