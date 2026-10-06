@@ -3,6 +3,7 @@ package io.github.akakishi04.asobibatweaks.mixin;
 import io.github.akakishi04.asobibatweaks.AsobibaRegistries;
 import io.github.akakishi04.asobibatweaks.AsobibaTags;
 import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
+import io.github.akakishi04.asobibatweaks.feature.EnchantmentRerollProtocol;
 import java.util.List;
 import java.util.stream.Stream;
 import net.minecraft.core.BlockPos;
@@ -33,8 +34,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(EnchantmentMenu.class)
 public abstract class EnchantmentMenuExtensionsMixin {
-    public static final int ASOBIBA_REROLL_BUTTON = 3;
-
     @Shadow @Final
     private Container enchantSlots;
 
@@ -49,7 +48,7 @@ public abstract class EnchantmentMenuExtensionsMixin {
 
     @Inject(method = "clickMenuButton", at = @At("HEAD"), cancellable = true)
     private void asobibatweaks$reroll(Player player, int buttonId, CallbackInfoReturnable<Boolean> cir) {
-        if (buttonId != ASOBIBA_REROLL_BUTTON) {
+        if (buttonId != EnchantmentRerollProtocol.BUTTON_ID) {
             return;
         }
         if (!AsobibaTweaksConfig.ENCHANTMENT_REROLL_ENABLED.getAsBoolean()) {
