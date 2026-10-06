@@ -4,6 +4,7 @@
   "package": "io.github.akakishi04.asobibatweaks.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "EntitySharedFlagAccessor",
     "AbstractMinecartMixin",
     "AnvilMenuMixin",
     "PrimedTntMixin",
