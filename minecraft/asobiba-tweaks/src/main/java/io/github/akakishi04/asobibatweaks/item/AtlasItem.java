@@ -39,56 +39,59 @@ public final class AtlasItem extends Item {
         InteractionHand otherHand = hand == InteractionHand.MAIN_HAND ? InteractionHand.OFF_HAND : InteractionHand.MAIN_HAND;
         ItemStack other = player.getItemInHand(otherHand);
 
-        if (!level.isClientSide() && other.is(Items.FILLED_MAP) && other.has(DataComponents.MAP_ID)) {
-            ItemStack page = other.copyWithCount(1);
-            AddResult result = addMap(atlas, page);
-            if (result == AddResult.ADDED) {
-                if (!player.getAbilities().instabuild) {
-                    other.shrink(1);
+        if (other.is(Items.FILLED_MAP) && other.has(DataComponents.MAP_ID)) {
+            if (!level.isClientSide()) {
+                ItemStack page = other.copyWithCount(1);
+                AddResult result = addMap(atlas, page);
+                if (result == AddResult.ADDED) {
+                    if (!player.getAbilities().instabuild) {
+                        other.shrink(1);
+                    }
+                    updateActiveMap(atlas, player);
+                    player.displayClientMessage(
+                            Component.translatable("message.asobibatweaks.atlas.added", mapCount(atlas), MAX_MAPS)
+                                    .withStyle(ChatFormatting.AQUA),
+                            true
+                    );
+                } else if (result == AddResult.DUPLICATE) {
+                    player.displayClientMessage(
+                            Component.translatable("message.asobibatweaks.atlas.duplicate")
+                                    .withStyle(ChatFormatting.YELLOW),
+                            true
+                    );
+                } else {
+                    player.displayClientMessage(
+                            Component.translatable("message.asobibatweaks.atlas.full", MAX_MAPS)
+                                    .withStyle(ChatFormatting.RED),
+                            true
+                    );
                 }
-                updateActiveMap(atlas, player);
-                player.displayClientMessage(
-                        Component.translatable("message.asobibatweaks.atlas.added", mapCount(atlas), MAX_MAPS)
-                                .withStyle(ChatFormatting.AQUA),
-                        true
-                );
-            } else if (result == AddResult.DUPLICATE) {
-                player.displayClientMessage(
-                        Component.translatable("message.asobibatweaks.atlas.duplicate")
-                                .withStyle(ChatFormatting.YELLOW),
-                        true
-                );
-            } else {
-                player.displayClientMessage(
-                        Component.translatable("message.asobibatweaks.atlas.full", MAX_MAPS)
-                                .withStyle(ChatFormatting.RED),
-                        true
-                );
             }
-            return InteractionResultHolder.sidedSuccess(atlas, false);
+            return InteractionResultHolder.sidedSuccess(atlas, level.isClientSide());
         }
 
-        if (!level.isClientSide() && player.isShiftKeyDown() && other.isEmpty()) {
-            ItemStack removed = removeActiveOrLast(atlas);
-            if (!removed.isEmpty()) {
-                if (!player.getInventory().add(removed)) {
-                    player.drop(removed, false);
+        if (player.isShiftKeyDown() && other.isEmpty()) {
+            if (!level.isClientSide()) {
+                ItemStack removed = removeActiveOrLast(atlas);
+                if (!removed.isEmpty()) {
+                    if (!player.getInventory().add(removed)) {
+                        player.drop(removed, false);
+                    }
+                    updateActiveMap(atlas, player);
+                    player.displayClientMessage(
+                            Component.translatable("message.asobibatweaks.atlas.removed", mapCount(atlas))
+                                    .withStyle(ChatFormatting.GRAY),
+                            true
+                    );
+                } else {
+                    player.displayClientMessage(
+                            Component.translatable("message.asobibatweaks.atlas.empty")
+                                    .withStyle(ChatFormatting.GRAY),
+                            true
+                    );
                 }
-                updateActiveMap(atlas, player);
-                player.displayClientMessage(
-                        Component.translatable("message.asobibatweaks.atlas.removed", mapCount(atlas))
-                                .withStyle(ChatFormatting.GRAY),
-                        true
-                );
-                return InteractionResultHolder.sidedSuccess(atlas, false);
             }
-
-            player.displayClientMessage(
-                    Component.translatable("message.asobibatweaks.atlas.empty")
-                            .withStyle(ChatFormatting.GRAY),
-                    true
-            );
-            return InteractionResultHolder.sidedSuccess(atlas, false);
+            return InteractionResultHolder.sidedSuccess(atlas, level.isClientSide());
         }
 
         return InteractionResultHolder.pass(atlas);
