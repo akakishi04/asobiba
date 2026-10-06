@@ -30,7 +30,10 @@ public final class ContinentalWorldgenEvents {
         int continentScale = AsobibaTweaksConfig.CONTINENT_SCALE.getAsInt();
         int islandScale = AsobibaTweaksConfig.ISLAND_SCALE.getAsInt();
         double oceanBias = AsobibaTweaksConfig.OCEAN_BIAS.getAsDouble();
+        double separationBias = AsobibaTweaksConfig.LANDMASS_SEPARATION_BIAS.getAsDouble();
         double islandThreshold = AsobibaTweaksConfig.ISLAND_THRESHOLD.getAsDouble();
+        double islandFrequency = AsobibaTweaksConfig.ISLAND_FREQUENCY.getAsDouble();
+        double archipelagoFrequency = AsobibaTweaksConfig.ARCHIPELAGO_FREQUENCY.getAsDouble();
         long seed = level.getSeed();
         int baseX = chunk.getPos().getMinBlockX();
         int baseZ = chunk.getPos().getMinBlockZ();
@@ -42,12 +45,27 @@ public final class ContinentalWorldgenEvents {
 
                 double continent = valueNoise(seed ^ 0x5DA77A9B2C13L, x, z, continentScale);
                 double island = valueNoise(seed ^ 0x1F123BB5D91EL, x, z, islandScale);
+                double archipelago = valueNoise(seed ^ 0x6A5BC1D803AFL, x, z, Math.max(64, islandScale / 3));
 
-                if (continent >= oceanBias || island >= islandThreshold) {
+                double continentThreshold = oceanBias + separationBias;
+                double tunedIslandThreshold = clamp(
+                        islandThreshold + (0.5D - islandFrequency) * 0.28D,
+                        0.30D, 0.98D
+                );
+                double archipelagoThreshold = clamp(0.97D - archipelagoFrequency * 0.72D, 0.30D, 0.99D);
+
+                boolean majorLand = continent >= continentThreshold;
+                boolean isolatedIsland = island >= tunedIslandThreshold;
+                boolean archipelagoLand = archipelagoFrequency > 0.0D
+                        && continent < continentThreshold - 0.04D
+                        && continent > continentThreshold - 0.42D
+                        && archipelago >= archipelagoThreshold;
+
+                if (majorLand || isolatedIsland || archipelagoLand) {
                     continue;
                 }
 
-                double depthFactor = clamp((oceanBias - continent) / 0.42D, 0.0D, 1.0D);
+                double depthFactor = clamp((continentThreshold - continent) / 0.42D, 0.0D, 1.0D);
                 double shelfNoise = valueNoise(seed ^ 0x741B8AA19EL, x, z, 96);
                 int targetFloor = sea - 7 - (int)Math.round(depthFactor * 17.0D + shelfNoise * 3.0D);
                 targetFloor = Math.max(level.getMinBuildHeight() + 8, Math.min(sea - 4, targetFloor));
