@@ -37,7 +37,7 @@ This file maps the accepted implementation backlog in `../MOD_IDEAS.md` to its c
 | Blast / Slipstream Wind Pressure | `PhysicsTransportEvents` | Implemented |
 | Wind Pressure Resistance | datapack enchantment + `PhysicsTransportEvents` | Implemented |
 | Growing Enchantments | `EnchantmentTweaksEvents`, `EnchantmentMasteryData` | Implemented |
-| Enchantment Branches | `EnchantmentTweaksEvents` | Implemented |
+| Enchantment Branches | `EnchantmentTweaksEvents` | MVP framework implemented; concrete branch effects partial (currently Efficiency / Feather Falling), remaining accepted branch behaviors pending |
 | Curse Growth | `EnchantmentTweaksEvents` | Implemented |
 | Fortune / Silk Touch Switching | `EnchantmentTweaksEvents` | Implemented |
 | Mastery Inheritance | `EnchantmentTweaksEvents` | Implemented |
@@ -82,3 +82,5 @@ This file maps the accepted implementation backlog in `../MOD_IDEAS.md` to its c
 - **Gameplay/balance:** still requires in-game playtesting; CI cannot validate feel, tuning or long-duration simulation stability
 
 The implementation label means the accepted behavior has a working MVP code path. It does not mean final art, balance, performance tuning or long-duration world testing is complete.
+
+For enchantment mastery branches specifically, "MVP framework implemented" means mastery storage, branch selection/cycling and some representative effects exist. It does **not** mean every accepted or pending vanilla-enchantment branch in `MOD_IDEAS.md` has a concrete runtime effect yet.
