@@ -76,6 +76,7 @@ public final class AsobibaTweaksConfig {
     public static final ModConfigSpec.DoubleValue GIANT_CROP_CHANCE = BUILDER.defineInRange("organisms.giantCropChance", 0.002D, 0.0D, 1.0D);
     public static final ModConfigSpec.BooleanValue GIANT_MOBS_ENABLED = bool("organisms.giantMobs", true, "Enable rare oversized mob variants.");
     public static final ModConfigSpec.DoubleValue GIANT_MOB_CHANCE = BUILDER.defineInRange("organisms.giantMobChance", 0.0005D, 0.0D, 1.0D);
+    public static final ModConfigSpec.DoubleValue GIANT_MOB_BIRTH_CHANCE = BUILDER.defineInRange("organisms.giantMobBirthChance", 0.0D, 0.0D, 1.0D);
 
     public static final ModConfigSpec.BooleanValue EXPANDED_RIDING_ENABLED = bool("riding.expandedRiding", true, "Allow saddles on more suitable mobs.");
     public static final ModConfigSpec.BooleanValue MOB_ON_MOB_RIDING_ENABLED = bool("riding.mobOnMobRiding", true, "Allow rare small-mob-on-large-mob riding.");
