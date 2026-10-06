@@ -35,6 +35,7 @@ import net.minecraft.world.item.alchemy.Potions;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DispenserBlock;
 import net.minecraft.world.level.block.DoorBlock;
+import net.minecraft.world.level.block.WallTorchBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -439,16 +440,41 @@ public final class InteractionTweaksEvents {
 
     private static void placeThrownTorch(ItemEntity item) {
         BlockPos pos = item.blockPosition();
-        if (!item.level().getBlockState(pos).canBeReplaced()) pos = pos.above();
-
-        if (item.level().getBlockState(pos).canBeReplaced()
-                && item.level().getBlockState(pos.below()).isFaceSturdy(item.level(), pos.below(), Direction.UP)) {
-            item.level().setBlockAndUpdate(pos, Blocks.TORCH.defaultBlockState());
-            item.discard();
-        } else {
-            item.getPersistentData().remove("asobibatweaks_thrown_torch");
-            item.setPickUpDelay(0);
+        if (!item.level().getBlockState(pos).canBeReplaced()) {
+            BlockPos above = pos.above();
+            if (item.level().getBlockState(above).canBeReplaced()) pos = above;
         }
+
+        if (!item.level().getBlockState(pos).canBeReplaced()) {
+            releaseThrownTorch(item);
+            return;
+        }
+
+        if (item.level().getBlockState(pos.below()).isFaceSturdy(item.level(), pos.below(), Direction.UP)) {
+            BlockState standing = Blocks.TORCH.defaultBlockState();
+            if (standing.canSurvive(item.level(), pos)) {
+                item.level().setBlockAndUpdate(pos, standing);
+                item.discard();
+                return;
+            }
+        }
+
+        for (Direction facing : Direction.Plane.HORIZONTAL) {
+            BlockState wall = Blocks.WALL_TORCH.defaultBlockState()
+                    .setValue(WallTorchBlock.FACING, facing);
+            if (wall.canSurvive(item.level(), pos)) {
+                item.level().setBlockAndUpdate(pos, wall);
+                item.discard();
+                return;
+            }
+        }
+
+        releaseThrownTorch(item);
+    }
+
+    private static void releaseThrownTorch(ItemEntity item) {
+        item.getPersistentData().remove("asobibatweaks_thrown_torch");
+        item.setPickUpDelay(0);
     }
 
     private static ServerPlayer resolveOwner(ItemEntity item) {
