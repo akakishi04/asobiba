@@ -693,7 +693,9 @@ Accepted direction:
 - a successful copy creates exactly one new arrow carrying the source arrow's enchantments/components relevant to the enchanted-arrow system
 - the source arrow is retained; the ordinary arrow is consumed
 - XP is the primary duplication cost
-- the exact XP cost remains a tuning decision
+- copy cost is determined by the source arrow's enchantment contents, not by the number of arrows being copied
+- copying one arrow or many arrows uses the same per-copy cost formula; there is no quantity multiplier or bulk surcharge
+- the exact enchantment-content cost formula remains a tuning decision
 - this copying route is intended to make recovered rare enchanted arrows valuable templates without making large stacks free
 
 ## Accepted transport / alchemy / explosives tweaks
