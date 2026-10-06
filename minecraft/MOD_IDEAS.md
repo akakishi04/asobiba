@@ -715,7 +715,6 @@ The initial set of existing enchantments to support with arrow-specific behavior
 - Impaling
 - Looting
 - Breach
-- Density
 - Wind Burst
 - Channeling
 - Loyalty
@@ -723,6 +722,7 @@ The initial set of existing enchantments to support with arrow-specific behavior
 Accepted direction:
 - these are the initial supported candidates for normal, spectral and tipped arrows where technically meaningful
 - exact arrow-specific behavior for each enchantment is decided separately
+- Density is intentionally excluded from arrow behavior; no fall-distance/downward-velocity damage mechanic is added for arrows
 - do not force unrelated enchantments to gain artificial arrow behavior merely for completeness
 - bow/crossbow enchantments and arrow enchantments may coexist; stacking rules are decided per effect where necessary
 
