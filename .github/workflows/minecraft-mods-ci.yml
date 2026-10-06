@@ -29,11 +29,26 @@ jobs:
       - name: Smoke-start dedicated server
         working-directory: minecraft/asobiba-tweaks
         shell: bash
-        timeout-minutes: 5
+        timeout-minutes: 3
         run: |
           mkdir -p run
           printf 'eula=true\n' > run/eula.txt
-          printf 'stop\n' | gradle runServer --stacktrace
+          printf 'online-mode=false\nserver-port=0\n' > run/server.properties
+
+          set +e
+          timeout --signal=TERM 90s gradle runServer --stacktrace > smoke-server.log 2>&1
+          status=$?
+          set -e
+
+          cat smoke-server.log
+
+          if grep -q "Done (" smoke-server.log; then
+            echo "Dedicated server reached ready state."
+            exit 0
+          fi
+
+          echo "Dedicated server never reached ready state (exit status: $status)." >&2
+          exit 1
 
   minecraft-data-logger:
     runs-on: ubuntu-latest
