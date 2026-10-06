@@ -1419,6 +1419,15 @@ Accepted direction:
 
 Design constraint: Piercing determines what the arrow can do during flight; Loyalty determines what happens after that flight is over.
 
+#### Multi-hit Area / Weather Effect Limits
+
+Accepted direction:
+- no additional per-projectile cooldown is added to Wind Burst or Channeling when a Piercing arrow hits multiple targets
+- no artificial per-flight trigger cap is added to Wind Burst or Channeling
+- each qualifying Piercing hit may trigger the effect independently according to its normal conditions
+- existing conditions such as Channeling weather/open-sky requirements still apply normally
+- balancing should come from ammunition cost, enchantment acquisition, projectile pathing and the underlying effect strength rather than hidden anti-chain throttles
+
 #### Piercing Multi-hit Effect Resolution
 
 Accepted direction:
