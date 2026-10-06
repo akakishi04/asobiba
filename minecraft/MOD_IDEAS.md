@@ -1220,11 +1220,36 @@ Accepted direction:
 Design constraint: Bow and Crossbow should differ by their weapon mechanics, not by an arbitrary wall between their enchantment pools.
 
 Launcher compatibility decisions:
+- the launcher compatibility set is **Unbreaking, Mending, Power, Punch, Flame, Infinity, Quick Charge, Multishot and Piercing**
+- all of these may coexist on the same Bow or Crossbow **except Multishot + Piercing**
 - **Infinity and Mending are compatible** on both Bows and Crossbows; the vanilla mutual exclusion between them is removed for these launchers
-- Infinity + Mending does not change Infinity's ammunition rules: ordinary arrows are the Infinity baseline, while enchanted/spectral/tipped arrows and other special ammunition are still consumed unless another explicit rule says otherwise
 - Mending continues to use the normal/higher-level Mending repair rules on the launcher
 - **Multishot and Piercing remain mutually exclusive on the same launcher item**
 - ammunition-side Piercing may still be used with a Multishot launcher because launcher and ammunition are separate enchantment sources
+- Power, Punch, Flame and launcher-side Piercing apply to arrow-like ammunition; they are not reinterpreted as arbitrary modifiers for Crossbow-fired fireworks
+- Quick Charge and Multishot remain valid weapon-level effects when a Crossbow fires fireworks
+- Infinity never makes fireworks free
+- Infinity affects ordinary arrows only; enchanted arrows, spectral arrows and tipped arrows remain consumable
+- Multishot consumes one ammunition item for one shot group; it creates additional projectile instances rather than additional ammunition items
+- when Multishot fires special or enchanted ammunition, only the primary projectile can ever be recovered/returned as an item under the separate recovery rules
+
+Compatibility matrix:
+
+| Launcher enchantment | Unbreaking | Mending | Power | Punch | Flame | Infinity | Quick Charge | Multishot | Piercing |
+|---|---|---|---|---|---|---|---|---|---|
+| Unbreaking | — | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| Mending | Yes | — | Yes | Yes | Yes | **Yes** | Yes | Yes | Yes |
+| Power | Yes | Yes | — | Yes | Yes | Yes | Yes | Yes | Yes |
+| Punch | Yes | Yes | Yes | — | Yes | Yes | Yes | Yes | Yes |
+| Flame | Yes | Yes | Yes | Yes | — | Yes | Yes | Yes | Yes |
+| Infinity | Yes | **Yes** | Yes | Yes | Yes | — | Yes | Yes | Yes |
+| Quick Charge | Yes | Yes | Yes | Yes | Yes | Yes | — | Yes | Yes |
+| Multishot | Yes | Yes | Yes | Yes | Yes | Yes | Yes | — | **No** |
+| Piercing | Yes | Yes | Yes | Yes | Yes | Yes | Yes | **No** | — |
+
+Design note:
+- this matrix is for enchantments stored on the launcher item itself
+- ammunition enchantments are a separate source and follow the Launcher + Arrow Enchantment Stacking rules below
 
 
 #### Accepted Arrow-Enchantment Candidate Set
