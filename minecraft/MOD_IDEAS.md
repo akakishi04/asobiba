@@ -824,8 +824,12 @@ Accepted:
 - Enchanting Table Efficiency and Fortune have separate roles: Efficiency raises enchanting power/level ceiling, while Fortune improves the vanilla-style continuation / multi-enchantment roll
 - Fortune does **not** add a simple hard maximum such as +1 enchantment per Fortune level; vanilla enchanting already has no useful fixed enchantment-count cap
 - at a high-power setup around internal enchanting level 100, with enough mutually compatible candidates available, **Fortune X should target roughly 8 enchantments on average**
-- lower Fortune levels should scale smoothly toward that endpoint rather than jumping directly to large multi-enchant rolls
-- the exact probability/decay curve is a tuning value and should be validated against real candidate-pool exhaustion and incompatibility, not only an unlimited-candidate mathematical model
+- Fortune modifies the vanilla continuation decay rather than adding a hard enchantment-count cap
+- after each successful additional-enchantment roll, the next continuation level uses: **nextLevel = currentLevel × (0.50 + FortuneLevel × 0.035)**
+- no Fortune keeps the vanilla-equivalent 50% decay
+- Fortune X keeps 85% of the current continuation level after each successful extra roll, producing about 8.3 enchantments on average in an unlimited-compatible-candidate level-100 model
+- lower Fortune levels therefore scale smoothly toward that endpoint rather than jumping directly to large multi-enchant rolls
+- the formula is the initial accepted tuning rule; real gameplay should still be validated against candidate-pool exhaustion and incompatibility, and only adjusted if the observed average materially misses the intended curve
 - normal enchantment compatibility/conflict rules still apply; Fortune does not force mutually exclusive enchantments together
 - the table does not fabricate extra enchantments merely to hit the target average when too few valid candidates exist
 - Furnace / Blast Furnace / Smoker Fortune grants a **5% chance per Fortune level** to produce one additional copy of the normal recipe output
