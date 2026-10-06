@@ -187,8 +187,6 @@ public final class OceanAndDisplayEvents {
     }
 
     private static void alignMapFrame(ItemFrame frame) {
-        if (frame.getRotation() == 0) return;
-
         AABB nearby = frame.getBoundingBox().inflate(1.25D);
         boolean neighborMap = !frame.level().getEntitiesOfClass(
                 ItemFrame.class,
@@ -198,7 +196,16 @@ public final class OceanAndDisplayEvents {
                         && other.getItem().is(Items.FILLED_MAP)
         ).isEmpty();
 
-        if (neighborMap) frame.setRotation(0);
+        if (neighborMap) {
+            if (frame.getRotation() != 0) frame.setRotation(0);
+            if (!frame.isInvisible()) {
+                frame.setInvisible(true);
+                frame.getPersistentData().putBoolean("asobibatweaks_map_wall_hidden", true);
+            }
+        } else if (frame.getPersistentData().getBoolean("asobibatweaks_map_wall_hidden")) {
+            frame.setInvisible(false);
+            frame.getPersistentData().remove("asobibatweaks_map_wall_hidden");
+        }
     }
 
     private static void spawnDebris(ServerPlayer player) {
