@@ -2,14 +2,14 @@
   "type": "minecraft:crafting_shaped",
   "category": "building",
   "pattern": [
-    "AAA",
-    "ABA",
-    "AEA"
+    "AFA",
+    "FBF",
+    "AFA"
   ],
   "key": {
     "A": { "item": "minecraft:amethyst_shard" },
-    "B": { "item": "minecraft:bookshelf" },
-    "E": { "item": "minecraft:ender_pearl" }
+    "F": { "item": "asobibatweaks:arcane_folio" },
+    "B": { "item": "minecraft:bookshelf" }
   },
   "result": {
     "id": "asobibatweaks:arcane_bookshelf",
