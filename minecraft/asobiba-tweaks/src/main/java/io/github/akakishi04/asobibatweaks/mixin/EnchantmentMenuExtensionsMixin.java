@@ -34,6 +34,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.spongepowered.asm.mixin.gen.Invoker;
 
 @Mixin(EnchantmentMenu.class)
 public abstract class EnchantmentMenuExtensionsMixin {
@@ -175,7 +176,7 @@ public abstract class EnchantmentMenuExtensionsMixin {
             for (int slot = 0; slot < 3; slot++) {
                 if (menu.costs[slot] <= 0) continue;
                 List<EnchantmentInstance> list =
-                        this.shadow$getEnchantmentList(level.registryAccess(), target, slot, menu.costs[slot]);
+                        this.asobibatweaks$invokeGetEnchantmentList(level.registryAccess(), target, slot, menu.costs[slot]);
                 if (!list.isEmpty()) {
                     EnchantmentInstance clue = list.get(this.random.nextInt(list.size()));
                     menu.enchantClue[slot] = holders.getId(clue.enchantment);
@@ -187,15 +188,13 @@ public abstract class EnchantmentMenuExtensionsMixin {
         });
     }
 
-    @org.spongepowered.asm.mixin.Shadow(prefix = "shadow$")
-    private List<EnchantmentInstance> shadow$getEnchantmentList(
+    @Invoker("getEnchantmentList")
+    protected abstract List<EnchantmentInstance> asobibatweaks$invokeGetEnchantmentList(
             RegistryAccess access,
             ItemStack itemStack,
             int slot,
             int enchantmentCost
-    ) {
-        throw new AssertionError();
-    }
+    );
 
     private boolean hasArcaneBookshelf() {
         return this.access.evaluate((level, pos) -> {
