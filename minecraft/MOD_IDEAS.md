@@ -1182,18 +1182,29 @@ Accepted direction:
 - arrows fired in a non-recoverable state, such as Infinity/creative-only pickup cases, must not become duplication sources
 - the system applies to normal, spectral and tipped arrows where technically valid
 
+#### Direct Arrow Enchanting at the Enchanting Table
+
+Accepted direction:
+- Arrow, Spectral Arrow and Tipped Arrow may be enchanted directly at the Enchanting Table
+- one enchanting action enchants **exactly one arrow item**, even when the input stack contains multiple arrows
+- if a stacked arrow input is used, one arrow is split out as the enchanted result and the remaining arrows stay unenchanted
+- lapis and player-level costs are paid once using the normal enchanting operation
+- offer generation uses the same table power, Arcane Bookshelf, raised-level-cap and compatibility rules that apply to other supported enchanting targets
+- this one-arrow direct enchanting path is intended to create valuable source/template arrows that can then be batch-copied at the Fletching Table for the full calculated XP cost
+
 #### Enchanted Arrow Copying at the Fletching Table
 
 Accepted direction:
-- enchanted arrows are copied one arrow at a time rather than enchanting/copying an entire stack
-- the Fletching Table is the copying station
-- copying requires one enchanted source arrow, one compatible ordinary arrow, and player experience
-- a successful copy creates exactly one new arrow carrying the source arrow's enchantments/components relevant to the enchanted-arrow system
-- the source arrow is retained; the ordinary arrow is consumed
-- XP is the primary duplication cost
-- copy cost is determined by the source arrow's enchantment contents, not by the number of arrows being copied
-- copying one arrow or many arrows uses the same per-copy cost formula; there is no quantity multiplier or bulk surcharge
-- XP copy cost is calculated as the sum of **enchantment level × that enchantment's anvil_cost** across all enchantments on the source arrow
+- enchanted-arrow copying is performed at the Fletching Table
+- copying requires one enchanted source arrow, compatible ordinary arrows, and player experience
+- the source enchanted arrow is retained as the template
+- the player may choose a **batch quantity** and copy multiple arrows in one operation
+- copying N arrows consumes exactly N compatible ordinary arrows and creates exactly N copied arrows carrying the source arrow's enchantments/components relevant to the enchanted-arrow system
+- XP is paid in one combined transaction for the whole batch
+- per-copy XP cost is calculated as the sum of **enchantment level × that enchantment's anvil_cost** across all enchantments on the source arrow
+- total batch cost is **per-copy XP cost × number of arrows copied**
+- there is no extra bulk surcharge or discount; batching is a convenience feature only
+- if the player lacks either the required ordinary arrows or the total XP cost, the requested batch cannot be completed
 - multiple enchantments add together naturally; higher-level and higher-anvil-cost enchantments therefore cost more to duplicate
 - do not maintain a separate hand-authored copy-price table unless a specific enchantment later proves to need an exception
 - this copying route is intended to make recovered rare enchanted arrows valuable templates without making large stacks free
