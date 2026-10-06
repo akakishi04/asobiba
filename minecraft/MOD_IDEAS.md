@@ -733,6 +733,9 @@ Accepted:
 - **Power**: reduces the arrow's normal in-flight velocity decay rather than directly adding impact damage. Higher Power levels preserve speed over distance, making Power primarily a long-range performance enchantment.
 - **Sharpness**: adds direct impact damage on hit. Its role is straightforward close-to-any-range damage rather than flight preservation.
 - Power and Sharpness may coexist on the same arrow because they improve different parts of the shot.
+- **Punch**: applies increased knockback to the directly hit target. Higher levels increase the target's displacement; this is a single-target control effect.
+- **Wind Burst**: creates a radial wind-pressure impulse centered on the impact point, affecting nearby entities/items as appropriate. This is an area-control effect rather than a stronger version of Punch.
+- when Punch and Wind Burst coexist, the directly hit target receives both the direct Punch knockback and the radial Wind Burst impulse.
 
 ## Accepted transport / alchemy / explosives tweaks
 
