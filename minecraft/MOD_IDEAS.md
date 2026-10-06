@@ -1207,6 +1207,11 @@ Accepted direction:
 - Power, Punch and Flame work on either launcher through their ordinary projectile-facing meanings
 - Infinity on either launcher applies to ordinary arrows; it does not make fireworks or other special projectile ammunition free
 - Quick Charge on a Bow shortens the time needed to reach full draw; on a Crossbow it shortens reload/charge time
+- Bow Quick Charge uses diminishing scaling: levels I-V reduce full-draw time by **8% per level**, levels VI-X reduce it by **4% per level**, for about **60% total reduction at Quick Charge X**
+- Bow full-draw time is clamped to about **40% of vanilla**; higher effective levels cannot reduce it further
+- Bow Quick Charge changes charge time only; it does not directly increase projectile damage
+- Power's Quick Shot mastery branch remains distinct: Quick Charge shortens the time required for a full draw, while Quick Shot reduces the damage penalty of releasing before full draw
+- Power, Punch, Flame and Infinity use the same projectile-facing meanings on Bow and Crossbow unless a weapon-specific rule explicitly says otherwise
 - Multishot on a Bow fires the same three-projectile style used by the shared Multishot system; ammo consumption follows the one-ammo-per-shot-group model unless a later explicit exception is accepted
 - Piercing on a Bow allows fired arrows to penetrate valid targets using the same Piercing count rules as Crossbow projectiles
 - normal enchantment compatibility/conflict rules remain unless explicitly redesigned later; sharing the eligible launcher pool does not automatically make every launcher enchantment mutually compatible
