@@ -578,6 +578,29 @@ Accepted mastery scale:
 Examples include Feather Falling becoming safer landing, impact landing, or aerial recovery; Fortune becoming ore-, crop-, or high-variance-focused.
 Branches should change play style more than raw DPS/mining output.
 
+Current accepted branch candidates:
+- **Unbreaking**
+  - Rested Reserve: leaving the item unused for a while builds a small reserve that negates the next few durability losses
+  - Continuous Operation: sustained use of the same item gradually reduces durability consumption; switching away resets the benefit
+  - Protective Mode: at low durability, the item trades some performance for sharply reduced further durability loss
+- **Infinity**
+  - Pure Infinity: normal arrows no longer require even a single seed arrow in inventory
+  - Rapid Infinity: sustained normal-arrow fire progressively reduces bow durability consumption
+  - Precision Infinity: fully charged deliberate shots greatly reduce or avoid bow durability consumption
+- **Blast Protection**
+  - Blast Anchor: strongly reduces explosion / blast knockback
+  - Epicenter Resistance: gains extra damage mitigation when very close to the explosion center
+  - Chain-Blast Resistance: repeated explosions within a short window become progressively less damaging
+- **Thorns**
+  - Retaliatory Spikes: specializes in direct reflected damage
+  - Entangling Thorns: gives up some reflected damage for slowdown / knockback control
+  - Stored Retaliation: incoming hits build retaliation energy that is released through the wearer's next melee attack
+- **Looting**
+  - Herd Hunter: consecutive kills of the same mob type increase ordinary-drop yield until the streak expires
+  - Stripping: emphasizes equipment / carried-item drop chance rather than generic quantity
+  - Big-Game Hunter: sacrifices some ordinary-drop improvement to emphasize rare-drop rolls
+- **Mending** is intentionally left without an accepted mastery branch for now; its bespoke level-I-X repair and routing progression already provides a large independent growth axis, so a branch should not be forced unless a genuinely distinct play-style option is found.
+
 ### Curse Growth
 Curses also accumulate mastery/history and may mutate through long-term use.
 The curse remains a meaningful drawback, but veteran cursed gear can develop unusual compensating behavior instead of remaining pure trash.
