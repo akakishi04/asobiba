@@ -1205,6 +1205,8 @@ Accepted direction:
 - add a dedicated **Quiver equipment slot** separate from armor, offhand and the normal inventory
 - only Quiver-compatible items may occupy this slot
 - a basic Quiver provides an internal ammunition inventory for arrows and other explicitly supported launcher ammunition
+- launcher ammunition priority is **selected Quiver ammunition -> offhand ammunition -> ordinary inventory ammunition**
+- if the selected Quiver slot is empty or contains ammunition invalid for the current launcher, continue to the offhand and then ordinary inventory rather than failing the shot immediately
 - the launcher checks the equipped Quiver before falling back to loose ammunition in the player's ordinary inventory
 - the Quiver stores exact ItemStacks, preserving tipped-arrow effects, spectral-arrow identity, enchantments and other relevant components
 - enchanted arrows remain discrete ammunition items; the Quiver does not merge different enchanted/component variants merely because their base item id matches
@@ -1213,6 +1215,7 @@ Accepted direction:
 - the Quiver is a convenience/container system, not an ammunition duplicator and not an automatic crafting system
 - Multishot still consumes at most one source ammunition item per shot group under the existing Multishot rules
 - Infinity still only makes ordinary arrows free; placing special/enchanting arrows in the Quiver does not make them free
+- Infinity is evaluated **after** ammunition selection: if the selected source item is an ordinary arrow, it is not consumed; if the selected source is enchanted/spectral/tipped/special ammunition, one source item is consumed normally
 - if the selected Quiver slot contains an ordinary arrow and the launcher has Infinity, the shot does not consume that ordinary arrow
 - if the selected Quiver slot contains an enchanted, spectral or tipped arrow, the shot consumes one source item normally unless a separate return/recovery mechanic returns it
 - when all eligible Quiver ammunition for the selected type is exhausted, the launcher may fall back to ordinary inventory ammunition according to the normal ammo-priority rules
