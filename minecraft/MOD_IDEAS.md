@@ -652,7 +652,6 @@ Design constraint: remove the junk-enchant workaround while preserving meaningfu
 Allow selected vanilla items that are normally not enchantable to receive ordinary enchantments.
 
 Accepted initial targets:
-- Crafting Table
 - Furnace
 - Blast Furnace
 - Smoker
@@ -663,6 +662,10 @@ Accepted initial targets:
 
 Accepted direction:
 - reuse existing vanilla enchantments rather than requiring a parallel enchantment family
+- Crafting Tables are explicitly excluded from extended enchanting
+- Efficiency on Furnace / Blast Furnace / Smoker increases processing speed
+- Efficiency on an Enchanting Table does **not** directly add levels to the resulting enchantments; instead it raises the enchanting table's normal level/power ceiling beyond vanilla level 30
+- the exact amount by which each Efficiency level raises the table ceiling is a separate tuning decision
 - exact gameplay meaning of individual enchantment / target combinations can be defined later
 - enchanted work blocks must retain their full ItemStack enchantment/mastery data while placed and restore it when broken
 - arrows retain enchantments on their ItemStack; projectile-specific interpretation can be added later
