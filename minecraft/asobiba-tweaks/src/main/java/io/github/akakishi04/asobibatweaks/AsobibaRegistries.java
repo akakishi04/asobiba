@@ -100,6 +100,11 @@ public final class AsobibaRegistries {
             () -> new AtlasItem(new Item.Properties().stacksTo(1))
     );
 
+    public static final DeferredItem<Item> ARCANE_FOLIO = ITEMS.register(
+            "arcane_folio",
+            () -> new Item(new Item.Properties().stacksTo(16))
+    );
+
     public static final DeferredItem<Item> LAVA_MINNOW_ITEM = ITEMS.register(
             "lava_minnow",
             () -> new Item(new Item.Properties().food(
