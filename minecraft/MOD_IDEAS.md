@@ -1389,6 +1389,19 @@ Accepted direction:
 
 Design constraint: avoid double-dipping identical mechanics while preserving useful launcher/ammunition combinations.
 
+#### Piercing + Loyalty Return Timing
+
+Accepted direction:
+- when an arrow has both Piercing and Loyalty, Loyalty does **not** begin returning on the first entity hit
+- Loyalty does **not** begin returning merely because the arrow has consumed its available Piercing target count
+- the arrow continues normal flight and resolves all valid impacts until its projectile flight ends
+- **Loyalty return begins only when the arrow's flight has ended**
+- flight-end handling may include becoming embedded/stationary in a block or otherwise entering the normal terminal state where the projectile would stop traveling
+- once Loyalty return begins, the arrow is removed from any embedded-arrow death-drop path and follows the existing Loyalty return/recovery rules
+- Multishot still allows only the primary/original projectile to return as an item; secondary projectile instances remain disposable
+
+Design constraint: Piercing determines what the arrow can do during flight; Loyalty determines what happens after that flight is over.
+
 #### Piercing Multi-hit Effect Resolution
 
 Accepted direction:
