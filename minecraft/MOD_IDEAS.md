@@ -575,8 +575,19 @@ Examples may include Binding becoming harder to lose on death, or Vanishing evol
 
 ### Mutually Exclusive Enchantment Switching
 Permit selected normally-exclusive enchantments to coexist on one item while only one is active at a time.
-Example: Fortune and Silk Touch can both be stored, but only the selected mode applies.
-Switching may require XP, cooldown, anvil work, or another explicit cost so one item does not become a free universal solution.
+
+Accepted initial behavior:
+- the initial supported pair is Fortune + Silk Touch
+- the pair is combined through an anvil; combination may retain an explicit additional anvil cost
+- after combination, one enchantment is active and the other remains stored on the same item
+- while holding the combined tool, **sneak + right-click in the air** toggles the active enchantment
+- no dedicated keybind or Enchanting Table interaction is required for switching
+- block-targeted right-click interactions take priority; the toggle should only trigger on an air-use action so normal block interaction is not hijacked
+- switching after the initial anvil combination does not consume XP
+- toggling should provide short action-bar feedback showing the newly active enchantment
+- normal mutually-exclusive behavior remains enforced at effect time; Fortune and Silk Touch are never active simultaneously
+
+Design constraint: pay the progression/combination cost up front, then make ordinary field switching immediate and low-friction.
 
 ### Enchantment Mastery Inheritance
 Retiring/sacrificing veteran enchanted gear can transfer only part of an enchantment's mastery/history to a replacement.
