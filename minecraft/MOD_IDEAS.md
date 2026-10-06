@@ -2,6 +2,8 @@
 
 Rule: small features, independently switchable, and no feature may become a hard dependency for another feature.
 
+> Implementation status: accepted candidates have MVP code paths. See `asobiba-tweaks/IMPLEMENTATION_STATUS.md` for the code mapping and validation state.
+
 ## Accepted / in implementation
 
 ### Growing item mining-tier mutations
