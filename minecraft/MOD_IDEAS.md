@@ -1171,6 +1171,10 @@ Accepted direction:
 #### Recoverable Embedded Arrows
 
 Accepted direction:
+- when Multishot creates multiple projectiles from one ammunition item, only the **primary/original projectile** remains recoverable
+- Multishot-created secondary projectiles are never stored for embedded-arrow recovery and never produce recoverable arrow items
+- this rule applies equally to enchanted, spectral and tipped arrows and prevents one source arrow from becoming multiple recovered copies
+- if Loyalty or another return behavior is involved, only the primary/original projectile may return as an item; secondary Multishot projectiles are disposable projectile instances
 - arrows that successfully embed in a living target can be recovered instead of being permanently lost
 - recovery preserves the exact arrow ItemStack, including enchantments and other components
 - recovery occurs when the target dies; the embedded arrow is dropped with the victim's drops
