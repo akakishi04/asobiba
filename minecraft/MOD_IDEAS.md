@@ -244,6 +244,27 @@ Accepted direction:
 - percentage thresholds and timing values are initial tuning defaults and may be adjusted after playtesting without changing the welfare model
 - special trade-only progression materials such as the Arcane Bookshelf material participate in the same welfare-adjusted pricing
 
+
+Additional anti-trading-hall rules:
+- welfare evaluation uses a weighted life-history model rather than a room-size detector
+- initial weighting target:
+  - **Mobility / usable local movement: 30%**
+  - **Sleep access and successful sleep: 20%**
+  - **Workstation access/use: 20%**
+  - **Open-space / non-confined access: 15%**
+  - **Social/village participation: 15%**
+- a villager can miss one category temporarily without severe consequences, but chronic failure in several categories drives welfare down reliably
+- ordinary compact houses remain valid as long as the villager can actually leave its sleeping/work position, move around, reach required points and participate in village life
+- permanent 1x1 / 1x2 immobilized cells, workstation cages and equivalent layouts are expected to fail Mobility, Open-space and Social participation over time even if bed/workstation reachability is technically present
+- after sustained severe confinement, the villager enters a **Refusal** state once Welfare is below **20**
+- while in Refusal, the villager **will not restock trades and will not open normal trading interaction**
+- Refusal clears only after Welfare recovers to at least **40**, preventing brief release/reset exploits
+- existing offers and villager profession data are retained while refusing; this is not a profession reset or trade deletion
+- welfare recovery requires actual successful life activity over time, not merely opening a door or enlarging the cell for a few seconds
+- moving a villager through transport or temporarily sheltering it during danger does not count as chronic confinement because the system evaluates history across Minecraft days
+- layouts that function as a normal village marketplace are allowed: villagers may work at assigned stalls during the day provided they can leave them, sleep normally, move through shared spaces and participate in village life
+- the design goal is specifically to make **permanently immobilized trading halls non-viable**, not to ban organized trading districts or compact villages
+
 Design constraint: discourage permanent immobilized trading halls without punishing normal houses, compact villages, temporary containment, transport or emergency shelter.
 
 ### Fire as a Village Emergency
