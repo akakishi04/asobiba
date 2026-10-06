@@ -591,8 +591,9 @@ Accepted direction:
 - provide an explicit reroll interaction at the Enchanting Table
 - rerolling replaces the current offer set
 - do not require sacrificing an unrelated item merely to advance the enchantment seed
-- rerolling should have some real cost or friction so it is not free infinite spam
-- exact XP / lapis / item / cooldown cost is intentionally undecided
+- rerolling costs player experience
+- XP cost is the primary reroll friction; no disposable item enchantment is required
+- exact XP amount / scaling per reroll is intentionally undecided
 - bookshelf-based pool expansion must affect rerolled offers normally
 - over-cap enchantments, if obtainable through the table later, should participate through the same offer-generation path
 
