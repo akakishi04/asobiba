@@ -13,6 +13,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.FishingRodItem;
@@ -26,6 +28,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDropsEvent;
+import net.neoforged.neoforge.event.entity.living.LivingEntityUseItemEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
@@ -95,6 +98,21 @@ public final class NetherFishingEvents {
                 && player.tickCount % 300 == Math.floorMod(player.getId(), 300)
                 && player.getRandom().nextDouble() < 0.08D) {
             tryNaturalSpawn(player);
+        }
+    }
+
+    @SubscribeEvent
+    public void onEat(LivingEntityUseItemEvent.Finish event) {
+        if (!AsobibaTweaksConfig.NETHER_FISH_ENABLED.getAsBoolean()) return;
+
+        ItemStack eaten = event.getItem();
+        if (eaten.is(AsobibaRegistries.LAVA_MINNOW_ITEM.get())) {
+            event.getEntity().addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 120, 0));
+        } else if (eaten.is(AsobibaRegistries.EMBERFIN_ITEM.get())) {
+            event.getEntity().clearFire();
+            event.getEntity().addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, 240, 0));
+        } else if (eaten.is(AsobibaRegistries.BASALT_EEL_ITEM.get())) {
+            event.getEntity().addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 100, 0));
         }
     }
 
