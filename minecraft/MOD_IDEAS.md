@@ -555,6 +555,20 @@ Remove the hard anvil experience ceiling / "Too Expensive!" rejection for normal
 
 Design constraint: anvil changes should remove arbitrary rejection, not make merging/repairing cheap.
 
+### Raised Enchantment Level Caps
+
+Raise the normal maximum levels of enchantments so vanilla caps such as Efficiency V, Sharpness V, Fortune III, and similar limits are no longer the final ceiling.
+
+Accepted direction:
+- enchantments may exist above their vanilla maximum levels
+- exact new caps are intentionally undecided for now
+- scaling behavior above the vanilla cap is also intentionally undecided
+- obtaining over-cap enchantments does not have to use the ordinary enchanting-table route
+- block/item enchantment expansion can reuse the same over-cap system later
+- Growing Enchantments / mastery must remain compatible with over-cap levels
+
+Design constraint: raising the cap must not automatically mean linear infinite power scaling. Per-enchantment behavior above the vanilla cap will be designed separately.
+
 
 ## Accepted transport / alchemy / explosives tweaks
 
