@@ -76,7 +76,7 @@ public final class FolkloreAndMoonEvents {
             tickLocationMemory(player);
         }
 
-        if (AsobibaTweaksConfig.WORLD_FOLKLORE_ENABLED.getAsBoolean()) {
+        if (AsobibaTweaksConfig.LUNAR_OFFERING_ENABLED.getAsBoolean()) {
             deliverMoonReturn(player);
         }
     }
@@ -85,7 +85,7 @@ public final class FolkloreAndMoonEvents {
     public void onItemTick(EntityTickEvent.Post event) {
         if (!(event.getEntity() instanceof ItemEntity item)
                 || item.level().isClientSide()
-                || !AsobibaTweaksConfig.WORLD_FOLKLORE_ENABLED.getAsBoolean()
+                || !AsobibaTweaksConfig.LUNAR_OFFERING_ENABLED.getAsBoolean()
                 || item.getPersistentData().getBoolean("asobibatweaks_moon_checked")) return;
 
         if (item.tickCount < 15 || item.getDeltaMovement().y <= 0.05D) return;
