@@ -736,6 +736,9 @@ Accepted:
 - **Punch**: applies increased knockback to the directly hit target. Higher levels increase the target's displacement; this is a single-target control effect.
 - **Wind Burst**: creates a radial wind-pressure impulse centered on the impact point, affecting nearby entities/items as appropriate. This is an area-control effect rather than a stronger version of Punch.
 - when Punch and Wind Burst coexist, the directly hit target receives both the direct Punch knockback and the radial Wind Burst impulse.
+- **Flame**: uses vanilla flaming-arrow behavior rather than inventing a separate fire system; it ignites hit targets and interacts with vanilla fire-arrow-responsive blocks/entities normally.
+- **Channeling**: during thunderstorms, an impact under open sky calls lightning at the impact position. This may trigger on direct entity hits or on valid block impacts.
+- Flame and Channeling may coexist; a qualifying Channeling impact may also apply the normal Flame behavior.
 
 ## Accepted transport / alchemy / explosives tweaks
 
