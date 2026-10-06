@@ -6,5 +6,16 @@
   "entity.asobibatweaks.basalt_eel": "玄武岩ウナギ",
   "item.asobibatweaks.lava_minnow": "溶岩コバナ",
   "item.asobibatweaks.emberfin": "火の粉ヒレ",
-  "item.asobibatweaks.basalt_eel": "玄武岩ウナギ"
+  "item.asobibatweaks.basalt_eel": "玄武岩ウナギ",
+  "item.asobibatweaks.atlas": "地図帳",
+  "tooltip.asobibatweaks.atlas.maps": "収納地図: %s / %s",
+  "tooltip.asobibatweaks.atlas.active": "現在の地図ID: %s",
+  "tooltip.asobibatweaks.atlas.out_of_coverage": "現在地を含む地図がありません",
+  "tooltip.asobibatweaks.atlas.insert": "反対の手に地図を持って右クリックで収納",
+  "tooltip.asobibatweaks.atlas.remove": "反対の手を空にしてスニーク＋右クリックで現在の地図を取り出す",
+  "message.asobibatweaks.atlas.added": "地図を地図帳に収納しました (%s/%s)",
+  "message.asobibatweaks.atlas.duplicate": "その地図はすでに収納されています",
+  "message.asobibatweaks.atlas.full": "地図帳は満杯です (%s枚)",
+  "message.asobibatweaks.atlas.removed": "地図を取り出しました (残り%s枚)",
+  "message.asobibatweaks.atlas.empty": "地図帳は空です"
 }
