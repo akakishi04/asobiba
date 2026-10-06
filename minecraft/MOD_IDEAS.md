@@ -626,7 +626,9 @@ Accepted direction:
 - redistributed XP is less efficient at lower Mending levels and becomes progressively more efficient toward Mending X
 - a low-level Mending recipient remains less efficient to repair than a high-level Mending recipient, so upgrading Mending across the whole equipment set has value
 - distribution should prioritize damaged eligible items rather than wasting repair on full-durability pieces
-- exact IV-X transfer-efficiency percentages are tuning values; the intended endpoint is substantial loss at the first linked-repair levels and near/full efficiency at Mending X
+- linked-repair transfer efficiency is intentionally lossy even at the top end; Mending X caps redistributed repair efficiency at about 80% rather than reaching 100%
+- the planned IV-X transfer-efficiency curve is: IV=40%, V=50%, VI=60%, VII=65%, VIII=70%, IX=75%, X=80%
+- recipient Mending level also matters: lower-level Mending recipients are repaired less efficiently than higher-level recipients, so a full high-level Mending loadout remains meaningfully better than one Mending X item feeding many low-level pieces
 - linked repair must preserve ordinary XP gain once all eligible Mending items are fully repaired
 
 Design constraint: higher-level Mending should improve XP use across a maintained equipment set, not become passive repair for every inventory item or create unlimited repair throughput.
