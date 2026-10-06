@@ -578,16 +578,18 @@ Design constraint: anvil changes should remove arbitrary rejection, not make mer
 Raise the normal maximum levels of enchantments so vanilla caps such as Efficiency V, Sharpness V, Fortune III, and similar limits are no longer the final ceiling.
 
 Accepted direction:
-- enchantments may exist above their vanilla maximum levels
-- for most enchantments, keep the existing vanilla level-based behavior and simply allow it to continue above the vanilla cap
+- enchantments whose vanilla maximum level is II or higher can extend up to level 10 by default
+- enchantments whose vanilla maximum level is I remain level I by default
+- for multi-level enchantments, keep the existing vanilla level-based behavior and simply allow it to continue above the vanilla cap
 - do not create bespoke post-cap scaling rules unless an enchantment actually needs one
 - only special-case enchantments whose vanilla formula becomes invalid, meaningless, technically capped elsewhere, or excessively disruptive at higher levels
-- the exact global/per-enchantment maximum level can be chosen as an implementation safeguard rather than requiring manual design for every enchantment
+- single-level enchantments can gain additional levels later only as explicit exceptions
+- the level-10 cap remains configurable as an implementation safeguard
 - obtaining over-cap enchantments does not have to use the ordinary enchanting-table route
 - block/item enchantment expansion can reuse the same over-cap system later
 - Growing Enchantments / mastery must remain compatible with over-cap levels
 
-Design constraint: default to vanilla formula continuation; special handling is the exception, not the rule.
+Design constraint: default to vanilla formula continuation for existing multi-level enchantments; single-level enchantments stay single-level unless intentionally redesigned.
 
 ### Enchantment-Pool Bookshelves
 
