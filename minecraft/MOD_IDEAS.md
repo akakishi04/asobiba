@@ -502,6 +502,24 @@ Add an armor enchantment that reduces forced displacement from wind-pressure imp
 
 Design constraint: wind pressure should create readable physical consequences without becoming a constant annoyance or replacing vanilla knockback rules.
 
+### Atlas / Map Binder
+
+Add a portable atlas item that can store multiple existing filled maps and automatically display the map that matches the player's current location.
+
+Accepted direction:
+- the atlas stores multiple normal filled maps rather than replacing vanilla map data
+- while held/opened, it automatically selects a stored map whose dimension and covered area contain the player
+- moving across map boundaries automatically switches to the appropriate stored map
+- Nether / Overworld / End and other dimensions must not accidentally select maps from the wrong dimension
+- if multiple stored maps cover the same position, prefer the most detailed usable map; ties can use a stable insertion/order rule
+- if no stored map covers the current position, show a clear blank / out-of-coverage state instead of inventing map data
+- maps can be added to and removed from the atlas without losing their existing map IDs, exploration data, decorations, or custom names
+- the atlas must not automatically generate unexplored maps or reveal terrain the player has not mapped
+- normal held-map rendering should be reused where practical so the currently selected page behaves like a vanilla filled map
+- the atlas may later support browsing stored pages manually in addition to automatic current-location selection
+
+Design constraint: this is a smart container/viewer for real vanilla maps, not an infinite minimap or automatic world map.
+
 
 ## Accepted enchantment-system tweaks
 
