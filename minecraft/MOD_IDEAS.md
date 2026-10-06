@@ -620,7 +620,7 @@ Accepted direction:
 - the Arcane Bookshelf requires a trade-only material rather than being craftable entirely from ordinary gathered resources
 - that material is **Arcane Folio / 秘術の書片**
 - Arcane Folio is sold by level-4 (Expert) Librarians rather than obtained from normal crafting, mining or loot
-- the initial base trade is 12 emeralds for 1 Arcane Folio, with 6 uses before restock
+- the initial base trade is 24 emeralds for 1 Arcane Folio, with 6 uses before restock
 - Arcane Bookshelf crafting consumes 4 Arcane Folios plus 4 amethyst shards around a normal bookshelf
 - these values are tuning defaults and can be adjusted after playtesting without changing the progression structure
 - the trade-only material is supplied through villager trading, tying access to a functioning village economy
@@ -640,7 +640,7 @@ Accepted direction:
 - do not require sacrificing an unrelated item merely to advance the enchantment seed
 - rerolling costs player experience
 - XP cost is the primary reroll friction; no disposable item enchantment is required
-- exact XP amount / scaling per reroll is intentionally undecided
+- reroll cost is fixed at 1 experience level per reroll; repeated rerolls do not escalate in price
 - bookshelf-based pool expansion must affect rerolled offers normally
 - over-cap enchantments, if obtainable through the table later, should participate through the same offer-generation path
 
