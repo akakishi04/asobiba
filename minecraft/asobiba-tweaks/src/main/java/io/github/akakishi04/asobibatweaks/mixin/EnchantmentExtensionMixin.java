@@ -14,7 +14,10 @@ public abstract class EnchantmentExtensionMixin {
     @Inject(method = "getMaxLevel", at = @At("RETURN"), cancellable = true)
     private void asobibatweaks$raiseMaxLevel(CallbackInfoReturnable<Integer> cir) {
         if (AsobibaTweaksConfig.RAISED_ENCHANTMENT_CAPS_ENABLED.getAsBoolean()) {
-            cir.setReturnValue(Math.max(cir.getReturnValue(), AsobibaTweaksConfig.ENCHANTMENT_LEVEL_CAP.getAsInt()));
+            int vanillaMax = cir.getReturnValue();
+            if (vanillaMax > 1) {
+                cir.setReturnValue(Math.max(vanillaMax, AsobibaTweaksConfig.ENCHANTMENT_LEVEL_CAP.getAsInt()));
+            }
         }
     }
 
