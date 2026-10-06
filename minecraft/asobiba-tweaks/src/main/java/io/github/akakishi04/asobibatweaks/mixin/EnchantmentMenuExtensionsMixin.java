@@ -4,7 +4,6 @@ import io.github.akakishi04.asobibatweaks.AsobibaRegistries;
 import io.github.akakishi04.asobibatweaks.AsobibaTags;
 import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
 import io.github.akakishi04.asobibatweaks.feature.EnchantmentRerollProtocol;
-import io.github.akakishi04.asobibatweaks.feature.EnchantedWorkBlockSavedData;
 import java.util.List;
 import java.util.stream.Stream;
 import net.minecraft.core.BlockPos;
@@ -25,7 +24,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.EnchantmentInstance;
-import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.block.EnchantingTableBlock;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -113,42 +111,6 @@ public abstract class EnchantmentMenuExtensionsMixin {
         cir.setReturnValue(list);
     }
 
-    @Inject(method = "getEnchantmentList", at = @At("RETURN"), cancellable = true)
-    private void asobibatweaks$boostWithTableEfficiency(
-            RegistryAccess registryAccess,
-            ItemStack itemStack,
-            int slot,
-            int enchantmentCost,
-            CallbackInfoReturnable<List<EnchantmentInstance>> cir
-    ) {
-        if (!AsobibaTweaksConfig.EXTENDED_ENCHANTING_TARGETS_ENABLED.getAsBoolean()) {
-            return;
-        }
-
-        int bonus = this.access.evaluate((level, pos) -> {
-            ItemStack tableStack = EnchantedWorkBlockSavedData.get((net.minecraft.server.level.ServerLevel) level)
-                    .peek(pos.asLong());
-            if (tableStack.isEmpty()) {
-                return 0;
-            }
-            Holder<Enchantment> efficiency = level.registryAccess()
-                    .lookupOrThrow(Registries.ENCHANTMENT)
-                    .getOrThrow(Enchantments.EFFICIENCY);
-            return EnchantmentHelper.getItemEnchantmentLevel(efficiency, tableStack);
-        }).orElse(0);
-
-        if (bonus <= 0 || cir.getReturnValue().isEmpty()) {
-            return;
-        }
-
-        List<EnchantmentInstance> boosted = cir.getReturnValue().stream()
-                .map(instance -> new EnchantmentInstance(
-                        instance.enchantment(),
-                        Math.min(instance.level() + bonus, instance.enchantment().value().getMaxLevel())
-                ))
-                .toList();
-        cir.setReturnValue(new java.util.ArrayList<>(boosted));
-    }
 
     private boolean hasArcaneBookshelf() {
         return this.access.evaluate((level, pos) -> {
