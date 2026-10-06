@@ -38,21 +38,80 @@ public final class WorldOddityEvents {
 
         ServerLevel level = (ServerLevel)enderman.level();
         BlockState carried = enderman.getCarriedBlock();
-        BlockPos base = enderman.blockPosition().offset(
-                enderman.getRandom().nextInt(5) - 2,
-                0,
-                enderman.getRandom().nextInt(5) - 2
-        );
+        var data = enderman.getPersistentData();
 
-        for (int y = 0; y < 3; y++) {
-            BlockPos pos = base.above(y);
-            if (level.getBlockState(pos).canBeReplaced()
-                    && level.getBlockState(pos.below()).isFaceSturdy(level, pos.below(), net.minecraft.core.Direction.UP)) {
-                level.setBlockAndUpdate(pos, carried);
-                enderman.setCarriedBlock(null);
-                break;
-            }
+        if (!data.getBoolean("asobibatweaks_micro_active")) {
+            BlockPos origin = enderman.blockPosition().offset(
+                    enderman.getRandom().nextInt(7) - 3,
+                    0,
+                    enderman.getRandom().nextInt(7) - 3
+            );
+            origin = new BlockPos(
+                    origin.getX(),
+                    level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                            origin.getX(), origin.getZ()),
+                    origin.getZ()
+            );
+            data.putBoolean("asobibatweaks_micro_active", true);
+            data.putInt("asobibatweaks_micro_x", origin.getX());
+            data.putInt("asobibatweaks_micro_y", origin.getY());
+            data.putInt("asobibatweaks_micro_z", origin.getZ());
+            data.putInt("asobibatweaks_micro_step", 0);
+            data.putInt("asobibatweaks_micro_length", 2 + enderman.getRandom().nextInt(4));
+            data.putInt("asobibatweaks_micro_pattern", enderman.getRandom().nextInt(4));
         }
+
+        BlockPos origin = new BlockPos(
+                data.getInt("asobibatweaks_micro_x"),
+                data.getInt("asobibatweaks_micro_y"),
+                data.getInt("asobibatweaks_micro_z")
+        );
+        int step = data.getInt("asobibatweaks_micro_step");
+        int length = data.getInt("asobibatweaks_micro_length");
+        int pattern = data.getInt("asobibatweaks_micro_pattern");
+        BlockPos target = microBuildTarget(origin, step, pattern);
+
+        boolean placed = level.getBlockState(target).canBeReplaced()
+                && level.getBlockState(target.below()).isFaceSturdy(
+                        level, target.below(), net.minecraft.core.Direction.UP);
+
+        if (placed) {
+            level.setBlockAndUpdate(target, carried);
+            enderman.setCarriedBlock(null);
+            step++;
+            data.putInt("asobibatweaks_micro_step", step);
+        } else {
+            data.remove("asobibatweaks_micro_active");
+            return;
+        }
+
+        if (step >= length) {
+            data.remove("asobibatweaks_micro_active");
+            data.remove("asobibatweaks_micro_step");
+            data.remove("asobibatweaks_micro_length");
+            data.remove("asobibatweaks_micro_pattern");
+        }
+    }
+
+    private static BlockPos microBuildTarget(BlockPos origin, int step, int pattern) {
+        return switch (pattern) {
+            case 0 -> origin.above(step); // tiny pillar
+            case 1 -> origin.offset(step, step % 2, 0); // crude stair
+            case 2 -> switch (step) { // tiny L / corner
+                case 0 -> origin;
+                case 1 -> origin.east();
+                case 2 -> origin.east().south();
+                case 3 -> origin.east().south().above();
+                default -> origin.east().south().above(step - 2);
+            };
+            default -> switch (step) { // little arch-like shape
+                case 0 -> origin;
+                case 1 -> origin.east(2);
+                case 2 -> origin.above();
+                case 3 -> origin.east(2).above();
+                default -> origin.east().above(2);
+            };
+        };
     }
 
     private static void tickParrot(Parrot parrot) {
