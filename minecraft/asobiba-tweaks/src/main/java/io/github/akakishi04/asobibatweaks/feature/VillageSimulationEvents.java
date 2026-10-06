@@ -279,11 +279,28 @@ public final class VillageSimulationEvents {
                 && step.state.hasProperty(BedBlock.PART)
                 && step.state.getValue(BedBlock.PART) == BedPart.FOOT;
         if (bedFoot) {
+            Direction facing = step.state.getValue(HorizontalDirectionalBlock.FACING);
+            BlockPos headPos = step.pos.relative(facing);
+            if (!level.getBlockState(headPos).canBeReplaced()) {
+                data.putBoolean(BUILD_ACTIVE, false);
+                data.putLong(NEXT_BUILD, level.getGameTime() + 12000L);
+                return;
+            }
             if (!consumeBedMaterials(level, villager.blockPosition(), 18)) {
                 requestMaterials(villager, "3 wool and 3 planks");
                 return;
             }
-        } else if (step.cost != null && !takeFromStorage(level, villager.blockPosition(), 18, step.cost, 1)) {
+
+            BlockState head = step.state.setValue(BedBlock.PART, BedPart.HEAD);
+            level.setBlock(step.pos, step.state, Block.UPDATE_CLIENTS);
+            level.setBlock(headPos, head, Block.UPDATE_CLIENTS);
+            level.updateNeighborsAt(step.pos, step.state.getBlock());
+            level.updateNeighborsAt(headPos, head.getBlock());
+            data.putInt(BUILD_STEP, Math.min(plan.size(), stepIndex + 2));
+            return;
+        }
+
+        if (step.cost != null && !takeFromStorage(level, villager.blockPosition(), 18, step.cost, 1)) {
             requestMaterials(villager, step.cost.getDescription().getString().toLowerCase(Locale.ROOT));
             return;
         }
