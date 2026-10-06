@@ -761,6 +761,16 @@ Accepted direction:
 - Furnace / Blast Furnace / Smoker Efficiency scales processing speed up to 2.0x at Efficiency X
 - Enchanting Table Efficiency raises the table's enchanting level ceiling from vanilla 30 up to 100
 
+
+#### Additional work-block enchantment decisions
+
+Accepted:
+- **Fortune on Furnace / Blast Furnace / Smoker** applies broadly to smelting outputs rather than being restricted to ores or a hand-authored allowlist
+- Fortune may increase the resulting output quantity for any normally smeltable recipe; balancing should come from the Fortune scaling itself rather than excluding food, metals, stone, etc.
+- **Fortune on an Enchanting Table** increases how many enchantments a single enchanting operation may apply
+- Enchanting Table Efficiency and Fortune have separate roles: Efficiency raises enchanting power/level ceiling, while Fortune raises the possible enchantment count
+- exact Fortune scaling for extra furnace output and extra enchanting-table enchantment count remains to be chosen
+
 ## Accepted transport / alchemy / explosives tweaks
 
 ### Potion Mixing
