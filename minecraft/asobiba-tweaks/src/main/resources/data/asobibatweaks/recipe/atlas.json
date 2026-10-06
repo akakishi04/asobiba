@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "PPP",
+    "PBP",
+    "LCL"
+  ],
+  "key": {
+    "P": { "item": "minecraft:paper" },
+    "B": { "item": "minecraft:book" },
+    "L": { "item": "minecraft:leather" },
+    "C": { "item": "minecraft:compass" }
+  },
+  "result": {
+    "id": "asobibatweaks:atlas",
+    "count": 1
+  }
+}
