@@ -9,6 +9,7 @@ import net.minecraft.nbt.FloatTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.AgeableMob;
 import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
@@ -18,6 +19,7 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
 import net.minecraft.world.entity.boss.wither.WitherBoss;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.AbstractSkeleton;
 import net.minecraft.world.entity.monster.Slime;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.level.Level;
@@ -63,7 +65,10 @@ public final class GiantOrganismEvents {
             return;
         }
 
-        if (mob.getRandom().nextDouble() >= AsobibaTweaksConfig.GIANT_MOB_CHANCE.getAsDouble()) {
+        double giantChance = mob instanceof AgeableMob ageable && ageable.isBaby()
+                ? AsobibaTweaksConfig.GIANT_MOB_BIRTH_CHANCE.getAsDouble()
+                : AsobibaTweaksConfig.GIANT_MOB_CHANCE.getAsDouble();
+        if (mob.getRandom().nextDouble() >= giantChance) {
             return;
         }
 
