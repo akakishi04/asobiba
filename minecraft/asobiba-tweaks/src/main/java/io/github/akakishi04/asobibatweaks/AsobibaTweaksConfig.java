@@ -79,7 +79,8 @@ public final class AsobibaTweaksConfig {
 
     public static final ModConfigSpec.BooleanValue EXPANDED_RIDING_ENABLED = bool("riding.expandedRiding", true, "Allow saddles on more suitable mobs.");
     public static final ModConfigSpec.BooleanValue MOB_ON_MOB_RIDING_ENABLED = bool("riding.mobOnMobRiding", true, "Allow rare small-mob-on-large-mob riding.");
-    public static final ModConfigSpec.BooleanValue NETHER_FISHING_ENABLED = bool("nether.lavaFishing", true, "Enable lava fishing and Nether fish catches.");
+    public static final ModConfigSpec.BooleanValue NETHER_FISHING_ENABLED = bool("nether.lavaFishing", true, "Enable heat-treated fishing rods and lava fishing.");
+    public static final ModConfigSpec.BooleanValue NETHER_FISH_ENABLED = bool("nether.netherFish", true, "Enable natural lava-dwelling Nether fish.");
 
     public static final ModConfigSpec.BooleanValue VILLAGE_SIMULATION_ENABLED = bool("village.simulation", true, "Master switch for lightweight village simulation features.");
     public static final ModConfigSpec.BooleanValue VILLAGE_CARPENTER_ENABLED = bool("village.carpenter", true, "Enable carpenter trades and construction behavior.");
