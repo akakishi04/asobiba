@@ -614,11 +614,13 @@ Design constraint: default to vanilla formula continuation for existing multi-le
 
 Accepted direction:
 - Frost Walker can be explicitly toggled ON/OFF while the enchanted boots are equipped
+- the toggle input is **sneak + jump**; no dedicated keybind is added
+- the input toggles state rather than only suppressing Frost Walker while the keys are held
 - turning it OFF suppresses water-freezing behavior without removing or rewriting the enchantment
 - turning it back ON restores the normal level-scaled Frost Walker behavior
-- the toggle must give clear player feedback and be usable without removing the boots
-- the exact input method/keybind is a UX tuning decision and is not fixed yet
-- toggle state must be safe across equip/unequip and save/reload; final choice of per-item versus per-player persistence is still open
+- toggling gives clear player feedback, preferably a short action-bar message such as "Frost Walker: ON/OFF"
+- toggle state must survive equip/unequip and save/reload
+- the toggle state belongs to the enchanted boots/item rather than being a global player setting
 
 Design constraint: higher-level Frost Walker should remain practical to wear in normal travel without forcing the player to freeze every nearby water surface continuously.
 
