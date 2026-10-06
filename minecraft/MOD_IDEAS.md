@@ -333,6 +333,20 @@ Village simulation is now an accepted feature family. The goal is a lightweight,
 - Porter: moves resources between farms, quarries, forests, storage and build sites; later may use llamas/donkeys.
 - Fire responder role: maintains access to water and prioritizes emergency response when fires occur.
 
+### Village activity boundary
+
+Accepted direction:
+- each village uses a **dynamic activity boundary** rather than one permanently fixed spherical radius
+- the village center is derived from the local concentration of recognized village anchors such as bells, occupied beds, active workstations and shared storage
+- the initial ordinary village activity radius is approximately **48 blocks**
+- the boundary may expand gradually in directions where recognized homes, workplaces, farms, roads and other continuously used village infrastructure already exist
+- isolated distant structures are not immediately absorbed into the main village simply because a villager can path to them
+- distant functional sites become Outposts / Satellite Sites once they are linked to the parent settlement through recognized roads/logistics
+- the ordinary village core should normally stop expanding at roughly **128 blocks from its effective center**; activity beyond that is handled as a linked satellite site rather than unlimited core growth
+- player-built structures are not automatically treated as village property merely because they fall inside the boundary
+- harvesting, construction placement, welfare context and logistics use this activity boundary as a common spatial reference so village AI does not expand or gather without limit
+- the boundary may be asymmetric and follow actual settlement growth rather than remaining a perfect circle
+
 ### Autonomous village growth
 - Villages gather real local/renewable materials.
 - Gathered resources enter actual village storage.
@@ -381,6 +395,19 @@ Village architecture can drift over time based on:
 - carpenter skill
 
 A plains village repeatedly supplied with spruce and stone brick may gradually develop a visibly different architectural identity.
+
+### Multi-story village buildings
+
+Accepted direction:
+- village construction is not limited to single-story templates
+- the building template pool may include **two-story houses, workshops and mixed-use structures**
+- vertical construction becomes more likely as the village matures, land near existing roads becomes constrained, or the local building culture already contains taller structures
+- multi-story buildings must remain fully navigable by villagers: stairs, doors, headroom, beds/workstations and path access must be validated before the structure is considered usable
+- upper floors may contain bedrooms, storage or secondary work/living space while the ground floor remains accessible from the village road/path network
+- builders construct upper stories progressively rather than spawning a completed multi-floor structure at once
+- multi-story templates still consume real stored materials and may use safe scaffolding/work positions during construction
+- early villages should prefer simpler one-story structures; experienced carpenters and mature settlements may unlock more complex vertical templates
+- do not require every village to become vertically dense; biome, available land, local material palette and established architecture influence whether the village grows outward or upward
 
 ### Imperfect construction
 Less experienced builders may make harmless aesthetic mistakes:
