@@ -663,34 +663,94 @@ Current accepted branch candidates:
   - Underwater Construction: improves underwater block-placement / break-workflow handling and reduces disruption while building
   - Current Adaptation: strongly reduces water-current displacement while actively mining or placing blocks, helping the player hold a working position
 
-### Pending mastery-branch coverage audit
-
-The following vanilla 1.21.1 enchantments are not yet represented in the accepted-branch list above. Candidate ideas have been discussed for many of them, but they remain explicitly tracked here until their branch wording is normalized against the rule that branches should stay within the original enchantment's behavior domain:
-
-- Riptide
-- Channeling
-- Wind Burst
-- Frost Walker
-- Sharpness
-- Smite
-- Bane of Arthropods
-- Impaling
-- Density
-- Breach
-- Piercing
-- Sweeping Edge
-- Fire Aspect
-- Knockback
-- Fortune
-- Efficiency
-- Quick Charge
-- Respiration
-- Soul Speed
-- Swift Sneak
-- Depth Strider
-- Loyalty
-
-This audit list must shrink as branch sets are accepted and moved into `Current accepted branch candidates`; do not silently drop an enchantment merely because its branch design is deferred.
+- **Riptide**
+  - Long Range: emphasizes travel distance per activation
+  - Steering: emphasizes directional control during Riptide movement
+  - Ram: emphasizes collision / contact impact while using Riptide
+- **Channeling**
+  - Chain Lightning: a successful Channeling strike can propagate a weaker lightning effect to nearby valid targets
+  - Rain Channeling: extends part of Channeling's lightning behavior into ordinary rain at reduced strength rather than requiring a full thunderstorm
+  - Conductor: improves Channeling interactions with conductive targets such as lightning rods and suitable metal targets
+- **Wind Burst**
+  - Updraft: emphasizes vertical self-launch height
+  - Blast: emphasizes horizontal area knockback around the impact
+  - Aerial Control: trades some launch magnitude for better movement control after the burst
+- **Frost Walker**
+  - Narrow Path: shapes freezing more strongly along the travel direction instead of simply widening the frozen area
+  - Lasting Ice: increases how long Frost Walker-created ice remains before reverting
+  - Frost: strengthens the slowing effect associated with Frost Walker's freezing behavior on nearby wet targets
+- **Sharpness**
+  - Duel: repeated attacks against the same target progressively favor sustained single-target pressure
+  - Heavy Strike: emphasizes fully charged melee attacks
+  - Execute: emphasizes damage against low-health targets
+- **Smite**
+  - Exorcism: killing an undead target produces a small Smite-themed effect against nearby undead
+  - Holy Strike: Smite hits temporarily weaken the offensive pressure of undead targets
+  - Gravebreaker: emphasizes damage against armored undead
+- **Bane of Arthropods**
+  - Binding Venom: emphasizes and extends Bane's slowing effect
+  - Swarm Extermination: becomes more effective when fighting groups of arthropods
+  - Antivenom: grants limited poison resistance while actively fighting arthropod targets
+- **Impaling**
+  - Wet Hunt: broadens Impaling's practical target condition toward wet targets
+  - Harpoon: gives Impaling hits a pulling component
+  - Deep Hunter: improves Impaling performance in deep-water combat
+- **Density**
+  - Terminal Fall: emphasizes very high-fall smash attacks
+  - Low-Altitude Impact: makes smaller and medium-height smash attacks more useful
+  - Shock Impact: converts part of Density's smash emphasis into a local impact effect around the strike
+- **Breach**
+  - Heavy Armor Crusher: becomes more effective against highly armored targets
+  - Shield Breaker: emphasizes pressure against shielding / guarding targets
+  - Fracture: a Breach hit temporarily leaves the target more vulnerable to armor-bypassing pressure
+- **Piercing**
+  - Penetration: reduces projectile performance loss as it passes through targets
+  - Skewer: emphasizes control / impact on the last target hit in a piercing sequence
+  - Line Hunter: improves stability when hitting several targets in a line
+- **Sweeping Edge**
+  - Wide Arc: increases sweep coverage
+  - Focused Sweep: narrows coverage while increasing secondary-target effectiveness
+  - Battle Rhythm: successful multi-target sweeps improve the handling of the next sweep attack
+- **Fire Aspect**
+  - Long Burn: emphasizes longer burn duration
+  - Flash Burn: emphasizes a shorter, more intense burn
+  - Cauterize: emphasizes pressure against targets that attempt to recover while burning
+- **Knockback**
+  - Launch: emphasizes vertical displacement
+  - Blowback: emphasizes horizontal displacement distance
+  - Recoil Step: uses part of the attack reaction as controlled attacker recoil / repositioning
+- **Fortune**
+  - Ore Specialist: biases Fortune's mastery benefit toward ore-style drops
+  - Harvest Specialist: biases Fortune's mastery benefit toward crops / natural harvests
+  - High Variance: increases outcome variance, accepting weaker ordinary rolls for a chance at unusually large Fortune results
+- **Efficiency**
+  - Hard-Material Breaker: gives more of the mastery benefit to difficult / high-hardness blocks
+  - Mining Rhythm: sustained mining gradually stabilizes / improves Efficiency performance
+  - Generalist Tool: reduces the penalty when the tool is used on somewhat unsuitable block types
+- **Quick Charge**
+  - First Load: strongly improves the first reload after a pause
+  - Reload Rhythm: consecutive reloads become progressively faster while the firing rhythm is maintained
+  - Mobile Reload: reduces movement disruption while reloading a crossbow
+- **Respiration**
+  - Deep Breath: extends total underwater breathing time
+  - Quiet Breath: reduces oxygen consumption while stationary or moving slowly underwater
+  - Rapid Ventilation: restores air more quickly after returning to breathable conditions
+- **Soul Speed**
+  - Soul-Sole Conservation: reduces Soul Speed's durability-consumption drawback
+  - Lingering Momentum: preserves part of Soul Speed's movement benefit briefly after leaving soul blocks
+  - Soul Footing: improves resistance to displacement while moving on soul blocks
+- **Swift Sneak**
+  - Silent Sneak: further suppresses vibration / sculk-trigger pressure while sneaking
+  - Combat Stance: reduces movement loss while using items from a sneaking stance
+  - Builder's Sneak: improves controlled edge movement while using sneak for fall prevention during building
+- **Depth Strider**
+  - Current Rider: improves movement when traveling with water flow
+  - Seabed Runner: emphasizes grounded underwater movement and turning
+  - Diver: emphasizes vertical underwater movement
+- **Loyalty**
+  - Fast Return: emphasizes return speed
+  - Safe Return: emphasizes obstacle avoidance and loss prevention during return
+  - Pursuing Return: improves the returning weapon's ability to catch up when the owner has moved far from the throw point
 
 ### Curse Growth
 Curses also accumulate mastery/history and may mutate through long-term use.
