@@ -720,9 +720,9 @@ Accepted direction:
 - Efficiency on an Enchanting Table does **not** directly add levels to the resulting enchantments; instead it raises the enchanting table's normal level/power ceiling beyond vanilla level 30
 - Enchanting Table Efficiency raises the table ceiling by 10 levels per Efficiency level, capped at enchanting level 100
 - progression is: none=30, Efficiency I=40, II=50, III=60, IV=70, V=80, VI=90, VII-X=100
-- exact gameplay meaning of individual enchantment / target combinations can be defined later
+- work-block enchantment effects are defined per supported block type below; enchantments with no defined effect are not eligible for that work block
 - enchanted work blocks must retain their full ItemStack enchantment/mastery data while placed and restore it when broken
-- arrows retain enchantments on their ItemStack; projectile-specific interpretation can be added later
+- arrows retain enchantments on their ItemStack, with the supported projectile-specific behaviors defined in the Arrow Effect Decisions section below
 - compatible with raised enchantment level caps and Growing Enchantments
 
 
@@ -774,7 +774,7 @@ The initial set of existing enchantments to support with arrow-specific behavior
 
 Accepted direction:
 - these are the initial supported candidates for normal, spectral and tipped arrows where technically meaningful
-- exact arrow-specific behavior for each enchantment is decided separately
+- arrow-specific behavior for this initial candidate set is defined in the Arrow Effect Decisions section below
 - Density is intentionally excluded from arrow behavior; no fall-distance/downward-velocity damage mechanic is added for arrows
 - do not force unrelated enchantments to gain artificial arrow behavior merely for completeness
 - bow/crossbow enchantments and arrow enchantments may coexist; stacking rules are decided per effect where necessary
