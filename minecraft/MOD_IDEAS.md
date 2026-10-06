@@ -571,6 +571,33 @@ Accepted direction:
 
 Design constraint: default to vanilla formula continuation; special handling is the exception, not the rule.
 
+### Enchantment-Pool Bookshelves
+
+Add bookshelf variants / bookshelf enchantment behavior that can expand the nearby Enchanting Table's candidate pool beyond ordinary table-available enchantments.
+
+Accepted direction:
+- some enchantments that normally never appear from a vanilla Enchanting Table can become eligible when the correct bookshelf condition is present
+- this should extend the candidate pool rather than guarantee a specific enchantment
+- exact eligible enchantments, bookshelf requirements, weighting, and rarity are intentionally undecided
+- treasure-only / otherwise table-excluded enchantments can be handled selectively rather than automatically enabling everything
+- compatible with raised enchantment level caps and Growing Enchantments
+- bookshelf state should be readable from the actual nearby enchanting setup rather than from a global unlock
+
+### Direct Enchanting-Table Reroll
+
+Allow the Enchanting Table to reroll its offered enchantments without forcing the player to enchant disposable gear or books first.
+
+Accepted direction:
+- provide an explicit reroll interaction at the Enchanting Table
+- rerolling replaces the current offer set
+- do not require sacrificing an unrelated item merely to advance the enchantment seed
+- rerolling should have some real cost or friction so it is not free infinite spam
+- exact XP / lapis / item / cooldown cost is intentionally undecided
+- bookshelf-based pool expansion must affect rerolled offers normally
+- over-cap enchantments, if obtainable through the table later, should participate through the same offer-generation path
+
+Design constraint: remove the junk-enchant workaround while preserving meaningful choice and resource cost.
+
 
 ## Accepted transport / alchemy / explosives tweaks
 
