@@ -578,7 +578,7 @@ Permit selected normally-exclusive enchantments to coexist on one item while onl
 
 Accepted initial behavior:
 - the initial supported pair is Fortune + Silk Touch
-- the pair is combined through an anvil; combination may retain an explicit additional anvil cost
+- the pair is combined through an anvil with an additional **+5 experience-level cost** on top of the normal anvil cost
 - after combination, one enchantment is active and the other remains stored on the same item
 - while holding the combined tool, **sneak + right-click in the air** toggles the active enchantment
 - no dedicated keybind or Enchanting Table interaction is required for switching
