@@ -742,6 +742,10 @@ Accepted:
 - **Piercing**: lets the arrow pass through multiple valid targets. Higher levels increase the number of targets that may be penetrated.
 - **Breach**: reduces or bypasses part of the directly hit target's armor-based damage mitigation. It does not increase penetration count.
 - when Piercing and Breach coexist, each target successfully penetrated by the arrow is evaluated with the arrow's Breach effect.
+- **Smite**: applies the vanilla Smite target rules and scaling to arrow impact damage against undead targets.
+- **Bane of Arthropods**: applies the vanilla arthropod target rules, bonus damage and slowdown behavior on arrow impact.
+- **Impaling**: applies the vanilla Impaling target rules and scaling to arrow impact damage against qualifying aquatic/wet targets.
+- these three enchantments intentionally reuse vanilla target classification and scaling instead of maintaining separate arrow-specific balance tables.
 
 ## Accepted transport / alchemy / explosives tweaks
 
