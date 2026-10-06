@@ -26,6 +26,13 @@ jobs:
       - name: Build Asobiba Tweaks
         working-directory: minecraft/asobiba-tweaks
         run: gradle build --stacktrace
+      - name: Smoke-start dedicated server
+        working-directory: minecraft/asobiba-tweaks
+        shell: bash
+        run: |
+          mkdir -p run
+          printf 'eula=true\n' > run/eula.txt
+          printf 'stop\n' | gradle runServer --stacktrace
 
   minecraft-data-logger:
     runs-on: ubuntu-latest
