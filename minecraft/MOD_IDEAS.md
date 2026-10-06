@@ -1240,6 +1240,25 @@ Accepted direction:
 - bow/crossbow enchantments and arrow enchantments may coexist; stacking rules are decided per effect where necessary
 
 
+#### Launcher + Arrow Enchantment Stacking
+
+Accepted direction:
+- launcher enchantments and arrow enchantments are evaluated as separate sources
+- if two sources produce the **same mechanical effect**, do not add their levels together; use the stronger effective level/effect unless a specific rule below says otherwise
+- if two same-named enchantments have intentionally different launcher-side and arrow-side meanings, both effects may apply
+- launcher Power and arrow Power may coexist because launcher Power modifies shot damage while arrow Power preserves projectile speed over distance
+- launcher Punch and arrow Punch do not stack levels; use the stronger effective Punch
+- launcher Flame and arrow Flame do not duplicate ignition; use the stronger/longer effective Flame result
+- launcher Piercing and arrow Piercing do not add levels; use the stronger effective Piercing count
+- launcher Multishot applies the selected arrow's projectile-side enchantment behavior to every spawned projectile instance, subject to the separate rule that only the primary/original Multishot projectile is recoverable
+- launcher Infinity does not make enchanted arrows, spectral arrows, tipped arrows, fireworks or other special ammunition free; ordinary arrows remain the Infinity baseline
+- Quick Charge is launcher-side only
+- arrow-side Sharpness, Smite, Bane of Arthropods, Impaling, Looting, Breach, Wind Burst, Channeling and Loyalty continue to function when fired from either Bow or Crossbow
+- same-item incompatibility rules remain in force on the launcher itself, but launcher + ammunition composition may create combinations that would be impossible on one item alone
+- example: a Multishot launcher may fire a Piercing enchanted arrow, producing multiple piercing projectile instances; this is allowed because the ammunition is a separate resource and is consumed/recovered under the arrow rules
+
+Design constraint: avoid double-dipping identical mechanics while preserving useful launcher/ammunition combinations.
+
 #### Arrow Effect Decisions
 
 Accepted:
