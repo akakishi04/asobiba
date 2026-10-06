@@ -769,7 +769,10 @@ Accepted:
 - Fortune may increase the resulting output quantity for any normally smeltable recipe; balancing should come from the Fortune scaling itself rather than excluding food, metals, stone, etc.
 - **Fortune on an Enchanting Table** increases how many enchantments a single enchanting operation may apply
 - Enchanting Table Efficiency and Fortune have separate roles: Efficiency raises enchanting power/level ceiling, while Fortune raises the possible enchantment count
-- exact Fortune scaling for extra furnace output and extra enchanting-table enchantment count remains to be chosen
+- Enchanting Table Fortune raises the maximum number of enchantments that may be applied by **+1 per Fortune level**
+- normal enchantment compatibility/conflict rules still apply; Fortune does not force mutually exclusive enchantments together
+- the table does not fabricate extra enchantments merely to hit the cap when too few valid candidates exist
+- exact Fortune scaling for extra furnace output remains to be chosen
 
 ## Accepted transport / alchemy / explosives tweaks
 
