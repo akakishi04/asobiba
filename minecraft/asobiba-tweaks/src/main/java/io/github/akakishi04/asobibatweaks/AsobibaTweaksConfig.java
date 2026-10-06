@@ -67,6 +67,12 @@ public final class AsobibaTweaksConfig {
     public static final ModConfigSpec.BooleanValue ENCHANTMENT_SWITCHING_ENABLED = bool("enchantments.exclusiveSwitching", true, "Allow selected exclusive enchantments to coexist with one active mode.");
     public static final ModConfigSpec.BooleanValue ENCHANTMENT_INHERITANCE_ENABLED = bool("enchantments.masteryInheritance", true, "Allow partial enchantment mastery inheritance.");
     public static final ModConfigSpec.BooleanValue UNCAPPED_ANVIL_ENABLED = bool("enchantments.uncappedAnvil", true, "Remove the survival Too Expensive rejection while preserving cost.");
+    public static final ModConfigSpec.BooleanValue RAISED_ENCHANTMENT_CAPS_ENABLED = bool("enchantments.raisedLevelCaps", true, "Allow enchantments above their vanilla maximum level.");
+    public static final ModConfigSpec.IntValue ENCHANTMENT_LEVEL_CAP = BUILDER.defineInRange("enchantments.levelCap", 10, 1, 255);
+    public static final ModConfigSpec.BooleanValue EXTENDED_ENCHANTING_TARGETS_ENABLED = bool("enchantments.extendedTargets", true, "Allow selected work blocks and arrows to receive normal enchantments.");
+    public static final ModConfigSpec.BooleanValue ENCHANTMENT_POOL_BOOKSHELF_ENABLED = bool("enchantments.arcaneBookshelfPool", true, "Allow Arcane Bookshelves to expand enchanting-table candidate pools.");
+    public static final ModConfigSpec.BooleanValue ENCHANTMENT_REROLL_ENABLED = bool("enchantments.directReroll", true, "Enable direct enchanting-table offer rerolls.");
+    public static final ModConfigSpec.IntValue ENCHANTMENT_REROLL_LEVEL_COST = BUILDER.defineInRange("enchantments.rerollLevelCost", 1, 0, 30);
 
     public static final ModConfigSpec.BooleanValue POTION_MIXING_ENABLED = bool("alchemy.potionMixing", true, "Allow weaker multi-effect potion mixtures.");
     public static final ModConfigSpec.BooleanValue TNT_DESIGN_ENABLED = bool("explosives.tntDesign", true, "Enable configurable TNT behavior.");
