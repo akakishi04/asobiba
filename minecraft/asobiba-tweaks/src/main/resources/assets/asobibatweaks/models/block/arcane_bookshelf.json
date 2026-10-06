@@ -1,0 +1,12 @@
+{
+  "parent": "minecraft:block/cube",
+  "textures": {
+    "down": "minecraft:block/obsidian",
+    "up": "minecraft:block/obsidian",
+    "north": "minecraft:block/bookshelf",
+    "south": "minecraft:block/bookshelf",
+    "west": "minecraft:block/crying_obsidian",
+    "east": "minecraft:block/crying_obsidian",
+    "particle": "minecraft:block/bookshelf"
+  }
+}
