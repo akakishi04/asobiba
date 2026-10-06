@@ -13,7 +13,8 @@
     "GiantCreeperMixin",
     "ExtendedEnchantableItemMixin",
     "EnchantmentExtensionMixin",
-    "EnchantmentMenuExtensionsMixin"
+    "EnchantmentMenuExtensionsMixin",
+    "EnchantedWorkBlockPlacementMixin"
   ],
   "injectors": {
     "defaultRequire": 1
