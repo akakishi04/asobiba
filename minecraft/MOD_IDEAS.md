@@ -1357,6 +1357,19 @@ Accepted direction:
 - bow/crossbow enchantments and arrow enchantments may coexist; stacking rules are decided per effect where necessary
 
 
+#### Arrow Enchantment Compatibility
+
+Accepted direction:
+- all currently supported arrow enchantments may **coexist on the same arrow ItemStack**
+- there are no arrow-side mutual-exclusion pairs among the accepted initial arrow-enchantment set
+- this includes allowing **Sharpness + Smite + Bane of Arthropods + Impaling** on the same arrow
+- target-specific enchantments only contribute when their own normal target condition is satisfied; coexistence does not make every conditional effect apply to every target
+- Power, Punch, Flame, Piercing, Sharpness, Smite, Bane of Arthropods, Impaling, Looting, Breach, Wind Burst, Channeling and Loyalty may therefore all be present together on one arrow
+- compatibility restrictions on the launcher item remain separate and are not changed by this rule
+- launcher + ammunition composition continues to follow the separate stacking rules below
+
+Design constraint: arrow enchantment depth should come from combining effects and ammunition cost rather than from an artificial one-enchantment-per-role restriction.
+
 #### Launcher + Arrow Enchantment Stacking
 
 Accepted direction:
