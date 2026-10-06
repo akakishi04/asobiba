@@ -665,7 +665,8 @@ Accepted direction:
 - Crafting Tables are explicitly excluded from extended enchanting
 - Efficiency on Furnace / Blast Furnace / Smoker increases processing speed
 - Efficiency on an Enchanting Table does **not** directly add levels to the resulting enchantments; instead it raises the enchanting table's normal level/power ceiling beyond vanilla level 30
-- the exact amount by which each Efficiency level raises the table ceiling is a separate tuning decision
+- Enchanting Table Efficiency raises the table ceiling by 10 levels per Efficiency level, capped at enchanting level 100
+- progression is: none=30, Efficiency I=40, II=50, III=60, IV=70, V=80, VI=90, VII-X=100
 - exact gameplay meaning of individual enchantment / target combinations can be defined later
 - enchanted work blocks must retain their full ItemStack enchantment/mastery data while placed and restore it when broken
 - arrows retain enchantments on their ItemStack; projectile-specific interpretation can be added later
