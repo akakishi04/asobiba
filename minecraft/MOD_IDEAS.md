@@ -1241,6 +1241,11 @@ Accepted direction:
 - when all eligible Quiver ammunition for the selected type is exhausted, the launcher may fall back to ordinary inventory ammunition according to the normal ammo-priority rules
 - Quiver contents and selected-ammo state persist through save/reload
 
+Crafting:
+- basic Quiver recipe: **6 Leather + 2 String**, with the center crafting-grid slot empty
+- the initial design uses one Quiver tier only; no capacity-upgrade tree is required until playtesting shows a real need
+- the Quiver should remain accessible in early survival and should not require a new progression-only material
+
 Initial capacity / UX target:
 - one equipped Quiver exposes **9 internal ammo slots** as the initial default
 - the Quiver overlay shows all 9 internal ammo slots directly while the overlay is open
