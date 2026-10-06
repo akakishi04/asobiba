@@ -1,7 +1,7 @@
 package io.github.akakishi04.asobibatweaks.client;
 
 import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
-import io.github.akakishi04.asobibatweaks.mixin.EnchantmentMenuExtensionsMixin;
+import io.github.akakishi04.asobibatweaks.feature.EnchantmentRerollProtocol;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.inventory.EnchantmentScreen;
@@ -29,7 +29,7 @@ public final class EnchantingScreenEvents {
                             && mc.player.containerMenu == screen.getMenu()) {
                         mc.gameMode.handleInventoryButtonClick(
                                 screen.getMenu().containerId,
-                                EnchantmentMenuExtensionsMixin.ASOBIBA_REROLL_BUTTON
+                                EnchantmentRerollProtocol.BUTTON_ID
                         );
                     }
                 })
