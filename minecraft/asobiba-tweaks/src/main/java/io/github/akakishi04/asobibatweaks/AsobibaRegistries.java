@@ -2,6 +2,7 @@ package io.github.akakishi04.asobibatweaks;
 
 import com.google.common.collect.ImmutableSet;
 import io.github.akakishi04.asobibatweaks.entity.NetherFishEntity;
+import io.github.akakishi04.asobibatweaks.item.AtlasItem;
 import java.util.Collection;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -83,6 +84,11 @@ public final class AsobibaRegistries {
                     .sized(0.95F, 0.34F)
                     .clientTrackingRange(8)
                     .build("asobibatweaks:basalt_eel"));
+
+    public static final DeferredItem<AtlasItem> ATLAS = ITEMS.register(
+            "atlas",
+            () -> new AtlasItem(new Item.Properties().stacksTo(1))
+    );
 
     public static final DeferredItem<Item> LAVA_MINNOW_ITEM = ITEMS.register(
             "lava_minnow",
