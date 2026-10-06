@@ -42,6 +42,11 @@ This file maps the accepted implementation backlog in `../MOD_IDEAS.md` to its c
 | Fortune / Silk Touch Switching | `EnchantmentTweaksEvents` | Implemented |
 | Mastery Inheritance | `EnchantmentTweaksEvents` | Implemented |
 | Uncapped Anvil XP Cost | `AnvilMenuMixin` | Implemented |
+| Direct Enchanting-Table Reroll | `EnchantmentMenuExtensionsMixin`, `EnchantingScreenEvents` | Implemented; XP cost |
+| Enchantment-Pool Bookshelves | Arcane Bookshelf + `EnchantmentMenuExtensionsMixin` | Implemented |
+| Extended Enchanting Targets | `ExtendedEnchantableItemMixin`, `EnchantmentExtensionMixin`, `EnchantedWorkBlockSavedData` | Implemented; effects intentionally deferred |
+| Raised Enchantment Level Caps | `EnchantmentExtensionMixin` | Implemented; configurable cap |
+| Atlas / Map Binder | `AtlasItem`, `AtlasItemInHandRendererMixin` | Implemented |
 | Potion Mixing | `AlchemyExplosivesCraftingEvents` | Implemented |
 | TNT Design | `AlchemyExplosivesCraftingEvents`, `TntDesignSavedData`, `PrimedTntMixin` | Implemented |
 | Fletching Table Expansion | `AlchemyExplosivesCraftingEvents` | Implemented |
