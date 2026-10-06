@@ -89,6 +89,7 @@ public final class AsobibaTweaksConfig {
     public static final ModConfigSpec.BooleanValue VILLAGE_LOGISTICS_ENABLED = bool("village.logistics", true, "Enable quartermaster, porter, forester, quarry and food logistics behaviors.");
     public static final ModConfigSpec.BooleanValue VILLAGE_FIRE_EMERGENCY_ENABLED = bool("village.fireEmergency", true, "Enable village fire alarms, evacuation and simple firefighting.");
     public static final ModConfigSpec.BooleanValue VILLAGE_OUTPOSTS_ENABLED = bool("village.outposts", true, "Allow mature villages to build occasional satellite outposts.");
+    public static final ModConfigSpec.BooleanValue VILLAGE_FISSION_ENABLED = bool("village.fission", true, "Allow mature villages to found rare small daughter settlements.");
     public static final ModConfigSpec.BooleanValue VILLAGE_ROADS_ENABLED = bool("village.roadsAndBridges", true, "Allow village construction to add paths and small bridges.");
     public static final ModConfigSpec.BooleanValue VILLAGE_REFUGEES_ENABLED = bool("village.refugeesAndMigration", true, "Allow distressed villagers to migrate and new outposts to receive settlers.");
     public static final ModConfigSpec.BooleanValue VILLAGE_BREEDING_ENABLED = bool("village.breedingOverhaul", true, "Use settlement food, beds and population pressure for villager reproduction.");
