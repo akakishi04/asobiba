@@ -10,7 +10,9 @@
     "PrimedTntMixin",
     "BoatMixin",
     "ArmorStandElytraMixin",
-    "GiantCreeperMixin"
+    "GiantCreeperMixin",
+    "ExtendedEnchantableItemMixin",
+    "EnchantmentExtensionMixin"
   ],
   "injectors": {
     "defaultRequire": 1
