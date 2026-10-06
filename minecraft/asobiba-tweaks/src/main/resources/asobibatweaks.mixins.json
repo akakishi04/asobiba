@@ -12,7 +12,8 @@
     "ArmorStandElytraMixin",
     "GiantCreeperMixin",
     "ExtendedEnchantableItemMixin",
-    "EnchantmentExtensionMixin"
+    "EnchantmentExtensionMixin",
+    "EnchantmentMenuExtensionsMixin"
   ],
   "injectors": {
     "defaultRequire": 1
