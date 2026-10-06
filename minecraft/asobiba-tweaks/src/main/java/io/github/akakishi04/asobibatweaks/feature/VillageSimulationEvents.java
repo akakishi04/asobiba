@@ -58,7 +58,8 @@ public final class VillageSimulationEvents {
 
     @SubscribeEvent
     public void onTrades(VillagerTradesEvent event) {
-        if (event.getType() != AsobibaRegistries.CARPENTER.value()) return;
+        if (!AsobibaTweaksConfig.VILLAGE_CARPENTER_ENABLED.getAsBoolean()
+                || event.getType() != AsobibaRegistries.CARPENTER.value()) return;
 
         event.getTrades().get(1).add(new BasicItemListing(
                 new ItemStack(Items.OAK_LOG, 16), new ItemStack(Items.EMERALD), 16, 2, 0.05F));
@@ -87,30 +88,43 @@ public final class VillageSimulationEvents {
         }
 
         ServerLevel level = (ServerLevel)villager.level();
-        respondToFire(villager, level);
-        tickSettlementTravel(villager, level);
-        tickRefugeeMigration(villager, level);
+        if (AsobibaTweaksConfig.VILLAGE_FIRE_EMERGENCY_ENABLED.getAsBoolean()) {
+            respondToFire(villager, level);
+        }
+        if (AsobibaTweaksConfig.VILLAGE_REFUGEES_ENABLED.getAsBoolean()) {
+            tickSettlementTravel(villager, level);
+            tickRefugeeMigration(villager, level);
+        }
 
         VillagerProfession profession = villager.getVillagerData().getProfession();
-        if (profession == AsobibaRegistries.CARPENTER.value()) {
+        if (profession == AsobibaRegistries.CARPENTER.value()
+                && AsobibaTweaksConfig.VILLAGE_CARPENTER_ENABLED.getAsBoolean()
+                && AsobibaTweaksConfig.VILLAGE_AUTONOMOUS_GROWTH_ENABLED.getAsBoolean()) {
             tickCarpenter(villager, level);
-        } else if (profession == VillagerProfession.MASON) {
+        } else if (AsobibaTweaksConfig.VILLAGE_LOGISTICS_ENABLED.getAsBoolean()
+                && profession == VillagerProfession.MASON) {
             tickQuarryWorker(villager, level);
-        } else if (profession == VillagerProfession.FLETCHER) {
+        } else if (AsobibaTweaksConfig.VILLAGE_LOGISTICS_ENABLED.getAsBoolean()
+                && profession == VillagerProfession.FLETCHER) {
             tickForester(villager, level);
-        } else if (profession == VillagerProfession.NONE || profession == VillagerProfession.NITWIT) {
+        } else if (AsobibaTweaksConfig.VILLAGE_LOGISTICS_ENABLED.getAsBoolean()
+                && (profession == VillagerProfession.NONE || profession == VillagerProfession.NITWIT)) {
             if ((villager.getUUID().hashCode() & 3) == 0) tickQuartermaster(villager, level);
             else tickPorter(villager, level);
-        } else if (profession == VillagerProfession.FARMER) {
+        } else if (AsobibaTweaksConfig.VILLAGE_LOGISTICS_ENABLED.getAsBoolean()
+                && profession == VillagerProfession.FARMER) {
             exportVillagerFood(villager, level);
         }
 
-        useBuildingsInRain(villager, level);
+        if (AsobibaTweaksConfig.MOB_USED_BUILDINGS_ENABLED.getAsBoolean()) {
+            useBuildingsInRain(villager, level);
+        }
     }
 
     @SubscribeEvent
     public void onBaby(BabyEntitySpawnEvent event) {
         if (!AsobibaTweaksConfig.VILLAGE_SIMULATION_ENABLED.getAsBoolean()
+                || !AsobibaTweaksConfig.VILLAGE_BREEDING_ENABLED.getAsBoolean()
                 || !(event.getParentA() instanceof Villager parent)
                 || !(event.getParentB() instanceof Villager)) {
             return;
@@ -170,7 +184,8 @@ public final class VillageSimulationEvents {
         int builderXp = villager.getPersistentData().getInt(BUILDER_XP);
         boolean housingNeed = beds <= population + 1;
         boolean storageNeed = stores < Math.max(2, (population + 3) / 4);
-        boolean outpost = !housingNeed && !storageNeed && population >= 6
+        boolean outpost = AsobibaTweaksConfig.VILLAGE_OUTPOSTS_ENABLED.getAsBoolean()
+                && !housingNeed && !storageNeed && population >= 6
                 && builderXp > 0 && builderXp % 4 == 3;
 
         if (!housingNeed && !storageNeed && !outpost) {
@@ -220,8 +235,11 @@ public final class VillageSimulationEvents {
             data.putLong(NEXT_BUILD, level.getGameTime() + 5L * 24000L);
             data.putInt(BUILDER_XP, data.getInt(BUILDER_XP) + 1);
             BlockPos anchor = new BlockPos(data.getInt(BUILD_ANCHOR_X), base.getY(), data.getInt(BUILD_ANCHOR_Z));
-            buildRoadAndBridge(level, villager, base.offset(2, 0, -1), anchor);
-            if (data.getBoolean(BUILD_OUTPOST)) {
+            if (AsobibaTweaksConfig.VILLAGE_ROADS_ENABLED.getAsBoolean()) {
+                buildRoadAndBridge(level, villager, base.offset(2, 0, -1), anchor);
+            }
+            if (data.getBoolean(BUILD_OUTPOST)
+                    && AsobibaTweaksConfig.VILLAGE_REFUGEES_ENABLED.getAsBoolean()) {
                 sendSettlers(level, villager, base.offset(2, 1, 2));
             }
             data.remove(BUILD_OUTPOST);
@@ -281,7 +299,7 @@ public final class VillageSimulationEvents {
 
     private static List<BuildStep> hutPlan(ServerLevel level, BlockPos base, Villager villager) {
         List<BuildStep> steps = new ArrayList<>();
-        Block plankBlock = choosePlanks(level, base);
+        Block plankBlock = chooseBuildingPlanks(level, base, villager.blockPosition());
         Item plankItem = plankBlock.asItem();
         BlockState plank = plankBlock.defaultBlockState();
         BlockState cobble = Blocks.COBBLESTONE.defaultBlockState();
@@ -297,7 +315,8 @@ public final class VillageSimulationEvents {
                 boolean window = y == 2 && ((x == 0 || x == 4) && z == 2);
                 if (edge && !doorway && !window) {
                     BlockState state = plank;
-                    if (villager.getPersistentData().getInt(BUILDER_XP) < 2
+                    if (AsobibaTweaksConfig.VILLAGE_IMPERFECT_CONSTRUCTION_ENABLED.getAsBoolean()
+                            && villager.getPersistentData().getInt(BUILDER_XP) < 2
                             && Math.floorMod((x * 31 + y * 17 + z * 13 + base.hashCode()), 37) == 0) {
                         state = cobble;
                     }
@@ -326,6 +345,9 @@ public final class VillageSimulationEvents {
     }
 
     private static Block chooseBuildingPlanks(ServerLevel level, BlockPos site, BlockPos villageCenter) {
+        if (!AsobibaTweaksConfig.VILLAGE_BUILDING_CULTURE_ENABLED.getAsBoolean()) {
+            return choosePlanks(level, site);
+        }
         Item[] items = {
                 Items.OAK_PLANKS, Items.SPRUCE_PLANKS, Items.BIRCH_PLANKS,
                 Items.JUNGLE_PLANKS, Items.ACACIA_PLANKS, Items.DARK_OAK_PLANKS,
@@ -780,6 +802,7 @@ public final class VillageSimulationEvents {
     }
 
     private static void requestMaterials(Villager villager, String what) {
+        if (!AsobibaTweaksConfig.VILLAGE_PUBLIC_WORKS_ENABLED.getAsBoolean()) return;
         long now = villager.level().getGameTime();
         long last = villager.getPersistentData().getLong("asobibatweaks_last_request");
         if (now - last < 1200L) return;
