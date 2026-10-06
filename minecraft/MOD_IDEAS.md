@@ -627,9 +627,9 @@ Accepted direction:
 - once an Arcane Bookshelf is available, its special pool can cover otherwise table-excluded enchantments broadly; individual exceptions can still be made for technical/gameplay reasons
 - an Arcane Bookshelf also contributes normal bookshelf-equivalent enchanting power; it is not a pool-only utility block
 - Arcane Bookshelf count has staged effects rather than being only a binary unlock:
-  - 1 Arcane Bookshelf: unlock the special enchantment pool
+  - 1 Arcane Bookshelf: unlock the base Arcane pool containing Mending and Frost Walker
   - 3 Arcane Bookshelves: increase special-enchantment appearance rate
-  - 5 Arcane Bookshelves: unlock rarer special-pool enchantments
+  - 5 Arcane Bookshelves: unlock the rarer Arcane pool containing Soul Speed, Swift Sneak and Wind Burst
   - 10 Arcane Bookshelves: allow high-level special enchantments to begin appearing
   - 15 Arcane Bookshelves: maximize the Arcane special-pool behavior
 - normal bookshelves remain valid enchanting-power providers; Arcane Bookshelves can replace them physically but are much more expensive
