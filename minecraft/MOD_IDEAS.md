@@ -1219,6 +1219,14 @@ Accepted direction:
 
 Design constraint: Bow and Crossbow should differ by their weapon mechanics, not by an arbitrary wall between their enchantment pools.
 
+Launcher compatibility decisions:
+- **Infinity and Mending are compatible** on both Bows and Crossbows; the vanilla mutual exclusion between them is removed for these launchers
+- Infinity + Mending does not change Infinity's ammunition rules: ordinary arrows are the Infinity baseline, while enchanted/spectral/tipped arrows and other special ammunition are still consumed unless another explicit rule says otherwise
+- Mending continues to use the normal/higher-level Mending repair rules on the launcher
+- **Multishot and Piercing remain mutually exclusive on the same launcher item**
+- ammunition-side Piercing may still be used with a Multishot launcher because launcher and ammunition are separate enchantment sources
+
+
 #### Accepted Arrow-Enchantment Candidate Set
 
 The initial set of existing enchantments to support with arrow-specific behavior is:
