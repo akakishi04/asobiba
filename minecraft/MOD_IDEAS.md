@@ -695,7 +695,9 @@ Accepted direction:
 - XP is the primary duplication cost
 - copy cost is determined by the source arrow's enchantment contents, not by the number of arrows being copied
 - copying one arrow or many arrows uses the same per-copy cost formula; there is no quantity multiplier or bulk surcharge
-- the exact enchantment-content cost formula remains a tuning decision
+- XP copy cost is calculated as the sum of **enchantment level × that enchantment's anvil_cost** across all enchantments on the source arrow
+- multiple enchantments add together naturally; higher-level and higher-anvil-cost enchantments therefore cost more to duplicate
+- do not maintain a separate hand-authored copy-price table unless a specific enchantment later proves to need an exception
 - this copying route is intended to make recovered rare enchanted arrows valuable templates without making large stacks free
 
 ## Accepted transport / alchemy / explosives tweaks
