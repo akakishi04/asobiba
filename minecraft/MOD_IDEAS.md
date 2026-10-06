@@ -619,8 +619,10 @@ Accepted direction:
 - Mending II restores 3 durability per XP
 - Mending III restores 4 durability per XP
 - direct single-item repair conversion stops increasing after Mending III; levels IV-X gain multi-item routing behavior instead of continuing raw repair inflation
-- Mending IV and above can distribute repair XP across multiple damaged equipped/held items that also have Mending
+- Mending IV-IX can distribute repair XP across multiple damaged equipped/held items that also have Mending
+- Mending X additionally expands linked-repair targeting to the player's full inventory, allowing damaged inventory items with Mending to participate in XP distribution
 - only items that actually have Mending are eligible recipients; high-level Mending does not repair arbitrary non-Mending equipment
+- inventory-wide repair is exclusive to Mending X; lower linked-repair levels remain limited to equipped armor, main hand and off hand
 - redistributed XP is less efficient at lower Mending levels and becomes progressively more efficient toward Mending X
 - a low-level Mending recipient remains less efficient to repair than a high-level Mending recipient, so upgrading Mending across the whole equipment set has value
 - distribution should prioritize damaged eligible items rather than wasting repair on full-durability pieces
