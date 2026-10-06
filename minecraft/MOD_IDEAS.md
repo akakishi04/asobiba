@@ -673,6 +673,29 @@ Accepted direction:
 - compatible with raised enchantment level caps and Growing Enchantments
 
 
+
+#### Recoverable Embedded Arrows
+
+Accepted direction:
+- arrows that successfully embed in a living target can be recovered instead of being permanently lost
+- recovery preserves the exact arrow ItemStack, including enchantments and other components
+- recovery occurs when the target dies; the embedded arrow is dropped with the victim's drops
+- only arrows that were normally recoverable are stored for later recovery
+- arrows fired in a non-recoverable state, such as Infinity/creative-only pickup cases, must not become duplication sources
+- the system applies to normal, spectral and tipped arrows where technically valid
+
+#### Enchanted Arrow Copying at the Fletching Table
+
+Accepted direction:
+- enchanted arrows are copied one arrow at a time rather than enchanting/copying an entire stack
+- the Fletching Table is the copying station
+- copying requires one enchanted source arrow, one compatible ordinary arrow, and player experience
+- a successful copy creates exactly one new arrow carrying the source arrow's enchantments/components relevant to the enchanted-arrow system
+- the source arrow is retained; the ordinary arrow is consumed
+- XP is the primary duplication cost
+- the exact XP cost remains a tuning decision
+- this copying route is intended to make recovered rare enchanted arrows valuable templates without making large stacks free
+
 ## Accepted transport / alchemy / explosives tweaks
 
 ### Potion Mixing
