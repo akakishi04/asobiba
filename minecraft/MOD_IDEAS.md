@@ -270,6 +270,17 @@ Design constraint: discourage permanent immobilized trading halls without punish
 ### Fire as a Village Emergency
 Large fires in or near settlements become an event. Villagers, golems and bonded helpers can flee, alert others, move valuables and attempt simple firefighting with nearby water or available containers. Fire should become a local incident rather than passive background destruction.
 
+Accepted initial behavior:
+- a single isolated fire block does not trigger a village-wide emergency
+- the initial event threshold is roughly **3-4 active fire blocks** within the village or near its boundary that persist for a short continuous window rather than disappearing immediately
+- once the threshold is met, nearby villagers temporarily suspend ordinary routines and enter fire-emergency behavior
+- children, unemployed/non-combat villagers and other vulnerable villagers prioritize evacuation toward recognized safe village space
+- Iron Golems and suitable bonded helpers may assist with evacuation / path clearing rather than treating fire itself as an enemy
+- Carpenter villagers may participate in containment, simple firefighting and later structural repair
+- firefighting should consume available village resources where appropriate, such as nearby water access or stored filled containers, rather than spawning free resources
+- after the fire ends, damaged recognized village structures may generate repair work that consumes stored construction materials
+- the exact persistence window and 3-vs-4 fire threshold are initial tuning values; the event should ignore trivial sparks while reacting quickly to a genuine spreading fire
+
 ### Autonomous Village Growth
 Villages can slowly expand using resources they actually possess or gather.
 
