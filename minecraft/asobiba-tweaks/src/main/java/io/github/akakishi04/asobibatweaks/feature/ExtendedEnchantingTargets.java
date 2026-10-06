@@ -11,8 +11,7 @@ public final class ExtendedEnchantingTargets {
     }
 
     public static boolean isExtendedBlockTarget(ItemStack stack) {
-        return stack.is(Items.CRAFTING_TABLE)
-                || stack.is(Items.FURNACE)
+        return stack.is(Items.FURNACE)
                 || stack.is(Items.BLAST_FURNACE)
                 || stack.is(Items.SMOKER)
                 || stack.is(Items.ENCHANTING_TABLE);
