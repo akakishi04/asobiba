@@ -396,6 +396,47 @@ Village architecture can drift over time based on:
 
 A plains village repeatedly supplied with spruce and stone brick may gradually develop a visibly different architectural identity.
 
+### Housing demand and new-house decisions
+
+Accepted direction:
+- village housing construction is driven by a **housing-pressure score** rather than by raw bed count alone
+- the planner reevaluates housing demand periodically, not every tick; an initial cadence of roughly **once per Minecraft day** is sufficient
+- housing pressure considers:
+  - current population versus recognized usable sleeping capacity
+  - number of genuinely free beds / usable home spaces
+  - recent and expected population growth
+  - villagers repeatedly failing to secure normal sleeping/home access
+  - welfare pressure caused specifically by overcrowding or inadequate housing
+  - homes lost or made unusable by fire, raids or other damage
+- a village should normally maintain a small reserve rather than waiting for every bed to be occupied
+- initial target reserve is approximately **15-25% spare usable housing capacity**, with a practical minimum of about **2 spare villager spaces** for established villages
+- housing construction becomes a normal candidate when usable housing capacity falls below roughly **110% of current population**
+- it becomes high priority when capacity is at or below current population, or when multiple villagers repeatedly fail to sleep because no valid home space is available
+- one transient bad night, temporary bed obstruction or visiting/moving villager does not immediately create a construction job
+- new construction requires sufficient stored food stability and required building materials; the planner does not create blocks or ignore a food crisis merely to satisfy the housing target
+- after completing a normal house, the village waits at least about **2-3 Minecraft days** before starting another discretionary housing expansion unless there is an acute housing loss/emergency
+- emergency replacement after fire/destruction may bypass the ordinary housing-growth cooldown
+- before creating an entirely new detached building, the planner may choose among:
+  1. repair/reoccupy an existing recognized but damaged/unused home
+  2. expand a suitable existing structure
+  3. add an upper floor where the template/building supports it
+  4. construct a new detached house
+- repair/reuse is preferred when it is materially cheaper and still produces valid housing
+- vertical expansion becomes more attractive when suitable road-adjacent land is scarce or the village's established architecture favors multi-story construction
+- detached new construction is preferred when land is available and vertical expansion would make navigation or architecture awkward
+- a new house is not considered complete housing capacity until its access, interior navigation, required beds and basic safety checks pass
+- unfinished construction does not count toward population capacity
+- the planner should avoid speculative overbuilding: housing projects are tied to real current/near-term demand rather than endlessly increasing spare capacity
+- abandoned or chronically unused houses may remain part of the architectural village but do not count as fully usable housing unless pathing and occupancy checks still pass
+
+Initial priority model:
+- **Acute shortage:** no spare usable capacity / villagers cannot sleep -> housing priority very high
+- **Growing pressure:** reserve below target and population/resources are stable -> normal housing project candidate
+- **Healthy reserve:** reserve at or above target -> no new housing project
+- **Oversupply:** substantially more housing than expected demand -> suppress housing expansion and prefer other public works
+
+Design constraint: villages should build homes because people actually need them, while keeping a small believable reserve and avoiding bed-count-driven construction spam.
+
 ### Multi-story village buildings
 
 Accepted direction:
