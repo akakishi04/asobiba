@@ -750,6 +750,17 @@ Accepted:
 - **Loyalty**: after a valid entity hit or block impact, the arrow returns to its original shooter instead of waiting for manual recovery. Higher Loyalty levels reduce return delay and/or increase return speed.
 - Loyalty takes precedence over the embedded-arrow death-drop path: an arrow that begins returning is no longer stored as an embedded recoverable arrow on the target.
 
+
+#### Work-block enchantment rule
+
+Accepted direction:
+- extended work blocks may still receive ordinary enchantments even when a specific enchantment has no custom block effect
+- only enchantments with a natural, understandable interpretation gain work-block behavior
+- do not invent arbitrary effects merely so every vanilla enchantment does something on every supported block
+- enchantments without a defined work-block interpretation remain stored on the ItemStack but have no active block-side effect
+- Furnace / Blast Furnace / Smoker Efficiency scales processing speed up to 2.0x at Efficiency X
+- Enchanting Table Efficiency raises the table's enchanting level ceiling from vanilla 30 up to 100
+
 ## Accepted transport / alchemy / explosives tweaks
 
 ### Potion Mixing
