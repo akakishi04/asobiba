@@ -599,7 +599,7 @@ Current accepted branch candidates:
   - Herd Hunter: consecutive kills of the same mob type increase ordinary-drop yield until the streak expires
   - Stripping: emphasizes equipment / carried-item drop chance rather than generic quantity
   - Big-Game Hunter: sacrifices some ordinary-drop improvement to emphasize rare-drop rolls
-- **Mending** is intentionally left without an accepted mastery branch for now; its bespoke level-I-X repair and routing progression already provides a large independent growth axis, so a branch should not be forced unless a genuinely distinct play-style option is found.
+- **Mending** is an explicit exception to the branch system: it does not choose a mastery branch at 50. Instead, mastery itself unlocks and grows an over-repair durability buffer.
 
 ### Curse Growth
 Curses also accumulate mastery/history and may mutate through long-term use.
@@ -682,6 +682,16 @@ Accepted direction:
 - linked repair must preserve ordinary XP gain once all eligible Mending items are fully repaired
 
 Design constraint: higher-level Mending should improve XP use across a maintained equipment set, not become passive repair for every inventory item or create unlimited repair throughput.
+
+Mending mastery-specific effect:
+- Mending does not use the normal mastery-50 branch selection
+- at mastery 50, Mending unlocks **over-repair**: when the item's normal durability is already full, repair XP may begin filling a temporary additional-durability buffer instead of being wasted on that item
+- the additional-durability capacity grows with mastery from about +5% of base maximum durability at mastery 50 to **+20% at mastery 100**
+- the buffer is consumed before ordinary durability
+- over-repair does not permanently increase the item's true maximum durability; it is a temporary per-item reserve
+- the buffer persists with the ItemStack across ordinary inventory movement, equip/unequip and save/reload
+- once both normal durability and the allowed over-repair buffer are full, ordinary XP handling resumes normally
+- exact interpolation between mastery 50 and 100 is a tuning value; the accepted endpoints are +5% at mastery 50 and +20% at mastery 100
 
 ### Frost Walker Runtime Toggle
 
