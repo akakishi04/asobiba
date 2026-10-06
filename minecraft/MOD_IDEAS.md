@@ -210,6 +210,25 @@ Mobs should recognize and make lightweight use of player- or village-built space
 ### Regional Trade Value
 Some goods become more valuable when moved far from where they are common. Snow-region goods can fetch more in deserts, cactus/desert goods more in cold regions, etc. Keep the model simple and visible enough to reward actual transport without turning trade into an opaque economy simulator.
 
+
+### Villager Welfare and Confinement
+
+Villagers track a lightweight persistent welfare state derived from their actual living conditions over time.
+
+Accepted direction:
+- do not use a crude room-size or single-block "trading hall" detector
+- welfare degrades gradually when a villager is chronically unable to move, sleep, reach a workstation, access reasonable open space, or participate in normal village life
+- short-term confinement, transport, emergencies, work shifts and temporary pathfinding failures should not immediately penalize the player
+- good living conditions recover welfare gradually
+- poor welfare can apply visible weakness/exhaustion-like effects and increase that villager's trade prices
+- severe long-term neglect may raise prices sharply enough that maintaining healthy villagers is economically preferable to permanent one-block imprisonment
+- welfare penalties apply per villager and persist across reloads
+- the system should remain compatible with autonomous village housing, work, migration and emergency behavior
+- exact thresholds and price curves are tuning values, not separate design decisions
+- special trade-only progression materials such as the Arcane Bookshelf material participate in the same welfare-adjusted pricing
+
+Design constraint: discourage permanent immobilized trading halls without punishing normal houses, compact villages, temporary containment, transport or emergency shelter.
+
 ### Fire as a Village Emergency
 Large fires in or near settlements become an event. Villagers, golems and bonded helpers can flee, alert others, move valuables and attempt simple firefighting with nearby water or available containers. Fire should become a local incident rather than passive background destruction.
 
@@ -598,10 +617,13 @@ Add bookshelf variants / bookshelf enchantment behavior that can expand the near
 Accepted direction:
 - some enchantments that normally never appear from a vanilla Enchanting Table can become eligible when the correct bookshelf condition is present
 - this should extend the candidate pool rather than guarantee a specific enchantment
-- exact eligible enchantments, bookshelf requirements, weighting, and rarity are intentionally undecided
-- treasure-only / otherwise table-excluded enchantments can be handled selectively rather than automatically enabling everything
+- the Arcane Bookshelf requires a trade-only material rather than being craftable entirely from ordinary gathered resources
+- the trade-only material is supplied through villager trading, tying access to a functioning village economy
+- once an Arcane Bookshelf is available, its special pool can cover otherwise table-excluded enchantments broadly; individual exceptions can still be made for technical/gameplay reasons
 - compatible with raised enchantment level caps and Growing Enchantments
 - bookshelf state should be readable from the actual nearby enchanting setup rather than from a global unlock
+
+Design constraint: access to special enchanting should reward maintaining viable villagers instead of simply imprisoning one trader indefinitely.
 
 ### Direct Enchanting-Table Reroll
 
