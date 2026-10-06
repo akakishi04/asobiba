@@ -39,6 +39,16 @@ public final class AsobibaRegistries {
     public static final DeferredRegister<VillagerProfession> PROFESSIONS =
             DeferredRegister.create(BuiltInRegistries.VILLAGER_PROFESSION, AsobibaTweaks.MOD_ID);
 
+    public static final DeferredBlock<Block> ARCANE_BOOKSHELF =
+            BLOCKS.registerSimpleBlock("arcane_bookshelf",
+                    BlockBehaviour.Properties.of()
+                            .mapColor(MapColor.COLOR_PURPLE)
+                            .strength(1.5F)
+                            .sound(SoundType.WOOD));
+
+    public static final DeferredItem<?> ARCANE_BOOKSHELF_ITEM =
+            ITEMS.registerSimpleBlockItem(ARCANE_BOOKSHELF);
+
     public static final DeferredBlock<Block> CARPENTER_WORKBENCH =
             BLOCKS.registerSimpleBlock("carpenter_workbench",
                     BlockBehaviour.Properties.of()
