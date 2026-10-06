@@ -610,6 +610,25 @@ Accepted direction:
 
 Design constraint: default to vanilla formula continuation for existing multi-level enchantments; single-level enchantments stay single-level unless intentionally redesigned.
 
+### Higher-Level Mending
+
+Mending is an explicit exception to the normal single-level-enchantment rule and may extend above level I.
+
+Accepted direction:
+- Mending I keeps vanilla behavior at 2 durability restored per XP
+- Mending II restores 3 durability per XP
+- Mending III restores 4 durability per XP
+- direct single-item repair conversion stops increasing after Mending III; levels IV-X gain multi-item routing behavior instead of continuing raw repair inflation
+- Mending IV and above can distribute repair XP across multiple damaged equipped/held items that also have Mending
+- only items that actually have Mending are eligible recipients; high-level Mending does not repair arbitrary non-Mending equipment
+- redistributed XP is less efficient at lower Mending levels and becomes progressively more efficient toward Mending X
+- a low-level Mending recipient remains less efficient to repair than a high-level Mending recipient, so upgrading Mending across the whole equipment set has value
+- distribution should prioritize damaged eligible items rather than wasting repair on full-durability pieces
+- exact IV-X transfer-efficiency percentages are tuning values; the intended endpoint is substantial loss at the first linked-repair levels and near/full efficiency at Mending X
+- linked repair must preserve ordinary XP gain once all eligible Mending items are fully repaired
+
+Design constraint: higher-level Mending should improve XP use across a maintained equipment set, not become passive repair for every inventory item or create unlimited repair throughput.
+
 ### Frost Walker Runtime Toggle
 
 Accepted direction:
