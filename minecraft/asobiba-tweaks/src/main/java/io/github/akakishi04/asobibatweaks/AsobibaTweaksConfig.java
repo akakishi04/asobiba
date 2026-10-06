@@ -72,7 +72,7 @@ public final class AsobibaTweaksConfig {
     public static final ModConfigSpec.BooleanValue EXTENDED_ENCHANTING_TARGETS_ENABLED = bool("enchantments.extendedTargets", true, "Allow selected work blocks and arrows to receive normal enchantments.");
     public static final ModConfigSpec.BooleanValue ENCHANTMENT_POOL_BOOKSHELF_ENABLED = bool("enchantments.arcaneBookshelfPool", true, "Allow Arcane Bookshelves to expand enchanting-table candidate pools.");
     public static final ModConfigSpec.BooleanValue ENCHANTMENT_REROLL_ENABLED = bool("enchantments.directReroll", true, "Enable direct enchanting-table offer rerolls.");
-    public static final ModConfigSpec.IntValue ENCHANTMENT_REROLL_LEVEL_COST = BUILDER.defineInRange("enchantments.rerollLevelCost", 1, 0, 30);
+    public static final ModConfigSpec.IntValue ENCHANTMENT_REROLL_LEVEL_COST = BUILDER.defineInRange("enchantments.rerollLevelCost", 1, 1, 30);
 
     public static final ModConfigSpec.BooleanValue POTION_MIXING_ENABLED = bool("alchemy.potionMixing", true, "Allow weaker multi-effect potion mixtures.");
     public static final ModConfigSpec.BooleanValue TNT_DESIGN_ENABLED = bool("explosives.tntDesign", true, "Enable configurable TNT behavior.");
