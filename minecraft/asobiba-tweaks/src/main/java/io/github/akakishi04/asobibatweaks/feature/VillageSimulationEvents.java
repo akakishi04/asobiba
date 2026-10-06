@@ -68,7 +68,7 @@ public final class VillageSimulationEvents {
         if (AsobibaTweaksConfig.ENCHANTMENT_POOL_BOOKSHELF_ENABLED.getAsBoolean()
                 && event.getType() == VillagerProfession.LIBRARIAN) {
             event.getTrades().get(4).add(new BasicItemListing(
-                    12, new ItemStack(AsobibaRegistries.ARCANE_FOLIO.get()), 6, 15));
+                    24, new ItemStack(AsobibaRegistries.ARCANE_FOLIO.get()), 6, 15));
         }
 
         if (!AsobibaTweaksConfig.VILLAGE_CARPENTER_ENABLED.getAsBoolean()
