@@ -589,10 +589,6 @@ Current accepted branch candidates:
   - Pure Infinity: normal arrows no longer require even a single seed arrow in inventory
   - Rapid Infinity: sustained normal-arrow fire progressively reduces bow durability consumption
   - Precision Infinity: fully charged deliberate shots greatly reduce or avoid bow durability consumption
-- **Blast Protection**
-  - Blast Anchor: strongly reduces explosion / blast knockback
-  - Epicenter Resistance: gains extra damage mitigation when very close to the explosion center
-  - Chain-Blast Resistance: repeated explosions within a short window become progressively less damaging
 - **Thorns**
   - Retaliatory Spikes: specializes in direct reflected damage
   - Entangling Thorns: gives up some reflected damage for slowdown / knockback control
@@ -751,6 +747,226 @@ Current accepted branch candidates:
   - Fast Return: emphasizes return speed
   - Safe Return: emphasizes obstacle avoidance and loss prevention during return
   - Pursuing Return: improves the returning weapon's ability to catch up when the owner has moved far from the throw point
+
+### Initial mastery-branch tuning defaults
+
+These are the initial balance values for the accepted mastery branches. They are tuning defaults, not compatibility promises.
+
+Common scaling rules:
+- unless a branch explicitly says otherwise, the first number is the effect at mastery 50 and the second number is the completed effect at mastery 100
+- numeric values interpolate linearly from mastery 50 to 100
+- discrete counts / tiers unlock at sensible intermediate thresholds, normally around mastery 50 / 75 / 100
+- branch bonuses are applied after the base enchantment's ordinary level behavior unless a branch explicitly modifies that behavior
+- damage-reduction branches generally reduce damage remaining after ordinary armor/enchantment mitigation rather than multiplying the original incoming damage
+- identical armor branch effects do not add together across multiple pieces; for the same branch, use the strongest mastery value present
+- different branches on different armor pieces may coexist unless a specific implementation proves unsafe
+- no branch grants full damage immunity, infinite acceleration, progression-block bypass, or free duplication unless explicitly stated
+- Mending uses its separately defined over-repair mastery progression and has no normal branch tuning here
+
+#### Unbreaking
+- Rested Reserve: while the item is not used, build 1 -> 3 reserve charges; one charge negates one durability-loss event. Recharge interval falls from about 20s -> 10s per charge.
+- Continuous Operation: sustained use builds an additional 5% -> 15% durability-loss-negation chance, reaching full branch strength after roughly 10 consecutive qualifying uses; swapping away or leaving the item unused for about 3s resets the streak.
+- Protective Mode: activates below 15% -> 25% remaining durability. While active, further durability loss is reduced by about 30% -> 60%, but the item suffers a roughly 10% performance penalty so the mode is protective rather than optimal normal use.
+
+#### Infinity
+- Pure Infinity: binary branch; from mastery 50 onward, ordinary Infinity shots no longer require a seed arrow in inventory. No additional numerical scaling is required.
+- Rapid Infinity: after roughly 3 consecutive qualifying shots, bow durability-loss chance is reduced by 10% -> 35%; the streak resets after about 4s without firing.
+- Precision Infinity: a fully charged shot has a 15% -> 50% chance to avoid the bow's normal durability loss.
+
+#### Thorns
+- Retaliatory Spikes: reflected Thorns damage is increased by about 15% -> 40% without increasing the base incoming damage.
+- Entangling Thorns: reflected damage is reduced by about 30%, but a successful Thorns retaliation applies roughly 20% -> 40% movement slowdown for 1.0s -> 2.5s and slightly stronger defensive knockback.
+- Stored Retaliation: incoming qualifying hits store about 15% -> 35% of their post-mitigation damage as retaliation energy, capped at about 3 -> 8 damage; the next successful melee hit releases the stored amount and clears it.
+
+#### Looting
+- Herd Hunter: consecutive kills of the same entity type within 20s build ordinary-drop momentum, reaching roughly +15% -> +30% additional ordinary-drop yield potential at the streak cap; changing target type or letting the timer expire resets it.
+- Stripping: applicable equipment / carried-item drop chances are multiplied by about 1.25x -> 1.75x after vanilla Looting handling.
+- Big-Game Hunter: rare-drop chances gain roughly +10% -> +30% relative weighting, while the branch reduces Looting's ordinary/common-drop improvement by about 25%.
+
+#### Flame
+- Long Burn: Flame-applied burn duration is extended by about 25% -> 75%.
+- Stacked Ignition: hitting an already-burning target with another Flame projectile adds about 1.0s -> 2.5s of burn time, with a total extra-duration cap of about 3s -> 8s.
+- Third branch: intentionally open.
+
+#### Protection
+- General Defense: reduces otherwise-Protectable damage remaining after normal mitigation by an additional 3% -> 8%.
+- First-Hit Defense: after about 8s without taking damage, the next qualifying hit receives an additional 10% -> 25% remaining-damage reduction; taking the protected hit restarts the re-arm timer.
+- Crisis Defense: below 40% health, the branch ramps up as health falls, reaching about 5% -> 20% additional remaining-damage reduction near 10% health.
+
+#### Fire Protection
+- Rapid Extinguishing: remaining burn duration is reduced by an additional 20% -> 50%.
+- Heat Adaptation: after about 2s of continuous fire/lava exposure, additional remaining fire/lava damage reduction ramps toward 5% -> 15%, reaching full strength after roughly 6s and resetting after about 3s safe.
+- Lava Adaptation: reduces lava movement impairment by about 20% -> 60% while submerged; it does not grant lava immunity.
+
+#### Projectile Protection
+- Frontal Guard: projectiles arriving from roughly the forward 120-degree arc receive an additional 8% -> 20% remaining-damage reduction.
+- Sniper Resistance: starting around 16 blocks of projectile travel, extra mitigation ramps with distance up to about 10% -> 25% at 48+ blocks.
+- Barrage Resistance: repeated projectile hits within 3s add about 3% -> 7% extra remaining-damage reduction per prior hit, capped around 9% -> 21%; the stack resets after roughly 4s without another projectile hit.
+
+#### Blast Protection
+- Blast Anchor: explosion knockback remaining after normal Blast Protection is reduced by another 20% -> 55%.
+- Epicenter Resistance: explosions within roughly 3 blocks gain an additional 5% -> 20% remaining-damage reduction, fading to zero by about 6 blocks.
+- Chain-Blast Resistance: explosions received within 4s of another explosion gain roughly 5% -> 12% extra remaining-damage reduction per prior blast, capped around 15% -> 36% and resetting after about 5s without another blast.
+
+#### Feather Falling
+- Soft Landing: remaining fall damage after ordinary Feather Falling is reduced by an additional 10% -> 30%.
+- Impact Landing: for falls of roughly 5+ blocks, 10% -> 25% of the fall damage prevented by Feather Falling is converted into a local impact effect, capped around 6 damage with a radius of about 2 -> 4 blocks.
+- Aerial Recovery: horizontal air-control authority during falls is improved by about 10% -> 35%; this does not add flight or cancel vertical fall speed.
+
+#### Power
+- Sniping: starting around 16 blocks of arrow travel, Power damage gains a distance bonus ramping to about +5% -> +20% at 48+ blocks.
+- Heavy Draw: shots released at roughly 95%+ full draw gain about +5% -> +15% damage.
+- Quick Shot: reduces the damage penalty from partial draw by about 15% -> 45%, without making tap-fire equal to a full draw.
+
+#### Luck of the Sea
+- Treasure Hunter: treasure-category weighting is increased by about 10% -> 35% relative to its post-vanilla value, with other categories renormalized rather than duplicated.
+- Quality Selection: applicable equipment / enchanted-book catches gain about a 10% -> 30% chance for one quality-improvement reroll; no infinite reroll loop.
+- Rare Catch: dedicated rare-living / regional / Nether-fishing entries gain about +10% -> +40% relative weighting where such entries exist; ordinary tables without a rare category are unchanged.
+
+#### Lure
+- Fast Bite: additional wait time is reduced by about 10% -> 30%, subject to a minimum wait floor so bites never become effectively instant.
+- Secure Hook: the successful reaction window after a bite is extended by about 20% -> 60%.
+- Fishing Rhythm: each successful catch grants a temporary next-bite reduction; branch strength starts around 10% and can build to a capped 20% -> 45% reduction through repeated successful catches. Rhythm expires after roughly 12s without a successful catch.
+
+#### Curse of Binding
+- Bound Legacy: on death, a bound item has about a 25% -> 75% chance to remain associated with the wearer and reappear equipped after respawn rather than becoming an ordinary drop; the curse still prevents normal removal.
+- Familiar Bondage: after long continuous wear, durability-loss chance is reduced by about 5% -> 15%; full benefit requires roughly 20 -> 10 minutes of uninterrupted wear depending on mastery.
+- Forced Attachment: external forced-unequip attempts are resisted about 50% -> 100% of the time. This does not change the ordinary Binding rule that the item cannot simply be removed.
+
+#### Curse of Vanishing
+- Delayed Return: the item still disappears on death; it has about a 10% -> 30% chance to return after a delay that falls from roughly 20 -> 5 minutes as mastery rises.
+- Echo: a vanished item leaves a non-item trace / echo for roughly 60s -> 300s.
+- Legacy: when the item permanently vanishes, about 15% -> 40% of its mastery/history may be inherited by a later same-type replacement through the existing inheritance system.
+
+#### Silk Touch
+- Precision Harvest: use three safe allowlist tiers at approximately mastery 50 / 75 / 100. Each tier adds only explicitly reviewed non-progression-breaking blocks; spawners and similar progression-breaking blocks remain excluded.
+- Batch Harvest: connected identical suitable blocks can be harvested in batches of about 3 -> 8 blocks. Each harvested block pays normal durability/tool costs and the branch never becomes free vein mining.
+- State Preservation: use three reviewed state-preservation tiers at approximately mastery 50 / 75 / 100. Preserve only safe/restorable properties such as orientation or approved waterlogged/state data; never serialize arbitrary block-entity state blindly.
+
+#### Multishot
+- Converging Volley: horizontal projectile spread narrows from about 75% -> 40% of vanilla Multishot spread.
+- Wide Volley: horizontal projectile spread widens to about 125% -> 180% of vanilla Multishot spread.
+- Vertical Volley: binary pattern change at mastery 50 from horizontal to center/up/down; vertical spread then scales from roughly 100% -> 140% of the vanilla Multishot angle.
+
+#### Punch
+- Blowback: horizontal knockback is increased by about 15% -> 40%.
+- Launch: converts roughly 30% -> 60% of the normal horizontal knockback emphasis into upward launch.
+- Pinning Shot: ordinary Punch displacement is heavily reduced and replaced with about 25% -> 45% movement slowdown for roughly 1.0s -> 2.5s.
+
+#### Aqua Affinity
+- Submerged Mining: removes about 25% -> 100% of the remaining airborne-underwater mining penalty that Aqua Affinity does not normally solve; mastery 100 may fully remove that specific residual penalty.
+- Underwater Construction: after a successful underwater block place/break interaction, water-drag / movement disruption is reduced by about 15% -> 40% for roughly 1.5s, improving repositioning without increasing reach.
+- Current Adaptation: while actively mining or placing blocks underwater, water-current displacement is reduced by about 20% -> 60%.
+
+#### Riptide
+- Long Range: Riptide travel distance is increased by about 10% -> 25%.
+- Steering: directional control during Riptide movement is improved by about 25% -> 75%.
+- Ram: valid Riptide collision/contact damage gains roughly +10% -> +30%, capped at about +6 bonus damage from the branch.
+
+#### Channeling
+- Chain Lightning: a normal qualifying strike may jump to 1 -> 3 additional valid nearby targets within roughly 4 -> 6 blocks; secondary strikes use about 35% -> 50% of the primary lightning damage/effect and never recursively chain.
+- Rain Channeling: during ordinary rain with open sky, Channeling has about a 15% -> 50% chance to produce a reduced strike at roughly 50% primary-lightning damage. Thunderstorms retain normal Channeling behavior.
+- Conductor: search radius for intentional conductor interactions grows from roughly 4 -> 8 blocks and increasingly favors a nearby valid lightning rod / approved conductive target over a less suitable strike point.
+
+#### Wind Burst
+- Updraft: self-launch vertical impulse is increased by about 10% -> 30%.
+- Blast: horizontal burst radius grows by roughly +0.5 -> +2.0 blocks and horizontal impulse by about +10% -> +25%.
+- Aerial Control: gives up roughly 10% of raw launch magnitude in exchange for about +25% -> +70% aerial steering authority after the burst.
+
+#### Frost Walker
+- Narrow Path: reshape the frozen area so forward reach is about 125% -> 175% of the normal radius while lateral width is reduced to roughly 65% -> 40%; total frozen area should stay in the same broad order rather than becoming a giant rectangle.
+- Lasting Ice: Frost Walker-created ice lifetime is extended by about 50% -> 200%.
+- Frost: wet valid targets standing on freshly created Frost Walker ice receive about 10% -> 30% movement slowdown for roughly 1.5s -> 3s.
+
+#### Sharpness
+- Duel: consecutive hits on the same target within roughly 3s gain about +1% -> +3% damage per stack, capped at 5 stacks.
+- Heavy Strike: fully charged melee attacks gain about +5% -> +15% damage.
+- Execute: attacks against targets below 25% health gain about +5% -> +20% damage.
+
+#### Smite
+- Exorcism: killing an undead target releases about 15% -> 35% of the Smite bonus damage as a nearby-undead-only effect within roughly 2.5 -> 4 blocks; it does not damage non-undead entities.
+- Holy Strike: an undead target hit by Smite deals about 5% -> 15% less damage for roughly 2s -> 4s; repeated hits refresh rather than stack the reduction.
+- Gravebreaker: against undead targets with substantial armor, the Smite bonus itself is increased by about 10% -> 30%.
+
+#### Bane of Arthropods
+- Binding Venom: Bane's existing slowdown duration is extended by about 25% -> 100%.
+- Swarm Extermination: each additional nearby arthropod grants about +5% -> +12% Bane bonus damage, capped at 3 nearby arthropods.
+- Antivenom: while actively fighting an arthropod (and for a short grace period after a hit), poison damage is reduced by about 15% -> 50%.
+
+#### Impaling
+- Wet Hunt: wet non-aquatic targets receive about 50% -> 100% of the normal Impaling bonus; dry non-aquatic targets remain unaffected.
+- Harpoon: Impaling hits add a pull impulse of roughly 0.15 -> 0.45 toward the attacker / projectile origin.
+- Deep Hunter: while fully submerged and roughly 8+ blocks below the local water surface, Impaling bonus damage increases by about 10% -> 30%.
+
+#### Density
+- Terminal Fall: after roughly the first 8 blocks of qualifying fall distance, Density's additional high-fall contribution is increased by about 10% -> 25%.
+- Low-Altitude Impact: the early / low-height portion of a qualifying smash gains about 15% -> 50% more Density contribution, making small and medium drops more useful without multiplying extreme falls.
+- Shock Impact: about 15% -> 35% of the Density bonus damage is echoed to nearby valid targets within roughly 2 -> 3.5 blocks, capped around 6 branch damage per secondary target.
+
+#### Breach
+- Heavy Armor Crusher: against heavily armored targets, Breach removes an additional roughly 5% -> 15% of the armor effectiveness remaining after normal Breach processing.
+- Shield Breaker: successful Breach hits that interact with active guarding extend the normal disable/pressure window by roughly 0.5s -> 1.5s where technically supported.
+- Fracture: a Breach hit leaves a non-stacking mark for roughly 2s -> 4s that improves subsequent Breach effectiveness against that target by about 5% -> 15%; repeat hits refresh duration.
+
+#### Piercing
+- Penetration: preserve roughly 90% -> 100% of projectile momentum / damage quality that would otherwise be lost through valid post-hit continuation; do not add artificial loss when the underlying projectile path has none.
+- Skewer: the final target allowed by the projectile's Piercing count receives about +15% -> +40% knockback / control impulse.
+- Line Hunter: after each successful pierced target, the projectile gains about +3% -> +8% effectiveness against the next valid target, capped after 3 penetrations; this bonus ends when the projectile stops piercing.
+
+#### Sweeping Edge
+- Wide Arc: effective sweep coverage increases by about 10% -> 30%.
+- Focused Sweep: sweep coverage is reduced by roughly 25%, while secondary-target sweep damage increases by about 10% -> 30%.
+- Battle Rhythm: hitting 2+ valid targets with one sweep improves the next melee attack's recovery / handling by about 5% -> 15% for roughly 2s; it does not stack repeatedly.
+
+#### Fire Aspect
+- Long Burn: Fire Aspect burn duration increases by about 25% -> 75%.
+- Flash Burn: burn duration is reduced by roughly 40%, but Fire Aspect's burn damage intensity increases by about 20% -> 60%.
+- Cauterize: while a target is burning from this Fire Aspect source, healing received is reduced by about 10% -> 30%; the effect ends with the burn.
+
+#### Knockback
+- Launch: converts roughly 30% -> 60% of the normal Knockback impulse into vertical displacement.
+- Blowback: horizontal Knockback distance increases by about 15% -> 40%.
+- Recoil Step: the attacker receives controlled recoil equal to about 10% -> 30% of the target's knockback impulse in the opposite direction.
+
+#### Fortune
+- Ore Specialist: when Fortune successfully produces bonus ore drops, there is about a 10% -> 25% chance to add one further bonus item; only approved ore-style Fortune targets qualify.
+- Harvest Specialist: same 10% -> 25% extra-bonus chance, but only for approved crop / natural-harvest Fortune targets.
+- High Variance: about 10% -> 30% of Fortune's bonus portion becomes volatile; half of volatile outcomes lose that bonus portion and half double it, keeping expected value roughly neutral while increasing variance.
+
+#### Efficiency
+- Hard-Material Breaker: qualifying high-hardness blocks receive about +5% -> +15% additional mining speed.
+- Mining Rhythm: consecutive qualifying blocks broken within roughly 1.5s build +2% -> +5% speed per stack, capped around +10% -> +25%; the streak resets when the interval is missed.
+- Generalist Tool: reduces the mining-speed penalty on somewhat unsuitable block types by about 15% -> 50%, but never grants drops when the tool is invalid for harvesting.
+
+#### Quick Charge
+- First Load: after roughly 3s without firing, the next crossbow reload is about 10% -> 30% faster.
+- Reload Rhythm: consecutive reloads within roughly 3s gain about 5% -> 10% reload speed per stack, capped around 15% -> 30%; losing the rhythm resets the stack.
+- Mobile Reload: reduces movement slowdown while charging/reloading a crossbow by about 15% -> 50%.
+
+#### Respiration
+- Deep Breath: effective underwater air-loss rate is reduced by an additional about 10% -> 30%.
+- Quiet Breath: while nearly stationary underwater, remaining air-loss rate is reduced by about 25% -> 70%; attacking/mining or moving quickly breaks the quiet condition.
+- Rapid Ventilation: air refills about 25% -> 100% faster once the player reaches breathable conditions.
+
+#### Soul Speed
+- Soul-Sole Conservation: Soul Speed's durability-consumption drawback is reduced by about 25% -> 75%.
+- Lingering Momentum: after leaving soul-speed-valid terrain, retain about 50% -> 75% of the Soul Speed movement bonus for roughly 1.0s -> 3.0s.
+- Soul Footing: while on soul-speed-valid terrain, knockback / forced displacement is reduced by about 10% -> 35%.
+
+#### Swift Sneak
+- Silent Sneak: suppress about 20% -> 70% of otherwise emitted movement-related vibrations while sneaking; intentionally noisy actions such as block breaking are not hidden for free.
+- Combat Stance: while sneaking, item-use movement slowdown is reduced by about 10% -> 35%.
+- Builder's Sneak: while crouch edge-protection is actively preventing a fall, controlled edge movement speed is improved by about 10% -> 30% without disabling the edge stop.
+
+#### Depth Strider
+- Current Rider: movement with water flow is improved by about 10% -> 30%.
+- Seabed Runner: grounded underwater horizontal movement / turning improves by about 10% -> 25%.
+- Diver: vertical underwater movement authority improves by about 10% -> 35%.
+
+#### Loyalty
+- Fast Return: Loyalty return speed increases by about 15% -> 50%.
+- Safe Return: return-path correction / obstacle-avoidance authority improves by about 25% -> 75%, with allowed detour distance growing from roughly 4 -> 12 blocks before giving up on that correction.
+- Pursuing Return: when the owner is moving away from the return path, catch-up acceleration improves by about 20% -> 60%, with a final return-speed bonus capped around 10% -> 30% above the branch's ordinary return speed.
 
 ### Curse Growth
 Curses also accumulate mastery/history and may mutate through long-term use.
