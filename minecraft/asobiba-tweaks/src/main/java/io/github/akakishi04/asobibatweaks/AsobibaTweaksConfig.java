@@ -112,6 +112,7 @@ public final class AsobibaTweaksConfig {
     public static final ModConfigSpec.BooleanValue OCEAN_DEBRIS_ENABLED = bool("ocean.driftDebris", true, "Enable sparse ocean drift debris.");
 
     public static final ModConfigSpec.BooleanValue MAP_WALLS_ENABLED = bool("display.autoConnectedMapWalls", true, "Improve adjacency behavior for map walls.");
+    public static final ModConfigSpec.BooleanValue ATLAS_ENABLED = bool("display.locationAwareAtlas", true, "Enable the portable multi-map atlas and automatic current-location page selection.");
     public static final ModConfigSpec.BooleanValue ELYTRA_DISPLAY_ENABLED = bool("display.elytraArmorStandDisplay", true, "Enable opened-Elytra presentation on armor stands.");
 
     public static final ModConfigSpec SPEC = BUILDER.build();
