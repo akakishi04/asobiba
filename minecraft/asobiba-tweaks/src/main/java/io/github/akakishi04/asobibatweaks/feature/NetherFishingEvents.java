@@ -90,7 +90,8 @@ public final class NetherFishingEvents {
         long catchAt = player.getPersistentData().getLong(CATCH_AT);
         if (catchAt > 0L && now >= catchAt) finishCatch(player);
 
-        if (player.level().dimension() == Level.NETHER
+        if (AsobibaTweaksConfig.NETHER_FISH_ENABLED.getAsBoolean()
+                && player.level().dimension() == Level.NETHER
                 && player.tickCount % 300 == Math.floorMod(player.getId(), 300)
                 && player.getRandom().nextDouble() < 0.08D) {
             tryNaturalSpawn(player);
