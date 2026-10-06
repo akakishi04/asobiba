@@ -610,6 +610,18 @@ Accepted direction:
 
 Design constraint: default to vanilla formula continuation for existing multi-level enchantments; single-level enchantments stay single-level unless intentionally redesigned.
 
+### Frost Walker Runtime Toggle
+
+Accepted direction:
+- Frost Walker can be explicitly toggled ON/OFF while the enchanted boots are equipped
+- turning it OFF suppresses water-freezing behavior without removing or rewriting the enchantment
+- turning it back ON restores the normal level-scaled Frost Walker behavior
+- the toggle must give clear player feedback and be usable without removing the boots
+- the exact input method/keybind is a UX tuning decision and is not fixed yet
+- toggle state must be safe across equip/unequip and save/reload; final choice of per-item versus per-player persistence is still open
+
+Design constraint: higher-level Frost Walker should remain practical to wear in normal travel without forcing the player to freeze every nearby water surface continuously.
+
 ### Enchantment-Pool Bookshelves
 
 Add bookshelf variants / bookshelf enchantment behavior that can expand the nearby Enchanting Table's candidate pool beyond ordinary table-available enchantments.
