@@ -1199,6 +1199,34 @@ Accepted direction:
 - this copying route is intended to make recovered rare enchanted arrows valuable templates without making large stacks free
 
 
+#### Quiver and Dedicated Ammo Slot
+
+Accepted direction:
+- add a dedicated **Quiver equipment slot** separate from armor, offhand and the normal inventory
+- only Quiver-compatible items may occupy this slot
+- a basic Quiver provides an internal ammunition inventory for arrows and other explicitly supported launcher ammunition
+- the launcher checks the equipped Quiver before falling back to loose ammunition in the player's ordinary inventory
+- the Quiver stores exact ItemStacks, preserving tipped-arrow effects, spectral-arrow identity, enchantments and other relevant components
+- enchanted arrows remain discrete ammunition items; the Quiver does not merge different enchanted/component variants merely because their base item id matches
+- the currently selected Quiver ammunition type is explicit and persistent rather than being chosen unpredictably on every shot
+- ordinary inventory arrows remain usable when no valid Quiver ammunition is selected/available
+- the Quiver is a convenience/container system, not an ammunition duplicator and not an automatic crafting system
+- Multishot still consumes at most one source ammunition item per shot group under the existing Multishot rules
+- Infinity still only makes ordinary arrows free; placing special/enchanting arrows in the Quiver does not make them free
+- if the selected Quiver slot contains an ordinary arrow and the launcher has Infinity, the shot does not consume that ordinary arrow
+- if the selected Quiver slot contains an enchanted, spectral or tipped arrow, the shot consumes one source item normally unless a separate return/recovery mechanic returns it
+- when all eligible Quiver ammunition for the selected type is exhausted, the launcher may fall back to ordinary inventory ammunition according to the normal ammo-priority rules
+- Quiver contents and selected-ammo state persist through save/reload
+
+Initial capacity / UX target:
+- one equipped Quiver exposes **9 internal ammo slots** as the initial default
+- opening the inventory while a Quiver is equipped should expose its ammo slots in the same inventory UI rather than requiring a separate world block
+- one Quiver slot is designated as the active ammo selection at a time
+- ammo selection should be changeable from inventory UI without adding a mandatory dedicated keybind
+- a lightweight in-world cycle interaction may be added later only if it does not conflict with normal bow/crossbow controls
+
+Design constraint: the Quiver should make mixed-arrow loadouts practical without making rare or enchanted ammunition free.
+
 #### Unified Bow / Crossbow Enchantment Pool
 
 Accepted direction:
