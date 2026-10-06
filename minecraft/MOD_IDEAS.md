@@ -618,6 +618,28 @@ Accepted direction:
 Design constraint: remove the junk-enchant workaround while preserving meaningful choice and resource cost.
 
 
+### Extended Enchanting Targets
+
+Allow selected vanilla items that are normally not enchantable to receive ordinary enchantments.
+
+Accepted initial targets:
+- Crafting Table
+- Furnace
+- Blast Furnace
+- Smoker
+- Enchanting Table
+- Arrow
+- Spectral Arrow
+- Tipped Arrow
+
+Accepted direction:
+- reuse existing vanilla enchantments rather than requiring a parallel enchantment family
+- exact gameplay meaning of individual enchantment / target combinations can be defined later
+- enchanted work blocks must retain their full ItemStack enchantment/mastery data while placed and restore it when broken
+- arrows retain enchantments on their ItemStack; projectile-specific interpretation can be added later
+- compatible with raised enchantment level caps and Growing Enchantments
+
+
 ## Accepted transport / alchemy / explosives tweaks
 
 ### Potion Mixing
