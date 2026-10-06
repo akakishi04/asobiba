@@ -58,7 +58,8 @@ public final class VillageSimulationEvents {
 
     @SubscribeEvent
     public void onTrades(VillagerTradesEvent event) {
-        if (!AsobibaTweaksConfig.VILLAGE_CARPENTER_ENABLED.getAsBoolean()
+        if (!AsobibaTweaksConfig.VILLAGE_SIMULATION_ENABLED.getAsBoolean()
+                || !AsobibaTweaksConfig.VILLAGE_CARPENTER_ENABLED.getAsBoolean()
                 || event.getType() != AsobibaRegistries.CARPENTER.value()) return;
 
         event.getTrades().get(1).add(new BasicItemListing(
@@ -146,7 +147,8 @@ public final class VillageSimulationEvents {
 
     @SubscribeEvent
     public void onRegionalTrade(TradeWithVillagerEvent event) {
-        if (!AsobibaTweaksConfig.REGIONAL_TRADE_VALUE_ENABLED.getAsBoolean()) return;
+        if (!AsobibaTweaksConfig.VILLAGE_SIMULATION_ENABLED.getAsBoolean()
+                || !AsobibaTweaksConfig.REGIONAL_TRADE_VALUE_ENABLED.getAsBoolean()) return;
 
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         Villager villager = event.getAbstractVillager() instanceof Villager v ? v : null;
