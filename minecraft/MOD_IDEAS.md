@@ -1447,7 +1447,7 @@ Design constraint: Piercing should preserve the full identity of an enchanted ar
 #### Arrow Effect Decisions
 
 Accepted:
-- **Power**: reduces the arrow's normal in-flight velocity decay rather than directly adding impact damage. Higher Power levels preserve speed over distance, making Power primarily a long-range performance enchantment.
+- **Power**: reduces the arrow's normal in-flight velocity decay rather than directly adding impact damage. Each Power level reduces ordinary in-flight velocity decay by **8%**, giving 8% at I, 40% at V and **80% at X**. This reduction applies to the normal air-flight velocity-decay component only; gravity remains unchanged and special medium resistance such as water drag is not removed. Power X therefore preserves long-range speed strongly without making arrows perfectly lossless or permanently straight-flying.
 - **Sharpness**: adds direct impact damage on hit. Its role is straightforward close-to-any-range damage rather than flight preservation.
 - Power and Sharpness may coexist on the same arrow because they improve different parts of the shot.
 - **Punch**: applies increased knockback to the directly hit target. Higher levels increase the target's displacement; this is a single-target control effect.
