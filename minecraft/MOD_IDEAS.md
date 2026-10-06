@@ -807,10 +807,11 @@ Accepted:
 #### Work-block enchantment rule
 
 Accepted direction:
-- extended work blocks may still receive ordinary enchantments even when a specific enchantment has no custom block effect
+- work blocks may receive only enchantments that have a defined, meaningful effect for that specific block type
+- enchantments with no active work-block interpretation are excluded from that block's enchanting candidate pool and should not be applied merely for storage
 - only enchantments with a natural, understandable interpretation gain work-block behavior
 - do not invent arbitrary effects merely so every vanilla enchantment does something on every supported block
-- enchantments without a defined work-block interpretation remain stored on the ItemStack but have no active block-side effect
+- if a new work-block effect is defined later, that enchantment can then be added to the corresponding block's eligible pool
 - Furnace / Blast Furnace / Smoker Efficiency scales processing speed up to 2.0x at Efficiency X
 - Enchanting Table Efficiency raises the table's enchanting level ceiling from vanilla 30 up to 100
 
