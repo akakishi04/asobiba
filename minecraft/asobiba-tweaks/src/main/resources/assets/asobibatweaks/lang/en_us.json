@@ -19,5 +19,6 @@
   "message.asobibatweaks.atlas.removed": "Map removed from atlas (%s remaining)",
   "message.asobibatweaks.atlas.empty": "The atlas has no maps",
   "block.asobibatweaks.arcane_bookshelf": "Arcane Bookshelf",
-  "button.asobibatweaks.enchantment_reroll": "Reroll (%s Lv)"
+  "button.asobibatweaks.enchantment_reroll": "Reroll (%s Lv)",
+  "item.asobibatweaks.arcane_folio": "Arcane Folio"
 }
