@@ -561,13 +561,15 @@ Raise the normal maximum levels of enchantments so vanilla caps such as Efficien
 
 Accepted direction:
 - enchantments may exist above their vanilla maximum levels
-- exact new caps are intentionally undecided for now
-- scaling behavior above the vanilla cap is also intentionally undecided
+- for most enchantments, keep the existing vanilla level-based behavior and simply allow it to continue above the vanilla cap
+- do not create bespoke post-cap scaling rules unless an enchantment actually needs one
+- only special-case enchantments whose vanilla formula becomes invalid, meaningless, technically capped elsewhere, or excessively disruptive at higher levels
+- the exact global/per-enchantment maximum level can be chosen as an implementation safeguard rather than requiring manual design for every enchantment
 - obtaining over-cap enchantments does not have to use the ordinary enchanting-table route
 - block/item enchantment expansion can reuse the same over-cap system later
 - Growing Enchantments / mastery must remain compatible with over-cap levels
 
-Design constraint: raising the cap must not automatically mean linear infinite power scaling. Per-enchantment behavior above the vanilla cap will be designed separately.
+Design constraint: default to vanilla formula continuation; special handling is the exception, not the rule.
 
 
 ## Accepted transport / alchemy / explosives tweaks
