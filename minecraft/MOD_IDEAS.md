@@ -606,6 +606,46 @@ Current accepted branch candidates:
   - Long Burn: extends the duration of the fire applied by Flame
   - Stacked Ignition: hitting a target that is already burning with Flame adds additional burn duration, with an explicit cap
   - a third Flame branch is intentionally left open for now rather than adding behavior outside Flame's own ignition/burning effect domain
+- **Protection**
+  - General Defense: improves the consistency of Protection's broad damage reduction without adding a new damage domain
+  - First-Hit Defense: after remaining unharmed for a while, the next damaging hit receives stronger Protection mitigation
+  - Crisis Defense: Protection becomes more effective as the wearer's health becomes low
+- **Fire Protection**
+  - Rapid Extinguishing: further shortens burn duration
+  - Heat Adaptation: sustained exposure to fire/lava gradually improves Fire Protection's mitigation while exposure continues
+  - Lava Adaptation: emphasizes Fire Protection's handling of lava exposure and movement-related penalties while submerged
+- **Projectile Protection**
+  - Frontal Guard: stronger mitigation against projectiles arriving from the wearer's forward-facing side
+  - Sniper Resistance: greater mitigation against projectiles that have traveled a long distance
+  - Barrage Resistance: repeated projectile hits within a short window gain progressively stronger mitigation
+- **Blast Protection**
+  - Blast Anchor: strongly reduces explosion knockback
+  - Epicenter Resistance: gains additional mitigation when very close to the explosion center
+  - Chain-Blast Resistance: repeated explosions within a short window gain progressively stronger mitigation
+- **Feather Falling**
+  - Soft Landing: specializes in pure fall-damage safety
+  - Impact Landing: converts part of the mitigated fall impact into a local landing shock effect
+  - Aerial Recovery: improves horizontal control during falls and immediately after landing
+- **Power**
+  - Sniping: specializes Power for long-range shots
+  - Heavy Draw: emphasizes fully charged shots
+  - Quick Shot: reduces the performance penalty of partially charged shots
+- **Luck of the Sea**
+  - Treasure Hunter: biases Luck of the Sea further toward treasure-category catches
+  - Quality Selection: biases applicable caught equipment/books toward better quality rather than only changing catch category
+  - Rare Catch: emphasizes rare living / regional / Nether-fishing catches where the fishing table supports them
+- **Lure**
+  - Fast Bite: further shortens time until a bite
+  - Secure Hook: extends the successful-hook reaction window
+  - Fishing Rhythm: a successful catch temporarily accelerates the next bite; repeated successful catches can maintain the rhythm
+- **Curse of Binding**
+  - Bound Legacy: reinforces the curse's stay-with-the-wearer behavior around death/loss without making the item normally removable
+  - Familiar Bondage: long continuous wear slightly reduces durability consumption while the curse remains fully active
+  - Forced Attachment: strengthens resistance to effects that would forcibly unequip/remove the cursed item; normal inability to remove it remains
+- **Curse of Vanishing**
+  - Delayed Return: the item still vanishes on death but may return later under the branch's defined delayed-return rules
+  - Echo: the item vanishes, but leaves a temporary trace/echo of the lost item at or around the death event
+  - Legacy: the item itself is permanently lost, but part of its mastery/history can be inherited by a later same-type replacement
 - **Silk Touch**
   - Precision Harvest: expands Silk Touch recovery to a limited allowlist of additional blocks that are safe to obtain; progression-breaking blocks such as spawners remain excluded
   - Batch Harvest: can Silk Touch a small connected group of the same suitable block type, aimed at glass, ice, leaves and building-material relocation rather than vein mining
