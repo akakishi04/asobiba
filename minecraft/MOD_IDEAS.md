@@ -746,6 +746,9 @@ Accepted:
 - **Bane of Arthropods**: applies the vanilla arthropod target rules, bonus damage and slowdown behavior on arrow impact.
 - **Impaling**: applies the vanilla Impaling target rules and scaling to arrow impact damage against qualifying aquatic/wet targets.
 - these three enchantments intentionally reuse vanilla target classification and scaling instead of maintaining separate arrow-specific balance tables.
+- **Looting**: applies when the enchanted arrow delivers the kill. If another applicable source already provides Looting, use the higher effective Looting level rather than adding the levels together.
+- **Loyalty**: after a valid entity hit or block impact, the arrow returns to its original shooter instead of waiting for manual recovery. Higher Loyalty levels reduce return delay and/or increase return speed.
+- Loyalty takes precedence over the embedded-arrow death-drop path: an arrow that begins returning is no longer stored as an embedded recoverable arrow on the target.
 
 ## Accepted transport / alchemy / explosives tweaks
 
