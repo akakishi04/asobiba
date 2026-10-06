@@ -618,6 +618,9 @@ Accepted direction:
 - some enchantments that normally never appear from a vanilla Enchanting Table can become eligible when the correct bookshelf condition is present
 - this should extend the candidate pool rather than guarantee a specific enchantment
 - the Arcane Bookshelf requires a trade-only material rather than being craftable entirely from ordinary gathered resources
+- that material is **Arcane Folio / 秘術の書片**
+- Arcane Folio is sold by higher-level Librarians rather than obtained from normal crafting, mining or loot
+- Arcane Bookshelf crafting consumes multiple Arcane Folios, so access depends on maintaining at least one viable Librarian trading relationship
 - the trade-only material is supplied through villager trading, tying access to a functioning village economy
 - once an Arcane Bookshelf is available, its special pool can cover otherwise table-excluded enchantments broadly; individual exceptions can still be made for technical/gameplay reasons
 - compatible with raised enchantment level caps and Growing Enchantments
