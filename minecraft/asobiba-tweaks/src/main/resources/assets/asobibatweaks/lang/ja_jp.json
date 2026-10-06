@@ -17,5 +17,7 @@
   "message.asobibatweaks.atlas.duplicate": "その地図はすでに収納されています",
   "message.asobibatweaks.atlas.full": "地図帳は満杯です (%s枚)",
   "message.asobibatweaks.atlas.removed": "地図を取り出しました (残り%s枚)",
-  "message.asobibatweaks.atlas.empty": "地図帳は空です"
+  "message.asobibatweaks.atlas.empty": "地図帳は空です",
+  "block.asobibatweaks.arcane_bookshelf": "秘術の本棚",
+  "button.asobibatweaks.enchantment_reroll": "再抽選 (%s Lv)"
 }
