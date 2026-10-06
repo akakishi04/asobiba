@@ -4,11 +4,13 @@ import io.github.akakishi04.asobibatweaks.AsobibaRegistries;
 import io.github.akakishi04.asobibatweaks.AsobibaTags;
 import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
 import io.github.akakishi04.asobibatweaks.feature.EnchantmentRerollProtocol;
+import io.github.akakishi04.asobibatweaks.feature.EnchantedWorkBlockSavedData;
 import java.util.List;
 import java.util.stream.Stream;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderSet;
+import net.minecraft.core.IdMap;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.sounds.SoundEvents;
@@ -21,6 +23,7 @@ import net.minecraft.world.inventory.ContainerLevelAccess;
 import net.minecraft.world.inventory.DataSlot;
 import net.minecraft.world.inventory.EnchantmentMenu;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.EnchantmentInstance;
@@ -111,6 +114,88 @@ public abstract class EnchantmentMenuExtensionsMixin {
         cir.setReturnValue(list);
     }
 
+
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "slotsChanged", at = @At("TAIL"))
+    private void asobibatweaks$extendTableLevelCap(
+            Container container,
+            org.spongepowered.asm.mixin.injection.callback.CallbackInfo ci
+    ) {
+        if (!AsobibaTweaksConfig.EXTENDED_ENCHANTING_TARGETS_ENABLED.getAsBoolean()
+                || container != this.enchantSlots) {
+            return;
+        }
+
+        ItemStack target = container.getItem(0);
+        if (target.isEmpty() || !target.isEnchantable()) {
+            return;
+        }
+
+        this.access.execute((level, pos) -> {
+            ItemStack tableStack = EnchantedWorkBlockSavedData.get((net.minecraft.server.level.ServerLevel) level)
+                    .peek(pos.asLong());
+            if (tableStack.isEmpty()) {
+                return;
+            }
+
+            Holder<Enchantment> efficiency = level.registryAccess()
+                    .lookupOrThrow(Registries.ENCHANTMENT)
+                    .getOrThrow(Enchantments.EFFICIENCY);
+            int efficiencyLevel = EnchantmentHelper.getItemEnchantmentLevel(efficiency, tableStack);
+            if (efficiencyLevel <= 0) {
+                return;
+            }
+
+            int tableCap = Math.min(100, 30 + efficiencyLevel * 10);
+            int virtualBookcases = tableCap / 2;
+            EnchantmentMenu menu = (EnchantmentMenu)(Object)this;
+
+            this.random.setSeed(this.enchantmentSeed.get());
+            for (int slot = 0; slot < 3; slot++) {
+                int selected = this.random.nextInt(8) + 1
+                        + (virtualBookcases >> 1)
+                        + this.random.nextInt(virtualBookcases + 1);
+                int cost;
+                if (slot == 0) {
+                    cost = Math.max(selected / 3, 1);
+                } else if (slot == 1) {
+                    cost = selected * 2 / 3 + 1;
+                } else {
+                    cost = Math.max(selected, virtualBookcases * 2);
+                }
+                menu.costs[slot] = Math.min(cost, tableCap);
+                menu.enchantClue[slot] = -1;
+                menu.levelClue[slot] = -1;
+            }
+
+            IdMap<Holder<Enchantment>> holders = level.registryAccess()
+                    .lookupOrThrow(Registries.ENCHANTMENT)
+                    .asHolderIdMap();
+
+            for (int slot = 0; slot < 3; slot++) {
+                if (menu.costs[slot] <= 0) continue;
+                List<EnchantmentInstance> list =
+                        this.shadow$getEnchantmentList(level.registryAccess(), target, slot, menu.costs[slot]);
+                if (!list.isEmpty()) {
+                    EnchantmentInstance clue = list.get(this.random.nextInt(list.size()));
+                    menu.enchantClue[slot] = holders.getId(clue.enchantment());
+                    menu.levelClue[slot] = clue.level();
+                }
+            }
+
+            menu.broadcastChanges();
+        });
+    }
+
+    @org.spongepowered.asm.mixin.Shadow(prefix = "shadow$")
+    private List<EnchantmentInstance> shadow$getEnchantmentList(
+            RegistryAccess access,
+            ItemStack itemStack,
+            int slot,
+            int enchantmentCost
+    ) {
+        throw new AssertionError();
+    }
 
     private boolean hasArcaneBookshelf() {
         return this.access.evaluate((level, pos) -> {
