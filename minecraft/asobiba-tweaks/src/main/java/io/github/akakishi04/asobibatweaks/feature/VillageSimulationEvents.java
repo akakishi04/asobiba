@@ -11,11 +11,14 @@ import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.animal.Sheep;
 import net.neoforged.neoforge.event.entity.living.BabyEntitySpawnEvent;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.entity.npc.VillagerProfession;
@@ -46,6 +49,7 @@ public final class VillageSimulationEvents {
     private static final String BUILDER_XP = "asobibatweaks_builder_xp";
     private static final String NEXT_BUILD = "asobibatweaks_next_build";
     private static final String DISTRESS = "asobibatweaks_village_distress";
+    private static final String RECOVERY_UNTIL = "asobibatweaks_village_recovery_until";
     private static final String BUILD_ANCHOR_X = "asobibatweaks_build_anchor_x";
     private static final String BUILD_ANCHOR_Z = "asobibatweaks_build_anchor_z";
     private static final String BUILD_OUTPOST = "asobibatweaks_build_outpost";
@@ -113,6 +117,9 @@ public final class VillageSimulationEvents {
             if ((villager.getUUID().hashCode() & 3) == 0) tickQuartermaster(villager, level);
             else tickPorter(villager, level);
         } else if (AsobibaTweaksConfig.VILLAGE_LOGISTICS_ENABLED.getAsBoolean()
+                && profession == VillagerProfession.SHEPHERD) {
+            tickShepherd(villager, level);
+        } else if (AsobibaTweaksConfig.VILLAGE_LOGISTICS_ENABLED.getAsBoolean()
                 && profession == VillagerProfession.FARMER) {
             exportVillagerFood(villager, level);
         }
@@ -138,9 +145,13 @@ public final class VillageSimulationEvents {
         int food = countStorageItems(level, parent.blockPosition(), 18,
                 Items.BREAD, Items.CARROT, Items.POTATO, Items.BEETROOT);
 
-        boolean distressed = level.getGameTime() < parent.getPersistentData().getLong(DISTRESS);
+        long now = level.getGameTime();
+        boolean distressed = now < parent.getPersistentData().getLong(DISTRESS);
+        boolean recovering = !distressed && now < parent.getPersistentData().getLong(RECOVERY_UNTIL);
         int infrastructureCap = Math.max(2, beds + Math.max(0, food / 24));
-        if (distressed || food < 12 || villagers >= infrastructureCap) {
+        if (recovering) infrastructureCap += Math.max(1, beds / 3);
+        int minimumFood = recovering ? 8 : 12;
+        if (distressed || food < minimumFood || villagers >= infrastructureCap) {
             event.setCanceled(true);
         }
     }
@@ -167,7 +178,11 @@ public final class VillageSimulationEvents {
     private static void tickCarpenter(Villager villager, ServerLevel level) {
         long now = level.getGameTime();
         if (villager.getPersistentData().getBoolean(BUILD_ACTIVE)) {
-            buildOneStep(villager, level);
+            int experience = villager.getPersistentData().getInt(BUILDER_XP);
+            int actions = 1 + Math.min(2, experience / 5);
+            for (int i = 0; i < actions && villager.getPersistentData().getBoolean(BUILD_ACTIVE); i++) {
+                buildOneStep(villager, level);
+            }
             return;
         }
 
@@ -260,7 +275,15 @@ public final class VillageSimulationEvents {
             return;
         }
 
-        if (step.cost != null && !takeFromStorage(level, villager.blockPosition(), 18, step.cost, 1)) {
+        boolean bedFoot = step.state.getBlock() instanceof BedBlock
+                && step.state.hasProperty(BedBlock.PART)
+                && step.state.getValue(BedBlock.PART) == BedPart.FOOT;
+        if (bedFoot) {
+            if (!consumeBedMaterials(level, villager.blockPosition(), 18)) {
+                requestMaterials(villager, "3 wool and 3 planks");
+                return;
+            }
+        } else if (step.cost != null && !takeFromStorage(level, villager.blockPosition(), 18, step.cost, 1)) {
             requestMaterials(villager, step.cost.getDescription().getString().toLowerCase(Locale.ROOT));
             return;
         }
@@ -293,9 +316,8 @@ public final class VillageSimulationEvents {
             steps.add(new BuildStep(base.offset(x, 4, z), plank, plankItem));
         }
 
-        steps.add(new BuildStep(base.offset(1, 1, 2), Blocks.BARREL.defaultBlockState(), Items.BARREL));
-        steps.add(new BuildStep(base.offset(3, 1, 2), Blocks.BARREL.defaultBlockState(), Items.BARREL));
-        steps.add(new BuildStep(base.offset(2, 2, 4), Blocks.TORCH.defaultBlockState(), Items.TORCH));
+        steps.add(new BuildStep(base.offset(1, 1, 2), Blocks.BARREL.defaultBlockState(), plankItem));
+        steps.add(new BuildStep(base.offset(3, 1, 2), Blocks.BARREL.defaultBlockState(), plankItem));
         return steps;
     }
 
@@ -336,12 +358,17 @@ public final class VillageSimulationEvents {
                 .setValue(BedBlock.PART, BedPart.FOOT)
                 .setValue(HorizontalDirectionalBlock.FACING, Direction.SOUTH);
         BlockState bedHead = bedFoot.setValue(BedBlock.PART, BedPart.HEAD);
-        steps.add(new BuildStep(base.offset(2, 1, 2), bedFoot, Items.WHITE_BED));
+        steps.add(new BuildStep(base.offset(2, 1, 2), bedFoot, null));
         steps.add(new BuildStep(base.offset(2, 1, 3), bedHead, null));
-        steps.add(new BuildStep(base.offset(2, 2, 3), Blocks.TORCH.defaultBlockState(), Items.TORCH));
         if (villager.getPersistentData().getBoolean(BUILD_OUTPOST)) {
-            steps.add(new BuildStep(base.offset(1, 1, 2), Blocks.BELL.defaultBlockState(), Items.BELL));
-            steps.add(new BuildStep(base.offset(3, 1, 2), Blocks.BARREL.defaultBlockState(), Items.BARREL));
+            BlockState secondBedFoot = Blocks.WHITE_BED.defaultBlockState()
+                    .setValue(BedBlock.PART, BedPart.FOOT)
+                    .setValue(HorizontalDirectionalBlock.FACING, Direction.SOUTH);
+            BlockState secondBedHead = secondBedFoot.setValue(BedBlock.PART, BedPart.HEAD);
+            steps.add(new BuildStep(base.offset(1, 1, 2), secondBedFoot, null));
+            steps.add(new BuildStep(base.offset(1, 1, 3), secondBedHead, null));
+            steps.add(new BuildStep(base.offset(3, 1, 2), Blocks.BARREL.defaultBlockState(), plankItem));
+            steps.add(new BuildStep(base.offset(3, 1, 3), Blocks.COMPOSTER.defaultBlockState(), plankItem));
         }
         return steps;
     }
@@ -562,6 +589,7 @@ public final class VillageSimulationEvents {
             villager.getPersistentData().putInt(SHORTAGE_STREAK, streak);
             if (streak >= 4) {
                 villager.getPersistentData().putLong(DISTRESS, level.getGameTime() + 2L * 24000L);
+        villager.getPersistentData().putLong(RECOVERY_UNTIL, level.getGameTime() + 4L * 24000L);
             }
         } else {
             villager.getPersistentData().remove(SHORTAGE_STREAK);
@@ -604,6 +632,25 @@ public final class VillageSimulationEvents {
             villager.getNavigation().moveTo(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D, 0.7D);
             return;
         }
+    }
+
+    private static void tickShepherd(Villager villager, ServerLevel level) {
+        if (!isWorkTime(level) || level.getGameTime() % 240 != Math.floorMod(villager.getId(), 240)) return;
+
+        List<Sheep> sheep = level.getEntitiesOfClass(
+                Sheep.class,
+                villager.getBoundingBox().inflate(9.0D),
+                s -> s.isAlive() && !s.isBaby() && !s.isSheared()
+        );
+        if (sheep.isEmpty()) return;
+
+        Sheep target = sheep.getFirst();
+        if (villager.distanceToSqr(target) > 6.25D) {
+            villager.getNavigation().moveTo(target, 0.68D);
+            return;
+        }
+
+        target.shear(SoundSource.NEUTRAL);
     }
 
     private static void tickPorter(Villager villager, ServerLevel level) {
@@ -675,6 +722,45 @@ public final class VillageSimulationEvents {
                 return;
             }
         }
+    }
+
+    private static boolean consumeBedMaterials(ServerLevel level, BlockPos center, int radius) {
+        if (countStorageMatching(level, center, radius, stack -> stack.is(ItemTags.WOOL)) < 3
+                || countStorageMatching(level, center, radius, stack -> stack.is(ItemTags.PLANKS)) < 3) {
+            return false;
+        }
+        return takeStorageMatching(level, center, radius, stack -> stack.is(ItemTags.WOOL), 3)
+                && takeStorageMatching(level, center, radius, stack -> stack.is(ItemTags.PLANKS), 3);
+    }
+
+    private static int countStorageMatching(ServerLevel level, BlockPos center, int radius,
+                                            java.util.function.Predicate<ItemStack> predicate) {
+        int count = 0;
+        for (Container container : containers(level, center, radius)) {
+            for (int i = 0; i < container.getContainerSize(); i++) {
+                ItemStack stack = container.getItem(i);
+                if (predicate.test(stack)) count += stack.getCount();
+            }
+        }
+        return count;
+    }
+
+    private static boolean takeStorageMatching(ServerLevel level, BlockPos center, int radius,
+                                               java.util.function.Predicate<ItemStack> predicate,
+                                               int count) {
+        int remaining = count;
+        for (Container container : containers(level, center, radius)) {
+            for (int i = 0; i < container.getContainerSize(); i++) {
+                ItemStack stack = container.getItem(i);
+                if (!predicate.test(stack)) continue;
+                int take = Math.min(remaining, stack.getCount());
+                stack.shrink(take);
+                container.setChanged();
+                remaining -= take;
+                if (remaining <= 0) return true;
+            }
+        }
+        return false;
     }
 
     private static boolean takeFromStorage(ServerLevel level, BlockPos center, int radius, Item item, int count) {
