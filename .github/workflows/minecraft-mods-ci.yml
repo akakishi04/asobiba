@@ -29,6 +29,7 @@ jobs:
       - name: Smoke-start dedicated server
         working-directory: minecraft/asobiba-tweaks
         shell: bash
+        timeout-minutes: 5
         run: |
           mkdir -p run
           printf 'eula=true\n' > run/eula.txt
