@@ -14,7 +14,8 @@
     "ExtendedEnchantableItemMixin",
     "EnchantmentExtensionMixin",
     "EnchantmentMenuExtensionsMixin",
-    "EnchantedWorkBlockPlacementMixin"
+    "EnchantedWorkBlockPlacementMixin",
+    "FurnaceEfficiencyMixin"
   ],
   "injectors": {
     "defaultRequire": 1
