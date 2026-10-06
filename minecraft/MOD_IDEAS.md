@@ -663,7 +663,7 @@ Accepted initial targets:
 Accepted direction:
 - reuse existing vanilla enchantments rather than requiring a parallel enchantment family
 - Crafting Tables are explicitly excluded from extended enchanting
-- Efficiency on Furnace / Blast Furnace / Smoker increases processing speed
+- Efficiency on Furnace / Blast Furnace / Smoker increases processing speed by 10% per level: I=1.1x, V=1.5x, X=2.0x; 2.0x is the final cap
 - Efficiency on an Enchanting Table does **not** directly add levels to the resulting enchantments; instead it raises the enchanting table's normal level/power ceiling beyond vanilla level 30
 - Enchanting Table Efficiency raises the table ceiling by 10 levels per Efficiency level, capped at enchanting level 100
 - progression is: none=30, Efficiency I=40, II=50, III=60, IV=70, V=80, VI=90, VII-X=100
