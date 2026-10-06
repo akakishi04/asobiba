@@ -1248,16 +1248,17 @@ Crafting:
 
 Initial capacity / UX target:
 - one equipped Quiver exposes **9 internal ammo slots** as the initial default
-- the Quiver overlay shows all 9 internal ammo slots directly while the overlay is open
-- arrows can be moved directly between the player inventory/hotbar and visible Quiver slots with ordinary inventory-style **drag-and-drop / click interactions**
-- valid arrow stacks dropped onto a Quiver slot are inserted directly without requiring a separate container screen or crafting action
-- invalid non-ammunition items are rejected by the Quiver slots
-- opening the inventory while a Quiver is equipped should expose the same Quiver slots in the player inventory UI rather than requiring a separate world block
+- the in-world Quiver overlay is **display-only**: it shows all 9 Quiver slots, stack counts and the currently selected ammunition, but does not capture the mouse or become a separate interactive screen
+- while holding a Bow or Crossbow, **Ctrl + mouse wheel** cycles through valid non-empty Quiver ammunition slots
+- cycling skips empty / invalid slots and wraps around at the end
+- ordinary mouse-wheel hotbar selection remains unchanged when Ctrl is not held
+- switching ammunition through Ctrl + mouse wheel updates the persistent active Quiver slot and refreshes the overlay highlight
+- opening the player inventory while a Quiver is equipped exposes the same 9 Quiver slots directly in the inventory UI
+- arrows are inserted/removed from those inventory-visible Quiver slots using ordinary **drag-and-drop / click interactions**
+- valid arrow stacks dropped onto a Quiver slot are inserted directly; invalid non-ammunition items are rejected
 - one Quiver slot is designated as the active ammo selection at a time
-- clicking a visible Quiver slot in the overlay or inventory UI may set it as the active ammunition slot without moving the stack
-- the active slot is visually highlighted in the Quiver overlay
-- ammo selection should be changeable from the overlay/inventory UI without adding a mandatory dedicated keybind
-- a lightweight in-world cycle interaction may still be added later only if it does not conflict with normal bow/crossbow controls
+- clicking a Quiver slot in the inventory UI may also set it as the active ammunition slot without requiring a dedicated keybind
+- the active slot is visually highlighted both in the inventory UI and in the display-only in-world overlay
 
 Design constraint: the Quiver should make mixed-arrow loadouts practical without making rare or enchanted ammunition free.
 
