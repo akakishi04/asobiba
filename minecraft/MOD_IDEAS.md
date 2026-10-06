@@ -577,6 +577,8 @@ Accepted mastery scale:
 
 Examples include Feather Falling becoming safer landing, impact landing, or aerial recovery; Fortune becoming ore-, crop-, or high-variance-focused.
 Branches should change play style more than raw DPS/mining output.
+- branch effects should, by default, remain self-contained within the original enchantment's own behavior domain
+- avoid inventing unrelated subsystems merely to fill branch slots; if only one or two strong branches exist, leave the remaining slot open until a natural option is found
 
 Current accepted branch candidates:
 - **Unbreaking**
@@ -600,6 +602,10 @@ Current accepted branch candidates:
   - Stripping: emphasizes equipment / carried-item drop chance rather than generic quantity
   - Big-Game Hunter: sacrifices some ordinary-drop improvement to emphasize rare-drop rolls
 - **Mending** is an explicit exception to the branch system: it does not choose a mastery branch at 50. Instead, mastery itself unlocks and grows an over-repair durability buffer.
+- **Flame**
+  - Long Burn: extends the duration of the fire applied by Flame
+  - Stacked Ignition: hitting a target that is already burning with Flame adds additional burn duration, with an explicit cap
+  - a third Flame branch is intentionally left open for now rather than adding behavior outside Flame's own ignition/burning effect domain
 - **Silk Touch**
   - Precision Harvest: expands Silk Touch recovery to a limited allowlist of additional blocks that are safe to obtain; progression-breaking blocks such as spawners remain excluded
   - Batch Harvest: can Silk Touch a small connected group of the same suitable block type, aimed at glass, ice, leaves and building-material relocation rather than vein mining
