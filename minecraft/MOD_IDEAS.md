@@ -1248,11 +1248,16 @@ Crafting:
 
 Initial capacity / UX target:
 - one equipped Quiver exposes **9 internal ammo slots** as the initial default
-- the in-world Quiver overlay is **display-only**: it shows all 9 Quiver slots, stack counts and the currently selected ammunition, but does not capture the mouse or become a separate interactive screen
+- the in-world Quiver HUD is **display-only** and normally hidden
+- while a Bow or Crossbow is equipped/held, only the **currently selected ammunition** is shown persistently, including its icon and remaining count
+- the full 9-slot Quiver overlay is not shown during ordinary play
 - while holding a Bow or Crossbow, **Ctrl + mouse wheel** cycles through valid non-empty Quiver ammunition slots
+- during Ctrl + mouse-wheel cycling, the full 9-slot Quiver overlay appears temporarily so the player can see the available ammunition choices and current selection
+- the temporary full overlay fades/hides again shortly after cycling stops, leaving only the selected-ammunition indicator while the launcher remains equipped
+- when no Bow or Crossbow is equipped/held, the in-world Quiver HUD is hidden entirely
 - cycling skips empty / invalid slots and wraps around at the end
 - ordinary mouse-wheel hotbar selection remains unchanged when Ctrl is not held
-- switching ammunition through Ctrl + mouse wheel updates the persistent active Quiver slot and refreshes the overlay highlight
+- switching ammunition through Ctrl + mouse wheel updates the persistent active Quiver slot and refreshes the selected-ammunition indicator
 - opening the player inventory while a Quiver is equipped exposes the same 9 Quiver slots directly in the inventory UI
 - arrows are inserted/removed from those inventory-visible Quiver slots using ordinary **drag-and-drop / click interactions**
 - valid arrow stacks dropped onto a Quiver slot are inserted directly; invalid non-ammunition items are rejected
