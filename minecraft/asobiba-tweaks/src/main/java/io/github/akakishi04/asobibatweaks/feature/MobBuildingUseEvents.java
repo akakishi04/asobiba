@@ -16,6 +16,7 @@ public final class MobBuildingUseEvents {
     @SubscribeEvent
     public void onMobTick(EntityTickEvent.Post event) {
         if (!AsobibaTweaksConfig.VILLAGE_SIMULATION_ENABLED.getAsBoolean()
+                || !AsobibaTweaksConfig.MOB_USED_BUILDINGS_ENABLED.getAsBoolean()
                 || !(event.getEntity() instanceof PathfinderMob mob)
                 || mob.level().isClientSide()
                 || mob.tickCount % 160 != Math.floorMod(mob.getId(), 160)
