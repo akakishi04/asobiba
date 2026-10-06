@@ -1389,6 +1389,23 @@ Accepted direction:
 
 Design constraint: avoid double-dipping identical mechanics while preserving useful launcher/ammunition combinations.
 
+#### Loyalty Return Destination
+
+Accepted direction:
+- a returning Loyalty arrow preserves its exact ItemStack identity and relevant components
+- return destination priority is:
+  1. the **original Quiver slot** the arrow was fired from, if that slot still exists and can accept the returning stack
+  2. another compatible **empty / mergeable Quiver slot**
+  3. the player's ordinary inventory
+  4. if no inventory destination can accept it, drop the arrow at the player's feet
+- returning to the original Quiver slot must not overwrite a different ammunition stack that has since occupied that slot
+- if the original slot now contains a compatible stack, the returning arrow may merge into it when normal stack rules allow
+- if the projectile was fired from offhand or ordinary inventory rather than the Quiver, skip the original-Quiver-slot step and use the remaining fallback order
+- Loyalty return never duplicates the source ammunition; exactly one recoverable primary projectile may become one returned item
+- secondary Multishot projectiles remain non-returnable under the existing rules
+
+Design constraint: Loyalty should restore ammunition to the player's existing ammo-management flow without silently replacing or deleting other ammunition.
+
 #### Piercing + Loyalty Return Timing
 
 Accepted direction:
