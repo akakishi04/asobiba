@@ -726,6 +726,14 @@ Accepted direction:
 - do not force unrelated enchantments to gain artificial arrow behavior merely for completeness
 - bow/crossbow enchantments and arrow enchantments may coexist; stacking rules are decided per effect where necessary
 
+
+#### Arrow Effect Decisions
+
+Accepted:
+- **Power**: reduces the arrow's normal in-flight velocity decay rather than directly adding impact damage. Higher Power levels preserve speed over distance, making Power primarily a long-range performance enchantment.
+- **Sharpness**: adds direct impact damage on hit. Its role is straightforward close-to-any-range damage rather than flight preservation.
+- Power and Sharpness may coexist on the same arrow because they improve different parts of the shot.
+
 ## Accepted transport / alchemy / explosives tweaks
 
 ### Potion Mixing
