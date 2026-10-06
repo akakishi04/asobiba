@@ -1101,12 +1101,13 @@ Accepted direction:
 - an Arcane Bookshelf also contributes normal bookshelf-equivalent enchanting power; it is not a pool-only utility block
 - Arcane Bookshelf count has staged effects rather than being only a binary unlock:
   - 1 Arcane Bookshelf: unlock the base Arcane pool containing Mending I and Frost Walker I-II
-  - 3 Arcane Bookshelves: increase the weighting / appearance rate of Arcane-pool enchantments
-  - 5 Arcane Bookshelves: unlock the rarer Arcane pool containing Soul Speed I-III, Swift Sneak I-III and Wind Burst I-III
-  - 10 Arcane Bookshelves: unlock over-cap / high-level Arcane rolls up to the configured level cap where the enchantment supports those levels; this includes Mending II-X, Frost Walker III-X, Soul Speed IV-X, Swift Sneak IV-X and Wind Burst IV-X under the current level-cap rules
+  - 3 Arcane Bookshelves: increase Arcane-pool candidate weight to about **1.35x** normal weighting
+  - 5 Arcane Bookshelves: unlock the rarer Arcane pool containing Soul Speed I-III, Swift Sneak I-III and Wind Burst I-III; Arcane candidate weight becomes about **1.50x**
+  - 10 Arcane Bookshelves: unlock over-cap / high-level Arcane rolls up to the configured level cap where the enchantment supports those levels; this includes Mending II-X, Frost Walker III-X, Soul Speed IV-X, Swift Sneak IV-X and Wind Burst IV-X under the current level-cap rules; Arcane candidate weight becomes about **1.75x**
   - 10 Arcane Bookshelves do not guarantee level X; they only make those levels eligible, with actual rolled level still depending on enchanting power / offer generation
-  - 15 Arcane Bookshelves: maximize Arcane-pool weighting and high-level Arcane-roll weighting
+  - 15 Arcane Bookshelves: maximize Arcane-pool weighting at about **2.0x** normal weighting and increase the relative weight of eligible over-cap Arcane levels by about **1.5x**
   - 15 Arcane Bookshelves do not guarantee an Arcane enchantment or level X, and ordinary enchanting-table candidates remain in the pool
+  - these multipliers affect weighted selection only; they do not duplicate candidates or bypass compatibility rules
 - normal bookshelves remain valid enchanting-power providers; Arcane Bookshelves can replace them physically but are much more expensive
 - compatible with raised enchantment level caps and Growing Enchantments
 - bookshelf state should be readable from the actual nearby enchanting setup rather than from a global unlock
