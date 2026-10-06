@@ -217,14 +217,31 @@ Villagers track a lightweight persistent welfare state derived from their actual
 
 Accepted direction:
 - do not use a crude room-size or single-block "trading hall" detector
+- each villager has a persistent **Welfare score from 0 to 100**
+- welfare is based on observed living-condition history rather than on one instantaneous enclosure check
 - welfare degrades gradually when a villager is chronically unable to move, sleep, reach a workstation, access reasonable open space, or participate in normal village life
 - short-term confinement, transport, emergencies, work shifts and temporary pathfinding failures should not immediately penalize the player
 - good living conditions recover welfare gradually
-- poor welfare can apply visible weakness/exhaustion-like effects and increase that villager's trade prices
+- the initial welfare bands are:
+  - **80-100: Good** — no welfare trade penalty
+  - **60-79: Normal** — no welfare trade penalty
+  - **40-59: Strained** — approximately **+10% trade price**
+  - **20-39: Poor** — approximately **+25% trade price** plus visible mild weakness/exhaustion-like feedback
+  - **0-19: Severe** — approximately **+50% trade price** plus stronger visible weakness/exhaustion-like feedback
+- the welfare score should be driven by several independent life-history signals rather than any one requirement:
+  - whether the villager has actually been able to move through a reasonable local area
+  - whether it has successfully slept during normal sleep opportunities
+  - whether it can reach/use its workstation during work periods
+  - whether it periodically reaches open or meaningfully non-confined space
+  - whether it can participate in ordinary village/social activity with other villagers
+- one failed signal does not immediately make a villager unhealthy; persistent failure across Minecraft days is what matters
+- normal transport in boats/minecarts, temporary holding cells, raids, fire evacuation, brief construction blockage and transient pathfinding failure must remain effectively penalty-free
+- meaningful welfare decline should require roughly **one or more Minecraft days** of sustained poor conditions, with deeper penalties requiring several days rather than minutes
+- welfare recovery is also gradual so briefly releasing a chronically confined villager does not instantly erase long-term neglect
 - severe long-term neglect may raise prices sharply enough that maintaining healthy villagers is economically preferable to permanent one-block imprisonment
 - welfare penalties apply per villager and persist across reloads
 - the system should remain compatible with autonomous village housing, work, migration and emergency behavior
-- exact thresholds and price curves are tuning values, not separate design decisions
+- percentage thresholds and timing values are initial tuning defaults and may be adjusted after playtesting without changing the welfare model
 - special trade-only progression materials such as the Arcane Bookshelf material participate in the same welfare-adjusted pricing
 
 Design constraint: discourage permanent immobilized trading halls without punishing normal houses, compact villages, temporary containment, transport or emergency shelter.
