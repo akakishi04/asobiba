@@ -169,7 +169,7 @@ public abstract class EnchantmentMenuExtensionsMixin {
             }
 
             IdMap<Holder<Enchantment>> holders = level.registryAccess()
-                    .lookupOrThrow(Registries.ENCHANTMENT)
+                    .registryOrThrow(Registries.ENCHANTMENT)
                     .asHolderIdMap();
 
             for (int slot = 0; slot < 3; slot++) {
@@ -178,8 +178,8 @@ public abstract class EnchantmentMenuExtensionsMixin {
                         this.shadow$getEnchantmentList(level.registryAccess(), target, slot, menu.costs[slot]);
                 if (!list.isEmpty()) {
                     EnchantmentInstance clue = list.get(this.random.nextInt(list.size()));
-                    menu.enchantClue[slot] = holders.getId(clue.enchantment());
-                    menu.levelClue[slot] = clue.level();
+                    menu.enchantClue[slot] = holders.getId(clue.enchantment);
+                    menu.levelClue[slot] = clue.level;
                 }
             }
 
