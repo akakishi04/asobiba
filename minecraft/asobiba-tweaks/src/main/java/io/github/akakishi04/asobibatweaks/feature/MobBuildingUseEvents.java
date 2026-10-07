@@ -25,8 +25,19 @@ public final class MobBuildingUseEvents {
         }
 
         ServerLevel level = (ServerLevel)mob.level();
+        VillageSimulationScheduler.enqueueValidation(
+                level,
+                "mob_building:" + mob.getUUID(),
+                () -> {
+                    if (!mob.isAlive() || mob.isRemoved() || mob.level() != level) return;
+                    tickBuildingUse(mob, level);
+                }
+        );
+    }
+
+    private static void tickBuildingUse(PathfinderMob mob, ServerLevel level) {
         if (level.isRainingAt(mob.blockPosition()) && !mob.getNavigation().isInProgress()) {
-            BlockPos shelter = findShelter(level, mob.blockPosition(), 9);
+            BlockPos shelter = findShelter(level, mob.blockPosition(), 9, mob);
             if (shelter != null) {
                 mob.getNavigation().moveTo(shelter.getX() + 0.5D, shelter.getY(), shelter.getZ() + 0.5D, 0.75D);
                 return;
@@ -36,14 +47,15 @@ public final class MobBuildingUseEvents {
         long dayTime = Math.floorMod(level.getDayTime(), 24000L);
         if (dayTime > 12500L && dayTime < 22000L && !mob.getNavigation().isInProgress()
                 && mob.getRandom().nextDouble() < 0.10D) {
-            BlockPos campfire = findCampfire(level, mob.blockPosition(), 12);
+            BlockPos campfire = findCampfire(level, mob.blockPosition(), 12, mob);
             if (campfire != null) {
                 BlockPos target = campfire.offset(
                         mob.getRandom().nextInt(5) - 2,
                         0,
                         mob.getRandom().nextInt(5) - 2
                 );
-                if (level.getBlockState(target).isAir()
+                if (VillageSimulationScheduler.isChunkLoaded(level, target)
+                        && level.getBlockState(target).isAir()
                         && level.getBlockState(target.below()).isFaceSturdy(level, target.below(), Direction.UP)) {
                     mob.getNavigation().moveTo(target.getX() + 0.5D, target.getY(), target.getZ() + 0.5D, 0.6D);
                 }
@@ -51,10 +63,20 @@ public final class MobBuildingUseEvents {
         }
     }
 
-    private static BlockPos findShelter(ServerLevel level, BlockPos center, int radius) {
+    private static BlockPos findShelter(ServerLevel level, BlockPos center, int radius, PathfinderMob mob) {
+        BlockPos min = center.offset(-radius, -2, -radius);
+        BlockPos max = center.offset(radius, 3, radius);
+        if (!VillageSimulationScheduler.isAreaLoaded(level, min, max)) return null;
+
         BlockPos best = null;
         int bestScore = Integer.MIN_VALUE;
-        for (BlockPos pos : BlockPos.betweenClosed(center.offset(-radius, -2, -radius), center.offset(radius, 3, radius))) {
+        for (int attempt = 0; attempt < 64; attempt++) {
+            if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) break;
+            BlockPos pos = center.offset(
+                    mob.getRandom().nextInt(radius * 2 + 1) - radius,
+                    mob.getRandom().nextInt(6) - 2,
+                    mob.getRandom().nextInt(radius * 2 + 1) - radius
+            );
             if (!level.getBlockState(pos).isAir()
                     || !level.getBlockState(pos.above()).isAir()
                     || !level.getBlockState(pos.below()).isFaceSturdy(level, pos.below(), Direction.UP)
@@ -76,8 +98,18 @@ public final class MobBuildingUseEvents {
         return best;
     }
 
-    private static BlockPos findCampfire(ServerLevel level, BlockPos center, int radius) {
-        for (BlockPos pos : BlockPos.betweenClosed(center.offset(-radius, -3, -radius), center.offset(radius, 3, radius))) {
+    private static BlockPos findCampfire(ServerLevel level, BlockPos center, int radius, PathfinderMob mob) {
+        BlockPos min = center.offset(-radius, -3, -radius);
+        BlockPos max = center.offset(radius, 3, radius);
+        if (!VillageSimulationScheduler.isAreaLoaded(level, min, max)) return null;
+
+        for (int attempt = 0; attempt < 64; attempt++) {
+            if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) return null;
+            BlockPos pos = center.offset(
+                    mob.getRandom().nextInt(radius * 2 + 1) - radius,
+                    mob.getRandom().nextInt(7) - 3,
+                    mob.getRandom().nextInt(radius * 2 + 1) - radius
+            );
             if (level.getBlockState(pos).is(Blocks.CAMPFIRE) || level.getBlockState(pos).is(Blocks.SOUL_CAMPFIRE)) {
                 return pos.immutable();
             }
