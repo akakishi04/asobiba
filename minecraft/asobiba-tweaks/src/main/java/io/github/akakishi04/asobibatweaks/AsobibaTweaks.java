@@ -19,6 +19,7 @@ import io.github.akakishi04.asobibatweaks.feature.PhysicsTransportEvents;
 import io.github.akakishi04.asobibatweaks.feature.TransportTweaksEvents;
 import io.github.akakishi04.asobibatweaks.feature.UniversalBondEvents;
 import io.github.akakishi04.asobibatweaks.feature.VillageSimulationEvents;
+import io.github.akakishi04.asobibatweaks.feature.VillageSimulationScheduler;
 import io.github.akakishi04.asobibatweaks.feature.WorldOddityEvents;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
@@ -52,6 +53,7 @@ public final class AsobibaTweaks {
         NeoForge.EVENT_BUS.register(new OceanAndDisplayEvents());
         NeoForge.EVENT_BUS.register(new NetherFishingEvents());
         NeoForge.EVENT_BUS.register(new VillageSimulationEvents());
+        NeoForge.EVENT_BUS.register(new VillageSimulationScheduler());
         NeoForge.EVENT_BUS.register(new MobBuildingUseEvents());
         InteractionTweaksEvents.registerDispenserBehaviors();
     }
