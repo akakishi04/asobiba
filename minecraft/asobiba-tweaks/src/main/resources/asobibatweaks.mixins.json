@@ -16,7 +16,9 @@
     "EnchantmentMenuExtensionsMixin",
     "EnchantedWorkBlockPlacementMixin",
     "FurnaceEfficiencyMixin",
-    "VillagerWelfareMixin"
+    "VillagerWelfareMixin",
+    "AbstractContainerMenuAccessor",
+    "InventoryMenuQuiverMixin"
   ],
   "injectors": {
     "defaultRequire": 1
