@@ -1218,8 +1218,14 @@ public final class VillageSimulationEvents {
         if (!level.isRainingAt(villager.blockPosition()) || villager.getNavigation().isInProgress()) return;
 
         BlockPos center = villager.blockPosition();
-        if (!areaLoaded(level, center, 9, 2, 4)) return;
+        BlockPos indexed = VillageBuildingService.findIndexedShelter(level, center, 24);
+        if (indexed != null) {
+            villager.getNavigation().moveTo(
+                    indexed.getX() + 0.5D, indexed.getY(), indexed.getZ() + 0.5D, 0.65D);
+            return;
+        }
 
+        if (!areaLoaded(level, center, 9, 2, 4)) return;
         for (int attempt = 0; attempt < 64; attempt++) {
             if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) return;
             BlockPos pos = center.offset(
