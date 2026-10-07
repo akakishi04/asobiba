@@ -892,11 +892,69 @@ Settlement structure:
 Design constraint: rivers should become useful pieces of settlement infrastructure while remaining real terrain that villagers must navigate, cross and physically transport goods through.
 
 ### Regional economy integration
-Regional trade value, village logistics and autonomous growth should interact:
-- scarce construction goods are worth more locally
-- player imports can unblock construction
-- surplus goods can support caravans later
-- material flow should visibly affect village development
+Regional trade value, village logistics and autonomous growth share one lightweight supply/demand model rather than maintaining a separate abstract market simulation.
+
+Accepted direction:
+- each village tracks a small set of **trade/resource categories** rather than a full per-item commodity exchange
+- initial categories may include:
+  - Food
+  - Wood
+  - Stone / Construction
+  - Metal
+  - Farming
+  - Fishing
+  - Regional goods
+  - Luxury / rare goods
+- each category derives a **Scarcity / Surplus state** from real recognized village inventory, reserved materials, active construction/repair demand and expected local consumption
+- market state is refreshed infrequently, initially about **once per Minecraft day**, rather than recalculated every tick
+- price logic uses the same real resource state already used by village planners and logistics; there is no hidden economic inventory
+
+Initial trade-value bands:
+- strong surplus: about **0.80x** base value
+- normal supply: **1.00x**
+- mild shortage: about **1.15x**
+- shortage: about **1.35x**
+- severe shortage: about **1.60x**
+- strongly non-local / regionally scarce goods may reach roughly **1.80x** where appropriate
+- these multipliers are initial tuning values and should remain bounded enough that ordinary trade does not become wildly unstable
+
+Regional value:
+- scarcity from inventory/demand and **regional availability** are related but separate inputs
+- goods that are naturally difficult to obtain in the surrounding biome/region may receive a regional-value bonus
+- examples include desert goods in cold regions, spruce/cold-region materials in deserts, or marine goods in strongly inland settlements
+- value should depend primarily on whether the good is locally obtainable, not simply on raw transport distance
+- moving goods between genuinely different regions should therefore be more valuable than repeatedly shuttling the same common local item between nearby villages
+
+Real trade feedback:
+- when the player sells useful material such as logs, food, stone or metal to a village, the accepted quantity may enter recognized village storage and become usable by the simulation
+- imported material can therefore directly unblock construction, repair or food shortages
+- as real stock recovers, the shortage premium falls on later market updates
+- repeated bulk sale of the same good cannot preserve maximum shortage pricing indefinitely
+- when village activity consumes stock again, demand/value may rise naturally
+
+Village selling:
+- villages prefer selling **surplus above their operational reserve**
+- planners should not voluntarily liquidate critical food, construction or emergency reserves merely because the player requests a trade
+- sale availability/pricing may therefore shrink when village stock approaches its target reserve
+
+Trade-price composition:
+- final trade pricing may combine:
+  - villager/base trade value
+  - regional supply/demand modifier
+  - regional-availability modifier where applicable
+  - existing per-villager Welfare modifier
+- these modifiers should remain visible enough that the player can understand why a price changed
+- trade UI may expose concise reasons such as **High local demand**, **Stock shortage**, **Regional import**, **Surplus**, or **Welfare +25%**
+
+AI integration:
+- the same Scarcity states inform village planning and logistics
+- shortages can create gathering, import, public-works or trade needs
+- surpluses can make goods available for export
+- when two settlements have complementary surplus/shortage states, future Caravan / Cargo Raft logistics may move real goods between them
+- imported goods enter real destination storage and exported goods leave real origin storage
+- no trade route generates materials from nothing
+
+Design constraint: regional economy should emerge from real village inventory, real consumption and geographic availability, while remaining simple enough to understand and cheap enough to update only periodically.
 
 ### Fire emergency integration
 Major settlement fires can:
