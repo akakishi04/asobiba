@@ -2049,7 +2049,7 @@ Target characteristics:
 - avoid filling every ocean with constant land fragments; empty sea is an intentional part of the experience
 
 Integration goals:
-- ocean currents, boats, maps and long-distance trade become more meaningful
+- boats, maps and long-distance trade become more meaningful; macro geography may imply routes, but no continuous ocean-current physics is required
 - regional trade value benefits from real geographic separation
 - villages and future caravans/ports can develop differently across continents
 - exploration rewards should account for the greater travel commitment
@@ -2098,6 +2098,10 @@ Terrain shaping:
 - not every river is guaranteed end-to-end boat navigation; rapids, waterfalls and terrain breaks are valid geographic obstacles
 
 Navigation / logistics integration:
+- river/ocean flow direction is **not simulated as continuous boat physics**
+- generated drainage direction may exist as world-generation/planning metadata, but it does not apply current forces, passive drift or per-tick acceleration to boats/entities
+- water logistics are route/path based: the system cares whether a continuous navigable water corridor exists, not whether the water physically pushes the craft downstream
+- this avoids adding a persistent fluid-current simulation cost to loaded chunks
 - long lowland river sections should often provide meaningful continuous boat navigation
 - non-navigable interruptions may later support **portage** logistics: unload at an upstream dock, transport goods overland, and resume at a downstream dock
 - village River Corridor recognition, docks, fishing sites, bridge planning and Cargo Raft logistics use the generated river network rather than maintaining a separate artificial water graph
@@ -2139,7 +2143,7 @@ Add a larger watercraft tier between vanilla boats and full ship mods.
 Planned direction:
 - carry multiple players/mobs plus a modest amount of cargo
 - visibly slower/heavier than a normal boat when loaded
-- compatible with future currents, wind pressure and mooring
+- compatible with mooring and existing wind-pressure interactions where applicable, but does **not** require simulated river/ocean currents
 - usable for long ocean crossings created by continental worldgen
 - remain simple enough to steer directly without a separate ship-management UI
 
