@@ -7,6 +7,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -14,6 +15,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.Enchantment;
@@ -39,7 +41,13 @@ public final class EnchantmentTweaksEvents {
     public void onBlockDrops(BlockDropsEvent event) {
         if (!(event.getBreaker() instanceof ServerPlayer player)
                 || !AsobibaTweaksConfig.GROWING_ENCHANTMENTS_ENABLED.getAsBoolean()) return;
-        gain(player, player.getMainHandItem(), 1);
+
+        ItemStack tool = event.getTool();
+        gain(player, tool, 1);
+
+        if (AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()) {
+            applyFortuneBranch(event, tool, player);
+        }
     }
 
     @SubscribeEvent
@@ -58,10 +66,12 @@ public final class EnchantmentTweaksEvents {
             int mastery = EnchantmentMasteryData.getMastery(stack, enchantment);
             if (mastery < BRANCH_THRESHOLD) return;
             int branch = EnchantmentMasteryData.getBranch(stack, enchantment);
+            if (branch < 0) return;
             float factor = switch (branch) {
                 case 0 -> 1.05F;
                 case 1 -> 1.10F;
-                default -> 1.075F;
+                case 2 -> 1.075F;
+                default -> 1.0F;
             };
             event.setNewSpeed(event.getNewSpeed() * factor);
             return;
@@ -79,6 +89,7 @@ public final class EnchantmentTweaksEvents {
                 int mastery = EnchantmentMasteryData.getMastery(armor, enchantment);
                 if (mastery < BRANCH_THRESHOLD) continue;
                 int branch = EnchantmentMasteryData.getBranch(armor, enchantment);
+                if (branch < 0) continue;
                 if (branch == 0) {
                     event.setDistance(event.getDistance() * 0.85F);
                 } else if (branch == 1 && event.getDistance() > 5.0F) {
@@ -137,8 +148,9 @@ public final class EnchantmentTweaksEvents {
                 header = true;
             }
             String name = enchantment.value().description().getString();
-            String branch = mastery >= BRANCH_THRESHOLD
-                    ? " / " + branchName(EnchantmentMasteryData.getBranch(stack, enchantment))
+            int selectedBranch = EnchantmentMasteryData.getBranch(stack, enchantment);
+            String branch = mastery >= BRANCH_THRESHOLD && selectedBranch >= 0
+                    ? " / " + branchName(EnchantmentMasteryData.id(enchantment), selectedBranch)
                     : "";
             ChatFormatting color = EnchantmentMasteryData.isCurse(enchantment)
                     ? ChatFormatting.DARK_RED : ChatFormatting.GRAY;
@@ -184,6 +196,9 @@ public final class EnchantmentTweaksEvents {
         Holder<Enchantment> best = null;
         int bestMastery = BRANCH_THRESHOLD - 1;
         for (Holder<Enchantment> enchantment : EnchantmentMasteryData.enchantments(stack).keySet()) {
+            String id = EnchantmentMasteryData.id(enchantment);
+            if (!supportsBranches(id)) continue;
+
             int mastery = EnchantmentMasteryData.getMastery(stack, enchantment);
             if (mastery > bestMastery) {
                 best = enchantment;
@@ -195,7 +210,8 @@ public final class EnchantmentTweaksEvents {
         int branch = EnchantmentMasteryData.cycleBranch(stack, best);
         if (!player.getAbilities().instabuild) player.getOffhandItem().shrink(1);
         player.sendSystemMessage(Component.literal(
-                best.value().description().getString() + " mastery branch -> " + branchName(branch)
+                best.value().description().getString() + " mastery branch -> "
+                        + branchName(EnchantmentMasteryData.id(best), branch)
         ).withStyle(ChatFormatting.AQUA));
         event.setCancellationResult(InteractionResult.SUCCESS);
         event.setCanceled(true);
@@ -251,6 +267,115 @@ public final class EnchantmentTweaksEvents {
         }
     }
 
+    private static void applyFortuneBranch(BlockDropsEvent event, ItemStack tool, ServerPlayer player) {
+        BranchRef fortune = branch(tool, FORTUNE);
+        if (fortune == null || event.getDrops().isEmpty()) return;
+
+        String blockPath = BuiltInRegistries.BLOCK.getKey(event.getState().getBlock()).getPath();
+        double strength = branchScale(fortune.mastery(), 0.0D, 1.0D);
+
+        if (fortune.branch() == 0) {
+            if (!isOreFortuneTarget(blockPath)) return;
+            double chance = 0.10D + 0.15D * strength;
+            if (player.getRandom().nextDouble() < chance) addOneDrop(event);
+            return;
+        }
+
+        if (fortune.branch() == 1) {
+            if (!isHarvestFortuneTarget(blockPath)) return;
+            double chance = 0.10D + 0.15D * strength;
+            if (player.getRandom().nextDouble() < chance) addOneDrop(event);
+            return;
+        }
+
+        if (fortune.branch() == 2) {
+            double chance = 0.10D + 0.20D * strength;
+            if (player.getRandom().nextDouble() >= chance) return;
+
+            ItemEntity target = largestDrop(event);
+            if (target == null || target.getItem().getCount() < 2) return;
+
+            if (player.getRandom().nextBoolean()) {
+                addOneDrop(event, target);
+            } else {
+                target.getItem().shrink(1);
+            }
+        }
+    }
+
+    private static BranchRef branch(ItemStack stack, String enchantmentId) {
+        if (stack.isEmpty()) return null;
+        for (Holder<Enchantment> enchantment : EnchantmentMasteryData.enchantments(stack).keySet()) {
+            if (!enchantmentId.equals(EnchantmentMasteryData.id(enchantment))) continue;
+
+            int mastery = EnchantmentMasteryData.getMastery(stack, enchantment);
+            int selected = EnchantmentMasteryData.getBranch(stack, enchantment);
+            if (mastery < BRANCH_THRESHOLD || selected < 0) return null;
+            return new BranchRef(mastery, selected);
+        }
+        return null;
+    }
+
+    private static double branchScale(int mastery, double min, double max) {
+        double t = (Math.max(BRANCH_THRESHOLD, Math.min(100, mastery)) - BRANCH_THRESHOLD)
+                / (double)(100 - BRANCH_THRESHOLD);
+        return min + (max - min) * t;
+    }
+
+    private static boolean isOreFortuneTarget(String blockPath) {
+        return blockPath.endsWith("_ore")
+                || "raw_copper_block".equals(blockPath)
+                || "raw_iron_block".equals(blockPath)
+                || "raw_gold_block".equals(blockPath);
+    }
+
+    private static boolean isHarvestFortuneTarget(String blockPath) {
+        return "wheat".equals(blockPath)
+                || "carrots".equals(blockPath)
+                || "potatoes".equals(blockPath)
+                || "beetroots".equals(blockPath)
+                || "nether_wart".equals(blockPath)
+                || "melon".equals(blockPath)
+                || "cocoa".equals(blockPath)
+                || "sweet_berry_bush".equals(blockPath);
+    }
+
+    private static ItemEntity largestDrop(BlockDropsEvent event) {
+        ItemEntity best = null;
+        int bestCount = -1;
+        for (ItemEntity drop : event.getDrops()) {
+            ItemStack stack = drop.getItem();
+            if (stack.isEmpty() || stack.getCount() <= bestCount) continue;
+            best = drop;
+            bestCount = stack.getCount();
+        }
+        return best;
+    }
+
+    private static void addOneDrop(BlockDropsEvent event) {
+        ItemEntity target = largestDrop(event);
+        if (target != null) addOneDrop(event, target);
+    }
+
+    private static void addOneDrop(BlockDropsEvent event, ItemEntity target) {
+        ItemStack stack = target.getItem();
+        if (stack.isEmpty()) return;
+
+        if (stack.getCount() < stack.getMaxStackSize()) {
+            stack.grow(1);
+            return;
+        }
+
+        ItemStack extra = stack.copyWithCount(1);
+        event.getDrops().add(new ItemEntity(
+                event.getLevel(),
+                event.getPos().getX() + 0.5D,
+                event.getPos().getY() + 0.5D,
+                event.getPos().getZ() + 0.5D,
+                extra
+        ));
+    }
+
     private static boolean toggleExclusive(ServerPlayer player, ItemStack stack) {
         String storedId = EnchantmentMasteryData.storedExclusive(stack);
         int storedLevel = Math.max(1, EnchantmentMasteryData.storedExclusiveLevel(stack));
@@ -298,13 +423,45 @@ public final class EnchantmentTweaksEvents {
         return (FORTUNE.equals(a) && SILK_TOUCH.equals(b)) || (SILK_TOUCH.equals(a) && FORTUNE.equals(b));
     }
 
-    private static String branchName(int branch) {
+    private static boolean supportsBranches(String enchantmentId) {
+        return "minecraft:efficiency".equals(enchantmentId)
+                || "minecraft:feather_falling".equals(enchantmentId)
+                || FORTUNE.equals(enchantmentId);
+    }
+
+    private static String branchName(String enchantmentId, int branch) {
+        if ("minecraft:efficiency".equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Hard-Material Breaker";
+                case 1 -> "Mining Rhythm";
+                case 2 -> "Generalist Tool";
+                default -> "Unselected";
+            };
+        }
+        if ("minecraft:feather_falling".equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Soft Landing";
+                case 1 -> "Impact Landing";
+                case 2 -> "Aerial Recovery";
+                default -> "Unselected";
+            };
+        }
+        if (FORTUNE.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Ore Specialist";
+                case 1 -> "Harvest Specialist";
+                case 2 -> "High Variance";
+                default -> "Unselected";
+            };
+        }
         return switch (branch) {
-            case 0 -> "Precision";
-            case 1 -> "Momentum";
-            default -> "Endurance";
+            case 0 -> "Branch I";
+            case 1 -> "Branch II";
+            case 2 -> "Branch III";
+            default -> "Unselected";
         };
     }
 
+    private record BranchRef(int mastery, int branch) {}
     private record EnchantRef(String id, int level) {}
 }

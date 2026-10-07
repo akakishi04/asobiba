@@ -44,14 +44,21 @@ public final class EnchantmentMasteryData {
     }
 
     public static int getBranch(ItemStack stack, Holder<Enchantment> enchantment) {
-        return custom(stack).getCompound(BRANCHES).getInt(id(enchantment));
+        CompoundTag branches = custom(stack).getCompound(BRANCHES);
+        String key = id(enchantment);
+        return branches.contains(key) ? branches.getInt(key) : -1;
+    }
+
+    public static boolean hasBranch(ItemStack stack, Holder<Enchantment> enchantment) {
+        return custom(stack).getCompound(BRANCHES).contains(id(enchantment));
     }
 
     public static int cycleBranch(ItemStack stack, Holder<Enchantment> enchantment) {
         CompoundTag root = custom(stack);
         CompoundTag branches = root.getCompound(BRANCHES);
         String key = id(enchantment);
-        int next = (branches.getInt(key) + 1) % 3;
+        int current = branches.contains(key) ? branches.getInt(key) : -1;
+        int next = (current + 1) % 3;
         branches.putInt(key, next);
         root.put(BRANCHES, branches);
         setCustom(stack, root);
