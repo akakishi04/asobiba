@@ -436,17 +436,45 @@ Accepted direction:
 
 Design constraint: workers gather from places the settlement has explicitly decided to use, not from every reachable resource in the loaded world.
 
-### Outposts and satellite sites
-Villages may establish small functional sites away from the core settlement:
-- forester huts
-- quarries
-  - quarry sites favor exposed stone, hillsides and shallow excavations; village AI does not create deep mines descending below Y=0
-- fishing huts
-- satellite farms
-- grazing areas
-- temporary work camps
+### Outpost creation and lifecycle
 
-These sites should remain linked to the parent settlement through logistics rather than becoming free resource generators.
+Accepted direction:
+- Outposts / Satellite Sites are created only for **persistent remote work needs**, not merely because a resource happens to exist outside the village core
+- suitable candidates include approved Forestry, Quarry, Farm, Fishing or similar work sites that are expected to remain useful for multiple Minecraft days
+- an Outpost requires:
+  - an actual village resource/work demand
+  - a recognized remote work site
+  - a safe practical route back to the parent village
+  - enough real stored construction/maintenance resources
+  - expected sustained use rather than one-off gathering
+- distance guidance:
+  - up to roughly **96 blocks** from the effective village center: ordinary commuting is preferred where practical
+  - roughly **96-192 blocks**: a small lodging/logistics Outpost becomes a normal option
+  - beyond roughly **192 blocks**: establishment should be uncommon and require stronger sustained value/logistics justification
+- an Outpost begins small and purpose-built rather than as a second full village
+- an initial Outpost may contain:
+  - one small work/rest building
+  - small local storage
+  - 1-2 beds where overnight work is justified
+  - the required profession/work equipment
+  - lighting/basic safety
+  - a recognized route/road link to the parent settlement
+- workers commute when distance allows; only the number of workers actually needed for the site should stay overnight or operate from the Outpost
+- Outposts remain explicitly linked to a **parent village**
+- ordinary Outposts do not independently:
+  - create unlimited new housing
+  - run unrestricted population growth
+  - create further Outposts on their own
+  - behave as free independent resource generators
+- their normal functions are remote work, temporary worker accommodation, local buffering/storage and logistics back to the parent village
+- continued use may grow a work site from a minimal shelter into a more established Outpost, but major permanent population growth requires a separate **Satellite Settlement / settlement-fission** decision rather than silent Outpost expansion
+- when the underlying resource demand disappears or the site becomes depleted/nonviable, the Outpost may enter an inactive/abandoned state
+- on shutdown, workers return to the parent village and logistics stop
+- recoverable stored resources may be transported back to the parent village when practical
+- abandoned Outpost buildings normally remain physically in the world as settlement history rather than being automatically deleted
+
+Design constraint: Outposts extend a village's working reach without becoming uncontrolled self-replicating villages.
+
 
 ### Roads and bridges
 Accepted direction:
