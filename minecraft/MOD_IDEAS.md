@@ -2067,6 +2067,73 @@ Compatibility constraint:
 This mode should primarily affect newly generated chunks/worlds. Existing worlds must not silently regenerate old terrain, and worldgen changes should remain optional because they can conflict with other terrain-generation mods.
 
 
+### Continental River Networks
+
+Add an optional macro-scale river-generation layer integrated with the accepted continental world-generation mode.
+
+Accepted direction:
+- rivers are generated as **connected drainage networks** rather than as unrelated short water features
+- continental terrain first establishes broad elevation/highland structure, then derives drainage basins and downstream flow paths
+- the intended topology is **highlands -> streams/tributaries -> main river -> lake/wetland/ocean outlet**
+- rivers should normally trend downhill and should not terminate arbitrarily without a plausible sink/outlet
+- tributaries may merge into progressively larger downstream rivers
+- lakes may participate in the network with inflow and outflow rivers; a smaller number of closed-basin lakes may still exist where terrain justifies them
+- river generation should preserve modern biome/terrain variety while making long continuous waterways substantially more common than in vanilla-like fragmented generation
+
+Initial river scale targets:
+- **Stream:** roughly 2-4 blocks wide, commonly 1-2 blocks deep
+- **Tributary:** roughly 4-8 blocks wide
+- **River:** roughly 8-16 blocks wide, commonly navigable by ordinary boats where terrain permits
+- **Major River:** roughly 16-32 blocks wide, generally suitable for larger cargo-watercraft logistics where uninterrupted
+- river mouths/deltas may widen beyond the normal upstream width
+- downstream width/depth should generally increase as tributaries merge rather than every river using one fixed size
+
+Terrain shaping:
+- rivers interact with surrounding terrain rather than being painted onto a finished surface
+- mountainous terrain favors narrow valleys, gorges, rapids and occasional waterfalls
+- plains favor broader channels, floodplains and stronger meandering
+- large mature rivers may create wider lowland corridors
+- occasional oxbow-like abandoned bends / floodplain water features are acceptable where generation supports them
+- river mouths may form deltas or broader estuarine terrain
+- not every river is guaranteed end-to-end boat navigation; rapids, waterfalls and terrain breaks are valid geographic obstacles
+
+Navigation / logistics integration:
+- long lowland river sections should often provide meaningful continuous boat navigation
+- non-navigable interruptions may later support **portage** logistics: unload at an upstream dock, transport goods overland, and resume at a downstream dock
+- village River Corridor recognition, docks, fishing sites, bridge planning and Cargo Raft logistics use the generated river network rather than maintaining a separate artificial water graph
+- rivers remain physical terrain; logistics still validate actual water continuity and clearance
+
+Settlement / structure integration:
+- village/structure placement may modestly favor useful river geography such as banks, confluences, lake shores and river mouths where other placement constraints allow
+- this bias should create plausible river settlements without forcing every village onto water
+- generated rivers may naturally influence district boundaries, bridge demand, fishing economies, ports and regional trade routes
+
+Generation order target:
+1. major continent / ocean placement
+2. broad mountain and elevation structure
+3. drainage-basin derivation
+4. river-network routing
+5. lakes / sinks / outlets
+6. river valley, floodplain and channel shaping
+7. biome/detail integration
+8. villages and other structures
+
+Configuration:
+- feature toggle
+- river density
+- major-river frequency
+- river width scale
+- meander strength
+- lake frequency
+- waterfall / rapid frequency
+- delta frequency
+
+Compatibility constraint:
+- this system primarily affects newly generated terrain and must not silently regenerate existing chunks
+- it remains optional because macro terrain/river generation can conflict with other world-generation mods
+
+Design constraint: generate rivers as part of continental geography so settlement simulation, roads, bridges, fishing and water logistics all operate on the same coherent terrain.
+
 ### Large Boats / Cargo Rafts
 Add a larger watercraft tier between vanilla boats and full ship mods.
 Planned direction:
