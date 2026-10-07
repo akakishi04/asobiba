@@ -93,6 +93,7 @@ public final class ContinentalWorldgenEvents {
             }
         }
 
+        ContinentalRiverGenerator.carveChunk(level, chunk);
         chunk.setUnsaved(true);
     }
 
