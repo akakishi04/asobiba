@@ -107,6 +107,22 @@ public final class VillageSavedData extends SavedData {
         return Collections.unmodifiableMap(projects);
     }
 
+    public List<ProjectRecord> activeProjectsForVillage(UUID villageId) {
+        VillageRecord village = villages.get(villageId);
+        if (village == null) return List.of();
+        List<ProjectRecord> result = new ArrayList<>();
+        for (UUID projectId : village.projectIds) {
+            ProjectRecord record = projects.get(projectId);
+            if (record == null) continue;
+            if ("complete".equals(record.phase) || "cancelled".equals(record.phase)) continue;
+            result.add(record);
+        }
+        result.sort(java.util.Comparator
+                .comparingInt(ProjectRecord::priority).reversed()
+                .thenComparing(record -> record.id.toString()));
+        return Collections.unmodifiableList(result);
+    }
+
     public Map<UUID, StorageRecord> storagesView() {
         return Collections.unmodifiableMap(storages);
     }
@@ -843,6 +859,9 @@ public final class VillageSavedData extends SavedData {
         private String phase = "planned";
         private int workCursor;
         private String pausedReason = "";
+        private UUID leadCarpenterId;
+        private BlockPos anchor;
+        private final Map<String, String> parameters = new HashMap<>();
         private final Map<String, Integer> reservations = new HashMap<>();
 
         private ProjectRecord(UUID id, UUID villageId, String type, int priority, BlockPos site) {
@@ -863,6 +882,10 @@ public final class VillageSavedData extends SavedData {
         public String phase() { return phase; }
         public int workCursor() { return workCursor; }
         public String pausedReason() { return pausedReason; }
+        public UUID leadCarpenterId() { return leadCarpenterId; }
+        public BlockPos anchor() { return anchor; }
+        public Map<String, String> parameters() { return Collections.unmodifiableMap(parameters); }
+        public String parameter(String key) { return parameters.getOrDefault(key, ""); }
         public Map<String, Integer> reservations() { return Collections.unmodifiableMap(reservations); }
 
         public void setType(String value) { type = safeText(value, "generic"); }
@@ -872,6 +895,14 @@ public final class VillageSavedData extends SavedData {
         public void setPhase(String value) { phase = safeText(value, "planned"); }
         public void setWorkCursor(int value) { workCursor = Math.max(0, value); }
         public void setPausedReason(String value) { pausedReason = value == null ? "" : value; }
+        public void setLeadCarpenterId(UUID value) { leadCarpenterId = value; }
+        public void setAnchor(BlockPos value) { anchor = value == null ? null : value.immutable(); }
+
+        public void setParameter(String key, String value) {
+            if (key == null || key.isBlank()) return;
+            if (value == null || value.isBlank()) parameters.remove(key);
+            else parameters.put(key, value);
+        }
 
         public void setReservation(String itemKey, int count) {
             if (itemKey == null || itemKey.isBlank() || count <= 0) reservations.remove(itemKey);
@@ -890,6 +921,17 @@ public final class VillageSavedData extends SavedData {
             tag.putString("phase", phase);
             tag.putInt("cursor", workCursor);
             tag.putString("paused_reason", pausedReason);
+            putUuid(tag, "lead", leadCarpenterId);
+            if (anchor != null) tag.putLong("anchor", anchor.asLong());
+
+            ListTag parameterRows = new ListTag();
+            for (var entry : parameters.entrySet()) {
+                CompoundTag row = new CompoundTag();
+                row.putString("key", entry.getKey());
+                row.putString("value", entry.getValue());
+                parameterRows.add(row);
+            }
+            tag.put("parameters", parameterRows);
 
             ListTag reservationRows = new ListTag();
             for (var entry : reservations.entrySet()) {
@@ -914,6 +956,16 @@ public final class VillageSavedData extends SavedData {
             record.phase = safeText(tag.getString("phase"), "planned");
             record.workCursor = Math.max(0, tag.getInt("cursor"));
             record.pausedReason = tag.getString("paused_reason");
+            record.leadCarpenterId = readUuid(tag, "lead");
+            if (tag.contains("anchor", Tag.TAG_LONG)) record.anchor = BlockPos.of(tag.getLong("anchor"));
+
+            ListTag parameterRows = tag.getList("parameters", Tag.TAG_COMPOUND);
+            for (int i = 0; i < parameterRows.size(); i++) {
+                CompoundTag row = parameterRows.getCompound(i);
+                String key = row.getString("key");
+                String value = row.getString("value");
+                if (!key.isBlank() && !value.isBlank()) record.parameters.put(key, value);
+            }
 
             ListTag reservationRows = tag.getList("reservations", Tag.TAG_COMPOUND);
             for (int i = 0; i < reservationRows.size(); i++) {
