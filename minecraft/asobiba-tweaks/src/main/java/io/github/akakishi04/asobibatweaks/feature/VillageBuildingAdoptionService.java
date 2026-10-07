@@ -257,7 +257,7 @@ public final class VillageBuildingAdoptionService {
         return "generic_shelter";
     }
 
-    private static boolean isWorkstation(BlockState state) {
+    static boolean isWorkstation(BlockState state) {
         return state.is(AsobibaRegistries.CARPENTER_WORKBENCH.get())
                 || state.is(Blocks.BLAST_FURNACE)
                 || state.is(Blocks.SMOKER)
