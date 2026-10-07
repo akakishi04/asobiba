@@ -146,7 +146,7 @@ public final class VillageSimulationEvents {
         if ("carpenter".equals(duty)
                 && AsobibaTweaksConfig.VILLAGE_CARPENTER_ENABLED.getAsBoolean()
                 && AsobibaTweaksConfig.VILLAGE_AUTONOMOUS_GROWTH_ENABLED.getAsBoolean()) {
-            if (villager.getPersistentData().getBoolean(BUILD_ACTIVE)) {
+            if (hasActiveBuildingProject(villager, level) || villager.getPersistentData().getBoolean(BUILD_ACTIVE)) {
                 VillageSimulationScheduler.enqueueWorker(level, "carpenter_work:" + id,
                         () -> runIfActive(villager, level, () -> tickCarpenter(villager, level)));
             } else {
@@ -234,6 +234,12 @@ public final class VillageSimulationEvents {
             player.displayClientMessage(Component.literal("Remote-region trade bonus")
                     .withStyle(ChatFormatting.GOLD), true);
         }
+    }
+
+    private static boolean hasActiveBuildingProject(Villager villager, ServerLevel level) {
+        var villageId = VillagerSimData.villageId(villager);
+        if (villageId.isEmpty()) return false;
+        return selectBuildingProject(VillageSavedData.get(level), villageId.get()) != null;
     }
 
     private static void tickCarpenter(Villager villager, ServerLevel level) {
@@ -1217,29 +1223,61 @@ public final class VillageSimulationEvents {
                 stack -> stack.is(ItemTags.PLANKS), 3);
     }
 
-    private static void registerCompletedLegacyBuild(Villager villager, ServerLevel level, BlockPos base, int buildKind) {
-        var villageId = VillagerSimData.villageId(villager);
-        if (villageId.isEmpty()) return;
-
+    private static void registerCompletedProject(Villager villager, ServerLevel level,
+                                                 VillageSavedData.ProjectRecord project) {
         VillageSavedData data = VillageSavedData.get(level);
+        BlockPos base = project.site();
+        boolean storage = "storage_5x5".equals(project.templateId());
+        boolean twoStory = "house_2story_5x5".equals(project.templateId());
+        int maxY = twoStory ? 8 : 4;
+
         VillageSavedData.BuildingRecord building = data.createBuilding(
-                villageId.get(), base, base.offset(4, 4, 4), true);
-        building.setTemplateId(buildKind == 1 ? "legacy_storage_5x5" : "legacy_hut_5x5");
-        building.setClassification(buildKind == 1 ? "storage" : "residential");
+                project.villageId(), base, base.offset(4, maxY, 4), true);
+        building.setTemplateId(project.templateId());
+        building.setClassification(storage ? "storage" : "residential");
+        building.setValidatedCapacity(storage ? 0 : Boolean.parseBoolean(project.parameter("outpost")) ? 2 : twoStory ? 2 : 1);
         building.setValidationState("valid");
         building.setLastValidatedGameTime(level.getGameTime());
 
-        if (buildKind == 1) {
+        if (storage) {
             for (BlockPos storagePos : List.of(base.offset(1, 1, 2), base.offset(3, 1, 2))) {
                 if (level.getBlockEntity(storagePos) instanceof Container
-                        && data.storageAt(villageId.get(), storagePos).isEmpty()) {
-                    VillageSavedData.StorageRecord storage = data.createStorage(villageId.get(), storagePos, "general");
-                    storage.setValidationState("valid");
-                    storage.setLastValidatedGameTime(level.getGameTime());
+                        && data.storageAt(project.villageId(), storagePos).isEmpty()) {
+                    VillageSavedData.StorageRecord storageRecord =
+                            data.createStorage(project.villageId(), storagePos, "general");
+                    storageRecord.setValidationState("valid");
+                    storageRecord.setLastValidatedGameTime(level.getGameTime());
                 }
             }
-            VillageStorageService.reconcileVillage(villageId.get(), level);
+            VillageStorageService.reconcileVillage(project.villageId(), level);
         }
+        data.touch();
+    }
+
+    private static void createRoadDemandProject(ServerLevel level, java.util.UUID villageId,
+                                                BlockPos from, BlockPos to, Villager carpenter) {
+        if (from.distManhattan(to) < 6) return;
+
+        VillageSavedData data = VillageSavedData.get(level);
+        for (VillageSavedData.ProjectRecord existing : data.activeProjectsForVillage(villageId)) {
+            if (!"road".equals(existing.type())) continue;
+            BlockPos end = existing.anchor();
+            if (end != null && existing.site().distManhattan(from) < 5 && end.distManhattan(to) < 5) return;
+        }
+
+        VillageSavedData.RouteRecord route = data.createRoute(villageId, "road", from, to);
+        route.setTrafficScore(1);
+        route.setState("planned");
+
+        VillageSavedData.ProjectRecord road = data.createProject(villageId, "road", 30, from);
+        road.setTemplateId("road_path_v1");
+        road.setVariantSeed(from.asLong() ^ to.asLong());
+        road.setLeadCarpenterId(carpenter.getUUID());
+        road.setAnchor(to);
+        road.setParameter("route_id", route.id().toString());
+        road.setParameter("plank", plankName(chooseBuildingPlanks(level, from, carpenter)));
+        road.setPhase("planned");
+        road.setWorkCursor(0);
         data.touch();
     }
 
