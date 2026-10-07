@@ -131,7 +131,8 @@ public final class VillageStatusNetworking {
             VillageSavedData.BuildingRecord building = data.building(id).orElse(null);
             if (building != null
                     && "valid".equals(building.validationState())
-                    && "residential".equals(building.classification())) {
+                    && ("residential".equals(building.classification())
+                    || "mixed_use".equals(building.classification()))) {
                 total += building.validatedCapacity();
             }
         }
