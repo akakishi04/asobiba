@@ -28,6 +28,8 @@ public final class VillageSimulationScheduler {
     public static final int MAX_RECONCILE_PER_TICK = 4;
     public static final int MAX_VALIDATION_PER_TICK = 2;
     public static final int MAX_BACKGROUND_PROBES_PER_TICK = 256;
+    public static final int MAX_WORKER_PROBES_PER_TICK = 2048;
+    public static final int MAX_EMERGENCY_PROBES_PER_TICK = 4096;
 
     private static final Map<ServerLevel, LevelState> STATES = new WeakHashMap<>();
 
@@ -85,6 +87,22 @@ public final class VillageSimulationScheduler {
         return true;
     }
 
+    public static boolean tryConsumeWorkerProbe(ServerLevel level) {
+        LevelState state = state(level);
+        state.beginTick(level.getGameTime());
+        if (state.workerProbes >= MAX_WORKER_PROBES_PER_TICK) return false;
+        state.workerProbes++;
+        return true;
+    }
+
+    public static boolean tryConsumeEmergencyProbe(ServerLevel level) {
+        LevelState state = state(level);
+        state.beginTick(level.getGameTime());
+        if (state.emergencyProbes >= MAX_EMERGENCY_PROBES_PER_TICK) return false;
+        state.emergencyProbes++;
+        return true;
+    }
+
     /**
      * Returns true only when the FULL chunk already exists. The false getChunk flag is
      * essential: village simulation must never request/generate a chunk just to inspect it.
@@ -116,7 +134,9 @@ public final class VillageSimulationScheduler {
                 state.reconcile.size(),
                 state.validation.size(),
                 state.route.size(),
-                state.backgroundProbes
+                state.backgroundProbes,
+                state.workerProbes,
+                state.emergencyProbes
         );
     }
 
@@ -163,11 +183,15 @@ public final class VillageSimulationScheduler {
 
         private long budgetTick = Long.MIN_VALUE;
         private int backgroundProbes;
+        private int workerProbes;
+        private int emergencyProbes;
 
         private void beginTick(long gameTime) {
             if (budgetTick == gameTime) return;
             budgetTick = gameTime;
             backgroundProbes = 0;
+            workerProbes = 0;
+            emergencyProbes = 0;
         }
     }
 
@@ -178,7 +202,9 @@ public final class VillageSimulationScheduler {
             int reconciliation,
             int validation,
             int route,
-            int backgroundProbes
+            int backgroundProbes,
+            int workerProbes,
+            int emergencyProbes
     ) {
     }
 }
