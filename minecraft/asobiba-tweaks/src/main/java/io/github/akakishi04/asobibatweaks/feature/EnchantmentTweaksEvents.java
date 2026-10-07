@@ -54,6 +54,7 @@ public final class EnchantmentTweaksEvents {
     private static final String FIRE_PROTECTION = "minecraft:fire_protection";
     private static final String BLAST_PROTECTION = "minecraft:blast_protection";
     private static final String FIRE_ASPECT = "minecraft:fire_aspect";
+    private static final String THORNS = "minecraft:thorns";
     private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
     private static final String PROTECTION_LAST_DAMAGE = "asobibatweaks_protection_last_damage";
     private static final String PROJECTILE_LAST_DAMAGE = "asobibatweaks_projectile_last_damage";
@@ -77,6 +78,8 @@ public final class EnchantmentTweaksEvents {
     private static final String FIRE_ASPECT_FLASH_MULTIPLIER = "asobibatweaks_fire_aspect_flash_multiplier";
     private static final String FIRE_ASPECT_CAUTERIZE_UNTIL = "asobibatweaks_fire_aspect_cauterize_until";
     private static final String FIRE_ASPECT_CAUTERIZE_REDUCTION = "asobibatweaks_fire_aspect_cauterize_reduction";
+    private static final String THORNS_STORED_DAMAGE = "asobibatweaks_thorns_stored_damage";
+    private static final String THORNS_RELEASE_ACTIVE = "asobibatweaks_thorns_release_active";
 
     @SubscribeEvent
     public void onBlockDrops(BlockDropsEvent event) {
@@ -92,9 +95,38 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
+    public void onStoredRetaliationHurt(LivingHurtEvent event) {
+        if (!(event.getSource().getEntity() instanceof ServerPlayer player)
+                || event.getSource().getDirectEntity() != player
+                || event.getSource().is(DamageTypes.THORNS)
+                || player.level().isClientSide()
+                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || event.getAmount() <= 0.0F
+                || player.getPersistentData().getBoolean(THORNS_RELEASE_ACTIVE)) {
+            return;
+        }
+
+        BranchRef thorns = armorBranch(player, THORNS);
+        if (thorns == null || thorns.branch() != 2) return;
+
+        var persistent = player.getPersistentData();
+        double stored = persistent.getInt(THORNS_STORED_DAMAGE) / 1000.0D;
+        if (stored <= 0.0D) return;
+
+        persistent.remove(THORNS_STORED_DAMAGE);
+        persistent.putBoolean(THORNS_RELEASE_ACTIVE, true);
+        try {
+            event.getEntity().hurt(player.damageSources().thorns(player), (float)stored);
+        } finally {
+            persistent.remove(THORNS_RELEASE_ACTIVE);
+        }
+    }
+
+    @SubscribeEvent
     public void onSharpnessHurt(LivingHurtEvent event) {
         if (!(event.getSource().getEntity() instanceof ServerPlayer player)
                 || event.getSource().getDirectEntity() != player
+                || event.getSource().is(DamageTypes.THORNS)
                 || player.getPersistentData().getBoolean(SMITE_ECHO_ACTIVE)
                 || player.level().isClientSide()
                 || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
@@ -147,6 +179,7 @@ public final class EnchantmentTweaksEvents {
     public void onFireAspectHurt(LivingHurtEvent event) {
         if (!(event.getSource().getEntity() instanceof ServerPlayer player)
                 || event.getSource().getDirectEntity() != player
+                || event.getSource().is(DamageTypes.THORNS)
                 || player.getPersistentData().getBoolean(SMITE_ECHO_ACTIVE)
                 || player.level().isClientSide()
                 || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
@@ -248,6 +281,7 @@ public final class EnchantmentTweaksEvents {
     public void onSmiteHurt(LivingHurtEvent event) {
         if (!(event.getSource().getEntity() instanceof ServerPlayer player)
                 || event.getSource().getDirectEntity() != player
+                || event.getSource().is(DamageTypes.THORNS)
                 || player.getPersistentData().getBoolean(SMITE_ECHO_ACTIVE)
                 || player.level().isClientSide()
                 || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
@@ -397,6 +431,62 @@ public final class EnchantmentTweaksEvents {
         );
         if (reduction > 0.0D) {
             event.setAmount((float)(event.getAmount() * (1.0D - reduction)));
+        }
+    }
+
+    @SubscribeEvent
+    public void onThornsDamage(LivingDamageEvent event) {
+        if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || event.getAmount() <= 0.0F) {
+            return;
+        }
+
+        // Branches 0/1 specialize an actual vanilla Thorns retaliation event.
+        if (event.getSource().is(DamageTypes.THORNS)
+                && event.getSource().getEntity() instanceof ServerPlayer wearer) {
+            BranchRef thorns = armorBranch(wearer, THORNS);
+            if (thorns == null) return;
+
+            double strength = branchScale(thorns.mastery(), 0.0D, 1.0D);
+            if (thorns.branch() == 0) {
+                event.setAmount((float)(event.getAmount() * (1.15D + 0.25D * strength)));
+            } else if (thorns.branch() == 1) {
+                event.setAmount(event.getAmount() * 0.70F);
+
+                int duration = (int)Math.round(20.0D + 30.0D * strength);
+                int amplifier = strength >= 0.67D ? 1 : 0;
+                event.getEntity().addEffect(new MobEffectInstance(
+                        MobEffects.MOVEMENT_SLOWDOWN,
+                        Math.max(1, duration),
+                        amplifier
+                ));
+
+                var away = event.getEntity().position().subtract(wearer.position());
+                double horizontal = Math.sqrt(away.x * away.x + away.z * away.z);
+                if (horizontal > 1.0E-4D) {
+                    double push = 0.12D + 0.10D * strength;
+                    event.getEntity().push(away.x / horizontal * push, 0.08D, away.z / horizontal * push);
+                }
+            }
+            return;
+        }
+
+        // Stored Retaliation records post-mitigation incoming damage on the wearer.
+        if (event.getEntity() instanceof ServerPlayer wearer
+                && !event.getSource().is(DamageTypes.THORNS)
+                && !wearer.getPersistentData().getBoolean(THORNS_RELEASE_ACTIVE)) {
+            BranchRef thorns = armorBranch(wearer, THORNS);
+            if (thorns == null || thorns.branch() != 2) return;
+
+            double strength = branchScale(thorns.mastery(), 0.0D, 1.0D);
+            double fraction = 0.15D + 0.20D * strength;
+            double cap = 3.0D + 5.0D * strength;
+            double stored = wearer.getPersistentData().getInt(THORNS_STORED_DAMAGE) / 1000.0D;
+            stored = Math.min(cap, stored + event.getAmount() * fraction);
+            wearer.getPersistentData().putInt(
+                    THORNS_STORED_DAMAGE,
+                    (int)Math.round(stored * 1000.0D)
+            );
         }
     }
 
@@ -1127,7 +1217,8 @@ public final class EnchantmentTweaksEvents {
                 || BANE_OF_ARTHROPODS.equals(enchantmentId)
                 || FIRE_PROTECTION.equals(enchantmentId)
                 || BLAST_PROTECTION.equals(enchantmentId)
-                || FIRE_ASPECT.equals(enchantmentId);
+                || FIRE_ASPECT.equals(enchantmentId)
+                || THORNS.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -1224,6 +1315,14 @@ public final class EnchantmentTweaksEvents {
                 case 0 -> "Long Burn";
                 case 1 -> "Flash Burn";
                 case 2 -> "Cauterize";
+                default -> "Unselected";
+            };
+        }
+        if (THORNS.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Retaliatory Spikes";
+                case 1 -> "Entangling Thorns";
+                case 2 -> "Stored Retaliation";
                 default -> "Unselected";
             };
         }
