@@ -26,6 +26,7 @@ import net.minecraft.world.level.block.Blocks;
 public final class VillageStorageService {
     private static final int LEGACY_BOOTSTRAP_RADIUS = 18;
     private static final int MAX_LEGACY_STORAGES = 32;
+    private static final double PHYSICAL_ACCESS_DISTANCE_SQR = 4.5D * 4.5D;
 
     private VillageStorageService() {
     }
@@ -65,12 +66,22 @@ public final class VillageStorageService {
         reconcileVillage(villageId.get(), level);
     }
 
+    /**
+     * Containers the villager can physically interact with right now.
+     * Planning uses the village ledger / StorageRecords instead of this local-access view.
+     */
     public static List<LocatedContainer> containers(Villager villager, ServerLevel level) {
         Optional<UUID> villageId = villageId(villager);
         if (villageId.isEmpty()) return List.of();
 
         bootstrapLegacyIfNeeded(villager, level);
-        return containers(villageId.get(), level);
+        List<LocatedContainer> result = new ArrayList<>();
+        for (LocatedContainer located : containers(villageId.get(), level)) {
+            if (villager.distanceToSqr(located.record.pos().getCenter()) <= PHYSICAL_ACCESS_DISTANCE_SQR) {
+                result.add(located);
+            }
+        }
+        return result;
     }
 
     public static List<LocatedContainer> containers(UUID villageId, ServerLevel level) {
@@ -90,7 +101,11 @@ public final class VillageStorageService {
     public static Optional<LocatedContainer> nearestContainer(Villager villager, ServerLevel level) {
         LocatedContainer best = null;
         double bestDistance = Double.MAX_VALUE;
-        for (LocatedContainer located : containers(villager, level)) {
+        Optional<UUID> villageId = villageId(villager);
+        if (villageId.isEmpty()) return Optional.empty();
+        bootstrapLegacyIfNeeded(villager, level);
+
+        for (LocatedContainer located : containers(villageId.get(), level)) {
             double distance = villager.distanceToSqr(located.record.pos().getCenter());
             if (distance < bestDistance) {
                 bestDistance = distance;
