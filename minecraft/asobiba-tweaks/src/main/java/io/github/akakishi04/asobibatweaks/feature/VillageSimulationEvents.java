@@ -1022,6 +1022,7 @@ public final class VillageSimulationEvents {
 
         for (VillageSavedData.WorkSiteRecord site : data.workSitesForVillage(village.id())) {
             if (!"outpost".equals(site.type()) || !"active".equals(site.state())) continue;
+            if (site.foundingPrepared()) continue;
             if (site.createdGameTime() <= 0L || now - site.createdGameTime() < 7L * 24000L) continue;
             if (site.lastUsedGameTime() <= 0L || now - site.lastUsedGameTime() > 2L * 24000L) continue;
             if (!VillageOutpostLifecycleService.isOperational(level, data, village, site)) continue;
@@ -1459,26 +1460,14 @@ public final class VillageSimulationEvents {
             try {
                 java.util.UUID outpostId = java.util.UUID.fromString(rawOutpost);
                 VillageSavedData.WorkSiteRecord site = data.workSite(outpostId).orElse(null);
-                VillageSavedData.VillageRecord parent = data.village(project.villageId()).orElse(null);
-                if (site != null && parent != null) {
-                    BlockPos daughterCenter = workSiteCenter(site);
-                    VillageSavedData.VillageRecord daughter = data.createVillage(daughterCenter, level.getGameTime());
-                    daughter.setParentVillageId(parent.id());
-                    daughter.setLifecycle("founding");
-                    daughter.setNextFissionGameTime(level.getGameTime() + 30L * 24000L);
-                    parent.setNextFissionGameTime(level.getGameTime() + 30L * 24000L);
-
-                    parent.buildingCulture().forEach((key, value) ->
-                            daughter.recordBuildingCulture(key, Math.max(1, value / 2)));
-
-                    data.transferOutpostSite(outpostId, daughter.id());
-                    site.setType("founding_site");
-                    site.setState("active");
-                    ownerVillageId = daughter.id();
-                    project.setParameter("founded_village_id", daughter.id().toString());
+                if (site != null && project.villageId().equals(site.villageId())) {
+                    // The second lodging building is still parent-village infrastructure.
+                    // Village ID creation waits until housing/storage/food/route validation passes.
+                    site.setFoundingPrepared(true);
+                    site.setLastUsedGameTime(level.getGameTime());
                 }
             } catch (IllegalArgumentException ignored) {
-                // Keep ownership with the parent; founding migration will not start without an ID.
+                // Invalid legacy outpost id: keep the completed building under the parent.
             }
         }
 
