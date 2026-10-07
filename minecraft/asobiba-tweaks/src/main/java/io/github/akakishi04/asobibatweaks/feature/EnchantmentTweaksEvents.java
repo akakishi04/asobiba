@@ -49,6 +49,7 @@ public final class EnchantmentTweaksEvents {
     private static final String SHARPNESS = "minecraft:sharpness";
     private static final String SMITE = "minecraft:smite";
     private static final String BANE_OF_ARTHROPODS = "minecraft:bane_of_arthropods";
+    private static final String FIRE_PROTECTION = "minecraft:fire_protection";
     private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
     private static final String PROTECTION_LAST_DAMAGE = "asobibatweaks_protection_last_damage";
     private static final String PROJECTILE_LAST_DAMAGE = "asobibatweaks_projectile_last_damage";
@@ -61,6 +62,9 @@ public final class EnchantmentTweaksEvents {
     private static final String SMITE_ECHO_ACTIVE = "asobibatweaks_smite_echo_active";
     private static final String BANE_ANTIVENOM_UNTIL = "asobibatweaks_bane_antivenom_until";
     private static final String BANE_ANTIVENOM_REDUCTION = "asobibatweaks_bane_antivenom_reduction";
+    private static final String FIRE_PROTECTION_PREV_TICKS = "asobibatweaks_fire_protection_prev_ticks";
+    private static final String FIRE_EXPOSURE_START = "asobibatweaks_fire_exposure_start";
+    private static final String FIRE_EXPOSURE_LAST = "asobibatweaks_fire_exposure_last";
 
     @SubscribeEvent
     public void onBlockDrops(BlockDropsEvent event) {
@@ -319,6 +323,37 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
+    public void onFireProtectionDamage(LivingDamageEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)
+                || player.level().isClientSide()
+                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || event.getAmount() <= 0.0F
+                || !event.getSource().is(DamageTypeTags.IS_FIRE)
+                || event.getSource().is(DamageTypeTags.BYPASSES_ENCHANTMENTS)) {
+            return;
+        }
+
+        BranchRef fireProtection = armorBranch(player, FIRE_PROTECTION);
+        if (fireProtection == null || fireProtection.branch() != 1) return;
+
+        var persistent = player.getPersistentData();
+        if (!persistent.contains(FIRE_EXPOSURE_START)) return;
+
+        long now = player.level().getGameTime();
+        long start = persistent.getLong(FIRE_EXPOSURE_START);
+        long exposure = Math.max(0L, now - start);
+        if (exposure < 40L) return;
+
+        double exposureRamp = Math.min(1.0D, (exposure - 40L) / 80.0D);
+        double strength = branchScale(fireProtection.mastery(), 0.0D, 1.0D);
+        double maxReduction = 0.05D + 0.10D * strength;
+        double reduction = maxReduction * exposureRamp;
+        if (reduction > 0.0D) {
+            event.setAmount((float)(event.getAmount() * (1.0D - reduction)));
+        }
+    }
+
+    @SubscribeEvent
     public void onLivingDamage(LivingDamageEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer player)
                 || player.level().isClientSide()
@@ -444,6 +479,65 @@ public final class EnchantmentTweaksEvents {
                 }
             }
         }
+    }
+
+    @SubscribeEvent
+    public void onFireProtectionTick(PlayerTickEvent.Post event) {
+        if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || !(event.getEntity() instanceof ServerPlayer player)
+                || player.level().isClientSide()) {
+            return;
+        }
+
+        BranchRef fireProtection = armorBranch(player, FIRE_PROTECTION);
+        var persistent = player.getPersistentData();
+        int currentFireTicks = player.getRemainingFireTicks();
+        long now = player.level().getGameTime();
+
+        boolean exposed = player.isOnFire() || player.isInLava();
+        if (exposed) {
+            if (!persistent.contains(FIRE_EXPOSURE_START)
+                    || !persistent.contains(FIRE_EXPOSURE_LAST)
+                    || now - persistent.getLong(FIRE_EXPOSURE_LAST) > 60L) {
+                persistent.putLong(FIRE_EXPOSURE_START, now);
+            }
+            persistent.putLong(FIRE_EXPOSURE_LAST, now);
+        } else if (persistent.contains(FIRE_EXPOSURE_LAST)
+                && now - persistent.getLong(FIRE_EXPOSURE_LAST) > 60L) {
+            persistent.remove(FIRE_EXPOSURE_START);
+            persistent.remove(FIRE_EXPOSURE_LAST);
+        }
+
+        if (fireProtection == null) {
+            persistent.putInt(FIRE_PROTECTION_PREV_TICKS, currentFireTicks);
+            return;
+        }
+
+        double strength = branchScale(fireProtection.mastery(), 0.0D, 1.0D);
+
+        if (fireProtection.branch() == 0) {
+            if (persistent.contains(FIRE_PROTECTION_PREV_TICKS)) {
+                int previous = persistent.getInt(FIRE_PROTECTION_PREV_TICKS);
+                if (currentFireTicks > previous + 1) {
+                    double reduction = 0.20D + 0.30D * strength;
+                    int reduced = Math.max(0, (int)Math.round(currentFireTicks * (1.0D - reduction)));
+                    player.setRemainingFireTicks(reduced);
+                    currentFireTicks = reduced;
+                }
+            }
+        } else if (fireProtection.branch() == 2 && player.isInLava()) {
+            // Vanilla lava horizontal drag is ~0.5. Recovering 20%-60% of the lost
+            // velocity corresponds to multiplying the post-drag horizontal velocity by 1+r.
+            double impairmentRecovery = 0.20D + 0.40D * strength;
+            var motion = player.getDeltaMovement();
+            player.setDeltaMovement(
+                    motion.x * (1.0D + impairmentRecovery),
+                    motion.y,
+                    motion.z * (1.0D + impairmentRecovery)
+            );
+        }
+
+        persistent.putInt(FIRE_PROTECTION_PREV_TICKS, currentFireTicks);
     }
 
     @SubscribeEvent
@@ -846,7 +940,8 @@ public final class EnchantmentTweaksEvents {
                 || PROJECTILE_PROTECTION.equals(enchantmentId)
                 || SHARPNESS.equals(enchantmentId)
                 || SMITE.equals(enchantmentId)
-                || BANE_OF_ARTHROPODS.equals(enchantmentId);
+                || BANE_OF_ARTHROPODS.equals(enchantmentId)
+                || FIRE_PROTECTION.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -919,6 +1014,14 @@ public final class EnchantmentTweaksEvents {
                 case 0 -> "Binding Venom";
                 case 1 -> "Swarm Extermination";
                 case 2 -> "Antivenom";
+                default -> "Unselected";
+            };
+        }
+        if (FIRE_PROTECTION.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Rapid Extinguishing";
+                case 1 -> "Heat Adaptation";
+                case 2 -> "Lava Adaptation";
                 default -> "Unselected";
             };
         }

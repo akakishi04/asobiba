@@ -39,7 +39,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Blast / Slipstream Wind Pressure | `PhysicsTransportEvents` | Implemented |
 | Wind Pressure Resistance | datapack enchantment + `PhysicsTransportEvents` | Implemented |
 | Growing Enchantments | `EnchantmentTweaksEvents`, `EnchantmentMasteryData` | Implemented |
-| Enchantment Branches | `EnchantmentTweaksEvents` | **V16+V17 expanded**: explicit branch-selection state plus concrete Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane of Arthropods branch effects; Mending is excluded from branch selection as designed. Remaining accepted branch families are still pending |
+| Enchantment Branches | `EnchantmentTweaksEvents` | **V16+V17 expanded**: explicit branch-selection state plus concrete Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane of Arthropods / Fire Protection branch effects; Mending is excluded from branch selection as designed. Remaining accepted branch families are still pending |
 | Curse Growth | `EnchantmentTweaksEvents` | Implemented |
 | Fortune / Silk Touch Switching | `EnchantmentTweaksEvents` | Implemented |
 | Mastery Inheritance | `EnchantmentTweaksEvents` | Implemented |
@@ -229,3 +229,8 @@ Smite now implements all three accepted undead-only branches using the vanilla S
 ## V22 bane-branch note
 
 Bane of Arthropods now implements all three accepted branches using the vanilla SENSITIVE_TO_BANE_OF_ARTHROPODS tag. Binding Venom extends the expected Slowness-IV window by a mastery-scaled 25%-100% without creating a stronger amplifier. Swarm Extermination counts at most three additional nearby arthropods and adds 5%-12% of the weapon's ordinary Bane bonus per nearby target. Antivenom grants a short combat grace window after striking an arthropod and reduces only NeoForge-tagged poison damage by 15%-50%; unrelated magic damage is not captured by the branch.
+
+
+## V23 fire-protection note
+
+Fire Protection now implements all three accepted branches. Rapid Extinguishing detects a new/refreshed ignition and shortens that remaining burn window once by 20%-50%, avoiding exponential per-tick shortening. Heat Adaptation tracks continuous fire/lava exposure, begins after about 2 seconds, reaches its full 5%-15% additional post-vanilla fire-damage reduction after about 6 seconds total exposure, and resets after roughly 3 safe seconds. Lava Adaptation restores 20%-60% of vanilla lava's horizontal movement impairment by converting the normal ~0.5 horizontal drag into an effective ~0.6-0.8 drag; it does not reduce fire damage or grant lava immunity.
