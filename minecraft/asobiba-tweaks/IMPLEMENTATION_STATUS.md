@@ -63,7 +63,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Mob-Used Buildings | `MobBuildingUseEvents`, village shelter logic | Implemented |
 | Villager Welfare / Confinement | planned village-state / villager persistent data | **Planned; accepted spec, not yet implemented** |
 | Village Status / Public Needs UI | planned Bell interaction + server status DTO/screen | **Planned; accepted spec, not yet implemented** |
-| Village persistent state / indexes / simulation budgets | planned SavedData + per-villager persistent simulation data | **Planned; accepted architecture, not yet implemented** |
+| Village persistent state / indexes / simulation budgets | `VillageSavedData`, `VillagerSimData` | **V1 foundation implemented**: versioned SavedData, stable record APIs, derived chunk index and namespaced per-villager state compile/smoke PASS; spatial Village-ID bootstrap/reconciliation and V2 scheduler/budgets still pending |
 | Regional Trade Value | `VillageSimulationEvents` | MVP implemented; accepted inventory-backed scarcity, Welfare and UI integration pending |
 | Fire Village Emergency | `VillageSimulationEvents` | MVP implemented; accepted resource-aware multi-role emergency flow pending |
 | Autonomous Village Growth | `VillageSimulationEvents` | MVP implemented; accepted dynamic-boundary, real-storage and phased-project architecture pending |
