@@ -64,10 +64,6 @@ public final class VillageSimulationEvents {
     private static final String BUILD_COLONY = "asobibatweaks_build_colony";
     private static final String BUILD_KIND = "asobibatweaks_build_kind";
     private static final String SHORTAGE_STREAK = "asobibatweaks_shortage_streak";
-    private static final String SETTLE_X = "asobibatweaks_settle_x";
-    private static final String SETTLE_Y = "asobibatweaks_settle_y";
-    private static final String SETTLE_Z = "asobibatweaks_settle_z";
-    private static final String SETTLE_UNTIL = "asobibatweaks_settle_until";
 
     @SubscribeEvent
     public void onTrades(VillagerTradesEvent event) {
@@ -132,6 +128,10 @@ public final class VillageSimulationEvents {
         if (villager.isBaby()) return;
 
         String id = villager.getUUID().toString();
+        if (VillageOutpostLifecycleService.handleAssignedWorker(villager, level)) {
+            return;
+        }
+
         VillageDutyScheduler.ensureFormalDuty(villager, level.getGameTime());
         String duty = VillagerSimData.duty(villager);
 
@@ -632,8 +632,6 @@ public final class VillageSimulationEvents {
                 } catch (IllegalArgumentException ignored) {
                     // Founding failed to create a durable daughter VillageRecord.
                 }
-            } else {
-                sendSettlers(level, villager, project.site().offset(2, 1, 2), 2);
             }
         }
 
@@ -1025,6 +1023,8 @@ public final class VillageSimulationEvents {
         for (VillageSavedData.WorkSiteRecord site : data.workSitesForVillage(village.id())) {
             if (!"outpost".equals(site.type()) || !"active".equals(site.state())) continue;
             if (site.createdGameTime() <= 0L || now - site.createdGameTime() < 7L * 24000L) continue;
+            if (site.lastUsedGameTime() <= 0L || now - site.lastUsedGameTime() > 2L * 24000L) continue;
+            if (!VillageOutpostLifecycleService.isOperational(level, data, village, site)) continue;
 
             BlockPos center = workSiteCenter(site);
             if (village.center().distManhattan(center) < 256) continue;
@@ -1118,28 +1118,6 @@ public final class VillageSimulationEvents {
             if (isBuildSiteClear(level, base, 4)) return base;
         }
         return null;
-    }
-
-    private static void sendSettlers(ServerLevel level, Villager carpenter, BlockPos target, int targetCount) {
-        long until = level.getGameTime() + 3L * 24000L;
-        List<Villager> candidates = level.getEntitiesOfClass(
-                Villager.class,
-                carpenter.getBoundingBox().inflate(28.0D),
-                v -> v != carpenter && !v.isBaby()
-        );
-        int sent = 0;
-        for (Villager settler : candidates) {
-            VillagerProfession profession = settler.getVillagerData().getProfession();
-            if (profession != VillagerProfession.NONE && profession != VillagerProfession.NITWIT
-                    && profession != VillagerProfession.FARMER) continue;
-            var data = settler.getPersistentData();
-            data.putInt(SETTLE_X, target.getX());
-            data.putInt(SETTLE_Y, target.getY());
-            data.putInt(SETTLE_Z, target.getZ());
-            data.putLong(SETTLE_UNTIL, until);
-            settler.getNavigation().moveTo(target.getX() + 0.5D, target.getY(), target.getZ() + 0.5D, 0.75D);
-            if (++sent >= targetCount) break;
-        }
     }
 
     private static void tickQuartermaster(Villager villager, ServerLevel level) {
