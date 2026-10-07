@@ -564,6 +564,7 @@ public final class VillageSavedData extends SavedData {
         private final UUID id;
         private BlockPos center;
         private final long createdGameTime;
+        private UUID parentVillageId;
         private String lifecycle = "active";
         private final Set<UUID> residentIds = new LinkedHashSet<>();
         private final Set<UUID> buildingIds = new LinkedHashSet<>();
@@ -603,6 +604,7 @@ public final class VillageSavedData extends SavedData {
         public BlockPos center() { return center; }
         public String lifecycle() { return lifecycle; }
         public long createdGameTime() { return createdGameTime; }
+        public UUID parentVillageId() { return parentVillageId; }
         public Set<UUID> residentIds() { return Collections.unmodifiableSet(residentIds); }
         public Set<UUID> buildingIds() { return Collections.unmodifiableSet(buildingIds); }
         public Set<UUID> storageIds() { return Collections.unmodifiableSet(storageIds); }
@@ -642,6 +644,7 @@ public final class VillageSavedData extends SavedData {
         public long lastValidatedGameTime() { return lastValidatedGameTime; }
 
         public void setCenter(BlockPos center) { this.center = center.immutable(); }
+        public void setParentVillageId(UUID value) { parentVillageId = value; }
         public void setLifecycle(String lifecycle) { this.lifecycle = safeText(lifecycle, "active"); }
         public void setStorageBootstrapComplete(boolean value) { this.storageBootstrapComplete = value; }
 
@@ -713,6 +716,7 @@ public final class VillageSavedData extends SavedData {
             putUuid(tag, "id", id);
             tag.putLong("center", center.asLong());
             tag.putLong("created", createdGameTime);
+            putUuid(tag, "parent_village", parentVillageId);
             tag.putString("lifecycle", lifecycle);
             tag.put("residents", writeUuidSet(residentIds));
             tag.put("buildings", writeUuidSet(buildingIds));
@@ -749,6 +753,7 @@ public final class VillageSavedData extends SavedData {
             if (id == null || !tag.contains("center", Tag.TAG_LONG)) return null;
 
             VillageRecord record = new VillageRecord(id, BlockPos.of(tag.getLong("center")), tag.getLong("created"));
+            record.parentVillageId = readUuid(tag, "parent_village");
             record.lifecycle = safeText(tag.getString("lifecycle"), "active");
             record.residentIds.addAll(readUuidSet(tag, "residents"));
             record.buildingIds.addAll(readUuidSet(tag, "buildings"));
