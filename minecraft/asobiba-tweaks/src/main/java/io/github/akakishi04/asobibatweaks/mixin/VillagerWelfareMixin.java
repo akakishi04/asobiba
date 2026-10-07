@@ -1,6 +1,7 @@
 package io.github.akakishi04.asobibatweaks.mixin;
 
 import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
+import io.github.akakishi04.asobibatweaks.feature.VillageEconomyService;
 import io.github.akakishi04.asobibatweaks.feature.VillagerSimData;
 import io.github.akakishi04.asobibatweaks.feature.VillagerWelfareService;
 import net.minecraft.world.entity.npc.Villager;
@@ -16,7 +17,9 @@ public abstract class VillagerWelfareMixin {
     private void asobibatweaks$applyWelfareTradePrices(Player player, CallbackInfo ci) {
         if (!AsobibaTweaksConfig.VILLAGE_SIMULATION_ENABLED.getAsBoolean()
                 || !AsobibaTweaksConfig.VILLAGE_WELFARE_ENABLED.getAsBoolean()) return;
-        VillagerWelfareService.applyTradePriceModifier((Villager)(Object)this);
+        Villager self = (Villager)(Object)this;
+        VillagerWelfareService.applyTradePriceModifier(self);
+        VillageEconomyService.applyTradePriceModifier(self);
     }
 
     @Inject(method = "restock", at = @At("HEAD"), cancellable = true)
