@@ -426,7 +426,7 @@ public final class VillageSimulationEvents {
 
     private static List<BuildStep> hutPlan(ServerLevel level, BlockPos base, Villager villager) {
         List<BuildStep> steps = new ArrayList<>();
-        Block plankBlock = chooseBuildingPlanks(level, base, villager.blockPosition());
+        Block plankBlock = chooseBuildingPlanks(level, base, villager);
         Item plankItem = plankBlock.asItem();
         BlockState plank = plankBlock.defaultBlockState();
         BlockState cobble = Blocks.COBBLESTONE.defaultBlockState();
