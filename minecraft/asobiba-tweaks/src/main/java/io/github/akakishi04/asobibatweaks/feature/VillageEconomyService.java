@@ -93,8 +93,13 @@ public final class VillageEconomyService {
         // solely because V5 has not yet adopted every old house.
         int housingCapacity = recordedHousing > 0 ? recordedHousing : population + 2;
         int foodCapacity = village.storageIds().isEmpty() ? population : Math.max(0, food / 12);
+        int workSiteCapacity = 0;
+        for (VillageSavedData.WorkSiteRecord site : data.workSitesForVillage(villageId)) {
+            if (!"active".equals(site.state())) continue;
+            workSiteCapacity += "river_corridor".equals(site.type()) ? 2 : 4;
+        }
         int infrastructureCapacity = Math.max(4,
-                village.storageIds().size() * 8 + village.workSiteIds().size() * 4 + 4);
+                village.storageIds().size() * 8 + workSiteCapacity + 4);
 
         int sustainable = Math.max(0, Math.min(housingCapacity,
                 Math.min(Math.max(population, foodCapacity), Math.max(population, infrastructureCapacity))));
