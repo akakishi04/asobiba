@@ -95,18 +95,18 @@ public final class VillageSimulationEvents {
         if (!AsobibaTweaksConfig.VILLAGE_SIMULATION_ENABLED.getAsBoolean()
                 || !(event.getEntity() instanceof Villager villager)
                 || villager.level().isClientSide()
-                || villager.isBaby()
                 || villager.tickCount % 40 != Math.floorMod(villager.getId(), 40)) {
             return;
         }
 
         ServerLevel level = (ServerLevel)villager.level();
 
-        // V1 persistence foundation: initialize the namespaced per-villager state and make
-        // sure the dimension-level SavedData is available. Village identity bootstrap is
-        // intentionally deferred until its spatial reconciliation rules are implemented.
-        VillagerSimData.ensureInitialized(villager);
-        VillageSavedData.get(level);
+        // V1 persistence foundation: all loaded villagers, including children, receive the
+        // namespaced persistent state and conservative stable Village-ID bootstrap.
+        VillageIdentityBootstrap.ensure(villager, level);
+
+        // Children participate in persistent settlement identity but never execute work Duties.
+        if (villager.isBaby()) return;
 
         if (AsobibaTweaksConfig.VILLAGE_FIRE_EMERGENCY_ENABLED.getAsBoolean()) {
             respondToFire(villager, level);
