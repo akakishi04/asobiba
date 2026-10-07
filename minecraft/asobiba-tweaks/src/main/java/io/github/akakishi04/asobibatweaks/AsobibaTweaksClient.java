@@ -2,6 +2,8 @@ package io.github.akakishi04.asobibatweaks;
 
 import io.github.akakishi04.asobibatweaks.client.EnchantingScreenEvents;
 import io.github.akakishi04.asobibatweaks.client.NetherFishRenderer;
+import io.github.akakishi04.asobibatweaks.client.VillageStatusScreen;
+import io.github.akakishi04.asobibatweaks.feature.VillageStatusNetworking;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
@@ -15,6 +17,7 @@ import net.neoforged.neoforge.common.NeoForge;
 public final class AsobibaTweaksClient {
     public AsobibaTweaksClient(IEventBus modBus, ModContainer container) {
         container.registerExtensionPoint(IConfigScreenFactory.class, ConfigurationScreen::new);
+        VillageStatusNetworking.installClientHandler(VillageStatusScreen::open);
         modBus.addListener(this::registerRenderers);
         NeoForge.EVENT_BUS.register(new EnchantingScreenEvents());
     }
