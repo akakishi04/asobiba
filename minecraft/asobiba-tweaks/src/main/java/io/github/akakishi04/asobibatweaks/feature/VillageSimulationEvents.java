@@ -246,6 +246,10 @@ public final class VillageSimulationEvents {
 
     private static void tickCarpenter(Villager villager, ServerLevel level) {
         long now = level.getGameTime();
+        if (VillagerSimData.carpentrySkill(villager) == 0) {
+            int legacyXp = Math.max(0, villager.getPersistentData().getInt(BUILDER_XP));
+            if (legacyXp > 0) VillagerSimData.setCarpentrySkill(villager, Math.min(100, legacyXp * 10));
+        }
         var villageId = VillagerSimData.villageId(villager);
         if (villageId.isEmpty()) return;
 
@@ -678,9 +682,10 @@ public final class VillageSimulationEvents {
                 if (edge && !doorway && !window) {
                     BlockState state = plank;
                     int leadSkill = parseInt(project.parameter("lead_skill"), 0);
+                    int imperfectionChance = leadSkill < 25 ? 20 : leadSkill < 50 ? 12 : leadSkill < 75 ? 5 : 2;
                     if (AsobibaTweaksConfig.VILLAGE_IMPERFECT_CONSTRUCTION_ENABLED.getAsBoolean()
-                            && leadSkill < 50
-                            && Math.floorMod((int)(project.variantSeed() + x * 31L + y * 17L + z * 13L), 37) == 0) {
+                            && Math.floorMod((int)(project.variantSeed() + x * 31L + y * 17L + z * 13L), 100)
+                            < imperfectionChance) {
                         state = cobble;
                     }
                     steps.add(new BuildStep(base.offset(x, y, z), state,
@@ -794,6 +799,8 @@ public final class VillageSimulationEvents {
         if (!AsobibaTweaksConfig.VILLAGE_BUILDING_CULTURE_ENABLED.getAsBoolean()) {
             return choosePlanks(level, site);
         }
+
+        String[] names = {"oak", "spruce", "birch", "jungle", "acacia", "dark_oak", "mangrove", "cherry"};
         Item[] items = {
                 Items.OAK_PLANKS, Items.SPRUCE_PLANKS, Items.BIRCH_PLANKS,
                 Items.JUNGLE_PLANKS, Items.ACACIA_PLANKS, Items.DARK_OAK_PLANKS,
@@ -805,32 +812,43 @@ public final class VillageSimulationEvents {
                 Blocks.MANGROVE_PLANKS, Blocks.CHERRY_PLANKS
         };
 
-        int[] counts = new int[items.length];
-        for (VillageStorageService.LocatedContainer located : VillageStorageService.containers(villager, level)) {
-            Container container = located.container();
-            for (int slot = 0; slot < container.getContainerSize(); slot++) {
-                ItemStack stack = container.getItem(slot);
-                for (int i = 0; i < items.length; i++) {
-                    if (stack.is(items[i])) {
-                        counts[i] += stack.getCount();
-                        break;
-                    }
+        VillageSavedData.VillageRecord village = VillagerSimData.villageId(villager)
+                .flatMap(id -> VillageSavedData.get(level).village(id))
+                .orElse(null);
+
+        if (village != null && !village.buildingCulture().isEmpty()) {
+            int dominant = -1;
+            int dominantWeight = 0;
+            for (int i = 0; i < names.length; i++) {
+                int weight = village.cultureWeight("plank:" + names[i]);
+                if (weight > dominantWeight) {
+                    dominantWeight = weight;
+                    dominant = i;
+                }
+            }
+
+            if (dominant >= 0) {
+                long salt = site.asLong() ^ level.getSeed() ^ (level.getGameTime() / 24000L);
+                int roll = Math.floorMod(Long.hashCode(salt), 100);
+                if (roll < 75) return blocks[dominant];
+            }
+        }
+
+        // Non-dominant choices prefer material the village actually has available, but a one-time
+        // stock dump does not become culture until completed construction records it below.
+        int best = -1;
+        int bestCount = 0;
+        if (village != null) {
+            for (int i = 0; i < items.length; i++) {
+                int count = village.ledgerCount(VillageStorageService.itemKey(items[i]));
+                if (count > bestCount) {
+                    bestCount = count;
+                    best = i;
                 }
             }
         }
+        if (best >= 0 && bestCount >= 16) return blocks[best];
 
-        int best = -1;
-        int bestCount = 0;
-        for (int i = 0; i < counts.length; i++) {
-            if (counts[i] > bestCount) {
-                bestCount = counts[i];
-                best = i;
-            }
-        }
-
-        if (best >= 0 && bestCount >= 16) {
-            return blocks[best];
-        }
         return choosePlanks(level, site);
     }
 
@@ -1314,6 +1332,16 @@ public final class VillageSimulationEvents {
         building.setValidatedCapacity(storage ? 0 : Boolean.parseBoolean(project.parameter("outpost")) ? 2 : twoStory ? 2 : 1);
         building.setValidationState("valid");
         building.setLastValidatedGameTime(level.getGameTime());
+
+        String plank = project.parameter("plank");
+        if (!plank.isBlank()) {
+            data.village(project.villageId()).ifPresent(village -> village.recordBuildingCulture("plank:" + plank, 10));
+        }
+        if ("house_2story_5x5".equals(project.templateId())) {
+            data.village(project.villageId()).ifPresent(village -> village.recordBuildingCulture("form:multi_story", 8));
+        } else {
+            data.village(project.villageId()).ifPresent(village -> village.recordBuildingCulture("form:one_story", 4));
+        }
 
         if (storage) {
             for (BlockPos storagePos : List.of(base.offset(1, 1, 2), base.offset(3, 1, 2))) {
