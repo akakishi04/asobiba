@@ -29,6 +29,7 @@ public final class VillageOutpostLifecycleService {
     private static final int ABANDON_AFTER_IDLE_DAYS = 10;
     private static final int PORTER_CARGO_SLOTS = 16;
     private static final int LOCAL_OUTPUT_BUFFER = 8;
+    private static final int LOCAL_FOOD_TARGET = 24;
 
     public VillageOutpostLifecycleService() {
     }
@@ -206,7 +207,10 @@ public final class VillageOutpostLifecycleService {
 
     private static void assignPorter(ServerLevel level, VillageSavedData.VillageRecord village,
                                      VillageSavedData.WorkSiteRecord site) {
-        if (localOutputCount(VillageSavedData.get(level), site) < 16) return;
+        VillageSavedData data = VillageSavedData.get(level);
+        boolean needsOutputHaul = localOutputCount(data, site) >= 16;
+        boolean needsFoodSupply = localFoodCount(data, site) < LOCAL_FOOD_TARGET;
+        if (!needsOutputHaul && !needsFoodSupply) return;
 
         List<Villager> residents = level.getEntitiesOfClass(
                 Villager.class,
@@ -225,7 +229,11 @@ public final class VillageOutpostLifecycleService {
         residents.stream()
                 .filter(v -> VillagerSimData.outpostSiteId(v).isEmpty())
                 .min(Comparator.comparing(v -> v.getUUID().toString()))
-                .ifPresent(v -> VillagerSimData.setOutpostSiteId(v, site.id()));
+                .ifPresent(v -> {
+                    VillagerSimData.setOutpostSiteId(v, site.id());
+                    VillagerSimData.setOutpostHaulMode(v,
+                            needsFoodSupply ? "supply_pickup" : "output_pickup");
+                });
     }
 
     private static boolean handleOutpostPorter(
@@ -234,41 +242,105 @@ public final class VillageOutpostLifecycleService {
             VillageSavedData data,
             VillageSavedData.VillageRecord village,
             VillageSavedData.WorkSiteRecord site) {
-        boolean hasCargo = VillagerSimData.hasWorkCargo(villager, level.registryAccess(), PORTER_CARGO_SLOTS);
+        String mode = VillagerSimData.outpostHaulMode(villager);
+        boolean hasCargo = VillagerSimData.hasWorkCargo(
+                villager, level.registryAccess(), PORTER_CARGO_SLOTS);
 
-        if (hasCargo) {
-            VillageStorageService.LocatedContainer core = nearestCoreStorage(level, data, village, site);
-            if (core == null) return true;
-
-            BlockPos target = core.record().pos();
-            if (villager.distanceToSqr(target.getCenter()) > 4.5D * 4.5D) {
-                moveTowardLoaded(villager, level, target, 0.80D);
+        if (mode.isBlank()) {
+            if (hasCargo) {
+                mode = "output_delivery";
+            } else if (localFoodCount(data, site) < LOCAL_FOOD_TARGET) {
+                mode = "supply_pickup";
+            } else if (localOutputCount(data, site) >= 16) {
+                mode = "output_pickup";
+            } else {
+                VillagerSimData.clearOutpostSiteId(villager);
                 return true;
             }
+            VillagerSimData.setOutpostHaulMode(villager, mode);
+        }
 
-            List<ItemStack> cargo = VillagerSimData.workCargo(
-                    villager, level.registryAccess(), PORTER_CARGO_SLOTS);
-            for (int slot = 0; slot < cargo.size(); slot++) {
-                ItemStack stack = cargo.get(slot);
-                if (stack.isEmpty()) continue;
-                cargo.set(slot, insertIntoContainer(core.container(), stack));
+        switch (mode) {
+            case "supply_pickup" -> {
+                VillageStorageService.LocatedContainer core =
+                        nearestCoreFoodStorage(level, data, village, site);
+                if (core == null) return true;
+
+                BlockPos target = core.record().pos();
+                if (villager.distanceToSqr(target.getCenter()) > 4.5D * 4.5D) {
+                    moveTowardLoaded(villager, level, target, 0.80D);
+                    return true;
+                }
+
+                int need = Math.min(16, Math.max(0, LOCAL_FOOD_TARGET - localFoodCount(data, site)));
+                if (need <= 0) {
+                    VillagerSimData.setOutpostHaulMode(villager,
+                            localOutputCount(data, site) >= 16 ? "output_pickup" : "");
+                    return true;
+                }
+
+                if (loadFoodFromContainer(villager, level, core.container(), need)) {
+                    VillageStorageService.reconcileVillage(village.id(), level);
+                    VillagerSimData.setOutpostHaulMode(villager, "supply_delivery");
+                }
+                return true;
             }
-            VillagerSimData.setWorkCargo(villager, level.registryAccess(), cargo, PORTER_CARGO_SLOTS);
-            VillageStorageService.reconcileVillage(village.id(), level);
-            return true;
-        }
+            case "supply_delivery" -> {
+                VillageStorageService.LocatedContainer local = localOutpostStorage(level, data, site);
+                if (local == null) return true;
 
-        BlockPos siteCenter = center(site);
-        if (villager.blockPosition().distManhattan(siteCenter) > 20) {
-            moveTowardLoaded(villager, level, siteCenter, 0.80D);
-            return true;
-        }
+                BlockPos target = local.record().pos();
+                if (villager.distanceToSqr(target.getCenter()) > 4.5D * 4.5D) {
+                    moveTowardLoaded(villager, level, target, 0.80D);
+                    return true;
+                }
 
-        if (loadOutpostCargo(villager, level, data, site)) {
-            site.setLastUsedGameTime(level.getGameTime());
-            data.touch();
+                depositCargo(villager, level, local.container());
+                VillageStorageService.reconcileVillage(village.id(), level);
+                site.setLastUsedGameTime(level.getGameTime());
+                data.touch();
+                VillagerSimData.setOutpostHaulMode(villager,
+                        localOutputCount(data, site) >= 16 ? "output_pickup" : "");
+                return true;
+            }
+            case "output_pickup" -> {
+                BlockPos siteCenter = center(site);
+                if (villager.blockPosition().distManhattan(siteCenter) > 20) {
+                    moveTowardLoaded(villager, level, siteCenter, 0.80D);
+                    return true;
+                }
+
+                if (loadOutpostCargo(villager, level, data, site)) {
+                    site.setLastUsedGameTime(level.getGameTime());
+                    data.touch();
+                    VillagerSimData.setOutpostHaulMode(villager, "output_delivery");
+                } else {
+                    VillagerSimData.setOutpostHaulMode(villager, "");
+                }
+                return true;
+            }
+            case "output_delivery" -> {
+                VillageStorageService.LocatedContainer core =
+                        nearestCoreStorage(level, data, village, site);
+                if (core == null) return true;
+
+                BlockPos target = core.record().pos();
+                if (villager.distanceToSqr(target.getCenter()) > 4.5D * 4.5D) {
+                    moveTowardLoaded(villager, level, target, 0.80D);
+                    return true;
+                }
+
+                depositCargo(villager, level, core.container());
+                VillageStorageService.reconcileVillage(village.id(), level);
+                VillagerSimData.setOutpostHaulMode(villager,
+                        localFoodCount(data, site) < LOCAL_FOOD_TARGET ? "supply_pickup" : "");
+                return true;
+            }
+            default -> {
+                VillagerSimData.setOutpostHaulMode(villager, "");
+                return true;
+            }
         }
-        return true;
     }
 
     private static boolean loadOutpostCargo(Villager villager, ServerLevel level,
@@ -311,6 +383,103 @@ public final class VillageOutpostLifecycleService {
 
         if (moved) VillageStorageService.reconcileVillage(site.villageId(), level);
         return moved;
+    }
+
+    private static int localFoodCount(VillageSavedData data, VillageSavedData.WorkSiteRecord site) {
+        int total = 0;
+        for (VillageSavedData.StorageRecord storage : data.storagesForVillage(site.villageId())) {
+            if (!inside(storage.pos(), site.min(), site.max())) continue;
+            total += storage.cachedCounts().getOrDefault(VillageStorageService.itemKey(Items.BREAD), 0);
+            total += storage.cachedCounts().getOrDefault(VillageStorageService.itemKey(Items.CARROT), 0);
+            total += storage.cachedCounts().getOrDefault(VillageStorageService.itemKey(Items.POTATO), 0);
+            total += storage.cachedCounts().getOrDefault(VillageStorageService.itemKey(Items.BEETROOT), 0);
+        }
+        return total;
+    }
+
+    private static boolean isFood(ItemStack stack) {
+        return stack.is(Items.BREAD) || stack.is(Items.CARROT)
+                || stack.is(Items.POTATO) || stack.is(Items.BEETROOT);
+    }
+
+    private static boolean loadFoodFromContainer(Villager villager, ServerLevel level,
+                                                 Container container, int requested) {
+        int remaining = requested;
+        boolean moved = false;
+        for (int slot = 0; slot < container.getContainerSize() && remaining > 0; slot++) {
+            ItemStack stack = container.getItem(slot);
+            if (!isFood(stack)) continue;
+
+            int take = Math.min(remaining, stack.getCount());
+            ItemStack candidate = stack.copyWithCount(take);
+            if (!VillagerSimData.canInsertWorkCargo(
+                    villager, level.registryAccess(), candidate, PORTER_CARGO_SLOTS)) {
+                continue;
+            }
+
+            ItemStack remainder = VillagerSimData.insertWorkCargo(
+                    villager, level.registryAccess(), candidate, PORTER_CARGO_SLOTS);
+            int inserted = take - remainder.getCount();
+            if (inserted <= 0) continue;
+
+            stack.shrink(inserted);
+            container.setChanged();
+            remaining -= inserted;
+            moved = true;
+        }
+        return moved;
+    }
+
+    private static void depositCargo(Villager villager, ServerLevel level, Container container) {
+        List<ItemStack> cargo = VillagerSimData.workCargo(
+                villager, level.registryAccess(), PORTER_CARGO_SLOTS);
+        for (int slot = 0; slot < cargo.size(); slot++) {
+            ItemStack stack = cargo.get(slot);
+            if (stack.isEmpty()) continue;
+            cargo.set(slot, insertIntoContainer(container, stack));
+        }
+        VillagerSimData.setWorkCargo(villager, level.registryAccess(), cargo, PORTER_CARGO_SLOTS);
+    }
+
+    private static VillageStorageService.LocatedContainer localOutpostStorage(
+            ServerLevel level, VillageSavedData data, VillageSavedData.WorkSiteRecord site) {
+        for (VillageStorageService.LocatedContainer located :
+                VillageStorageService.containers(site.villageId(), level)) {
+            if (inside(located.record().pos(), site.min(), site.max())) return located;
+        }
+        return null;
+    }
+
+    private static VillageStorageService.LocatedContainer nearestCoreFoodStorage(
+            ServerLevel level,
+            VillageSavedData data,
+            VillageSavedData.VillageRecord village,
+            VillageSavedData.WorkSiteRecord outpost) {
+        VillageStorageService.LocatedContainer best = null;
+        int bestDistance = Integer.MAX_VALUE;
+
+        for (VillageStorageService.LocatedContainer located :
+                VillageStorageService.containers(village.id(), level)) {
+            BlockPos pos = located.record().pos();
+            if (inside(pos, outpost.min(), outpost.max())) continue;
+
+            boolean hasFood = false;
+            Container container = located.container();
+            for (int slot = 0; slot < container.getContainerSize(); slot++) {
+                if (isFood(container.getItem(slot))) {
+                    hasFood = true;
+                    break;
+                }
+            }
+            if (!hasFood) continue;
+
+            int distance = pos.distManhattan(village.center());
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = located;
+            }
+        }
+        return best;
     }
 
     private static int localOutputCount(VillageSavedData data, VillageSavedData.WorkSiteRecord site) {
