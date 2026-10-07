@@ -238,11 +238,19 @@ public final class VillageSimulationEvents {
 
     private static void tickCarpenter(Villager villager, ServerLevel level) {
         long now = level.getGameTime();
-        if (villager.getPersistentData().getBoolean(BUILD_ACTIVE)) {
-            int experience = villager.getPersistentData().getInt(BUILDER_XP);
-            int actions = 1 + Math.min(2, experience / 5);
-            for (int i = 0; i < actions && villager.getPersistentData().getBoolean(BUILD_ACTIVE); i++) {
-                buildOneStep(villager, level);
+        var villageId = VillagerSimData.villageId(villager);
+        if (villageId.isEmpty()) return;
+
+        migrateLegacyBuild(villager, level, villageId.get());
+
+        VillageSavedData data = VillageSavedData.get(level);
+        VillageSavedData.ProjectRecord active = selectBuildingProject(data, villageId.get());
+        if (active != null) {
+            int skill = VillagerSimData.carpentrySkill(villager);
+            int actions = skill >= 75 ? 2 : 1;
+            for (int i = 0; i < actions && !"complete".equals(active.phase())
+                    && !"cancelled".equals(active.phase()); i++) {
+                buildOneProjectStep(villager, level, active);
             }
             return;
         }
@@ -260,16 +268,23 @@ public final class VillageSimulationEvents {
             return;
         }
 
-        int builderXp = villager.getPersistentData().getInt(BUILDER_XP);
+        int skill = VillagerSimData.carpentrySkill(villager);
+        int activeProjects = data.activeProjectsForVillage(villageId.get()).size();
+        int projectCap = population < 12 ? 1 : population < 28 ? 2 : 3;
+        if (activeProjects >= projectCap) {
+            villager.getPersistentData().putLong(NEXT_BUILD, now + 2400L);
+            return;
+        }
+
         boolean housingNeed = beds <= population + 1;
         boolean storageNeed = stores < Math.max(2, (population + 3) / 4);
         boolean colony = AsobibaTweaksConfig.VILLAGE_FISSION_ENABLED.getAsBoolean()
                 && !housingNeed && !storageNeed && population >= 10
-                && builderXp >= 5 && builderXp % 8 == 7;
+                && skill >= 50 && Math.floorMod((int)(now / 24000L) + villager.getId(), 8) == 7;
         boolean outpost = !colony
                 && AsobibaTweaksConfig.VILLAGE_OUTPOSTS_ENABLED.getAsBoolean()
                 && !housingNeed && !storageNeed && population >= 6
-                && builderXp > 0 && builderXp % 4 == 3;
+                && skill >= 25 && Math.floorMod((int)(now / 24000L) + villager.getId(), 4) == 3;
 
         if (!housingNeed && !storageNeed && !outpost && !colony) {
             villager.getPersistentData().putLong(NEXT_BUILD, now + 12000L);
@@ -291,55 +306,84 @@ public final class VillageSimulationEvents {
             return;
         }
 
-        var data = villager.getPersistentData();
-        data.putInt(BUILD_X, site.getX());
-        data.putInt(BUILD_Y, site.getY());
-        data.putInt(BUILD_Z, site.getZ());
-        data.putInt(BUILD_STEP, 0);
-        data.putBoolean(BUILD_ACTIVE, true);
-        data.putBoolean(BUILD_OUTPOST, outpost || colony);
-        data.putBoolean(BUILD_COLONY, colony);
-        data.putInt(BUILD_KIND, buildKind);
-        data.putInt(BUILD_ANCHOR_X, villager.blockPosition().getX());
-        data.putInt(BUILD_ANCHOR_Z, villager.blockPosition().getZ());
+        String templateId;
+        if (buildKind == 1) templateId = "storage_5x5";
+        else if (!outpost && !colony && skill >= 50 && population >= 8) templateId = "house_2story_5x5";
+        else templateId = "house_5x5";
+
+        VillageSavedData.ProjectRecord project = data.createProject(
+                villageId.get(), "building", housingNeed ? 80 : storageNeed ? 70 : 40, site);
+        project.setTemplateId(templateId);
+        project.setVariantSeed(villager.getUUID().getLeastSignificantBits() ^ site.asLong());
+        project.setLeadCarpenterId(villager.getUUID());
+        project.setAnchor(villager.blockPosition());
+        project.setParameter("outpost", Boolean.toString(outpost || colony));
+        project.setParameter("colony", Boolean.toString(colony));
+        project.setParameter("lead_skill", Integer.toString(skill));
+        project.setParameter("plank", plankName(chooseBuildingPlanks(level, site, villager)));
+        project.setPhase("foundation");
+        project.setWorkCursor(0);
+        project.setPausedReason("");
+        data.touch();
+
         villager.getNavigation().moveTo(site.getX() + 2.0D, site.getY(), site.getZ() + 2.0D, 0.7D);
     }
 
-    private static void buildOneStep(Villager villager, ServerLevel level) {
+    private static VillageSavedData.ProjectRecord selectBuildingProject(VillageSavedData data, java.util.UUID villageId) {
+        for (VillageSavedData.ProjectRecord project : data.activeProjectsForVillage(villageId)) {
+            if ("building".equals(project.type())) return project;
+        }
+        return null;
+    }
+
+    private static void migrateLegacyBuild(Villager villager, ServerLevel level, java.util.UUID villageId) {
+        var legacy = villager.getPersistentData();
+        if (!legacy.getBoolean(BUILD_ACTIVE)) return;
+
+        VillageSavedData data = VillageSavedData.get(level);
+        if (selectBuildingProject(data, villageId) != null) {
+            legacy.putBoolean(BUILD_ACTIVE, false);
+            return;
+        }
+
+        BlockPos site = new BlockPos(legacy.getInt(BUILD_X), legacy.getInt(BUILD_Y), legacy.getInt(BUILD_Z));
+        int kind = legacy.getInt(BUILD_KIND);
+        VillageSavedData.ProjectRecord project = data.createProject(villageId, "building", 75, site);
+        project.setTemplateId(kind == 1 ? "storage_5x5" : "house_5x5");
+        project.setVariantSeed(villager.getUUID().getLeastSignificantBits() ^ site.asLong());
+        project.setLeadCarpenterId(villager.getUUID());
+        project.setAnchor(new BlockPos(legacy.getInt(BUILD_ANCHOR_X), site.getY(), legacy.getInt(BUILD_ANCHOR_Z)));
+        project.setParameter("outpost", Boolean.toString(legacy.getBoolean(BUILD_OUTPOST)));
+        project.setParameter("colony", Boolean.toString(legacy.getBoolean(BUILD_COLONY)));
+        project.setParameter("lead_skill", Integer.toString(VillagerSimData.carpentrySkill(villager)));
+        project.setParameter("plank", plankName(chooseBuildingPlanks(level, site, villager)));
+        project.setWorkCursor(Math.max(0, legacy.getInt(BUILD_STEP)));
+        project.setPhase(projectPhase(project));
+        data.touch();
+
+        legacy.putBoolean(BUILD_ACTIVE, false);
+        legacy.remove(BUILD_STEP);
+        legacy.remove(BUILD_OUTPOST);
+        legacy.remove(BUILD_COLONY);
+    }
+
+    private static void buildOneProjectStep(Villager villager, ServerLevel level,
+                                            VillageSavedData.ProjectRecord project) {
         if (!isWorkTime(level)) return;
 
-        var data = villager.getPersistentData();
-        BlockPos base = new BlockPos(data.getInt(BUILD_X), data.getInt(BUILD_Y), data.getInt(BUILD_Z));
-        List<BuildStep> plan = data.getInt(BUILD_KIND) == 1
-                ? storagePlan(level, base, villager)
-                : hutPlan(level, base, villager);
-        int stepIndex = data.getInt(BUILD_STEP);
+        List<BuildStep> plan = projectPlan(project);
+        int stepIndex = project.workCursor();
         if (stepIndex >= plan.size()) {
-            boolean colony = data.getBoolean(BUILD_COLONY);
-            data.putBoolean(BUILD_ACTIVE, false);
-            data.putLong(NEXT_BUILD, level.getGameTime() + (colony ? 10L : 5L) * 24000L);
-            data.putInt(BUILDER_XP, data.getInt(BUILDER_XP) + 1);
-            registerCompletedLegacyBuild(villager, level, base, data.getInt(BUILD_KIND));
-            BlockPos anchor = new BlockPos(data.getInt(BUILD_ANCHOR_X), base.getY(), data.getInt(BUILD_ANCHOR_Z));
-            if (AsobibaTweaksConfig.VILLAGE_ROADS_ENABLED.getAsBoolean()) {
-                BlockPos roadFrom = base.offset(2, 0, -1).immutable();
-                BlockPos roadTo = anchor.immutable();
-                String routeKey = "road:" + villager.getUUID() + ":" + base.asLong();
-                VillageSimulationScheduler.enqueueRouteSearch(level, routeKey,
-                        () -> runIfActive(villager, level,
-                                () -> buildRoadAndBridge(level, villager, roadFrom, roadTo)));
-            }
-            if (data.getBoolean(BUILD_OUTPOST)
-                    && AsobibaTweaksConfig.VILLAGE_REFUGEES_ENABLED.getAsBoolean()) {
-                sendSettlers(level, villager, base.offset(2, 1, 2), colony ? 3 : 2);
-            }
-            data.remove(BUILD_OUTPOST);
-            data.remove(BUILD_COLONY);
+            completeBuildingProject(villager, level, project, plan);
             return;
         }
 
         BuildStep step = plan.get(stepIndex);
-        if (!VillageSimulationScheduler.isChunkLoaded(level, step.pos)) return;
+        if (!VillageSimulationScheduler.isChunkLoaded(level, step.pos)) {
+            project.setPausedReason("waiting for chunk");
+            VillageSavedData.get(level).touch();
+            return;
+        }
 
         boolean bedFoot = step.state.getBlock() instanceof BedBlock
                 && step.state.hasProperty(BedBlock.PART)
@@ -347,32 +391,46 @@ public final class VillageSimulationEvents {
 
         if (bedFoot) {
             if (!ensureBedCargo(villager, level)) {
+                project.setPausedReason("missing bed materials");
                 requestMaterials(villager, "3 wool and 3 planks");
+                VillageSavedData.get(level).touch();
                 return;
             }
-        } else if (step.cost != null && !ensureCargoItem(villager, level, step.cost, 1, CARPENTER_CARGO_SLOTS)) {
+        } else if (step.cost != null
+                && !ensureCargoItem(villager, level, step.cost, 1, CARPENTER_CARGO_SLOTS)) {
+            project.setPausedReason("missing " + step.cost.getDescription().getString());
             requestMaterials(villager, step.cost.getDescription().getString().toLowerCase(Locale.ROOT));
+            VillageSavedData.get(level).touch();
             return;
         }
 
         if (villager.distanceToSqr(step.pos.getCenter()) > 7.0D * 7.0D) {
+            project.setPausedReason("worker travelling");
             villager.getNavigation().moveTo(step.pos.getX() + 0.5D, step.pos.getY(), step.pos.getZ() + 0.5D, 0.75D);
+            VillageSavedData.get(level).touch();
             return;
         }
 
-        if (!level.getBlockState(step.pos).canBeReplaced() && !level.getBlockState(step.pos).is(step.state.getBlock())) {
-            data.putBoolean(BUILD_ACTIVE, false);
-            data.putLong(NEXT_BUILD, level.getGameTime() + 12000L);
+        BlockState existing = level.getBlockState(step.pos);
+        if (!existing.canBeReplaced() && !existing.is(step.state.getBlock())) {
+            project.setPausedReason("site changed");
+            project.setPhase("paused");
+            VillageSavedData.get(level).touch();
             return;
         }
 
         if (bedFoot) {
             Direction facing = step.state.getValue(HorizontalDirectionalBlock.FACING);
             BlockPos headPos = step.pos.relative(facing);
-            if (!VillageSimulationScheduler.isChunkLoaded(level, headPos)) return;
+            if (!VillageSimulationScheduler.isChunkLoaded(level, headPos)) {
+                project.setPausedReason("waiting for chunk");
+                VillageSavedData.get(level).touch();
+                return;
+            }
             if (!level.getBlockState(headPos).canBeReplaced()) {
-                data.putBoolean(BUILD_ACTIVE, false);
-                data.putLong(NEXT_BUILD, level.getGameTime() + 12000L);
+                project.setPausedReason("bed space blocked");
+                project.setPhase("paused");
+                VillageSavedData.get(level).touch();
                 return;
             }
             if (!consumeBedCargo(villager, level)) return;
@@ -382,23 +440,78 @@ public final class VillageSimulationEvents {
             level.setBlock(headPos, head, Block.UPDATE_CLIENTS);
             level.updateNeighborsAt(step.pos, step.state.getBlock());
             level.updateNeighborsAt(headPos, head.getBlock());
-            data.putInt(BUILD_STEP, Math.min(plan.size(), stepIndex + 2));
-            return;
+            project.setWorkCursor(Math.min(plan.size(), stepIndex + 2));
+        } else {
+            if (step.cost != null
+                    && !VillagerSimData.takeWorkCargo(villager, level.registryAccess(),
+                    CARPENTER_CARGO_SLOTS, step.cost, 1)) {
+                return;
+            }
+            level.setBlock(step.pos, step.state, Block.UPDATE_ALL);
+            project.setWorkCursor(stepIndex + 1);
         }
 
-        if (step.cost != null
-                && !VillagerSimData.takeWorkCargo(villager, level.registryAccess(),
-                CARPENTER_CARGO_SLOTS, step.cost, 1)) {
-            return;
-        }
-
-        level.setBlock(step.pos, step.state, Block.UPDATE_ALL);
-        data.putInt(BUILD_STEP, stepIndex + 1);
+        project.setPausedReason("");
+        project.setPhase(projectPhase(project));
+        VillageSavedData.get(level).touch();
     }
 
-    private static List<BuildStep> storagePlan(ServerLevel level, BlockPos base, Villager villager) {
+    private static void completeBuildingProject(Villager villager, ServerLevel level,
+                                                VillageSavedData.ProjectRecord project,
+                                                List<BuildStep> plan) {
+        project.setPhase("complete");
+        project.setPausedReason("");
+        VillageSavedData data = VillageSavedData.get(level);
+
+        int skill = VillagerSimData.carpentrySkill(villager);
+        VillagerSimData.setCarpentrySkill(villager, Math.min(100, skill + 2));
+
+        registerCompletedProject(villager, level, project);
+
+        BlockPos anchor = project.anchor() != null ? project.anchor() : villager.blockPosition();
+        if (AsobibaTweaksConfig.VILLAGE_ROADS_ENABLED.getAsBoolean()) {
+            BlockPos roadFrom = project.site().offset(2, 0, -1);
+            createRoadDemandProject(level, project.villageId(), roadFrom, anchor, villager);
+        }
+
+        if (Boolean.parseBoolean(project.parameter("outpost"))
+                && AsobibaTweaksConfig.VILLAGE_REFUGEES_ENABLED.getAsBoolean()) {
+            boolean colony = Boolean.parseBoolean(project.parameter("colony"));
+            sendSettlers(level, villager, project.site().offset(2, 1, 2), colony ? 3 : 2);
+        }
+
+        villager.getPersistentData().putLong(
+                NEXT_BUILD,
+                level.getGameTime() + (Boolean.parseBoolean(project.parameter("colony")) ? 10L : 5L) * 24000L
+        );
+        data.touch();
+    }
+
+    private static String projectPhase(VillageSavedData.ProjectRecord project) {
+        int cursor = project.workCursor();
+        String template = project.templateId();
+        if (cursor < 25) return "foundation";
+        if ("house_2story_5x5".equals(template)) {
+            if (cursor < 75) return "ground_floor";
+            if (cursor < 100) return "second_floor";
+            if (cursor < 150) return "upper_floor";
+            if (cursor < 175) return "roof";
+            return "interior";
+        }
+        if (cursor < 75) return "walls";
+        if (cursor < 100) return "roof";
+        return "interior";
+    }
+
+    private static List<BuildStep> projectPlan(VillageSavedData.ProjectRecord project) {
+        if ("storage_5x5".equals(project.templateId())) return storagePlan(project);
+        return hutPlan(project);
+    }
+
+    private static List<BuildStep> storagePlan(VillageSavedData.ProjectRecord project) {
+        BlockPos base = project.site();
         List<BuildStep> steps = new ArrayList<>();
-        Block plankBlock = chooseBuildingPlanks(level, base, villager);
+        Block plankBlock = plankFromName(project.parameter("plank"));
         Item plankItem = plankBlock.asItem();
         BlockState plank = plankBlock.defaultBlockState();
 
@@ -425,9 +538,10 @@ public final class VillageSimulationEvents {
         return steps;
     }
 
-    private static List<BuildStep> hutPlan(ServerLevel level, BlockPos base, Villager villager) {
+    private static List<BuildStep> hutPlan(VillageSavedData.ProjectRecord project) {
+        BlockPos base = project.site();
         List<BuildStep> steps = new ArrayList<>();
-        Block plankBlock = chooseBuildingPlanks(level, base, villager);
+        Block plankBlock = plankFromName(project.parameter("plank"));
         Item plankItem = plankBlock.asItem();
         BlockState plank = plankBlock.defaultBlockState();
         BlockState cobble = Blocks.COBBLESTONE.defaultBlockState();
@@ -443,9 +557,10 @@ public final class VillageSimulationEvents {
                 boolean window = y == 2 && ((x == 0 || x == 4) && z == 2);
                 if (edge && !doorway && !window) {
                     BlockState state = plank;
+                    int leadSkill = parseInt(project.parameter("lead_skill"), 0);
                     if (AsobibaTweaksConfig.VILLAGE_IMPERFECT_CONSTRUCTION_ENABLED.getAsBoolean()
-                            && villager.getPersistentData().getInt(BUILDER_XP) < 2
-                            && Math.floorMod((x * 31 + y * 17 + z * 13 + base.hashCode()), 37) == 0) {
+                            && leadSkill < 50
+                            && Math.floorMod((int)(project.variantSeed() + x * 31L + y * 17L + z * 13L), 37) == 0) {
                         state = cobble;
                     }
                     steps.add(new BuildStep(base.offset(x, y, z), state,
@@ -464,7 +579,7 @@ public final class VillageSimulationEvents {
         BlockState bedHead = bedFoot.setValue(BedBlock.PART, BedPart.HEAD);
         steps.add(new BuildStep(base.offset(2, 1, 2), bedFoot, null));
         steps.add(new BuildStep(base.offset(2, 1, 3), bedHead, null));
-        if (villager.getPersistentData().getBoolean(BUILD_OUTPOST)) {
+        if (Boolean.parseBoolean(project.parameter("outpost"))) {
             BlockState secondBedFoot = Blocks.WHITE_BED.defaultBlockState()
                     .setValue(BedBlock.PART, BedPart.FOOT)
                     .setValue(HorizontalDirectionalBlock.FACING, Direction.SOUTH);
@@ -473,12 +588,86 @@ public final class VillageSimulationEvents {
             steps.add(new BuildStep(base.offset(1, 1, 3), secondBedHead, null));
             steps.add(new BuildStep(base.offset(3, 1, 2), Blocks.BARREL.defaultBlockState(), plankItem));
             steps.add(new BuildStep(base.offset(3, 1, 3), Blocks.COMPOSTER.defaultBlockState(), plankItem));
-            if (villager.getPersistentData().getBoolean(BUILD_COLONY)) {
+            if (Boolean.parseBoolean(project.parameter("colony"))) {
                 steps.add(new BuildStep(base.offset(1, 1, 1),
                         AsobibaRegistries.CARPENTER_WORKBENCH.get().defaultBlockState(), plankItem));
             }
         }
+
+        if ("house_2story_5x5".equals(project.templateId())) {
+            // Replace the single-story roof layer with a second floor and add an upper shell/roof.
+            steps.removeIf(step -> step.pos.getY() == base.getY() + 4);
+            for (int x = 0; x < 5; x++) for (int z = 0; z < 5; z++) {
+                steps.add(new BuildStep(base.offset(x, 4, z), plank, plankItem));
+            }
+            for (int y = 5; y <= 7; y++) {
+                for (int x = 0; x < 5; x++) for (int z = 0; z < 5; z++) {
+                    boolean edge = x == 0 || x == 4 || z == 0 || z == 4;
+                    boolean window = y == 6 && ((x == 0 || x == 4) && z == 2);
+                    if (edge && !window) steps.add(new BuildStep(base.offset(x, y, z), plank, plankItem));
+                }
+            }
+            for (int x = 0; x < 5; x++) for (int z = 0; z < 5; z++) {
+                steps.add(new BuildStep(base.offset(x, 8, z), plank, plankItem));
+            }
+            // Simple internal stair spine; material cost remains real plank-equivalent.
+            Block stair = stairsForPlank(plankBlock);
+            BlockState stairState = stair.defaultBlockState();
+            steps.add(new BuildStep(base.offset(1, 1, 1), stairState, plankItem));
+            steps.add(new BuildStep(base.offset(2, 2, 1), stairState, plankItem));
+            steps.add(new BuildStep(base.offset(3, 3, 1), stairState, plankItem));
+
+            BlockState upperBedFoot = Blocks.WHITE_BED.defaultBlockState()
+                    .setValue(BedBlock.PART, BedPart.FOOT)
+                    .setValue(HorizontalDirectionalBlock.FACING, Direction.SOUTH);
+            BlockState upperBedHead = upperBedFoot.setValue(BedBlock.PART, BedPart.HEAD);
+            steps.add(new BuildStep(base.offset(2, 5, 2), upperBedFoot, null));
+            steps.add(new BuildStep(base.offset(2, 5, 3), upperBedHead, null));
+        }
         return steps;
+    }
+
+    private static int parseInt(String value, int fallback) {
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private static String plankName(Block block) {
+        if (block == Blocks.SPRUCE_PLANKS) return "spruce";
+        if (block == Blocks.BIRCH_PLANKS) return "birch";
+        if (block == Blocks.JUNGLE_PLANKS) return "jungle";
+        if (block == Blocks.ACACIA_PLANKS) return "acacia";
+        if (block == Blocks.DARK_OAK_PLANKS) return "dark_oak";
+        if (block == Blocks.MANGROVE_PLANKS) return "mangrove";
+        if (block == Blocks.CHERRY_PLANKS) return "cherry";
+        return "oak";
+    }
+
+    private static Block plankFromName(String name) {
+        return switch (name) {
+            case "spruce" -> Blocks.SPRUCE_PLANKS;
+            case "birch" -> Blocks.BIRCH_PLANKS;
+            case "jungle" -> Blocks.JUNGLE_PLANKS;
+            case "acacia" -> Blocks.ACACIA_PLANKS;
+            case "dark_oak" -> Blocks.DARK_OAK_PLANKS;
+            case "mangrove" -> Blocks.MANGROVE_PLANKS;
+            case "cherry" -> Blocks.CHERRY_PLANKS;
+            default -> Blocks.OAK_PLANKS;
+        };
+    }
+
+    private static Block stairsForPlank(Block plank) {
+        if (plank == Blocks.SPRUCE_PLANKS) return Blocks.SPRUCE_STAIRS;
+        if (plank == Blocks.BIRCH_PLANKS) return Blocks.BIRCH_STAIRS;
+        if (plank == Blocks.JUNGLE_PLANKS) return Blocks.JUNGLE_STAIRS;
+        if (plank == Blocks.ACACIA_PLANKS) return Blocks.ACACIA_STAIRS;
+        if (plank == Blocks.DARK_OAK_PLANKS) return Blocks.DARK_OAK_STAIRS;
+        if (plank == Blocks.MANGROVE_PLANKS) return Blocks.MANGROVE_STAIRS;
+        if (plank == Blocks.CHERRY_PLANKS) return Blocks.CHERRY_STAIRS;
+        return Blocks.OAK_STAIRS;
     }
 
     private static Block chooseBuildingPlanks(ServerLevel level, BlockPos site, Villager villager) {
