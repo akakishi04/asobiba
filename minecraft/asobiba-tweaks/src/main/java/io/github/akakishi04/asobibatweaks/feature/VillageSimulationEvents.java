@@ -397,7 +397,7 @@ public final class VillageSimulationEvents {
 
     private static List<BuildStep> storagePlan(ServerLevel level, BlockPos base, Villager villager) {
         List<BuildStep> steps = new ArrayList<>();
-        Block plankBlock = chooseBuildingPlanks(level, base, villager.blockPosition());
+        Block plankBlock = chooseBuildingPlanks(level, base, villager);
         Item plankItem = plankBlock.asItem();
         BlockState plank = plankBlock.defaultBlockState();
 
@@ -480,7 +480,7 @@ public final class VillageSimulationEvents {
         return steps;
     }
 
-    private static Block chooseBuildingPlanks(ServerLevel level, BlockPos site, BlockPos villageCenter) {
+    private static Block chooseBuildingPlanks(ServerLevel level, BlockPos site, Villager villager) {
         if (!AsobibaTweaksConfig.VILLAGE_BUILDING_CULTURE_ENABLED.getAsBoolean()) {
             return choosePlanks(level, site);
         }
