@@ -94,6 +94,7 @@ public final class VillageStatusScreen extends Screen {
         draw(graphics, x, y += line, "Viability: " + snapshot.viability()
                 + " [" + viabilityBand(snapshot.viability()) + "]");
         draw(graphics, x, y += line, "State: " + snapshot.lifecycle());
+        draw(graphics, x, y += line, "Emergency: " + snapshot.emergency());
         draw(graphics, x, y += line, "Districts: " + snapshot.districtCount()
                 + "   Outposts: " + snapshot.outpostCount());
     }
