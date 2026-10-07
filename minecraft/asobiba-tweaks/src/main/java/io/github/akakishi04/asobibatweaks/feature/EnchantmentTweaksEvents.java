@@ -34,6 +34,7 @@ import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.living.LivingHealEvent;
 import net.neoforged.neoforge.event.entity.living.LivingHurtEvent;
+import net.neoforged.neoforge.event.entity.living.ShieldBlockEvent;
 import net.neoforged.neoforge.event.entity.living.LivingFallEvent;
 import net.neoforged.neoforge.event.entity.player.AnvilRepairEvent;
 import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
@@ -55,6 +56,7 @@ public final class EnchantmentTweaksEvents {
     private static final String BLAST_PROTECTION = "minecraft:blast_protection";
     private static final String FIRE_ASPECT = "minecraft:fire_aspect";
     private static final String THORNS = "minecraft:thorns";
+    private static final String BREACH = "minecraft:breach";
     private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
     private static final String PROTECTION_LAST_DAMAGE = "asobibatweaks_protection_last_damage";
     private static final String PROJECTILE_LAST_DAMAGE = "asobibatweaks_projectile_last_damage";
@@ -80,6 +82,9 @@ public final class EnchantmentTweaksEvents {
     private static final String FIRE_ASPECT_CAUTERIZE_REDUCTION = "asobibatweaks_fire_aspect_cauterize_reduction";
     private static final String THORNS_STORED_DAMAGE = "asobibatweaks_thorns_stored_damage";
     private static final String THORNS_RELEASE_ACTIVE = "asobibatweaks_thorns_release_active";
+    private static final String BREACH_FRACTURE_ATTACKER = "asobibatweaks_breach_fracture_attacker";
+    private static final String BREACH_FRACTURE_UNTIL = "asobibatweaks_breach_fracture_until";
+    private static final String BREACH_FRACTURE_BONUS = "asobibatweaks_breach_fracture_bonus";
 
     @SubscribeEvent
     public void onBlockDrops(BlockDropsEvent event) {
@@ -431,6 +436,55 @@ public final class EnchantmentTweaksEvents {
         );
         if (reduction > 0.0D) {
             event.setAmount((float)(event.getAmount() * (1.0D - reduction)));
+        }
+    }
+
+    @SubscribeEvent
+    public void onBreachDamage(LivingDamageEvent event) {
+        if (!(event.getSource().getEntity() instanceof ServerPlayer player)
+                || event.getSource().getDirectEntity() != player
+                || event.getSource().is(DamageTypes.THORNS)
+                || player.getPersistentData().getBoolean(SMITE_ECHO_ACTIVE)
+                || player.getPersistentData().getBoolean(THORNS_RELEASE_ACTIVE)
+                || player.level().isClientSide()
+                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || event.getAmount() <= 0.0F) {
+            return;
+        }
+
+        BranchRef breach = branch(player.getMainHandItem(), BREACH);
+        if (breach == null) return;
+
+        double strength = branchScale(breach.mastery(), 0.0D, 1.0D);
+
+        if (breach.branch() == 0) {
+            if (event.getEntity().getArmorValue() >= 10) {
+                double extraRemainingDamage = 0.05D + 0.10D * strength;
+                event.setAmount((float)(event.getAmount() * (1.0D + extraRemainingDamage)));
+            }
+            return;
+        }
+
+        if (breach.branch() == 2) {
+            var targetData = event.getEntity().getPersistentData();
+            long now = player.level().getGameTime();
+            String attacker = player.getUUID().toString();
+
+            boolean active = attacker.equals(targetData.getString(BREACH_FRACTURE_ATTACKER))
+                    && now <= targetData.getLong(BREACH_FRACTURE_UNTIL);
+            if (active) {
+                double bonus = Math.min(
+                        0.15D,
+                        Math.max(0.0D, targetData.getInt(BREACH_FRACTURE_BONUS) / 1000.0D)
+                );
+                event.setAmount((float)(event.getAmount() * (1.0D + bonus)));
+            }
+
+            long duration = Math.round(40.0D + 40.0D * strength);
+            double bonus = 0.05D + 0.10D * strength;
+            targetData.putString(BREACH_FRACTURE_ATTACKER, attacker);
+            targetData.putLong(BREACH_FRACTURE_UNTIL, now + duration);
+            targetData.putInt(BREACH_FRACTURE_BONUS, (int)Math.round(bonus * 1000.0D));
         }
     }
 
@@ -961,6 +1015,31 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
+    public void onBreachShieldBlock(ShieldBlockEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer blocker)
+                || !(event.getDamageSource().getEntity() instanceof ServerPlayer attacker)
+                || event.getDamageSource().getDirectEntity() != attacker
+                || attacker.level().isClientSide()
+                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || event.getBlockedDamage() <= 0.0F) {
+            return;
+        }
+
+        BranchRef breach = branch(attacker.getMainHandItem(), BREACH);
+        if (breach == null || breach.branch() != 1) return;
+
+        ItemStack shield = blocker.getUseItem();
+        if (shield.isEmpty()) return;
+
+        double strength = branchScale(breach.mastery(), 0.0D, 1.0D);
+        int extraTicks = (int)Math.round(10.0D + 20.0D * strength);
+        var shieldItem = shield.getItem();
+
+        blocker.stopUsingItem();
+        blocker.getCooldowns().addCooldown(shieldItem, Math.max(1, extraTicks));
+    }
+
+    @SubscribeEvent
     public void onCauterizeHeal(LivingHealEvent event) {
         if (event.getAmount() <= 0.0F || !event.getEntity().isOnFire()) return;
 
@@ -1218,7 +1297,8 @@ public final class EnchantmentTweaksEvents {
                 || FIRE_PROTECTION.equals(enchantmentId)
                 || BLAST_PROTECTION.equals(enchantmentId)
                 || FIRE_ASPECT.equals(enchantmentId)
-                || THORNS.equals(enchantmentId);
+                || THORNS.equals(enchantmentId)
+                || BREACH.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -1323,6 +1403,14 @@ public final class EnchantmentTweaksEvents {
                 case 0 -> "Retaliatory Spikes";
                 case 1 -> "Entangling Thorns";
                 case 2 -> "Stored Retaliation";
+                default -> "Unselected";
+            };
+        }
+        if (BREACH.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Heavy Armor Crusher";
+                case 1 -> "Shield Breaker";
+                case 2 -> "Fracture";
                 default -> "Unselected";
             };
         }

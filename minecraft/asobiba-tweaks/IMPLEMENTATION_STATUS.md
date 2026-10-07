@@ -39,7 +39,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Blast / Slipstream Wind Pressure | `PhysicsTransportEvents` | Implemented |
 | Wind Pressure Resistance | datapack enchantment + `PhysicsTransportEvents` | Implemented |
 | Growing Enchantments | `EnchantmentTweaksEvents`, `EnchantmentMasteryData` | Implemented |
-| Enchantment Branches | `EnchantmentTweaksEvents` | **V16+V17 expanded**: explicit branch-selection state plus concrete Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane of Arthropods / Fire Protection / Blast Protection / Fire Aspect / Thorns branch effects; Mending is excluded from branch selection as designed. Remaining accepted branch families are still pending |
+| Enchantment Branches | `EnchantmentTweaksEvents` | **V16+V17 expanded**: explicit branch-selection state plus concrete Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane of Arthropods / Fire Protection / Blast Protection / Fire Aspect / Thorns / Breach branch effects; Mending is excluded from branch selection as designed. Remaining accepted branch families are still pending |
 | Curse Growth | `EnchantmentTweaksEvents` | Implemented |
 | Fortune / Silk Touch Switching | `EnchantmentTweaksEvents` | Implemented |
 | Mastery Inheritance | `EnchantmentTweaksEvents` | Implemented |
@@ -249,3 +249,8 @@ Fire Aspect now implements all three accepted branches for direct melee hits. Lo
 ## V26 thorns-branch note
 
 Thorns now implements all three accepted specializations around actual vanilla Thorns events. Retaliatory Spikes multiplies only reflected Thorns damage by 1.15x-1.40x. Entangling Thorns reduces reflected damage to 70% but applies a bounded 1.0-2.5 second slowdown plus a small outward control impulse to the entity that actually received the retaliation. Stored Retaliation accumulates 15%-35% of the wearer's post-mitigation incoming damage, caps at 3-8 damage by mastery, and releases once as Thorns-typed auxiliary damage on the wearer's next successful direct melee hit. Auxiliary retaliation is guarded from recursively triggering weapon mastery branches.
+
+
+## V27 breach-branch note
+
+Breach now implements all three accepted branches. Heavy Armor Crusher applies a mastery-scaled +5%-15% adjustment to post-vanilla remaining damage only against targets with substantial armor (initial threshold: 10 armor), approximating additional removal of the armor effectiveness left after ordinary Breach. Shield Breaker listens only to successful ShieldBlockEvent instances caused by a direct player hit, stops the active guard and adds a 0.5-1.5 second item cooldown to the shield that actually blocked. Fracture stores an attacker-specific 2-4 second mark on the target; subsequent direct Breach hits by that same attacker gain +5%-15% remaining damage and refresh the mark rather than stacking multiple marks.
