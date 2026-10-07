@@ -8,7 +8,9 @@ import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.entity.npc.VillagerProfession;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
@@ -69,6 +71,66 @@ public final class VillagePopulationMigrationService {
         }
 
         VillagerSimData.villageId(villager).ifPresent(villageId -> scheduleDaily(level, villageId));
+    }
+
+    public static boolean startFoundingGroup(ServerLevel level, Villager carpenter,
+                                             UUID destinationVillageId, int requestedSize) {
+        Optional<UUID> sourceId = VillagerSimData.villageId(carpenter);
+        if (sourceId.isEmpty() || sourceId.get().equals(destinationVillageId)) return false;
+
+        VillageSavedData data = VillageSavedData.get(level);
+        VillageSavedData.VillageRecord source = data.village(sourceId.get()).orElse(null);
+        VillageSavedData.VillageRecord destination = data.village(destinationVillageId).orElse(null);
+        if (source == null || destination == null) return false;
+        if (hasOpenMigration(data, source.id())) return false;
+
+        List<Villager> candidates = loadedResidents(level, source);
+        candidates.removeIf(v -> v.isBaby() || VillagerSimData.migrationId(v).isPresent());
+        if (candidates.size() < 4) return false;
+
+        candidates.sort(Comparator
+                .comparingInt(VillagePopulationMigrationService::founderPriority)
+                .thenComparing(v -> v.getUUID().toString()));
+
+        int sourcePopulation = Math.max(source.lastKnownPopulation(), source.residentIds().size());
+        int size = Math.max(4, Math.min(6, requestedSize));
+        size = Math.min(size, candidates.size());
+        size = Math.min(size, Math.max(0, sourcePopulation - 4));
+        if (size < 4) return false;
+
+        List<Villager> selected = new ArrayList<>(candidates.subList(0, size));
+        VillageSavedData.MigrationRecord migration = data.createMigration(
+                source.id(), destinationVillageId, selected.stream().map(Villager::getUUID).toList());
+        migration.setKind("founding");
+        migration.setTarget(destination.center());
+        migration.setState("travelling");
+        migration.setCreatedGameTime(level.getGameTime());
+        migration.setUpdatedGameTime(level.getGameTime());
+
+        for (Villager villager : selected) {
+            VillagerSimData.setMigrationId(villager, migration.id());
+            VillagerSimData.setRemigrationCooldownUntil(villager,
+                    level.getGameTime() + PLANNED_REMIGRATION_COOLDOWN);
+        }
+
+        loadTravelFood(selected, level);
+        loadFoundingSupplies(selected, level);
+
+        source.setNextFissionGameTime(level.getGameTime() + 30L * DAY);
+        destination.setNextFissionGameTime(level.getGameTime() + 30L * DAY);
+        data.touch();
+        return true;
+    }
+
+    private static int founderPriority(Villager villager) {
+        VillagerProfession profession = villager.getVillagerData().getProfession();
+        if (profession == VillagerProfession.FARMER) return 0;
+        if ("carpenter".equals(VillagerSimData.duty(villager))) return 1;
+        if (profession == VillagerProfession.NONE) return 2;
+        if (profession == VillagerProfession.FISHERMAN) return 3;
+        if (profession == VillagerProfession.MASON || profession == VillagerProfession.FLETCHER) return 4;
+        if (profession == VillagerProfession.NITWIT) return 9;
+        return 5;
     }
 
     public static boolean allowBirth(Villager parentA, Villager parentB, ServerLevel level) {
@@ -294,6 +356,29 @@ public final class VillagePopulationMigrationService {
         }
     }
 
+    private static void loadFoundingSupplies(List<Villager> travelers, ServerLevel level) {
+        if (travelers.isEmpty()) return;
+        Villager sourceAccess = travelers.getFirst();
+
+        List<ItemStack> planks = VillageStorageService.extractMatching(
+                sourceAccess, level, stack -> stack.is(ItemTags.PLANKS),
+                Math.min(32, VillageStorageService.countMatching(
+                        sourceAccess, level, stack -> stack.is(ItemTags.PLANKS))));
+        List<ItemStack> stone = VillageStorageService.extract(
+                sourceAccess, level, Items.COBBLESTONE,
+                Math.min(16, VillageStorageService.count(sourceAccess, level, Items.COBBLESTONE)));
+
+        int index = 0;
+        for (ItemStack stack : planks) {
+            ItemStack remainder = insertInventory(travelers.get(index++ % travelers.size()), stack);
+            if (!remainder.isEmpty()) VillageStorageService.insert(sourceAccess, level, remainder);
+        }
+        for (ItemStack stack : stone) {
+            ItemStack remainder = insertInventory(travelers.get(index++ % travelers.size()), stack);
+            if (!remainder.isEmpty()) VillageStorageService.insert(sourceAccess, level, remainder);
+        }
+    }
+
     private static ItemStack insertInventory(Villager villager, ItemStack incoming) {
         ItemStack work = incoming.copy();
         var inventory = villager.getInventory();
@@ -388,6 +473,9 @@ public final class VillagePopulationMigrationService {
         migration.setUpdatedGameTime(level.getGameTime());
         if (migration.members().isEmpty()) {
             migration.setState("complete");
+            if ("founding".equals(migration.kind())) {
+                data.village(destinationId).ifPresent(destination -> destination.setLifecycle("active"));
+            }
             data.removeMigration(migration.id());
         } else {
             data.touch();
