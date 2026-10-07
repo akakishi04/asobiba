@@ -195,8 +195,8 @@ public final class VillageStorageService {
                 ItemStack remainder = insert(villager, level, stack);
                 if (!remainder.isEmpty()) {
                     // If the container topology changed unexpectedly, preserve the item physically
-                    // by placing it in the villager's normal inventory as a last-resort recovery.
-                    villager.getInventory().addItem(remainder);
+                    // in-world rather than silently deleting it.
+                    villager.spawnAtLocation(remainder);
                 }
             }
             reconcileVillage(villager, level);
