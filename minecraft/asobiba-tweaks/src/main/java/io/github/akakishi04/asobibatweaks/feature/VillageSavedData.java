@@ -62,6 +62,27 @@ public final class VillageSavedData extends SavedData {
         return Optional.ofNullable(storages.get(id));
     }
 
+    public Optional<StorageRecord> storageAt(UUID villageId, BlockPos pos) {
+        VillageRecord village = villages.get(villageId);
+        if (village == null) return Optional.empty();
+        for (UUID storageId : village.storageIds) {
+            StorageRecord record = storages.get(storageId);
+            if (record != null && record.pos.equals(pos)) return Optional.of(record);
+        }
+        return Optional.empty();
+    }
+
+    public List<StorageRecord> storagesForVillage(UUID villageId) {
+        VillageRecord village = villages.get(villageId);
+        if (village == null) return List.of();
+        List<StorageRecord> result = new ArrayList<>();
+        for (UUID storageId : village.storageIds) {
+            StorageRecord record = storages.get(storageId);
+            if (record != null) result.add(record);
+        }
+        return Collections.unmodifiableList(result);
+    }
+
     public Optional<WorkSiteRecord> workSite(UUID id) {
         return Optional.ofNullable(workSites.get(id));
     }
@@ -647,6 +668,7 @@ public final class VillageSavedData extends SavedData {
         private final BlockPos pos;
         private String category;
         private String validationState = "unknown";
+        private final Map<String, Integer> cachedCounts = new HashMap<>();
         private long lastValidatedGameTime;
 
         private StorageRecord(UUID id, UUID villageId, BlockPos pos, String category) {
@@ -661,10 +683,19 @@ public final class VillageSavedData extends SavedData {
         public BlockPos pos() { return pos; }
         public String category() { return category; }
         public String validationState() { return validationState; }
+        public Map<String, Integer> cachedCounts() { return Collections.unmodifiableMap(cachedCounts); }
         public long lastValidatedGameTime() { return lastValidatedGameTime; }
 
         public void setCategory(String value) { category = safeText(value, "general"); }
         public void setValidationState(String value) { validationState = safeText(value, "unknown"); }
+
+        public void replaceCachedCounts(Map<String, Integer> counts) {
+            cachedCounts.clear();
+            counts.forEach((key, value) -> {
+                if (key != null && !key.isBlank() && value != null && value > 0) cachedCounts.put(key, value);
+            });
+        }
+
         public void setLastValidatedGameTime(long value) { lastValidatedGameTime = value; }
 
         private CompoundTag save() {
@@ -674,6 +705,7 @@ public final class VillageSavedData extends SavedData {
             tag.putLong("pos", pos.asLong());
             tag.putString("category", category);
             tag.putString("validation", validationState);
+            tag.put("cached_counts", writeIntMap(cachedCounts));
             tag.putLong("last_validated", lastValidatedGameTime);
             return tag;
         }
@@ -686,6 +718,7 @@ public final class VillageSavedData extends SavedData {
             StorageRecord record = new StorageRecord(id, villageId, BlockPos.of(tag.getLong("pos")),
                     safeText(tag.getString("category"), "general"));
             record.validationState = safeText(tag.getString("validation"), "unknown");
+            record.cachedCounts.putAll(readIntMap(tag, "cached_counts"));
             record.lastValidatedGameTime = tag.getLong("last_validated");
             return record;
         }
