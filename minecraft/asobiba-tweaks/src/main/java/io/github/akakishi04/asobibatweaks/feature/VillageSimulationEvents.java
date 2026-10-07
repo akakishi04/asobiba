@@ -166,6 +166,10 @@ public final class VillageSimulationEvents {
             VillageSimulationScheduler.enqueueWorker(level, "shepherd:" + id,
                     () -> runIfActive(villager, level, () -> tickShepherd(villager, level)));
         } else if (AsobibaTweaksConfig.VILLAGE_LOGISTICS_ENABLED.getAsBoolean()
+                && "fisher".equals(duty)) {
+            VillageSimulationScheduler.enqueueWorker(level, "fisher:" + id,
+                    () -> runIfActive(villager, level, () -> tickFisher(villager, level)));
+        } else if (AsobibaTweaksConfig.VILLAGE_LOGISTICS_ENABLED.getAsBoolean()
                 && "farmer".equals(duty)) {
             VillageSimulationScheduler.enqueueWorker(level, "farmer_export:" + id,
                     () -> runIfActive(villager, level, () -> exportVillagerFood(villager, level)));
@@ -917,9 +921,13 @@ public final class VillageSimulationEvents {
             purpose = "quarry";
         }
 
-        // Fishing/Farm Outposts remain in the accepted design, but their dedicated
-        // physical work-site execution is not complete yet. Do not create decorative/non-working
-        // Outposts for those categories.
+        int fishing = village.marketPermille("fishing");
+        if (fishing > best) {
+            purpose = "fishing";
+        }
+
+        // Farm Outposts remain accepted but are not selected until their irrigated
+        // crop-site provisioning and physical harvest loop are complete.
         return purpose;
     }
 
@@ -1237,6 +1245,70 @@ public final class VillageSimulationEvents {
             }
             return;
         }
+    }
+
+    private static void tickFisher(Villager villager, ServerLevel level) {
+        if (!isWorkTime(level) || level.getGameTime() % 360 != Math.floorMod(villager.getId(), 360)) return;
+
+        var siteId = VillagerSimData.outpostSiteId(villager);
+        if (siteId.isEmpty()) return;
+
+        VillageSavedData data = VillageSavedData.get(level);
+        VillageSavedData.WorkSiteRecord site = data.workSite(siteId.get()).orElse(null);
+        if (site == null || !"outpost".equals(site.type()) || !"active".equals(site.state())
+                || !"fishing".equals(site.purpose())) {
+            return;
+        }
+
+        if (VillagerSimData.hasWorkCargo(villager, level.registryAccess(), WORKER_CARGO_SLOTS)) {
+            depositWorkCargo(villager, level, WORKER_CARGO_SLOTS);
+            return;
+        }
+
+        BlockPos center = workSiteCenter(site);
+        BlockPos water = null;
+        for (int attempt = 0; attempt < 40 && water == null; attempt++) {
+            if (!VillageSimulationScheduler.tryConsumeWorkerProbe(level)) return;
+
+            int x = center.getX() + villager.getRandom().nextInt(25) - 12;
+            int z = center.getZ() + villager.getRandom().nextInt(25) - 12;
+            BlockPos column = new BlockPos(x, level.getMinBuildHeight(), z);
+            if (!VillageSimulationScheduler.isChunkLoaded(level, column)) continue;
+
+            int surfaceY = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+            for (int dy = -3; dy <= 1; dy++) {
+                BlockPos probe = new BlockPos(
+                        x,
+                        Math.max(level.getMinBuildHeight(), surfaceY + dy),
+                        z
+                );
+                if (level.getFluidState(probe).is(FluidTags.WATER)) {
+                    water = probe;
+                    break;
+                }
+            }
+        }
+        if (water == null) return;
+
+        if (villager.distanceToSqr(water.getCenter()) > 25.0D) {
+            villager.getNavigation().moveTo(
+                    water.getX() + 0.5D, water.getY() + 1.0D, water.getZ() + 0.5D, 0.66D);
+            return;
+        }
+
+        // Common fish only: outpost fishing is a bounded food/logistics source, not a treasure generator.
+        if (villager.getRandom().nextInt(3) != 0) return;
+        Item catchItem = villager.getRandom().nextInt(5) == 0 ? Items.SALMON : Items.COD;
+        ItemStack caught = new ItemStack(catchItem);
+        if (!VillagerSimData.canInsertWorkCargo(
+                villager, level.registryAccess(), caught, WORKER_CARGO_SLOTS)) {
+            depositWorkCargo(villager, level, WORKER_CARGO_SLOTS);
+            return;
+        }
+
+        VillagerSimData.insertWorkCargo(villager, level.registryAccess(), caught, WORKER_CARGO_SLOTS);
+        site.setLastUsedGameTime(level.getGameTime());
+        data.touch();
     }
 
     private static void tickShepherd(Villager villager, ServerLevel level) {

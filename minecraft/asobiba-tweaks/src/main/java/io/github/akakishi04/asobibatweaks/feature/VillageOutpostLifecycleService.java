@@ -176,6 +176,7 @@ public final class VillageOutpostLifecycleService {
         String requiredDuty = switch (site.purpose()) {
             case "forestry" -> "forester";
             case "quarry" -> "quarry";
+            case "fishing" -> "fisher";
             default -> "";
         };
         if (requiredDuty.isBlank()) return;
@@ -507,6 +508,9 @@ public final class VillageOutpostLifecycleService {
                     || stack.is(Items.ANDESITE) || stack.is(Items.DIORITE)
                     || stack.is(Items.GRANITE);
         }
+        if ("fishing".equals(purpose)) {
+            return stack.is(Items.COD) || stack.is(Items.SALMON);
+        }
         return false;
     }
 
@@ -518,6 +522,9 @@ public final class VillageOutpostLifecycleService {
             return key.endsWith(":cobblestone") || key.endsWith(":stone")
                     || key.endsWith(":andesite") || key.endsWith(":diorite")
                     || key.endsWith(":granite");
+        }
+        if ("fishing".equals(purpose)) {
+            return key.endsWith(":cod") || key.endsWith(":salmon");
         }
         return false;
     }
@@ -590,6 +597,7 @@ public final class VillageOutpostLifecycleService {
         return switch (purpose) {
             case "forestry" -> village.marketPermille("wood");
             case "quarry" -> village.marketPermille("stone");
+            case "fishing" -> village.marketPermille("fishing");
             default -> 1000;
         };
     }
@@ -651,6 +659,12 @@ public final class VillageOutpostLifecycleService {
                 if (surface.getY() >= 0
                         && (state.is(Blocks.STONE) || state.is(Blocks.ANDESITE)
                         || state.is(Blocks.DIORITE) || state.is(Blocks.GRANITE))) {
+                    useful++;
+                }
+            } else if ("fishing".equals(site.purpose())) {
+                if (level.getFluidState(surface).is(net.minecraft.tags.FluidTags.WATER)
+                        || level.getFluidState(surface.above()).is(net.minecraft.tags.FluidTags.WATER)
+                        || level.getFluidState(surface.below()).is(net.minecraft.tags.FluidTags.WATER)) {
                     useful++;
                 }
             }
