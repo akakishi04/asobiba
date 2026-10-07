@@ -239,6 +239,14 @@ public final class VillageSavedData extends SavedData {
         }
     }
 
+    public void removeMigration(UUID migrationId) {
+        if (migrations.remove(migrationId) != null) setDirty();
+    }
+
+    public Map<UUID, MigrationRecord> migrationsView() {
+        return Collections.unmodifiableMap(migrations);
+    }
+
     public ChunkIndexView recordsForChunk(ChunkPos chunk) {
         ChunkIndexEntry entry = chunkIndex.get(chunk.toLong());
         if (entry == null) {
@@ -518,6 +526,13 @@ public final class VillageSavedData extends SavedData {
         private long nextMarketUpdateGameTime;
         private long nextBirthGameTime;
         private long recoveryGrowthUntil;
+        private long nextDemographicUpdateGameTime;
+        private long nextMigrationGameTime;
+        private int lowViability5DayBits;
+        private int collapse7DayBits;
+        private int overpopulation5DayBits;
+        private int demographicSamples;
+        private int stableViabilityDays;
         private long lastValidatedGameTime;
 
         private VillageRecord(UUID id, BlockPos center, long createdGameTime) {
@@ -548,6 +563,18 @@ public final class VillageSavedData extends SavedData {
         public long nextMarketUpdateGameTime() { return nextMarketUpdateGameTime; }
         public long nextBirthGameTime() { return nextBirthGameTime; }
         public long recoveryGrowthUntil() { return recoveryGrowthUntil; }
+        public long nextDemographicUpdateGameTime() { return nextDemographicUpdateGameTime; }
+        public long nextMigrationGameTime() { return nextMigrationGameTime; }
+        public int stableViabilityDays() { return Math.max(0, stableViabilityDays); }
+        public boolean migrationPressure3Of5() {
+            return Math.min(demographicSamples, 5) >= 3 && Integer.bitCount(lowViability5DayBits & 0x1F) >= 3;
+        }
+        public boolean overpopulationPressure3Of5() {
+            return Math.min(demographicSamples, 5) >= 3 && Integer.bitCount(overpopulation5DayBits & 0x1F) >= 3;
+        }
+        public boolean collapsePressure5Of7() {
+            return Math.min(demographicSamples, 7) >= 5 && Integer.bitCount(collapse7DayBits & 0x7F) >= 5;
+        }
         public int ledgerCount(String itemKey) { return Math.max(0, ledgerCounts.getOrDefault(itemKey, 0)); }
         public int reservedCount(String itemKey) { return Math.max(0, reservedCounts.getOrDefault(itemKey, 0)); }
         public int availableCount(String itemKey) { return Math.max(0, ledgerCount(itemKey) - reservedCount(itemKey)); }
@@ -606,6 +633,16 @@ public final class VillageSavedData extends SavedData {
         public void setNextMarketUpdateGameTime(long value) { nextMarketUpdateGameTime = value; }
         public void setNextBirthGameTime(long value) { nextBirthGameTime = value; }
         public void setRecoveryGrowthUntil(long value) { recoveryGrowthUntil = value; }
+        public void setNextDemographicUpdateGameTime(long value) { nextDemographicUpdateGameTime = value; }
+        public void setNextMigrationGameTime(long value) { nextMigrationGameTime = value; }
+
+        public void recordDemographicDay(boolean below40, boolean below25, boolean overpopulated, boolean stable60) {
+            lowViability5DayBits = ((lowViability5DayBits << 1) | (below40 ? 1 : 0)) & 0x1F;
+            collapse7DayBits = ((collapse7DayBits << 1) | (below25 ? 1 : 0)) & 0x7F;
+            overpopulation5DayBits = ((overpopulation5DayBits << 1) | (overpopulated ? 1 : 0)) & 0x1F;
+            demographicSamples = Math.min(7, demographicSamples + 1);
+            stableViabilityDays = stable60 ? Math.min(30, stableViabilityDays + 1) : 0;
+        }
 
         public void setNextPlanningGameTime(long value) { this.nextPlanningGameTime = value; }
         public void setLastValidatedGameTime(long value) { this.lastValidatedGameTime = value; }
@@ -634,6 +671,13 @@ public final class VillageSavedData extends SavedData {
             tag.putLong("next_market_update", nextMarketUpdateGameTime);
             tag.putLong("next_birth", nextBirthGameTime);
             tag.putLong("recovery_growth_until", recoveryGrowthUntil);
+            tag.putLong("next_demographic_update", nextDemographicUpdateGameTime);
+            tag.putLong("next_migration", nextMigrationGameTime);
+            tag.putInt("low_viability_5d", lowViability5DayBits);
+            tag.putInt("collapse_7d", collapse7DayBits);
+            tag.putInt("overpopulation_5d", overpopulation5DayBits);
+            tag.putInt("demographic_samples", demographicSamples);
+            tag.putInt("stable_viability_days", stableViabilityDays);
             tag.putLong("last_validated", lastValidatedGameTime);
             return tag;
         }
@@ -663,6 +707,13 @@ public final class VillageSavedData extends SavedData {
             record.nextMarketUpdateGameTime = tag.getLong("next_market_update");
             record.nextBirthGameTime = tag.getLong("next_birth");
             record.recoveryGrowthUntil = tag.getLong("recovery_growth_until");
+            record.nextDemographicUpdateGameTime = tag.getLong("next_demographic_update");
+            record.nextMigrationGameTime = tag.getLong("next_migration");
+            record.lowViability5DayBits = tag.getInt("low_viability_5d") & 0x1F;
+            record.collapse7DayBits = tag.getInt("collapse_7d") & 0x7F;
+            record.overpopulation5DayBits = tag.getInt("overpopulation_5d") & 0x1F;
+            record.demographicSamples = Math.max(0, Math.min(7, tag.getInt("demographic_samples")));
+            record.stableViabilityDays = Math.max(0, tag.getInt("stable_viability_days"));
             record.lastValidatedGameTime = tag.getLong("last_validated");
             return record;
         }
@@ -1042,6 +1093,8 @@ public final class VillageSavedData extends SavedData {
         private UUID destinationVillageId;
         private final Set<UUID> members = new LinkedHashSet<>();
         private String state = "planned";
+        private String kind = "planned";
+        private BlockPos target;
         private long createdGameTime;
         private long updatedGameTime;
 
@@ -1056,6 +1109,8 @@ public final class VillageSavedData extends SavedData {
         public UUID destinationVillageId() { return destinationVillageId; }
         public Set<UUID> members() { return Collections.unmodifiableSet(members); }
         public String state() { return state; }
+        public String kind() { return kind; }
+        public BlockPos target() { return target; }
         public long createdGameTime() { return createdGameTime; }
         public long updatedGameTime() { return updatedGameTime; }
 
@@ -1063,6 +1118,8 @@ public final class VillageSavedData extends SavedData {
         public void addMember(UUID value) { members.add(value); }
         public void removeMember(UUID value) { members.remove(value); }
         public void setState(String value) { state = safeText(value, "planned"); }
+        public void setKind(String value) { kind = safeText(value, "planned"); }
+        public void setTarget(BlockPos value) { target = value == null ? null : value.immutable(); }
         public void setCreatedGameTime(long value) { createdGameTime = value; }
         public void setUpdatedGameTime(long value) { updatedGameTime = value; }
 
@@ -1073,6 +1130,8 @@ public final class VillageSavedData extends SavedData {
             putUuid(tag, "destination", destinationVillageId);
             tag.put("members", writeUuidSet(members));
             tag.putString("state", state);
+            tag.putString("kind", kind);
+            if (target != null) tag.putLong("target", target.asLong());
             tag.putLong("created", createdGameTime);
             tag.putLong("updated", updatedGameTime);
             return tag;
@@ -1086,6 +1145,8 @@ public final class VillageSavedData extends SavedData {
             MigrationRecord record = new MigrationRecord(id, origin, readUuid(tag, "destination"));
             record.members.addAll(readUuidSet(tag, "members"));
             record.state = safeText(tag.getString("state"), "planned");
+            record.kind = safeText(tag.getString("kind"), "planned");
+            if (tag.contains("target", Tag.TAG_LONG)) record.target = BlockPos.of(tag.getLong("target"));
             record.createdGameTime = tag.getLong("created");
             record.updatedGameTime = tag.getLong("updated");
             return record;
