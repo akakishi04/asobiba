@@ -8,10 +8,14 @@ import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.Container;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.entity.npc.VillagerProfession;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.ItemTags;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.tick.EntityTickEvent;
 
@@ -23,6 +27,8 @@ public final class VillageOutpostLifecycleService {
     private static final long ESTABLISHING_GRACE = 3L * DAY;
     private static final int INACTIVE_AFTER_IDLE_DAYS = 3;
     private static final int ABANDON_AFTER_IDLE_DAYS = 10;
+    private static final int PORTER_CARGO_SLOTS = 16;
+    private static final int LOCAL_OUTPUT_BUFFER = 8;
 
     public VillageOutpostLifecycleService() {
     }
@@ -76,6 +82,10 @@ public final class VillageOutpostLifecycleService {
                 VillagerSimData.clearOutpostSiteId(villager);
             }
             return true;
+        }
+
+        if ("porter".equals(VillagerSimData.duty(villager))) {
+            return handleOutpostPorter(villager, level, data, village, site);
         }
 
         BlockPos center = center(site);
@@ -135,6 +145,7 @@ public final class VillageOutpostLifecycleService {
                 site.setState("active");
                 site.setIdleDays(0);
                 assignWorkers(level, village, site);
+                assignPorter(level, village, site);
                 continue;
             }
 
@@ -191,6 +202,202 @@ public final class VillageOutpostLifecycleService {
                 .sorted(Comparator.comparing(v -> v.getUUID().toString()))
                 .limit(target - already.size())
                 .forEach(v -> VillagerSimData.setOutpostSiteId(v, site.id()));
+    }
+
+    private static void assignPorter(ServerLevel level, VillageSavedData.VillageRecord village,
+                                     VillageSavedData.WorkSiteRecord site) {
+        if (localOutputCount(VillageSavedData.get(level), site) < 16) return;
+
+        List<Villager> residents = level.getEntitiesOfClass(
+                Villager.class,
+                new net.minecraft.world.phys.AABB(village.center()).inflate(384.0D, 96.0D, 384.0D),
+                v -> v.isAlive()
+                        && !v.isBaby()
+                        && "porter".equals(VillagerSimData.duty(v))
+                        && VillagerSimData.villageId(v).filter(village.id()::equals).isPresent()
+                        && VillagerSimData.migrationId(v).isEmpty()
+        );
+
+        boolean assigned = residents.stream()
+                .anyMatch(v -> VillagerSimData.outpostSiteId(v).filter(site.id()::equals).isPresent());
+        if (assigned) return;
+
+        residents.stream()
+                .filter(v -> VillagerSimData.outpostSiteId(v).isEmpty())
+                .min(Comparator.comparing(v -> v.getUUID().toString()))
+                .ifPresent(v -> VillagerSimData.setOutpostSiteId(v, site.id()));
+    }
+
+    private static boolean handleOutpostPorter(
+            Villager villager,
+            ServerLevel level,
+            VillageSavedData data,
+            VillageSavedData.VillageRecord village,
+            VillageSavedData.WorkSiteRecord site) {
+        boolean hasCargo = VillagerSimData.hasWorkCargo(villager, level.registryAccess(), PORTER_CARGO_SLOTS);
+
+        if (hasCargo) {
+            VillageStorageService.LocatedContainer core = nearestCoreStorage(level, data, village, site);
+            if (core == null) return true;
+
+            BlockPos target = core.record().pos();
+            if (villager.distanceToSqr(target.getCenter()) > 4.5D * 4.5D) {
+                moveTowardLoaded(villager, level, target, 0.80D);
+                return true;
+            }
+
+            List<ItemStack> cargo = VillagerSimData.workCargo(
+                    villager, level.registryAccess(), PORTER_CARGO_SLOTS);
+            for (int slot = 0; slot < cargo.size(); slot++) {
+                ItemStack stack = cargo.get(slot);
+                if (stack.isEmpty()) continue;
+                cargo.set(slot, insertIntoContainer(core.container(), stack));
+            }
+            VillagerSimData.setWorkCargo(villager, level.registryAccess(), cargo, PORTER_CARGO_SLOTS);
+            VillageStorageService.reconcileVillage(village.id(), level);
+            return true;
+        }
+
+        BlockPos siteCenter = center(site);
+        if (villager.blockPosition().distManhattan(siteCenter) > 20) {
+            moveTowardLoaded(villager, level, siteCenter, 0.80D);
+            return true;
+        }
+
+        if (loadOutpostCargo(villager, level, data, site)) {
+            site.setLastUsedGameTime(level.getGameTime());
+            data.touch();
+        }
+        return true;
+    }
+
+    private static boolean loadOutpostCargo(Villager villager, ServerLevel level,
+                                            VillageSavedData data,
+                                            VillageSavedData.WorkSiteRecord site) {
+        int available = localOutputCount(data, site);
+        int movable = Math.min(32, Math.max(0, available - LOCAL_OUTPUT_BUFFER));
+        if (movable <= 0) return false;
+
+        int remaining = movable;
+        boolean moved = false;
+        for (VillageSavedData.StorageRecord storage : data.storagesForVillage(site.villageId())) {
+            if (!inside(storage.pos(), site.min(), site.max())) continue;
+            if (!VillageSimulationScheduler.isChunkLoaded(level, storage.pos())) continue;
+            if (!(level.getBlockEntity(storage.pos()) instanceof Container container)) continue;
+
+            for (int slot = 0; slot < container.getContainerSize() && remaining > 0; slot++) {
+                ItemStack stack = container.getItem(slot);
+                if (!isOutpostOutput(stack, site.purpose())) continue;
+
+                int take = Math.min(remaining, stack.getCount());
+                ItemStack candidate = stack.copyWithCount(take);
+                if (!VillagerSimData.canInsertWorkCargo(
+                        villager, level.registryAccess(), candidate, PORTER_CARGO_SLOTS)) {
+                    continue;
+                }
+
+                ItemStack remainder = VillagerSimData.insertWorkCargo(
+                        villager, level.registryAccess(), candidate, PORTER_CARGO_SLOTS);
+                int inserted = take - remainder.getCount();
+                if (inserted <= 0) continue;
+
+                stack.shrink(inserted);
+                container.setChanged();
+                remaining -= inserted;
+                moved = true;
+            }
+            if (remaining <= 0) break;
+        }
+
+        if (moved) VillageStorageService.reconcileVillage(site.villageId(), level);
+        return moved;
+    }
+
+    private static int localOutputCount(VillageSavedData data, VillageSavedData.WorkSiteRecord site) {
+        int total = 0;
+        for (VillageSavedData.StorageRecord storage : data.storagesForVillage(site.villageId())) {
+            if (!inside(storage.pos(), site.min(), site.max())) continue;
+            for (var entry : storage.cachedCounts().entrySet()) {
+                if (isOutpostOutputKey(entry.getKey(), site.purpose())) total += entry.getValue();
+            }
+        }
+        return total;
+    }
+
+    private static boolean isOutpostOutput(ItemStack stack, String purpose) {
+        if (stack.isEmpty()) return false;
+        if ("forestry".equals(purpose)) return stack.is(ItemTags.LOGS);
+        if ("quarry".equals(purpose)) {
+            return stack.is(Items.COBBLESTONE) || stack.is(Items.STONE)
+                    || stack.is(Items.ANDESITE) || stack.is(Items.DIORITE)
+                    || stack.is(Items.GRANITE);
+        }
+        return false;
+    }
+
+    private static boolean isOutpostOutputKey(String key, String purpose) {
+        if ("forestry".equals(purpose)) {
+            return key.endsWith("_log") || key.endsWith("_stem") || key.endsWith(":bamboo_block");
+        }
+        if ("quarry".equals(purpose)) {
+            return key.endsWith(":cobblestone") || key.endsWith(":stone")
+                    || key.endsWith(":andesite") || key.endsWith(":diorite")
+                    || key.endsWith(":granite");
+        }
+        return false;
+    }
+
+    private static VillageStorageService.LocatedContainer nearestCoreStorage(
+            ServerLevel level,
+            VillageSavedData data,
+            VillageSavedData.VillageRecord village,
+            VillageSavedData.WorkSiteRecord outpost) {
+        VillageStorageService.LocatedContainer best = null;
+        int bestDistance = Integer.MAX_VALUE;
+
+        for (VillageStorageService.LocatedContainer located :
+                VillageStorageService.containers(village.id(), level)) {
+            BlockPos pos = located.record().pos();
+            if (inside(pos, outpost.min(), outpost.max())) continue;
+
+            int distance = pos.distManhattan(village.center());
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = located;
+            }
+        }
+        return best;
+    }
+
+    private static ItemStack insertIntoContainer(Container container, ItemStack incoming) {
+        ItemStack work = incoming.copy();
+
+        for (int slot = 0; slot < container.getContainerSize() && !work.isEmpty(); slot++) {
+            ItemStack current = container.getItem(slot);
+            if (current.isEmpty() || !ItemStack.isSameItemSameComponents(current, work)
+                    || current.getCount() >= current.getMaxStackSize()) {
+                continue;
+            }
+            int move = Math.min(work.getCount(), current.getMaxStackSize() - current.getCount());
+            current.grow(move);
+            work.shrink(move);
+            container.setChanged();
+        }
+
+        for (int slot = 0; slot < container.getContainerSize() && !work.isEmpty(); slot++) {
+            if (!container.getItem(slot).isEmpty()) continue;
+            int move = Math.min(work.getCount(), work.getMaxStackSize());
+            container.setItem(slot, work.copyWithCount(move));
+            work.shrink(move);
+            container.setChanged();
+        }
+        return work;
+    }
+
+    private static boolean inside(BlockPos pos, BlockPos min, BlockPos max) {
+        return pos.getX() >= min.getX() && pos.getX() <= max.getX()
+                && pos.getY() >= min.getY() && pos.getY() <= max.getY()
+                && pos.getZ() >= min.getZ() && pos.getZ() <= max.getZ();
     }
 
     private static void releaseLoadedWorkers(ServerLevel level, VillageSavedData.VillageRecord village, UUID siteId) {
