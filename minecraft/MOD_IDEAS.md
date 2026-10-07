@@ -830,6 +830,82 @@ Initial cosmetic-imperfection target:
 
 Design constraint: Carpenter progression should make experienced builders visibly faster, more reliable and capable of more ambitious work without turning basic village survival into a skill-gated deadlock.
 
+### Village simulation across partially loaded chunks
+
+Accepted direction:
+- village simulation must **not force-load chunks merely to keep settlement AI running**
+- village AI does not issue persistent chunk tickets for homes, roads, Outposts, resource sites or logistics routes
+- loaded and unloaded areas are treated differently so partial loading never makes unloaded village infrastructure appear to have vanished
+
+State model:
+- **Active**: relevant chunks are loaded and the physical world can be validated directly
+- **Cached**: chunks are unloaded, but the village retains the last validated persistent record
+- **Unknown / Invalidated**: cached information is missing or known to be unreliable and must be revalidated when the area loads
+- Cached state is never interpreted as zero population, zero housing, zero storage or destroyed infrastructure merely because the chunk is absent
+
+Active simulation:
+- only loaded/Active areas perform physical world actions such as:
+  - villager movement/pathing
+  - block placement/breaking
+  - Carpenter construction
+  - Forestry/Quarry/Farm gathering
+  - Porter item transport
+  - direct container transfers
+  - fire response
+  - building revalidation
+  - normal lived Welfare observations
+
+Dormant / unloaded behavior:
+- physical simulation pauses completely for unloaded chunks
+- unloaded areas do **not** perform abstract/offline production
+- no blocks are placed/broken
+- no resources are gathered
+- no items teleport between storage sites
+- no construction progress is fabricated
+- no breeding occurs solely because time passed while unloaded
+- no hidden fire progression is simulated
+- no Welfare penalty/recovery is accumulated from missing sleep/movement/social observations while the villager is unloaded
+- Village Records retain the last known validated state for buildings, housing capacity, work sites, roads, Outposts, villagers, reservations and projects
+
+Cross-chunk projects:
+- if the next required construction/work unit lies in an unloaded chunk, that portion of the project pauses
+- a project crossing loaded/unloaded boundaries must not blindly continue into unavailable terrain
+- when the chunk loads again, the remaining site is revalidated before work resumes
+- player/world edits made while the area was not actively tracked are reconciled at revalidation time
+
+Logistics:
+- Porter/Cargo Raft/resource transport does not teleport through unloaded route sections
+- when the carrying entity/chunk unloads, transport state and physical cargo remain persistent/dormant
+- movement resumes when the relevant entity/area becomes active again
+- the simulation does not force-load an entire village-to-Outpost route just to complete delivery
+
+Welfare:
+- Welfare life-history clocks count only periods where the villager is genuinely Active enough for the relevant behavior to be observed
+- unloaded villagers are not considered unable to move, sleep, work or socialize
+- this prevents long-unloaded villages from returning with artificial Welfare collapse
+
+Fire emergencies:
+- if the affected fire area unloads, the village emergency enters a suspended state rather than continuing a separate abstract fire simulation
+- when reloaded, actual fire/world state is checked again
+- if the hazard remains, response resumes; if not, the emergency can close
+
+Planner / time metadata:
+- lightweight nonphysical metadata may still use absolute world time while chunks are unloaded, including project cooldown timestamps, market-update scheduling, founding cooldowns and request timestamps
+- elapsed time alone must not create physical resources, construction progress, population or simulated work
+- when a calculation depends on actual physical state, Cached data is used conservatively until Active revalidation is possible
+
+Partial-load decision safety:
+- Cached infrastructure may be counted as last-known capacity for non-destructive planning so unloaded homes/warehouses do not appear missing
+- irreversible or high-impact decisions should require adequate recent validation of the affected area
+- examples requiring conservative handling include village merge/fission, settlement abandonment, major new construction placement and conclusions that a large portion of housing/storage has disappeared
+- local urgent actions in fully loaded areas, such as fire response or repair of a visible damaged building, may proceed normally
+
+Performance constraint:
+- settlement simulation scales primarily with the chunks/entities the game has already loaded around normal gameplay
+- village growth must not silently expand the server/client loaded area and runtime cost by keeping distant districts or Outposts alive
+
+Design constraint: unloaded village space is dormant remembered world state, not missing world state and not an offline production simulator.
+
 ### Adaptive plans
 
 Accepted direction:
