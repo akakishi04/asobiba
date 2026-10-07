@@ -37,7 +37,10 @@ public final class VillageDirtyEvents {
         VillageSimulationScheduler.enqueueValidation(
                 level,
                 key,
-                () -> VillageSavedData.get(level).invalidateChunk(chunk)
+                () -> {
+                    VillageSavedData.get(level).invalidateChunk(chunk);
+                    VillageBuildingService.revalidateChunk(level, chunk);
+                }
         );
     }
 }
