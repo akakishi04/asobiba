@@ -299,26 +299,42 @@ Design constraint: the system should make villages feel self-sustaining and capa
 
 
 ### Carpenter Villager Profession
-Add a dedicated carpenter/builder villager profession as the visible executor for village construction.
 
-Initial responsibilities:
-- Read village build jobs created by the autonomous-growth planner.
-- Pull required blocks from village storage rather than spawning materials.
-- Carry a small work inventory for the current construction step.
-- Walk to the build site and place blocks progressively.
-- Repair damaged village structures using stored materials.
-- Help with post-fire reconstruction.
-- Prefer nearby safe scaffolding/path positions and stop work at night or during danger.
+Accepted final direction:
+- **Carpenter is the only new formal VillagerProfession required by the initial village-simulation design**
+- Carpenter uses the dedicated **Carpenter Workbench** as its job-site block
+- the Carpenter Workbench recipe is **3 planks + 4 logs + 1 Crafting Table**, using normal wood-family tags where technically practical; the bottom-center crafting-grid cell remains empty
+- existing implementation may temporarily use a narrower wood ingredient, but the accepted design is wood-family compatible
+- Carpenter remains the visible executor of construction/repair while village-level planning decides what and where to build
 
-Possible workstation:
-- A vanilla-adjacent workstation should be preferred where practical; otherwise add one very small carpenter workbench block rather than a whole machine system.
+Responsibilities:
+- read approved village construction/repair jobs
+- withdraw reserved real materials from recognized village storage
+- carry a persistent bounded work inventory for the current task
+- walk to reachable work positions and place/remove only approved construction blocks
+- use temporary scaffolding/approved construction aids for upper-floor and roof work
+- repair recognized village-owned/planned infrastructure
+- participate in post-fire reconstruction
+- stop/interrupt ordinary work at night, during danger or when higher-priority emergency behavior takes over
 
-Possible trades:
-- Buy logs, planks, stone, bricks and common construction materials.
-- Sell scaffolding, ladders, doors, fences, signs and small batches of building blocks.
-- Higher levels can sell decorative building materials or village-style blueprint/map items without bypassing exploration.
+Work cargo:
+- Carpenter has an initial simulation work-cargo capacity of **8 ItemStack slots**
+- cargo consists of real ItemStacks, persists across save/reload and is not an abstract material counter
+- the initial design does not require a player-facing Carpenter inventory GUI
+- cargo consumed by construction leaves the inventory normally
+- if a Carpenter dies while carrying village materials, those items are not silently returned to the ledger or duplicated; normal entity-death/drop handling determines their physical fate and the ledger reconciles afterward
 
-Design constraint: carpenter AI should execute construction jobs, not independently decide village strategy. Planning stays in a village-level system so individual villagers remain simple and debuggable.
+Accepted baseline trade ladder:
+- **Novice:** buy 16 Logs -> 1 Emerald; sell 8 Scaffolding -> 1 Emerald
+- **Apprentice:** buy 24 Cobblestone/ordinary stone construction material -> 1 Emerald; sell 4 Doors -> 2 Emeralds
+- **Journeyman:** sell 12 Fences -> 2 Emeralds
+- **Expert:** sell 16 Bricks -> 3 Emeralds
+- **Master:** sell 4 Lanterns -> 5 Emeralds
+- wood-family variants should prefer the village's established Building Culture where practical, with a stable vanilla-compatible fallback
+- Carpenter offers participate in the accepted Regional Economy and individual Welfare price modifiers
+- no blueprint/map progression item is required in the initial trade set
+
+Design constraint: Carpenter is a real profession with a real workstation and trades, but strategy remains village-level so individual Carpenter AI stays bounded and debuggable.
 
 
 ## Village simulation scope — accepted
@@ -326,12 +342,57 @@ Design constraint: carpenter AI should execute construction jobs, not independen
 Village simulation is now an accepted feature family. The goal is a lightweight, observable settlement simulation built from real resources and actual villager actions, not invisible structure spawning.
 
 ### Village professions and logistics
-- Carpenter: executes construction and repair jobs, including post-fire reconstruction.
-- Quartermaster: manages shared village storage and exposes shortages/surpluses.
-- Forester: harvests wood conservatively and replants saplings.
-- Quarry worker: gathers stone from bounded/recognized quarry areas instead of free-form underground strip mining. Village quarrying is intentionally shallow: autonomous workers should normally remain at **Y >= 0** and must not dig into negative-Y deep-slate/deep-cave layers.
-- Porter: moves resources between farms, quarries, forests, storage and build sites; later may use llamas/donkeys.
-- Fire responder role: maintains access to water and prioritizes emergency response when fires occur.
+
+Accepted role model:
+- distinguish **formal VillagerProfession** from temporary/persistent **Village Duty**
+- Carpenter is a formal custom profession
+- Farmer, Fisherman, Shepherd, Mason, Fletcher and other vanilla professions keep their normal profession/trade identity
+- Quartermaster, Forester, Quarry Worker, Porter and Fire Responder are village-simulation Duties rather than mandatory new trading professions/workstation blocks
+- assigning a Duty does not reroll or erase an existing villager's profession/offers
+- **Nitwits are not used as an ordinary free labor pool**; they participate in evacuation/social life but are excluded from routine work-duty assignment
+- children never receive work Duties
+- duty assignment is persistent enough to avoid role thrashing and is re-evaluated about once per Active Minecraft day or when a major shortage/emergency occurs
+- non-emergency reassignment normally keeps a villager in the same Duty for at least roughly **1 Active day** unless the underlying site/job disappears
+- the planner prefers unemployed adults for generic Duties before borrowing villagers with established trade professions
+
+Duty definitions:
+- **Carpenter:** formal profession; executes construction and repair, including post-fire reconstruction
+- **Quartermaster:** inventory/logistics coordinator; maintains the Village Resource Ledger view, identifies shortages/surpluses and creates transfer/reservation work; it does **not** teleport or directly move items between containers
+- **Forester:** works approved Forestry Sites, harvests conservatively and replants; Fletcher profession has affinity/preference for this Duty, but it is not a hard requirement
+- **Quarry Worker:** works approved Quarry Sites and remains at Y>=0; Mason profession has affinity/preference, but the Duty remains separate from the profession
+- **Farmer duty integration:** normal Farmer villagers service approved Village Farms and export surplus into recognized village storage
+- **Fisher duty integration:** normal Fishermen service approved Fishing Sites / river facilities when demand exists
+- **Shepherd duty integration:** normal Shepherds may service recognized grazing/livestock areas when those systems are active
+- **Porter:** dedicated logistics carrier moving real ItemStacks among storage, farms, resource sites, docks, Outposts and projects
+- **Fire Responder:** temporary emergency Duty layered over normal roles; suitable adults may be reassigned during an active fire, with Carpenters/Porters and nearby capable workers preferred for material handling/evacuation support
+
+Initial staffing rules:
+- **Quartermaster:** normally 1 per active village; a large multi-district settlement may use roughly 1 per major active district, usually capped around **1 per 32 residents** unless testing proves insufficient
+- **Forester / Quarry Worker:** normally 1 worker per active site; severe sustained deficit may raise this to **2 workers per site**
+- **Porter:** assigned from actual transfer backlog; small villages normally use at most 2, medium villages about 4, and large/multi-district settlements about 8 before pack-animal/water-logistics scaling is preferred
+- **Carpenter:** at least 1 is desirable when construction is active; additional Carpenters are useful only when project concurrency and material/logistics capacity can feed them
+- staffing limits are initial performance/balance defaults, not reasons to create phantom workers when the population cannot support them
+
+Work schedule:
+- ordinary Duties operate primarily during vanilla-compatible daylight/work activity periods
+- work pauses for night/rest, raids, immediate danger and higher-priority emergency behavior
+- Quartermaster/planner calculations may update as lightweight scheduled metadata, but physical item transfers still require Active workers/containers
+- Fire Responder temporarily overrides normal Duty scheduling only for the duration of a valid emergency
+
+Physical cargo:
+- Forester, Quarry Worker and other ordinary material workers use an initial **8-stack persistent work-cargo capacity**
+- Porter uses an initial **16-stack persistent cargo capacity**
+- work cargo contains real ItemStacks and persists across save/reload
+- cargo is not a hidden village resource pool and is not counted as central storage until physically delivered
+- pack animals / Cargo Rafts later use their own real container capacity rather than multiplying an abstract Porter number
+
+Assignment priorities:
+- preserve essential food production, active emergency staffing and critical construction before assigning optional duties
+- do not strip the last necessary Farmer/Fisher/other critical worker merely to gain another Porter
+- role selection uses active sites, shortages, transfer backlog, projects and population capacity; it is not a deterministic hash of villager UUID
+- if a preferred-affinity profession is unavailable, the village may use a suitable unemployed adult rather than deadlocking
+
+Design constraint: use one real added profession where a profession genuinely matters, and model the remaining settlement labor as bounded Duties so village simulation does not require a new workstation/trade career for every logistics task.
 
 ### Village activity boundary
 
@@ -906,6 +967,130 @@ Performance constraint:
 
 Design constraint: unloaded village space is dormant remembered world state, not missing world state and not an offline production simulator.
 
+### Village persistence, indexing and simulation budget
+
+Accepted data architecture:
+- village simulation uses a **versioned persistent state store per ServerLevel/dimension**, implemented through the normal Minecraft/NeoForge saved-data mechanism
+- every settlement has a stable **Village ID**
+- physical world state remains authoritative; persistent records are indexes/caches/planning state that are revalidated against loaded chunks
+- do not serialize complete copies of village terrain or every block of every building
+
+Core persistent records:
+- **VillageRecord**
+  - Village ID and lifecycle state
+  - effective center / district references
+  - resident references
+  - Building / Storage / WorkSite / Route / Outpost IDs
+  - Resource Ledger and reservations
+  - active projects / public requests
+  - Building Culture
+  - sustainable-population / Viability aggregates
+  - market/scarcity bands
+  - cooldown / planning timestamps
+- **VillagerSimData** attached to individual villagers
+  - Village ID / district
+  - current Duty and duty-assignment timestamps
+  - compact Welfare signal state
+  - Carpenter Skill where applicable
+  - migration/remigration cooldown
+  - Displaced/origin state where applicable
+- **BuildingRecord**
+  - stable ID
+  - compact bounds/footprint reference
+  - entrances / semantic anchors / usable-floor summary
+  - functional classification and validated capacity
+  - planned-village vs recognized-player origin
+  - validation state/version
+  - template/variant identity when village-built
+- **StorageRecord**
+  - actual container position/reference
+  - logical category if any
+  - cached counts / dirty state
+  - the container ItemStacks remain authoritative
+- **WorkSiteRecord**
+  - Forestry / Quarry / Farm / Fishing / other site type
+  - compact center/bounds
+  - parent village
+  - local storage / status
+- **RouteRecord**
+  - endpoints, route type and compact waypoints/edge data
+  - traffic/demand score
+  - do not persist a duplicate copy of every physical road block
+- **ProjectRecord**
+  - project type, priority and site
+  - template ID, transform and deterministic variant seed where applicable
+  - current phase/work cursor
+  - material reservations
+  - paused/blocking state
+  - expected block plan should be reproducible from template+variant rather than storing a huge full block list when avoidable
+- **MigrationRecord**
+  - origin, destination, member UUIDs, state and relevant timestamps
+  - physical traveler/cargo entities remain physical entities rather than being converted into an abstract shipment
+- **Chunk index**
+  - map affected chunk keys to the IDs of buildings/sites/routes/projects requiring load-time revalidation
+  - chunk loading therefore looks up relevant records directly instead of rescanning an entire 128-block village radius
+
+Serialization / compatibility:
+- village saved data carries an explicit **schema version**
+- future record-shape changes require deterministic migration from older schema versions where practical
+- unknown/stale data must fail conservatively rather than deleting physical village structures
+- mark SavedData dirty only when persistent state actually changes; do not rewrite the whole state every simulation tick
+- transient path objects, current AI paths and short-lived task claims are not persisted unless required for duplication safety
+
+Event-driven invalidation:
+- block placement/breaking, container changes, relevant POI changes and chunk load/unload should mark only nearby indexed records dirty
+- do not repeatedly full-scan recognized buildings that have not changed
+- recognized-container changes update/reconcile the Resource Ledger incrementally
+- periodic audits remain as a safety net for external/modded mutations, but audits are spread over time
+
+Initial scheduling cadence:
+- high-level village planning: roughly **once per Active Minecraft day per village**, staggered by Village ID so every village does not update on the same tick
+- market/scarcity refresh: roughly once per Minecraft day
+- active worker Duty execution: approximately **once per 40 ticks per worker**, staggered by entity ID/UUID
+- Welfare observation sampling: roughly **once per 200 ticks per Active villager**, accumulated into daily history rather than running heavy checks every tick
+- UI status refresh: no faster than roughly once per 40 ticks while a player actually has the status screen open
+- emergencies may enqueue immediate limited work, but they do not bypass all global simulation budgets
+
+Initial per-level work budgets:
+- at most **2 high-level village planning slices per server tick**
+- at most **4 dirty container reconciliations per server tick**
+- at most **2 building/site validation jobs per server tick**
+- target at most roughly **256 local block/anchor probe operations per server tick** across background village validation
+- at most **1 heavy new route/site search every 10 server ticks** per level by default
+- these are configurable initial safety budgets; unfinished work remains queued for later ticks rather than forcing completion immediately
+- no budget rule creates progress in unloaded chunks
+
+Pathing / world access:
+- use normal entity pathfinding for actual worker movement
+- expensive planning searches are requested only when a real project/site/route need exists
+- initial implementation keeps world reads/mutations on the server thread under the above budgets
+- if pure computation is moved off-thread later, it may operate only on immutable snapshots and must revalidate before mutating the world
+- never read/write live Level state asynchronously without the required thread safety
+
+Record cleanup / compaction:
+- ephemeral candidate scans and rejected placement candidates are not persisted
+- cancelled projects release reservations immediately and may retain only a compact historical result if needed
+- short-lived worker task claims expire automatically after a small timeout rather than becoming permanent locks
+- dead villagers are removed from resident/duty indexes only after death is actually known; unloaded villagers are never garbage-collected merely because their entity is absent
+- inactive work sites may drop heavy runtime caches after roughly **7 Active days** without use
+- long-abandoned sites/villages may be compacted after roughly **30 Active days** into a minimal historical record while leaving all physical world structures untouched
+- a compact Abandoned Village record retains enough identity/history for later rediscovery/resettlement but drops active planner queues, live ledger caches and transient task state
+- route traffic counters and other rolling statistics decay/compact rather than growing unbounded
+- diagnostic/history lists, if stored at all, use fixed-size/ring-buffer limits rather than append-only logs
+
+Failure / recovery:
+- save/reload must preserve Village IDs, reservations, project phase, worker persistent state, migration state and Building Culture
+- on chunk reload, indexed physical records are revalidated lazily
+- if cached state conflicts with the actual world, physical world state wins and dependent ledger/planner data is repaired
+- reservations referencing destroyed storage/projects are released during reconciliation
+- no recovery routine may regenerate missing inventory/items merely to make the cache match
+
+Performance constraint:
+- simulation cost should scale with **currently Active villagers, dirty records and real pending work**, not with total historical village area
+- no force-loading, no every-tick full-village scans, no offline production and no unbounded persistent history
+
+Design constraint: persistence remembers enough to resume a living settlement exactly and safely, while indexing/event-driven dirty work keeps the system bounded as villages, districts and historical ruins accumulate.
+
 ### Adaptive plans
 
 Accepted direction:
@@ -982,6 +1167,76 @@ Visibility:
 - completed/resolved requests should disappear cleanly rather than accumulating as a permanent quest log
 
 Design constraint: public works requests tell the player what the village genuinely needs right now; helping works because the real resources enter the same storage/logistics/planning system, not because a parallel quest system pretends they did.
+
+### Village status / public-needs UI
+
+Accepted direction:
+- the player-facing village UI is **read-only status/needs visibility**, not a colony-management control panel
+- the primary access point is the existing **Bell**
+- normal Bell interaction remains unchanged
+- **Sneak + right-click on a recognized village Bell** opens the Village Status screen
+- if the Bell is not associated with a recognized VillageRecord, no management screen is created; show a short "No recognized village status" style message instead
+- no mandatory new keybind or dedicated notice-board block is required for the initial implementation
+
+Initial screen structure:
+- keep the screen compact with three logical views/sections:
+  1. **Overview**
+  2. **Needs**
+  3. **Projects**
+- these may be tabs/panels inside one screen; do not create a deep menu hierarchy
+
+Overview shows only high-value aggregate state:
+- village/district display identity
+- current population
+- estimated sustainable population
+- usable housing capacity and spare spaces
+- approximate food reserve in **days**
+- average Welfare band rather than every villager's private history
+- Settlement Viability band
+- current emergency state if any
+- number of active Outposts / districts where useful
+- major shortage/surplus summary
+
+Needs:
+- show only the highest-priority **up to 5** active Public Works / shortage requests by default
+- each entry includes:
+  - urgency: Normal / High / Emergency
+  - requested item/category
+  - remaining real quantity
+  - concise reason
+  - destination/project context when useful
+- examples:
+  - "Bridge construction needs 38 Stone"
+  - "Food reserve critically low"
+  - "Fire reconstruction needs 64 Oak Planks"
+- requests disappear/update from the same simulation records when fulfilled; there is no separate quest-state copy
+- the UI may show the current shortage/import trade-value band so the player can see that supplying a needed good is economically valuable
+
+Projects:
+- show the highest-priority active/paused major projects, initially up to about **5**
+- display project type/name, location/district, construction phase and a concise paused/blocking reason
+- examples: "Two-story house — Roof — waiting for Spruce", "Stone bridge — Foundation", "Warehouse repair — paused: fire emergency"
+- do not expose internal block-by-block task lists, path nodes or planner scoring formulas
+
+Interaction limits:
+- no UI button to assign villagers to Duties
+- no UI button to force/cancel village construction
+- no manual setting of prices, population targets, migration or Outpost creation
+- player influence remains physical: supply goods, construct infrastructure, trade, alter buildings and change the world
+- developer/debug tooling may expose deeper internals separately, but it is not part of the normal player UI
+
+Regional-trade visibility:
+- trade UI may attach concise server-provided reasons such as **Stock shortage**, **Regional import**, **Surplus** and **Welfare +25%**
+- the client must not rescan village containers/world state to derive these values independently
+
+Networking / refresh:
+- the server is authoritative for Village Status data
+- opening the screen sends a compact status snapshot/DTO rather than the full persistent VillageRecord
+- while the screen remains open, refresh at most about **once every 40 ticks** or when a meaningful dirty/version change is available; do not stream every simulation tick
+- closing the UI ends periodic status synchronization
+- unloaded/Cached records are clearly treated as last-known state where relevant rather than being rendered as zero/missing
+
+Design constraint: the player can understand what a village needs and what it is doing without becoming responsible for scheduling its workers or operating a colony dashboard.
 
 ### Refugees and migration
 
