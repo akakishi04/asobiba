@@ -873,6 +873,7 @@ public final class VillageSavedData extends SavedData {
         private final BlockPos min;
         private final BlockPos max;
         private String state = "active";
+        private long createdGameTime;
         private long lastUsedGameTime;
 
         private WorkSiteRecord(UUID id, UUID villageId, String type, BlockPos min, BlockPos max) {
@@ -889,10 +890,12 @@ public final class VillageSavedData extends SavedData {
         public BlockPos min() { return min; }
         public BlockPos max() { return max; }
         public String state() { return state; }
+        public long createdGameTime() { return createdGameTime; }
         public long lastUsedGameTime() { return lastUsedGameTime; }
 
         public void setType(String value) { type = safeText(value, "generic"); }
         public void setState(String value) { state = safeText(value, "active"); }
+        public void setCreatedGameTime(long value) { createdGameTime = value; }
         public void setLastUsedGameTime(long value) { lastUsedGameTime = value; }
 
         private CompoundTag save() {
@@ -903,6 +906,7 @@ public final class VillageSavedData extends SavedData {
             tag.putLong("min", min.asLong());
             tag.putLong("max", max.asLong());
             tag.putString("state", state);
+            tag.putLong("created", createdGameTime);
             tag.putLong("last_used", lastUsedGameTime);
             return tag;
         }
@@ -915,6 +919,7 @@ public final class VillageSavedData extends SavedData {
             WorkSiteRecord record = new WorkSiteRecord(id, villageId, safeText(tag.getString("type"), "generic"),
                     BlockPos.of(tag.getLong("min")), BlockPos.of(tag.getLong("max")));
             record.state = safeText(tag.getString("state"), "active");
+            record.createdGameTime = tag.getLong("created");
             record.lastUsedGameTime = tag.getLong("last_used");
             return record;
         }
