@@ -55,12 +55,12 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Giant Crops | `GiantOrganismEvents` | Implemented |
 | Giant Mobs | `GiantOrganismEvents`, `GiantCreeperMixin` | Implemented |
 | Continental Oceans / Islands / Archipelagos | `ContinentalWorldgenEvents` | Implemented; default OFF |
-| Continental River Networks | planned continental worldgen drainage/river layer | **Planned; accepted spec, not yet implemented** |
+| Continental River Networks | `ContinentalRiverGenerator`, `ContinentalWorldgenEvents` | **V8 implemented initial network generator**: deterministic macro drainage cells, downhill neighbor routing, tributary widening, major rivers, meanders, sink lakes, delta widening and rapid/waterfall shaping; configurable and only active inside optional continental worldgen; CI build + dedicated-server smoke PASS, visual/new-world tuning still required |
 | Large Boats / Cargo Rafts | `OceanAndDisplayEvents`, `BoatMixin` | Implemented |
 | Ocean Drift Debris | `OceanAndDisplayEvents` | Implemented |
 | Nether / Lava Fishing | `NetherFishingEvents` | Implemented |
 | Nether Fish | `NetherFishEntity`, `NetherFishingEvents`, renderer/registry | Implemented |
-| Mob-Used Buildings | `MobBuildingUseEvents`, village shelter logic | Implemented |
+| Mob-Used Buildings | `MobBuildingUseEvents`, `VillageBuildingService` | **V8 integrated**: mobs/villagers prefer indexed validated BuildingRecords for shelter before bounded local fallback scans; gathering/campfire fallback remains lightweight |
 | Villager Welfare / Confinement | `VillagerWelfareService`, `VillagerWelfareMixin`, `VillagerSimData` | **V4 implemented**: Active-time weighted Welfare 0-100, refusal <20 / recovery >=40, restock blocking, trade price modifiers and feature toggle; CI build + dedicated-server smoke PASS |
 | Village Status / Public Needs UI | `VillageStatusEvents`, `VillageStatusNetworking`, `VillageStatusPayload`, `VillageStatusScreen` | **V7 implemented**: Sneak+right-click recognized Bell opens read-only Overview / Needs / Projects UI from a server-authoritative compact snapshot; refresh is limited to ~40 ticks while open; CI build + dedicated-server smoke PASS |
 | Village persistent state / indexes / simulation budgets | `VillageSavedData`, `VillagerSimData`, `VillageIdentityBootstrap`, `VillageSimulationScheduler`, `VillageDirtyEvents`, `VillageStorageService` | **V1-V5 foundation implemented**: versioned persistent records/IDs, chunk index, bounded scheduler/configurable budgets, loaded-chunk guards, dirty invalidation, recognized StorageRecords/ledger/reservations, persistent cargo, shared ProjectRecords and lazy BuildingRecord revalidation; CI build + dedicated-server smoke PASS |
@@ -70,7 +70,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Carpenter Profession | `AsobibaRegistries`, `VillageSimulationEvents`, `VillageDutyScheduler` | **V4/V5 core implemented**: formal Carpenter profession, persistent Duty integration, 8-slot work cargo, shared ProjectRecord execution, 0-100 skill migration/progression and skill-gated two-story template; final trade palette polish remains |
 | Village Logistics Roles | `VillageDutyScheduler`, `VillageSimulationEvents`, `VillagerSimData`, `VillageStorageService` | **V4 implemented**: demand-driven persistent Duties, profession affinities, Nitwit exclusion, hold time/staffing caps plus V3 physical cargo paths; additional Outpost/water-logistics specialization remains later work |
 | Outposts / Satellite Sites | `VillageSimulationEvents` | MVP implemented; accepted parent-linked lifecycle, lodging/logistics and shutdown behavior pending |
-| Roads / Bridges / River Use | `VillageSimulationEvents`, `VillageSavedData.RouteRecord/ProjectRecord` | **V5 initial persistent public-works path implemented**: completed buildings create Road demand/RouteRecords and Carpenters construct one loaded step at a time with real bridge planks. Full terrain cost-map, road widths/upgrades and River Corridor logic remain pending |
+| Roads / Bridges / River Use | `VillageSimulationEvents`, `VillageSavedData.RouteRecord/ProjectRecord`, `VillageRiverService` | **V5+V8 implemented core**: persistent road/bridge projects, real bridge materials, route indexing across traversed chunks and low-frequency physical River Corridor recognition. Full terrain cost-map and road width/upgrade families remain later tuning/features |
 | Building Recognition / Occupancy | `VillageSavedData.BuildingRecord`, `VillageBuildingService`, `VillageDirtyEvents`, `MobBuildingUseEvents` | **V5 persistent village-built recognition implemented**: bounds/classification/capacity records plus dirty chunk lazy revalidation from physical beds/storage/interior. Broader player-built semantic adoption remains pending |
 | Building Culture | `VillageSavedData.VillageRecord`, `VillageSimulationEvents` | **V5 persistent culture implemented**: completed construction records weighted plank/form history; dominant culture receives ~75% preference and one-time storage dumps no longer instantly redefine culture. District-level culture remains pending |
 | Imperfect Construction | `VillageSimulationEvents` ProjectRecord template generation | **V5 initial plan-time model implemented**: deterministic project variant seed with skill-band cosmetic substitution chances; structural/project validation remains authoritative |
@@ -78,7 +78,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Adaptive Plans / Public Works | `VillageSimulationEvents` | MVP implemented; accepted priority queue, real request lifecycle and status-UI integration pending |
 | Refugees / Migration / Village Fission | `VillagePopulationMigrationService`, `VillageSavedData.MigrationRecord`, `VillageSimulationEvents` | **V6 implemented core**: Viability-driven planned/refugee waves, persistent MigrationRecords, physical loaded-route travel, real travel/founding supplies, Displaced return/permanence, relocation/abandonment hysteresis, mature-Outpost fission and sustained-integration merge redirects; CI build + dedicated-server smoke PASS |
 | Villager Breeding Overhaul | `VillagePopulationMigrationService`, `VillageEconomyService` | **V6 implemented**: sustainable-population / Viability / housing / Welfare / food gates, village-wide birth cooldown and recovery-only Recovery Growth path |
-| Forest Regeneration | `ForestRegenerationEvents` | Implemented |
+| Forest Regeneration | `ForestRegenerationEvents`, `VillageBuildingService` | **V8 integrated**: bounded natural regeneration plus suppression near indexed buildings, active work sites and recognized road corridors; broader player-land-use heuristics remain playtest/tuning work |
 | Play Time Limit | `PlayTimeLimitEvents` | Implemented; default OFF |
 
 ## Validation gates
@@ -94,9 +94,9 @@ For enchantment mastery branches specifically, "MVP framework implemented" means
 
 ## Village-simulation status note
 
-The village rows above distinguish the existing runtime MVP from the much more detailed accepted design in `../MOD_IDEAS.md`. In particular, the current `VillageSimulationEvents` implementation still contains provisional profession-based role routing (for example Mason/Fletcher/unemployed/Nitwit branches) and does **not** yet represent the accepted final Duty scheduler. Nitwits are excluded from routine labor in the accepted design.
+The village rows above distinguish working implementation from the deeper accepted design in `../MOD_IDEAS.md`. V1-V8 have now replaced the original per-villager/scan-heavy foundation with persistent Village IDs/records, recognized real storage, bounded scheduling, persistent Duties, Welfare, shared ProjectRecords, demographic/migration state, read-only Bell status UI, indexed building use and River Corridor recognition.
 
-The accepted final village architecture now also includes persistent Village IDs/records, Active/Cached/Unknown chunk handling, real-container-backed ledgers/reservations, bounded project scheduling, Bell-based read-only status UI, Welfare/Confinement, migration/relocation lifecycle, and event-driven indexed validation. These are implementation backlog items until their concrete code paths and validation gates exist.
+Remaining village work is no longer missing foundation architecture. It is concentrated in deeper behavior fidelity and content breadth: resource-aware fire response, persistent public-works request records/adaptive priority queues, broader player-built semantic building adoption, Outpost lifecycle polish, richer road cost/upgrade families and long-duration balance/playtesting.
 
 
 ## V3 storage / cargo note
@@ -120,3 +120,10 @@ Road creation from completed buildings is now represented as persistent RouteRec
 V6 replaces the old per-villager distress migration heuristic with persistent VillageRecord demographic pressure, Settlement Viability and MigrationRecords. Planned migration, emergency refugees, return/permanence, durable abandonment, mature-Outpost daughter settlement founding and conservative multi-day merge evidence now operate on shared settlement state. Regional trade pricing is driven from the real recognized-storage ledger and composes with Welfare pricing rather than spawning synthetic bonus currency.
 
 V7 adds the accepted read-only Bell interface. Sneak+right-click on a recognized Bell requests a compact server-authoritative snapshot and opens Overview / Needs / Projects. While the screen is open it refreshes at most once every 40 ticks; closing it ends refresh traffic. It exposes planner/resource state without worker assignment, price controls or construction-management buttons.
+
+
+## V8 village/world note
+
+V8 reuses the persistent Building/Route/WorkSite indexes at runtime instead of adding new broad scans. Mob/villager shelter selection now prefers validated BuildingRecords, forest regeneration avoids maintained village space, and route records are indexed across every traversed chunk so road-adjacent ecology checks work away from endpoints.
+
+The optional continental world-generation mode now has deterministic seed/world-coordinate river networks. Macro drainage cells choose lower-potential neighbors, direct tributary inflow widens downstream channels, low basins can form lakes, lowland outlets can widen into deltas, and high-relief sections can form rapids/waterfall steps. No runtime water-current physics is simulated. VillageRiverService only caches low-frequency recognition of long physical water corridors for settlement planning; the water blocks remain authoritative.
