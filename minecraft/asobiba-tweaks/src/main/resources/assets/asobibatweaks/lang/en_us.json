@@ -20,5 +20,8 @@
   "message.asobibatweaks.atlas.empty": "The atlas has no maps",
   "block.asobibatweaks.arcane_bookshelf": "Arcane Bookshelf",
   "button.asobibatweaks.enchantment_reroll": "Reroll (%s Lv)",
-  "item.asobibatweaks.arcane_folio": "Arcane Folio"
+  "item.asobibatweaks.arcane_folio": "Arcane Folio",
+  "item.asobibatweaks.quiver": "Quiver",
+  "tooltip.asobibatweaks.quiver.slots": "Ammo slots used: %s / %s",
+  "message.asobibatweaks.quiver.selected": "Quiver ammo slot %s: %s"
 }
