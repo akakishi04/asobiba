@@ -115,6 +115,40 @@ public final class VillageStorageService {
         return Optional.ofNullable(best);
     }
 
+    public static Optional<LocatedContainer> nearestContainerWith(
+            Villager villager, ServerLevel level, Item item) {
+        return nearestContainerMatching(villager, level, stack -> stack.is(item));
+    }
+
+    public static Optional<LocatedContainer> nearestContainerMatching(
+            Villager villager, ServerLevel level, Predicate<ItemStack> predicate) {
+        Optional<UUID> villageId = villageId(villager);
+        if (villageId.isEmpty()) return Optional.empty();
+        bootstrapLegacyIfNeeded(villager, level);
+
+        LocatedContainer best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (LocatedContainer located : containers(villageId.get(), level)) {
+            boolean matches = false;
+            Container container = located.container();
+            for (int slot = 0; slot < container.getContainerSize(); slot++) {
+                ItemStack stack = container.getItem(slot);
+                if (!stack.isEmpty() && predicate.test(stack)) {
+                    matches = true;
+                    break;
+                }
+            }
+            if (!matches) continue;
+
+            double distance = villager.distanceToSqr(located.record().pos().getCenter());
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = located;
+            }
+        }
+        return Optional.ofNullable(best);
+    }
+
     public static void reconcileVillage(Villager villager, ServerLevel level) {
         villageId(villager).ifPresent(id -> reconcileVillage(id, level));
     }
