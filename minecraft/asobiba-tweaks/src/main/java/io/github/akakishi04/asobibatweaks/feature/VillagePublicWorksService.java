@@ -4,7 +4,6 @@ import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.item.Items;
@@ -200,9 +199,7 @@ public final class VillagePublicWorksService {
                     Items.BROWN_WOOL, Items.GREEN_WOOL, Items.RED_WOOL, Items.BLACK_WOOL);
         }
         if (key == null || key.isBlank() || key.startsWith("category:") || key.startsWith("tag:")) return 0;
-
-        var item = BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.tryParse(key));
-        return item == null ? 0 : village.ledgerCount(VillageStorageService.itemKey(item));
+        return village.ledgerCount(key);
     }
 
     private static int food(VillageSavedData.VillageRecord village) {
