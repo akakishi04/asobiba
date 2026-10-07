@@ -40,8 +40,11 @@ public final class EnchantmentTweaksEvents {
     private static final String SILK_TOUCH = "minecraft:silk_touch";
     private static final String RESPIRATION = "minecraft:respiration";
     private static final String PROTECTION = "minecraft:protection";
+    private static final String PROJECTILE_PROTECTION = "minecraft:projectile_protection";
     private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
     private static final String PROTECTION_LAST_DAMAGE = "asobibatweaks_protection_last_damage";
+    private static final String PROJECTILE_LAST_DAMAGE = "asobibatweaks_projectile_last_damage";
+    private static final String PROJECTILE_BARRAGE_COUNT = "asobibatweaks_projectile_barrage_count";
 
     @SubscribeEvent
     public void onBlockDrops(BlockDropsEvent event) {
@@ -117,6 +120,67 @@ public final class EnchantmentTweaksEvents {
                 double maxReduction = 0.05D + 0.15D * strength;
                 reduction = maxReduction * healthRamp;
             }
+        }
+
+        if (reduction > 0.0D) {
+            event.setAmount((float)(event.getAmount() * Math.max(0.0D, 1.0D - reduction)));
+        }
+    }
+
+    @SubscribeEvent
+    public void onProjectileProtectionDamage(LivingDamageEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)
+                || player.level().isClientSide()
+                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || event.getAmount() <= 0.0F
+                || !event.getSource().is(DamageTypeTags.IS_PROJECTILE)
+                || event.getSource().is(DamageTypeTags.BYPASSES_ENCHANTMENTS)) {
+            return;
+        }
+
+        BranchRef protection = armorBranch(player, PROJECTILE_PROTECTION);
+        if (protection == null) return;
+
+        double strength = branchScale(protection.mastery(), 0.0D, 1.0D);
+        double reduction = 0.0D;
+
+        if (protection.branch() == 0) {
+            var sourcePos = event.getSource().getSourcePosition();
+            if (sourcePos != null) {
+                var toSource = sourcePos.subtract(player.getEyePosition());
+                if (toSource.lengthSqr() > 1.0E-6D) {
+                    double dot = player.getLookAngle().dot(toSource.normalize());
+                    if (dot >= 0.5D) reduction = 0.08D + 0.12D * strength;
+                }
+            }
+        } else if (protection.branch() == 1) {
+            var attacker = event.getSource().getEntity();
+            if (attacker != null) {
+                double distance = attacker.distanceTo(player);
+                if (distance >= 16.0D) {
+                    double distanceRamp = Math.min(1.0D, (distance - 16.0D) / 32.0D);
+                    double maxReduction = 0.10D + 0.15D * strength;
+                    reduction = maxReduction * distanceRamp;
+                }
+            }
+        } else if (protection.branch() == 2) {
+            long now = player.level().getGameTime();
+            var persistent = player.getPersistentData();
+            long last = persistent.getLong(PROJECTILE_LAST_DAMAGE);
+            int previousHits = persistent.getInt(PROJECTILE_BARRAGE_COUNT);
+
+            if (!persistent.contains(PROJECTILE_LAST_DAMAGE) || now - last > 80L) {
+                previousHits = 0;
+            }
+
+            if (previousHits > 0 && now - last <= 60L) {
+                double perPriorHit = 0.03D + 0.04D * strength;
+                reduction = Math.min(3, previousHits) * perPriorHit;
+            }
+
+            int nextHits = now - last <= 60L ? Math.min(3, previousHits + 1) : 1;
+            persistent.putLong(PROJECTILE_LAST_DAMAGE, now);
+            persistent.putInt(PROJECTILE_BARRAGE_COUNT, nextHits);
         }
 
         if (reduction > 0.0D) {
@@ -538,7 +602,8 @@ public final class EnchantmentTweaksEvents {
                 || "minecraft:feather_falling".equals(enchantmentId)
                 || FORTUNE.equals(enchantmentId)
                 || RESPIRATION.equals(enchantmentId)
-                || PROTECTION.equals(enchantmentId);
+                || PROTECTION.equals(enchantmentId)
+                || PROJECTILE_PROTECTION.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -579,6 +644,14 @@ public final class EnchantmentTweaksEvents {
                 case 0 -> "General Defense";
                 case 1 -> "First-Hit Defense";
                 case 2 -> "Crisis Defense";
+                default -> "Unselected";
+            };
+        }
+        if (PROJECTILE_PROTECTION.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Frontal Guard";
+                case 1 -> "Sniper Resistance";
+                case 2 -> "Barrage Resistance";
                 default -> "Unselected";
             };
         }

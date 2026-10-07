@@ -39,7 +39,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Blast / Slipstream Wind Pressure | `PhysicsTransportEvents` | Implemented |
 | Wind Pressure Resistance | datapack enchantment + `PhysicsTransportEvents` | Implemented |
 | Growing Enchantments | `EnchantmentTweaksEvents`, `EnchantmentMasteryData` | Implemented |
-| Enchantment Branches | `EnchantmentTweaksEvents` | **V16+V17 expanded**: explicit branch-selection state plus concrete Efficiency / Feather Falling / Fortune / Respiration / Protection branch effects; Mending is excluded from branch selection as designed. Remaining accepted branch families are still pending |
+| Enchantment Branches | `EnchantmentTweaksEvents` | **V16+V17 expanded**: explicit branch-selection state plus concrete Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection branch effects; Mending is excluded from branch selection as designed. Remaining accepted branch families are still pending |
 | Curse Growth | `EnchantmentTweaksEvents` | Implemented |
 | Fortune / Silk Touch Switching | `EnchantmentTweaksEvents` | Implemented |
 | Mastery Inheritance | `EnchantmentTweaksEvents` | Implemented |
@@ -209,3 +209,8 @@ Respiration now has all three accepted mastery branches. Deep Breath probabilist
 ## V18 protection-branch note
 
 Protection now implements all three accepted specialization branches at the final post-vanilla damage stage. General Defense removes an additional mastery-scaled 3%-8% of remaining protectable damage. First-Hit Defense arms after about 8 seconds without qualifying damage and removes 10%-25% of the next hit before restarting its timer. Crisis Defense activates below 40% health and ramps toward a mastery-scaled 5%-20% reduction near 10% health. Damage types tagged to bypass enchantments are explicitly excluded so the branch does not protect against domains vanilla enchantment mitigation intentionally bypasses.
+
+
+## V19 projectile-protection note
+
+Projectile Protection now implements all three accepted branches on post-vanilla projectile damage. Frontal Guard checks the incoming source direction against the player's view and applies its extra reduction only inside the forward ~120-degree arc. Sniper Resistance uses attacker-to-player range as the bounded runtime proxy for projectile travel distance, beginning at 16 blocks and reaching full branch strength at 48+. Barrage Resistance tracks recent qualifying projectile hits in player-persistent state, adds mastery-scaled mitigation for up to three prior hits inside the 3-second chain window, and resets after the accepted quiet period. Damage types that bypass enchantments remain excluded.
