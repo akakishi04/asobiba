@@ -13,6 +13,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.DamageTypeTags;
+import net.minecraft.tags.EntityTypeTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
@@ -43,6 +44,7 @@ public final class EnchantmentTweaksEvents {
     private static final String PROTECTION = "minecraft:protection";
     private static final String PROJECTILE_PROTECTION = "minecraft:projectile_protection";
     private static final String SHARPNESS = "minecraft:sharpness";
+    private static final String SMITE = "minecraft:smite";
     private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
     private static final String PROTECTION_LAST_DAMAGE = "asobibatweaks_protection_last_damage";
     private static final String PROJECTILE_LAST_DAMAGE = "asobibatweaks_projectile_last_damage";
@@ -50,6 +52,9 @@ public final class EnchantmentTweaksEvents {
     private static final String SHARPNESS_DUEL_TARGET = "asobibatweaks_sharpness_duel_target";
     private static final String SHARPNESS_DUEL_TIME = "asobibatweaks_sharpness_duel_time";
     private static final String SHARPNESS_DUEL_STACKS = "asobibatweaks_sharpness_duel_stacks";
+    private static final String SMITE_HOLY_UNTIL = "asobibatweaks_smite_holy_until";
+    private static final String SMITE_HOLY_REDUCTION = "asobibatweaks_smite_holy_reduction";
+    private static final String SMITE_ECHO_ACTIVE = "asobibatweaks_smite_echo_active";
 
     @SubscribeEvent
     public void onBlockDrops(BlockDropsEvent event) {
@@ -68,6 +73,7 @@ public final class EnchantmentTweaksEvents {
     public void onSharpnessHurt(LivingHurtEvent event) {
         if (!(event.getSource().getEntity() instanceof ServerPlayer player)
                 || event.getSource().getDirectEntity() != player
+                || player.getPersistentData().getBoolean(SMITE_ECHO_ACTIVE)
                 || player.level().isClientSide()
                 || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
                 || event.getAmount() <= 0.0F) {
@@ -116,10 +122,95 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
+    public void onSmiteHurt(LivingHurtEvent event) {
+        if (!(event.getSource().getEntity() instanceof ServerPlayer player)
+                || event.getSource().getDirectEntity() != player
+                || player.getPersistentData().getBoolean(SMITE_ECHO_ACTIVE)
+                || player.level().isClientSide()
+                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || event.getAmount() <= 0.0F
+                || !event.getEntity().getType().is(EntityTypeTags.SENSITIVE_TO_SMITE)) {
+            return;
+        }
+
+        ItemStack weapon = player.getMainHandItem();
+        BranchRef smite = branch(weapon, SMITE);
+        if (smite == null) return;
+
+        int level = enchantmentLevel(weapon, SMITE);
+        if (level <= 0) return;
+
+        double strength = branchScale(smite.mastery(), 0.0D, 1.0D);
+
+        if (smite.branch() == 1) {
+            long duration = Math.round(40.0D + 40.0D * strength);
+            double reduction = 0.05D + 0.10D * strength;
+            var targetData = event.getEntity().getPersistentData();
+            targetData.putLong(SMITE_HOLY_UNTIL, player.level().getGameTime() + duration);
+            targetData.putInt(SMITE_HOLY_REDUCTION, (int)Math.round(reduction * 1000.0D));
+        } else if (smite.branch() == 2 && event.getEntity().getArmorValue() >= 10) {
+            double vanillaSmiteBonus = 2.5D * level;
+            double extra = vanillaSmiteBonus * (0.10D + 0.20D * strength);
+            event.setAmount(event.getAmount() + (float)extra);
+        }
+    }
+
+    @SubscribeEvent
+    public void onHolyStrikeOutgoingDamage(LivingHurtEvent event) {
+        if (!(event.getSource().getEntity() instanceof LivingEntity attacker)
+                || event.getAmount() <= 0.0F) {
+            return;
+        }
+
+        var data = attacker.getPersistentData();
+        long now = attacker.level().getGameTime();
+        if (!data.contains(SMITE_HOLY_UNTIL) || now > data.getLong(SMITE_HOLY_UNTIL)) return;
+
+        double reduction = Math.min(0.15D, Math.max(0.0D, data.getInt(SMITE_HOLY_REDUCTION) / 1000.0D));
+        if (reduction > 0.0D) {
+            event.setAmount((float)(event.getAmount() * (1.0D - reduction)));
+        }
+    }
+
+    @SubscribeEvent
     public void onLivingDeath(LivingDeathEvent event) {
         if (!(event.getSource().getEntity() instanceof ServerPlayer player)
                 || !AsobibaTweaksConfig.GROWING_ENCHANTMENTS_ENABLED.getAsBoolean()) return;
-        gain(player, player.getMainHandItem(), 4);
+
+        ItemStack weapon = player.getMainHandItem();
+        gain(player, weapon, 4);
+
+        if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || player.getPersistentData().getBoolean(SMITE_ECHO_ACTIVE)
+                || event.getSource().getDirectEntity() != player
+                || !event.getEntity().getType().is(EntityTypeTags.SENSITIVE_TO_SMITE)) {
+            return;
+        }
+
+        BranchRef smite = branch(weapon, SMITE);
+        if (smite == null || smite.branch() != 0) return;
+
+        int level = enchantmentLevel(weapon, SMITE);
+        if (level <= 0) return;
+
+        double strength = branchScale(smite.mastery(), 0.0D, 1.0D);
+        double radius = 2.5D + 1.5D * strength;
+        double echoDamage = 2.5D * level * (0.15D + 0.20D * strength);
+        if (echoDamage <= 0.0D) return;
+
+        player.getPersistentData().putBoolean(SMITE_ECHO_ACTIVE, true);
+        try {
+            for (LivingEntity other : player.level().getEntitiesOfClass(
+                    LivingEntity.class,
+                    event.getEntity().getBoundingBox().inflate(radius),
+                    e -> e != event.getEntity()
+                            && e.isAlive()
+                            && e.getType().is(EntityTypeTags.SENSITIVE_TO_SMITE))) {
+                other.hurt(player.damageSources().playerAttack(player), (float)echoDamage);
+            }
+        } finally {
+            player.getPersistentData().remove(SMITE_ECHO_ACTIVE);
+        }
     }
 
     @SubscribeEvent
@@ -536,6 +627,15 @@ public final class EnchantmentTweaksEvents {
         return null;
     }
 
+    private static int enchantmentLevel(ItemStack stack, String enchantmentId) {
+        for (var entry : EnchantmentMasteryData.enchantments(stack).entrySet()) {
+            if (enchantmentId.equals(EnchantmentMasteryData.id(entry.getKey()))) {
+                return entry.getIntValue();
+            }
+        }
+        return 0;
+    }
+
     private static BranchRef armorBranch(ServerPlayer player, String enchantmentId) {
         BranchRef best = null;
         for (ItemStack armor : player.getArmorSlots()) {
@@ -660,7 +760,8 @@ public final class EnchantmentTweaksEvents {
                 || RESPIRATION.equals(enchantmentId)
                 || PROTECTION.equals(enchantmentId)
                 || PROJECTILE_PROTECTION.equals(enchantmentId)
-                || SHARPNESS.equals(enchantmentId);
+                || SHARPNESS.equals(enchantmentId)
+                || SMITE.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -717,6 +818,14 @@ public final class EnchantmentTweaksEvents {
                 case 0 -> "Duel";
                 case 1 -> "Heavy Strike";
                 case 2 -> "Execute";
+                default -> "Unselected";
+            };
+        }
+        if (SMITE.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Exorcism";
+                case 1 -> "Holy Strike";
+                case 2 -> "Gravebreaker";
                 default -> "Unselected";
             };
         }
