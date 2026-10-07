@@ -15,7 +15,8 @@
     "EnchantmentExtensionMixin",
     "EnchantmentMenuExtensionsMixin",
     "EnchantedWorkBlockPlacementMixin",
-    "FurnaceEfficiencyMixin"
+    "FurnaceEfficiencyMixin",
+    "VillagerWelfareMixin"
   ],
   "injectors": {
     "defaultRequire": 1
