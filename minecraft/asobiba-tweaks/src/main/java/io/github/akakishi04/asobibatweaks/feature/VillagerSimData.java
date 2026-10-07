@@ -35,6 +35,8 @@ public final class VillagerSimData {
     private static final String REMIGRATION_COOLDOWN_UNTIL = "remigration_cooldown_until";
     private static final String DISPLACED = "displaced";
     private static final String ORIGIN_VILLAGE_ID = "origin_village_id";
+    private static final String MIGRATION_ID = "migration_id";
+    private static final String DISPLACED_SINCE_ACTIVE = "displaced_since_active";
     private static final String WORK_CARGO = "work_cargo";
     private static final String REFUSAL = "refusal";
     private static final String LAST_WELFARE_PRICE_PERCENT = "last_welfare_price_percent";
@@ -198,16 +200,34 @@ public final class VillagerSimData {
         return readUuid(root(villager, false), ORIGIN_VILLAGE_ID);
     }
 
+    public static Optional<UUID> migrationId(Villager villager) {
+        return readUuid(root(villager, false), MIGRATION_ID);
+    }
+
+    public static void setMigrationId(Villager villager, UUID migrationId) {
+        putUuid(root(villager, true), MIGRATION_ID, migrationId);
+    }
+
+    public static void clearMigrationId(Villager villager) {
+        root(villager, true).remove(MIGRATION_ID);
+    }
+
+    public static long displacedSinceActive(Villager villager) {
+        return Math.max(0L, root(villager, false).getLong(DISPLACED_SINCE_ACTIVE));
+    }
+
     public static void setDisplaced(Villager villager, UUID originVillageId) {
         CompoundTag root = root(villager, true);
         root.putBoolean(DISPLACED, true);
         putUuid(root, ORIGIN_VILLAGE_ID, originVillageId);
+        root.putLong(DISPLACED_SINCE_ACTIVE, activeObservedTicks(villager));
     }
 
     public static void clearDisplaced(Villager villager) {
         CompoundTag root = root(villager, true);
         root.putBoolean(DISPLACED, false);
         root.remove(ORIGIN_VILLAGE_ID);
+        root.remove(DISPLACED_SINCE_ACTIVE);
     }
 
     public static List<ItemStack> workCargo(Villager villager, HolderLookup.Provider registries, int capacity) {
