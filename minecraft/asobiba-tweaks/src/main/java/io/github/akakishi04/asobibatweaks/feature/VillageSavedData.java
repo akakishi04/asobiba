@@ -26,7 +26,7 @@ import net.minecraft.world.level.saveddata.SavedData;
  * indexes, caches and planning state that later passes can reconcile against loaded chunks.</p>
  */
 public final class VillageSavedData extends SavedData {
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
 
     private static final String NAME = "asobibatweaks_villages";
     private static final Factory<VillageSavedData> FACTORY =
@@ -508,6 +508,7 @@ public final class VillageSavedData extends SavedData {
         private final Set<UUID> projectIds = new LinkedHashSet<>();
         private final Map<String, Integer> ledgerCounts = new HashMap<>();
         private final Map<String, Integer> reservedCounts = new HashMap<>();
+        private final Map<String, Integer> buildingCulture = new HashMap<>();
         private boolean storageBootstrapComplete;
         private long nextPlanningGameTime;
         private long lastValidatedGameTime;
@@ -529,6 +530,8 @@ public final class VillageSavedData extends SavedData {
         public Set<UUID> projectIds() { return Collections.unmodifiableSet(projectIds); }
         public Map<String, Integer> ledgerCounts() { return Collections.unmodifiableMap(ledgerCounts); }
         public Map<String, Integer> reservedCounts() { return Collections.unmodifiableMap(reservedCounts); }
+        public Map<String, Integer> buildingCulture() { return Collections.unmodifiableMap(buildingCulture); }
+        public int cultureWeight(String key) { return Math.max(0, buildingCulture.getOrDefault(key, 0)); }
         public boolean storageBootstrapComplete() { return storageBootstrapComplete; }
         public int ledgerCount(String itemKey) { return Math.max(0, ledgerCounts.getOrDefault(itemKey, 0)); }
         public int reservedCount(String itemKey) { return Math.max(0, reservedCounts.getOrDefault(itemKey, 0)); }
@@ -566,6 +569,17 @@ public final class VillageSavedData extends SavedData {
             reservedCounts.clear();
         }
 
+        public void recordBuildingCulture(String key, int weight) {
+            if (key == null || key.isBlank() || weight <= 0) return;
+            buildingCulture.merge(key, weight, Integer::sum);
+
+            // Keep weights bounded while preserving ratios closely enough for selection.
+            int max = buildingCulture.values().stream().mapToInt(Integer::intValue).max().orElse(0);
+            if (max > 10_000) {
+                buildingCulture.replaceAll((ignored, value) -> Math.max(1, value / 2));
+            }
+        }
+
         public void setNextPlanningGameTime(long value) { this.nextPlanningGameTime = value; }
         public void setLastValidatedGameTime(long value) { this.lastValidatedGameTime = value; }
 
@@ -583,6 +597,7 @@ public final class VillageSavedData extends SavedData {
             tag.put("projects", writeUuidSet(projectIds));
             tag.put("ledger", writeIntMap(ledgerCounts));
             tag.put("reserved", writeIntMap(reservedCounts));
+            tag.put("building_culture", writeIntMap(buildingCulture));
             tag.putBoolean("storage_bootstrap_complete", storageBootstrapComplete);
             tag.putLong("next_planning", nextPlanningGameTime);
             tag.putLong("last_validated", lastValidatedGameTime);
@@ -603,6 +618,7 @@ public final class VillageSavedData extends SavedData {
             record.projectIds.addAll(readUuidSet(tag, "projects"));
             record.ledgerCounts.putAll(readIntMap(tag, "ledger"));
             record.reservedCounts.putAll(readIntMap(tag, "reserved"));
+            record.buildingCulture.putAll(readIntMap(tag, "building_culture"));
             record.storageBootstrapComplete = tag.getBoolean("storage_bootstrap_complete");
             record.nextPlanningGameTime = tag.getLong("next_planning");
             record.lastValidatedGameTime = tag.getLong("last_validated");
