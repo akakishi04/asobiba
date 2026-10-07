@@ -177,6 +177,8 @@ public final class VillageBuildingService {
     private static boolean revalidateBuilding(ServerLevel level, VillageSavedData.BuildingRecord building) {
         int beds = 0;
         int containers = 0;
+        int workstations = 0;
+        int nonStorageWorkstations = 0;
         int usableInteriorCells = 0;
         int doors = 0;
 
@@ -193,6 +195,10 @@ public final class VillageBuildingService {
             }
             if (state.is(BlockTags.DOORS)) doors++;
             if (level.getBlockEntity(pos) instanceof Container) containers++;
+            if (VillageBuildingAdoptionService.isWorkstation(state)) {
+                workstations++;
+                if (!state.is(net.minecraft.world.level.block.Blocks.BARREL)) nonStorageWorkstations++;
+            }
 
             if (state.isAir()
                     && level.getBlockState(pos.above()).isAir()
@@ -202,6 +208,15 @@ public final class VillageBuildingService {
         }
 
         String classification = building.classification();
+        if (!building.villageBuilt()) {
+            if (beds > 0 && nonStorageWorkstations > 0) classification = "mixed_use";
+            else if (beds > 0) classification = "residential";
+            else if (containers >= 2 && nonStorageWorkstations == 0) classification = "storage";
+            else if (workstations > 0) classification = "workshop";
+            else classification = "generic_shelter";
+            building.setClassification(classification);
+        }
+
         boolean valid;
         if ("residential".equals(classification) || "mixed_use".equals(classification)) {
             valid = beds > 0 && usableInteriorCells >= 2;
