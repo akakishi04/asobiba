@@ -972,27 +972,27 @@ public final class VillageSimulationEvents {
     }
 
     private static int countBlocks(ServerLevel level, BlockPos center, int radius, java.util.function.Predicate<BlockState> predicate) {
+        if (!areaLoaded(level, center, radius, 5, 5)) return 0;
+
         int count = 0;
         for (BlockPos pos : BlockPos.betweenClosed(center.offset(-radius, -5, -radius), center.offset(radius, 5, radius))) {
-            if (!VillageSimulationScheduler.isChunkLoaded(level, pos)) continue;
             if (predicate.test(level.getBlockState(pos)) && ++count >= 64) break;
         }
         return count;
     }
 
     private static boolean hasExposedFace(ServerLevel level, BlockPos pos) {
+        if (!VillageSimulationScheduler.isAreaLoaded(level, pos.offset(-1, -1, -1), pos.offset(1, 1, 1))) return false;
         for (Direction direction : Direction.values()) {
-            BlockPos adjacent = pos.relative(direction);
-            if (!VillageSimulationScheduler.isChunkLoaded(level, adjacent)) return false;
             if (!VillageSimulationScheduler.tryConsumeWorkerProbe(level)) return false;
-            if (level.getBlockState(adjacent).isAir()) return true;
+            if (level.getBlockState(pos.relative(direction)).isAir()) return true;
         }
         return false;
     }
 
     private static boolean nearProtectedBuildingBlock(ServerLevel level, BlockPos pos) {
+        if (!VillageSimulationScheduler.isAreaLoaded(level, pos.offset(-3, -2, -3), pos.offset(3, 3, 3))) return true;
         for (BlockPos p : BlockPos.betweenClosed(pos.offset(-3, -2, -3), pos.offset(3, 3, 3))) {
-            if (!VillageSimulationScheduler.isChunkLoaded(level, p)) return true;
             if (!VillageSimulationScheduler.tryConsumeWorkerProbe(level)) return true;
             BlockState state = level.getBlockState(p);
             if (state.is(BlockTags.BEDS) || state.is(Blocks.CHEST) || state.is(Blocks.BARREL)
@@ -1002,9 +1002,9 @@ public final class VillageSimulationEvents {
     }
 
     private static boolean treeLooksNatural(ServerLevel level, BlockPos pos) {
+        if (!VillageSimulationScheduler.isAreaLoaded(level, pos.offset(-3, 0, -3), pos.offset(3, 5, 3))) return false;
         boolean leaves = false;
         for (BlockPos p : BlockPos.betweenClosed(pos.offset(-3, 0, -3), pos.offset(3, 5, 3))) {
-            if (!VillageSimulationScheduler.isChunkLoaded(level, p)) return false;
             if (!VillageSimulationScheduler.tryConsumeWorkerProbe(level)) return false;
             if (level.getBlockState(p).is(BlockTags.LEAVES)) {
                 leaves = true;
@@ -1027,8 +1027,8 @@ public final class VillageSimulationEvents {
     }
 
     private static boolean nearWater(ServerLevel level, BlockPos center, int radius) {
+        if (!areaLoaded(level, center, radius, 2, 2)) return false;
         for (BlockPos pos : BlockPos.betweenClosed(center.offset(-radius, -2, -radius), center.offset(radius, 2, radius))) {
-            if (!VillageSimulationScheduler.isChunkLoaded(level, pos)) continue;
             if (!VillageSimulationScheduler.tryConsumeEmergencyProbe(level)) return false;
             if (level.getFluidState(pos).is(FluidTags.WATER)) return true;
         }
