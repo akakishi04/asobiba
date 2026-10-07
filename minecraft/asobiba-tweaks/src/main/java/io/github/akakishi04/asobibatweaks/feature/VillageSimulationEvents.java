@@ -175,6 +175,11 @@ public final class VillageSimulationEvents {
         }
 
         ServerLevel level = (ServerLevel)parent.level();
+        if (!areaLoaded(level, parent.blockPosition(), 24, 5, 5)) {
+            // Conservative partial-load behavior: never infer spare housing/food from missing chunks.
+            event.setCanceled(true);
+            return;
+        }
         AABB area = parent.getBoundingBox().inflate(28.0D);
         int villagers = level.getEntitiesOfClass(Villager.class, area).size();
         int beds = countBlocks(level, parent.blockPosition(), 24, state -> state.is(BlockTags.BEDS));
@@ -224,6 +229,7 @@ public final class VillageSimulationEvents {
 
         if (now < villager.getPersistentData().getLong(NEXT_BUILD)) return;
         if (!isWorkTime(level)) return;
+        if (!areaLoaded(level, villager.blockPosition(), 24, 5, 5)) return;
 
         AABB villageArea = villager.getBoundingBox().inflate(28.0D);
         int population = level.getEntitiesOfClass(Villager.class, villageArea).size();
@@ -295,7 +301,12 @@ public final class VillageSimulationEvents {
             data.putInt(BUILDER_XP, data.getInt(BUILDER_XP) + 1);
             BlockPos anchor = new BlockPos(data.getInt(BUILD_ANCHOR_X), base.getY(), data.getInt(BUILD_ANCHOR_Z));
             if (AsobibaTweaksConfig.VILLAGE_ROADS_ENABLED.getAsBoolean()) {
-                buildRoadAndBridge(level, villager, base.offset(2, 0, -1), anchor);
+                BlockPos roadFrom = base.offset(2, 0, -1).immutable();
+                BlockPos roadTo = anchor.immutable();
+                String routeKey = "road:" + villager.getUUID() + ":" + base.asLong();
+                VillageSimulationScheduler.enqueueRouteSearch(level, routeKey,
+                        () -> runIfActive(villager, level,
+                                () -> buildRoadAndBridge(level, villager, roadFrom, roadTo)));
             }
             if (data.getBoolean(BUILD_OUTPOST)
                     && AsobibaTweaksConfig.VILLAGE_REFUGEES_ENABLED.getAsBoolean()) {
@@ -307,6 +318,9 @@ public final class VillageSimulationEvents {
         }
 
         BuildStep step = plan.get(stepIndex);
+        if (!VillageSimulationScheduler.isChunkLoaded(level, step.pos)) {
+            return;
+        }
         if (villager.distanceToSqr(step.pos.getCenter()) > 7.0D * 7.0D) {
             villager.getNavigation().moveTo(step.pos.getX() + 0.5D, step.pos.getY(), step.pos.getZ() + 0.5D, 0.75D);
             return;
@@ -324,6 +338,7 @@ public final class VillageSimulationEvents {
         if (bedFoot) {
             Direction facing = step.state.getValue(HorizontalDirectionalBlock.FACING);
             BlockPos headPos = step.pos.relative(facing);
+            if (!VillageSimulationScheduler.isChunkLoaded(level, headPos)) return;
             if (!level.getBlockState(headPos).canBeReplaced()) {
                 data.putBoolean(BUILD_ACTIVE, false);
                 data.putLong(NEXT_BUILD, level.getGameTime() + 12000L);
