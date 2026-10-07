@@ -831,24 +831,81 @@ Initial cosmetic-imperfection target:
 Design constraint: Carpenter progression should make experienced builders visibly faster, more reliable and capable of more ambitious work without turning basic village survival into a skill-gated deadlock.
 
 ### Adaptive plans
-Village-level planning can reprioritize or revise construction when conditions change:
-- housing shortage
-- food shortage
-- storage shortage
-- fire damage
-- population spike
-- new outpost need
 
-Avoid full procedural architecture editing in the first version; modular template stages are acceptable.
+Accepted direction:
+- each village maintains a lightweight **priority queue of real settlement needs / projects**
+- normal planning is reevaluated periodically, initially about **once per Minecraft day**, while major events such as fire, raid damage or sudden housing loss may request an immediate limited reprioritization
+- planning priorities are grouped broadly as:
+  1. **Emergency / survival** — active fire response, critical shelter loss, severe food failure, dangerous infrastructure damage
+  2. **Recovery / essential capacity** — repair housing, restore storage, restore food production, reconnect critical access
+  3. **Current population needs** — housing pressure, workstation/storage shortages, welfare-related infrastructure
+  4. **Logistics / public works** — roads, bridges, docks, quarry/forestry access, Outpost support
+  5. **Expansion** — new housing reserve, new Outposts, larger facilities
+  6. **Optional improvement** — road paving, nonessential upgrades and decorative/cultural projects
+- lower-priority work may pause when a genuinely higher-priority need appears
+- ordinary reprioritization should happen at **safe construction phase boundaries** where practical rather than constantly rewriting an active build block-by-block
+- emergencies may interrupt immediately when continuing work would be unreasonable or unsafe
+- paused projects keep their already placed physical blocks
+- unneeded reservations are released back to the village resource ledger when a project is cancelled or materially reduced
+- the planner does not automatically demolish a partially built structure merely because priorities changed
+- a paused/incomplete project may later:
+  - resume unchanged
+  - receive a compatible approved material substitution
+  - be reduced to a smaller valid variant before the next unbuilt phase
+  - be abandoned as a historical incomplete structure if it is no longer useful
+- any revised plan must revalidate player edits, navigation, safety, material availability and the already-built portion
+- initial implementation avoids unrestricted procedural redesign of a half-built structure; revisions operate through validated modular template stages/variants
+- the planner limits simultaneous major projects so villages do not create dozens of unfinished builds:
+  - small settlements normally run **1 major construction/public-works project**
+  - medium settlements may run about **2**
+  - large/mature settlements may run about **3**
+  - emergency repair tasks may temporarily exceed this where enough workers/resources actually exist
+- project concurrency also depends on available qualified Carpenters, logistics capacity and reserved material stock; the nominal cap never creates phantom workers
+- planning state is persistent so save/reload does not reset village priorities or reservations
+
+Design constraint: the village should visibly change its mind when circumstances change, but should do so through understandable project priorities rather than constant hidden replanning or destructive rebuilds.
 
 ### Public works requests
-Real village shortages/public works can generate requests visible to the player:
-- deliver stone for a bridge
-- supply lumber for housing
-- restore food reserves
-- bring materials for fire reconstruction
 
-These are not arbitrary quests; they should originate from actual simulation needs.
+Accepted direction:
+- Public Works Requests are **player-visible expressions of real simulation needs**, not a separate random quest generator
+- a request may appear only when an actual planner need is blocked or materially slowed by missing resources / support
+- examples include:
+  - stone shortage blocking a bridge
+  - lumber shortage blocking housing
+  - depleted food reserve
+  - materials needed for fire reconstruction
+  - missing supplies for a remote Outpost / dock / road project
+- request quantities come from the real current deficit, reservation requirement and target reserve rather than from arbitrary quest numbers
+- very small transient shortages do not need to create public requests
+- the village first considers its own gathering/logistics capability; a public request is most useful when self-supply is slow, impossible locally, or urgency is high
+- requests have an explicit reason, requested category/item(s), remaining quantity, destination/context and urgency
+- requests update or disappear automatically when the underlying simulation need changes
+- partial fulfillment reduces the displayed remaining requirement
+- if a project is cancelled, completed by village logistics, or no longer needed, its request closes automatically
+- duplicate requests for the same underlying shortage are merged rather than spammed
+
+Player interaction:
+- requests are primarily **information and economic opportunity**, not mandatory accepted missions
+- the player does not need to "accept" a request before helping
+- supplying the relevant goods through recognized village trade / request-compatible village storage can satisfy the real deficit
+- ordinary sale of requested goods uses the existing Regional Economy scarcity premium, so urgent shortages naturally pay better without a separate invented reward table
+- direct placement/donation of goods into recognized village storage also helps immediately, but does not create a second automatic emerald reward on top of the donated items
+- no separate magical reward chest or hidden material conversion is created
+- if the village later gains a dedicated notice-board/ledger UI, it is only a view into these existing planner needs
+
+Visibility:
+- requests should be discoverable without requiring colony-management micromanagement
+- initial presentation may expose the highest-priority few requests through a concise village status/notice interface associated with a central village anchor such as the Bell or a lightweight notice-board element
+- do **not** expose the entire internal planner graph to the player
+- show practical messages such as:
+  - "Bridge construction needs 38 Stone"
+  - "Food reserve critically low"
+  - "Fire reconstruction needs 64 Oak Planks"
+- urgency categories may be **Normal / High / Emergency**
+- completed/resolved requests should disappear cleanly rather than accumulating as a permanent quest log
+
+Design constraint: public works requests tell the player what the village genuinely needs right now; helping works because the real resources enter the same storage/logistics/planning system, not because a parallel quest system pretends they did.
 
 ### Refugees and migration
 Villagers can relocate after severe local failure:
