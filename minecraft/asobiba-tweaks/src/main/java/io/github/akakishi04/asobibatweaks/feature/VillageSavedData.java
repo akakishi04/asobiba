@@ -767,6 +767,7 @@ public final class VillageSavedData extends SavedData {
         private int lastKnownPopulation;
         private long nextPlanningGameTime;
         private long nextMarketUpdateGameTime;
+        private long nextPublicWorksUpdateGameTime;
         private long nextBirthGameTime;
         private long recoveryGrowthUntil;
         private long nextDemographicUpdateGameTime;
@@ -815,6 +816,7 @@ public final class VillageSavedData extends SavedData {
         public int settlementViability() { return Math.max(0, Math.min(100, settlementViability)); }
         public int lastKnownPopulation() { return Math.max(0, lastKnownPopulation); }
         public long nextMarketUpdateGameTime() { return nextMarketUpdateGameTime; }
+        public long nextPublicWorksUpdateGameTime() { return nextPublicWorksUpdateGameTime; }
         public long nextBirthGameTime() { return nextBirthGameTime; }
         public long recoveryGrowthUntil() { return recoveryGrowthUntil; }
         public long nextDemographicUpdateGameTime() { return nextDemographicUpdateGameTime; }
@@ -904,6 +906,7 @@ public final class VillageSavedData extends SavedData {
         public void setSettlementViability(int value) { settlementViability = Math.max(0, Math.min(100, value)); }
         public void setLastKnownPopulation(int value) { lastKnownPopulation = Math.max(0, value); }
         public void setNextMarketUpdateGameTime(long value) { nextMarketUpdateGameTime = value; }
+        public void setNextPublicWorksUpdateGameTime(long value) { nextPublicWorksUpdateGameTime = value; }
         public void setNextBirthGameTime(long value) { nextBirthGameTime = value; }
         public void setRecoveryGrowthUntil(long value) { recoveryGrowthUntil = value; }
         public void setNextDemographicUpdateGameTime(long value) { nextDemographicUpdateGameTime = value; }
@@ -964,6 +967,7 @@ public final class VillageSavedData extends SavedData {
             tag.putInt("last_population", lastKnownPopulation);
             tag.putLong("next_planning", nextPlanningGameTime);
             tag.putLong("next_market_update", nextMarketUpdateGameTime);
+            tag.putLong("next_public_works_update", nextPublicWorksUpdateGameTime);
             tag.putLong("next_birth", nextBirthGameTime);
             tag.putLong("recovery_growth_until", recoveryGrowthUntil);
             tag.putLong("next_demographic_update", nextDemographicUpdateGameTime);
@@ -1013,6 +1017,7 @@ public final class VillageSavedData extends SavedData {
             record.lastKnownPopulation = Math.max(0, tag.getInt("last_population"));
             record.nextPlanningGameTime = tag.getLong("next_planning");
             record.nextMarketUpdateGameTime = tag.getLong("next_market_update");
+            record.nextPublicWorksUpdateGameTime = tag.getLong("next_public_works_update");
             record.nextBirthGameTime = tag.getLong("next_birth");
             record.recoveryGrowthUntil = tag.getLong("recovery_growth_until");
             record.nextDemographicUpdateGameTime = tag.getLong("next_demographic_update");
