@@ -4,6 +4,7 @@ import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.item.Items;
@@ -102,8 +103,12 @@ public final class VillagePublicWorksService {
         for (VillageSavedData.ProjectRecord project : data.activeProjectsForVillage(villageId)) {
             if ("complete".equals(project.phase()) || "cancelled".equals(project.phase())) continue;
             for (var reservation : project.reservations().entrySet()) {
-                int remaining = Math.max(0, reservation.getValue());
-                if (remaining <= 0) continue;
+                int required = Math.max(0, reservation.getValue());
+                if (required <= 0) continue;
+
+                int available = availableForReservation(village, reservation.getKey());
+                int missing = Math.max(0, required - available);
+                if (missing <= 0) continue;
 
                 String key = "project:" + project.id() + ":" + reservation.getKey();
                 activeKeys.add(key);
@@ -115,8 +120,8 @@ public final class VillagePublicWorksService {
                         key,
                         urgency,
                         reservation.getKey(),
-                        remaining,
-                        remaining,
+                        required,
+                        missing,
                         project.pausedReason().isBlank() ? "Project material requirement" : project.pausedReason(),
                         context,
                         project.id(),
@@ -177,6 +182,27 @@ public final class VillagePublicWorksService {
             }
             project.setPriority(priority);
         }
+    }
+
+    private static int availableForReservation(
+            VillageSavedData.VillageRecord village,
+            String key) {
+        if ("tag:minecraft:planks".equals(key)) {
+            return count(village,
+                    Items.OAK_PLANKS, Items.SPRUCE_PLANKS, Items.BIRCH_PLANKS, Items.JUNGLE_PLANKS,
+                    Items.ACACIA_PLANKS, Items.DARK_OAK_PLANKS, Items.MANGROVE_PLANKS, Items.CHERRY_PLANKS);
+        }
+        if ("tag:minecraft:wool".equals(key)) {
+            return count(village,
+                    Items.WHITE_WOOL, Items.ORANGE_WOOL, Items.MAGENTA_WOOL, Items.LIGHT_BLUE_WOOL,
+                    Items.YELLOW_WOOL, Items.LIME_WOOL, Items.PINK_WOOL, Items.GRAY_WOOL,
+                    Items.LIGHT_GRAY_WOOL, Items.CYAN_WOOL, Items.PURPLE_WOOL, Items.BLUE_WOOL,
+                    Items.BROWN_WOOL, Items.GREEN_WOOL, Items.RED_WOOL, Items.BLACK_WOOL);
+        }
+        if (key == null || key.isBlank() || key.startsWith("category:") || key.startsWith("tag:")) return 0;
+
+        var item = BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.tryParse(key));
+        return item == null ? 0 : village.ledgerCount(VillageStorageService.itemKey(item));
     }
 
     private static int food(VillageSavedData.VillageRecord village) {
