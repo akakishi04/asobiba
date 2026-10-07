@@ -36,6 +36,8 @@ public final class EnchantmentTweaksEvents {
     private static final int BRANCH_THRESHOLD = 50;
     private static final String FORTUNE = "minecraft:fortune";
     private static final String SILK_TOUCH = "minecraft:silk_touch";
+    private static final String RESPIRATION = "minecraft:respiration";
+    private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
 
     @SubscribeEvent
     public void onBlockDrops(BlockDropsEvent event) {
@@ -103,6 +105,60 @@ public final class EnchantmentTweaksEvents {
                 }
             }
         }
+    }
+
+    @SubscribeEvent
+    public void onRespirationTick(PlayerTickEvent.Post event) {
+        if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || !(event.getEntity() instanceof ServerPlayer player)
+                || player.level().isClientSide()) {
+            return;
+        }
+
+        BranchRef respiration = armorBranch(player, RESPIRATION);
+        var persistent = player.getPersistentData();
+        int currentAir = player.getAirSupply();
+
+        if (respiration == null) {
+            persistent.putInt(RESPIRATION_PREV_AIR, currentAir);
+            return;
+        }
+
+        if (!persistent.contains(RESPIRATION_PREV_AIR)) {
+            persistent.putInt(RESPIRATION_PREV_AIR, currentAir);
+            return;
+        }
+
+        int previousAir = persistent.getInt(RESPIRATION_PREV_AIR);
+        int adjustedAir = currentAir;
+        double strength = branchScale(respiration.mastery(), 0.0D, 1.0D);
+
+        if (respiration.branch() == 0 && player.isUnderWater() && currentAir < previousAir) {
+            int lost = previousAir - currentAir;
+            double preserveChance = 0.10D + 0.20D * strength;
+            for (int i = 0; i < lost; i++) {
+                if (player.getRandom().nextDouble() < preserveChance) adjustedAir++;
+            }
+        } else if (respiration.branch() == 1 && player.isUnderWater() && currentAir < previousAir) {
+            var movement = player.getDeltaMovement();
+            boolean quiet = movement.horizontalDistanceSqr() < 0.0036D && Math.abs(movement.y) < 0.04D;
+            if (quiet) {
+                int lost = previousAir - currentAir;
+                double preserveChance = 0.25D + 0.45D * strength;
+                for (int i = 0; i < lost; i++) {
+                    if (player.getRandom().nextDouble() < preserveChance) adjustedAir++;
+                }
+            }
+        } else if (respiration.branch() == 2 && !player.isUnderWater()
+                && currentAir > previousAir && currentAir < player.getMaxAirSupply()) {
+            int vanillaRecovery = currentAir - previousAir;
+            double extraFraction = 0.25D + 0.75D * strength;
+            int extra = Math.max(1, (int)Math.round(vanillaRecovery * extraFraction));
+            adjustedAir = Math.min(player.getMaxAirSupply(), currentAir + extra);
+        }
+
+        if (adjustedAir != currentAir) player.setAirSupply(adjustedAir);
+        persistent.putInt(RESPIRATION_PREV_AIR, adjustedAir);
     }
 
     @SubscribeEvent
@@ -316,6 +372,16 @@ public final class EnchantmentTweaksEvents {
         return null;
     }
 
+    private static BranchRef armorBranch(ServerPlayer player, String enchantmentId) {
+        BranchRef best = null;
+        for (ItemStack armor : player.getArmorSlots()) {
+            BranchRef candidate = branch(armor, enchantmentId);
+            if (candidate == null) continue;
+            if (best == null || candidate.mastery() > best.mastery()) best = candidate;
+        }
+        return best;
+    }
+
     private static double branchScale(int mastery, double min, double max) {
         double t = (Math.max(BRANCH_THRESHOLD, Math.min(100, mastery)) - BRANCH_THRESHOLD)
                 / (double)(100 - BRANCH_THRESHOLD);
@@ -426,7 +492,8 @@ public final class EnchantmentTweaksEvents {
     private static boolean supportsBranches(String enchantmentId) {
         return "minecraft:efficiency".equals(enchantmentId)
                 || "minecraft:feather_falling".equals(enchantmentId)
-                || FORTUNE.equals(enchantmentId);
+                || FORTUNE.equals(enchantmentId)
+                || RESPIRATION.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -451,6 +518,14 @@ public final class EnchantmentTweaksEvents {
                 case 0 -> "Ore Specialist";
                 case 1 -> "Harvest Specialist";
                 case 2 -> "High Variance";
+                default -> "Unselected";
+            };
+        }
+        if (RESPIRATION.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Deep Breath";
+                case 1 -> "Quiet Breath";
+                case 2 -> "Rapid Ventilation";
                 default -> "Unselected";
             };
         }
