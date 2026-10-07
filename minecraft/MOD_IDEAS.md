@@ -819,19 +819,77 @@ Design constraint: village population should grow only when the settlement can a
 
 ### Forest regeneration
 Forests can recover slowly without requiring every sapling to be manually placed.
-- mature forest edges can very slowly seed nearby viable ground
-- player-heavy clearcut areas recover over long timescales
-- foresters accelerate and organize regeneration
-- avoid rapid spreading or uncontrolled tree spam
+
+Accepted direction:
+- natural forest recovery is **slow ecological background behavior**, not fast automatic replanting
+- mature natural woodland creates a low-strength regeneration field around its edges
+- viable nearby ground may occasionally receive a compatible local sapling / young-tree start, allowing ordinary tree growth mechanics to finish the process
+- natural regeneration favors the existing local tree family / biome palette rather than introducing unrelated tree types
+- an initial mature forest patch should produce only a small number of new starts over several Minecraft days; regeneration must be visibly slower than deliberate Forester replanting
+- natural spreading stays local to existing forest edges and does not leap large empty distances
+- recently clear-cut natural woodland may slowly refill over long timescales if the land remains viable and unused
+- natural regeneration is suppressed on or near:
+  - recognized buildings and roads
+  - cultivated Village Farms
+  - active Quarry / work sites
+  - frequently used player-built areas
+  - clearly artificial floors, paths and landscaped surfaces
+- regeneration does not overwrite placed blocks or force trees into occupied structures
+- Foresters are the **active/fast path** for woodland recovery:
+  - they use real collected/stored saplings where practical
+  - they replant approved Forestry Sites after harvesting
+  - they can fill obvious gaps more deliberately than the natural background system
+- Foresters prefer maintaining a mixed-age renewable woodland rather than repeatedly harvesting every mature tree at once
+- abandoned Forestry Sites may gradually return toward ordinary natural woodland after active management stops
+- the system should not create runaway tree spam, exponential spreading or forests invading maintained settlements
+- exact natural seeding interval/density is a tuning value; the intended pace is measured in multiple Minecraft days, not minutes
+
+Design constraint: natural forests can heal slowly on their own, while managed forestry recovers much faster without making wood an infinite instantaneous resource.
 
 ### Rivers as infrastructure
-Settlements can treat rivers as useful geography rather than only pathfinding obstacles:
-- water source
-- fishing area
-- settlement boundary
-- transport corridor
-- bridge location
-- possible later boat logistics
+Settlements treat persistent navigable surface-water corridors as useful geography rather than only as pathfinding obstacles.
+
+Accepted direction:
+- the village planner may recognize a **River Corridor** when a connected surface-water route is long/continuous enough to matter for settlement movement or work
+- isolated ponds and tiny water patches are not treated as rivers merely because they contain water
+- recognized rivers may serve several roles simultaneously:
+  - reliable nearby water access
+  - fishing-work area
+  - natural settlement/district boundary
+  - road/bridge crossing constraint
+  - transport/logistics corridor
+  - suitable location for fishing huts, docks and small river-side work sites
+- village planning remains terrain-aware: a river can attract development along its banks while also limiting where roads/buildings can cross
+- bridge placement uses the already accepted road/bridge cost comparison rather than placing bridges at every crossing
+- frequently used bank access may gain a small path, landing or dock when real traffic justifies it
+- villagers do not automatically reroute, dam or massively excavate natural rivers in the initial implementation
+- minor safe bank preparation is allowed for paths/docks, but major canal engineering is outside the initial scope
+
+Water and emergency use:
+- recognized accessible river water counts as a nearby water source for settlement planning and fire-response logic
+- fire responders prefer practical nearby water access and still obey actual travel/container constraints rather than extinguishing remotely
+
+Fishing:
+- a suitable river reach may become an approved Fishing Site
+- fishing huts and related storage may be built when food/economic demand justifies sustained fishing
+- fishing sites follow the same bounded-work-site model as Forestry/Quarry/Farm sites
+
+River logistics:
+- water transport becomes available only when two useful endpoints are connected by a **continuous navigable water route**
+- endpoints should use recognized docks/landings tied into the local road/storage network
+- when a water route is substantially cheaper/safer than overland hauling, the planner may prefer it for bulk logistics
+- actual boats / Cargo Rafts use the route physically; items do not teleport between docks
+- river logistics may move construction materials, food, trade goods and Outpost supplies
+- local road/Porter transport handles the first/last leg between storage/work sites and docks
+- route planning must validate practical clearance, water continuity and endpoint access before assigning regular boat traffic
+- water transport does not automatically create a new independent settlement; it is another logistics link between existing village districts / Outposts / settlements
+
+Settlement structure:
+- rivers may naturally separate districts within one merged village when bridges/docks still maintain strong daily integration
+- if a river produces weak connectivity rather than strong shared movement/logistics, settlements on opposite banks may remain distinct
+- village expansion should generally preserve recognizable river geography instead of filling the waterway with buildings
+
+Design constraint: rivers should become useful pieces of settlement infrastructure while remaining real terrain that villagers must navigate, cross and physically transport goods through.
 
 ### Regional economy integration
 Regional trade value, village logistics and autonomous growth should interact:
