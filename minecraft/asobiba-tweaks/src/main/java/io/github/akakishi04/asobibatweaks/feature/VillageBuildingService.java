@@ -203,7 +203,7 @@ public final class VillageBuildingService {
 
         String classification = building.classification();
         boolean valid;
-        if ("residential".equals(classification)) {
+        if ("residential".equals(classification) || "mixed_use".equals(classification)) {
             valid = beds > 0 && usableInteriorCells >= 2;
             building.setValidatedCapacity(valid ? beds : 0);
         } else if ("storage".equals(classification)) {
@@ -211,6 +211,7 @@ public final class VillageBuildingService {
             building.setValidatedCapacity(0);
         } else if ("workshop".equals(classification)) {
             valid = usableInteriorCells >= 2;
+            building.setValidatedCapacity(valid ? Math.max(1, building.validatedCapacity()) : 0);
         } else {
             valid = usableInteriorCells >= 1;
         }
