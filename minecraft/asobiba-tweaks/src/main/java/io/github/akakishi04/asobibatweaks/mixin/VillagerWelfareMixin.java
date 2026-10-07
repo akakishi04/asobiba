@@ -14,13 +14,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class VillagerWelfareMixin {
     @Inject(method = "updateSpecialPrices", at = @At("TAIL"))
     private void asobibatweaks$applyWelfareTradePrices(Player player, CallbackInfo ci) {
-        if (!AsobibaTweaksConfig.VILLAGE_SIMULATION_ENABLED.getAsBoolean()) return;
+        if (!AsobibaTweaksConfig.VILLAGE_SIMULATION_ENABLED.getAsBoolean()
+                || !AsobibaTweaksConfig.VILLAGE_WELFARE_ENABLED.getAsBoolean()) return;
         VillagerWelfareService.applyTradePriceModifier((Villager)(Object)this);
     }
 
     @Inject(method = "restock", at = @At("HEAD"), cancellable = true)
     private void asobibatweaks$blockRestockDuringRefusal(CallbackInfo ci) {
-        if (!AsobibaTweaksConfig.VILLAGE_SIMULATION_ENABLED.getAsBoolean()) return;
+        if (!AsobibaTweaksConfig.VILLAGE_SIMULATION_ENABLED.getAsBoolean()
+                || !AsobibaTweaksConfig.VILLAGE_WELFARE_ENABLED.getAsBoolean()) return;
         if (VillagerSimData.refusal((Villager)(Object)this)) {
             ci.cancel();
         }
