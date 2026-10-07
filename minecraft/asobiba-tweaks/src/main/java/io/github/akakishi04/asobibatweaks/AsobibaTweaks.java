@@ -23,6 +23,7 @@ import io.github.akakishi04.asobibatweaks.feature.VillageEconomyService;
 import io.github.akakishi04.asobibatweaks.feature.VillageFireEmergencyService;
 import io.github.akakishi04.asobibatweaks.feature.VillageDutyScheduler;
 import io.github.akakishi04.asobibatweaks.feature.VillagePopulationMigrationService;
+import io.github.akakishi04.asobibatweaks.feature.VillagePublicWorksService;
 import io.github.akakishi04.asobibatweaks.feature.VillageRiverService;
 import io.github.akakishi04.asobibatweaks.feature.VillageSimulationEvents;
 import io.github.akakishi04.asobibatweaks.feature.VillageSimulationScheduler;
@@ -66,6 +67,7 @@ public final class AsobibaTweaks {
         NeoForge.EVENT_BUS.register(new VillageFireEmergencyService());
         NeoForge.EVENT_BUS.register(new VillageSimulationEvents());
         NeoForge.EVENT_BUS.register(new VillagePopulationMigrationService());
+        NeoForge.EVENT_BUS.register(new VillagePublicWorksService());
         NeoForge.EVENT_BUS.register(new VillageRiverService());
         NeoForge.EVENT_BUS.register(new VillageSimulationScheduler());
         NeoForge.EVENT_BUS.register(new VillageDirtyEvents());
