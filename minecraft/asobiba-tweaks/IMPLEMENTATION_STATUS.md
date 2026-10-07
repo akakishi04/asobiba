@@ -63,12 +63,12 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Mob-Used Buildings | `MobBuildingUseEvents`, village shelter logic | Implemented |
 | Villager Welfare / Confinement | planned village-state / villager persistent data | **Planned; accepted spec, not yet implemented** |
 | Village Status / Public Needs UI | planned Bell interaction + server status DTO/screen | **Planned; accepted spec, not yet implemented** |
-| Village persistent state / indexes / simulation budgets | `VillageSavedData`, `VillagerSimData`, `VillageIdentityBootstrap`, `VillageSimulationScheduler`, `VillageDirtyEvents` | **V1+V2 implemented**: versioned persistent core, stable IDs, chunk index, conservative identity bootstrap, bounded per-level scheduler, configurable work/probe budgets, loaded-chunk guards, queued route/worker/planning work and chunk/block-edit dirty invalidation; CI build + dedicated-server smoke PASS. Full recognized-storage/ledger reconciliation moves to V3 |
+| Village persistent state / indexes / simulation budgets | `VillageSavedData`, `VillagerSimData`, `VillageIdentityBootstrap`, `VillageSimulationScheduler`, `VillageDirtyEvents`, `VillageStorageService` | **V1-V3 core implemented**: versioned persistent records/IDs, chunk index, bounded scheduler/configurable budgets, loaded-chunk guards, dirty invalidation, recognized StorageRecords, cached physical inventory ledger, reservation API, periodic recognized-storage reconciliation and persistent worker cargo; CI build + dedicated-server smoke PASS |
 | Regional Trade Value | `VillageSimulationEvents` | MVP implemented; accepted inventory-backed scarcity, Welfare and UI integration pending |
 | Fire Village Emergency | `VillageSimulationEvents` | MVP implemented; accepted resource-aware multi-role emergency flow pending |
-| Autonomous Village Growth | `VillageSimulationEvents` | MVP implemented; accepted dynamic-boundary, real-storage and phased-project architecture pending |
+| Autonomous Village Growth | `VillageSimulationEvents`, `VillageSavedData`, `VillageStorageService` | MVP construction retained; V3 now uses recognized real storage and Carpenter work cargo for ordinary build materials. Dynamic-boundary and V5 phased ProjectRecord/template architecture still pending |
 | Carpenter Profession | `AsobibaRegistries`, `VillageSimulationEvents` | Core implemented; accepted final work-cargo, trade/palette and profession-duty integration pending |
-| Village Logistics Roles | `VillageSimulationEvents` | MVP implemented; accepted Duty scheduler, staffing rules and persistent cargo pending |
+| Village Logistics Roles | `VillageSimulationEvents`, `VillagerSimData`, `VillageStorageService` | V3 physical cargo path implemented for Forester/Quarry/Porter/Farmer and Carpenter block materials; accepted V4 Duty scheduler/staffing rules still pending |
 | Outposts / Satellite Sites | `VillageSimulationEvents` | MVP implemented; accepted parent-linked lifecycle, lodging/logistics and shutdown behavior pending |
 | Roads / Bridges / River Use | `VillageSimulationEvents` | MVP implemented; accepted demand-driven roads/bridges and River Corridor integration pending |
 | Building Recognition / Occupancy | vanilla POI + `MobBuildingUseEvents` heuristics | MVP implemented; accepted persistent functional records/revalidation pending |
@@ -97,3 +97,12 @@ For enchantment mastery branches specifically, "MVP framework implemented" means
 The village rows above distinguish the existing runtime MVP from the much more detailed accepted design in `../MOD_IDEAS.md`. In particular, the current `VillageSimulationEvents` implementation still contains provisional profession-based role routing (for example Mason/Fletcher/unemployed/Nitwit branches) and does **not** yet represent the accepted final Duty scheduler. Nitwits are excluded from routine labor in the accepted design.
 
 The accepted final village architecture now also includes persistent Village IDs/records, Active/Cached/Unknown chunk handling, real-container-backed ledgers/reservations, bounded project scheduling, Bell-based read-only status UI, Welfare/Confinement, migration/relocation lifecycle, and event-driven indexed validation. These are implementation backlog items until their concrete code paths and validation gates exist.
+
+
+## V3 storage / cargo note
+
+V3 replaces the old permanent radius-based arbitrary-container path with recognized `StorageRecord` access. Villages that predate the record system may perform one conservative one-time legacy bootstrap of loaded Chest/Trapped Chest/Barrel blocks inside vanilla-recognized village space; after that, storage access uses persistent recognized positions only.
+
+Loaded recognized containers are authoritative. Each StorageRecord caches its last validated item totals so unloaded storage is remembered rather than treated as empty. Village ledger totals are rebuilt from those cached per-storage values. Manual player edits are caught by periodic low-priority reconciliation of recognized storage only.
+
+Forester, Quarry Worker, Porter, Farmer export and ordinary Carpenter block placement now use persistent physical work cargo rather than harvest/build-time direct item teleport. Current legacy road/bridge placement still consumes materials through its MVP path and is scheduled for replacement by the accepted V5 RouteRecord/public-works construction system.
