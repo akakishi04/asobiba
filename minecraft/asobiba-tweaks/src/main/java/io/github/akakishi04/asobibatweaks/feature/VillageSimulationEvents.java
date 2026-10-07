@@ -200,20 +200,12 @@ public final class VillageSimulationEvents {
     @SubscribeEvent
     public void onRegionalTrade(TradeWithVillagerEvent event) {
         if (!AsobibaTweaksConfig.VILLAGE_SIMULATION_ENABLED.getAsBoolean()
-                || !AsobibaTweaksConfig.REGIONAL_TRADE_VALUE_ENABLED.getAsBoolean()) return;
-
-        if (!(event.getEntity() instanceof ServerPlayer player)) return;
-        Villager villager = event.getAbstractVillager() instanceof Villager v ? v : null;
-        if (villager == null) return;
-
-        ItemStack paid = event.getMerchantOffer().getCostA();
-        Item bonus = regionalBonus(paid.getItem(), villager);
-        if (bonus != null && player.getRandom().nextDouble() < 0.55D) {
-            ItemStack stack = new ItemStack(bonus);
-            if (!player.getInventory().add(stack)) player.drop(stack, false);
-            player.displayClientMessage(Component.literal("Remote-region trade bonus")
-                    .withStyle(ChatFormatting.GOLD), true);
+                || !(event.getAbstractVillager() instanceof Villager villager)) {
+            return;
         }
+
+        VillageIdentityBootstrap.ensure(villager, (ServerLevel)villager.level());
+        VillageEconomyService.acceptCompletedTrade(villager, event.getMerchantOffer());
     }
 
     private static boolean hasActiveCarpenterProject(Villager villager, ServerLevel level) {
@@ -1407,19 +1399,6 @@ public final class VillageSimulationEvents {
                     "Village carpenter needs " + what + " for current work."
             ).withStyle(ChatFormatting.YELLOW));
         }
-    }
-
-    private static Item regionalBonus(Item item, Villager villager) {
-        String biome = villager.level().getBiome(villager.blockPosition())
-                .unwrapKey().map(k -> k.location().getPath()).orElse("");
-
-        boolean cold = biome.contains("snow") || biome.contains("frozen") || biome.contains("taiga");
-        boolean dry = biome.contains("desert") || biome.contains("badlands") || biome.contains("savanna");
-
-        if (cold && (item == Items.CACTUS || item == Items.SAND || item == Items.TERRACOTTA)) return Items.EMERALD;
-        if (dry && (item == Items.SNOW_BLOCK || item == Items.ICE || item == Items.SPRUCE_LOG)) return Items.EMERALD;
-        if (!cold && !dry && (item == Items.PACKED_ICE || item == Items.RED_SAND)) return Items.EMERALD;
-        return null;
     }
 
     private record BuildStep(BlockPos pos, BlockState state, Item cost) {}
