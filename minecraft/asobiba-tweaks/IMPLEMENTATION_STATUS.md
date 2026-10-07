@@ -39,7 +39,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Blast / Slipstream Wind Pressure | `PhysicsTransportEvents` | Implemented |
 | Wind Pressure Resistance | datapack enchantment + `PhysicsTransportEvents` | Implemented |
 | Growing Enchantments | `EnchantmentTweaksEvents`, `EnchantmentMasteryData` | Implemented |
-| Enchantment Branches | `EnchantmentTweaksEvents` | **V16+V17 expanded**: explicit branch-selection state plus concrete Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane of Arthropods / Fire Protection / Blast Protection / Fire Aspect / Thorns / Breach / Knockback / Punch / Impaling / Flame branch effects; Mending is excluded from branch selection as designed. Remaining accepted branch families are still pending |
+| Enchantment Branches | `EnchantmentTweaksEvents` | **V16+V17 expanded**: explicit branch-selection state plus concrete Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane of Arthropods / Fire Protection / Blast Protection / Fire Aspect / Thorns / Breach / Knockback / Punch / Impaling / Flame / Depth Strider branch effects; Mending is excluded from branch selection as designed. Remaining accepted branch families are still pending |
 | Curse Growth | `EnchantmentTweaksEvents` | Implemented |
 | Fortune / Silk Touch Switching | `EnchantmentTweaksEvents` | Implemented |
 | Mastery Inheritance | `EnchantmentTweaksEvents` | Implemented |
@@ -274,3 +274,8 @@ Impaling now implements all three accepted specializations for both direct and w
 ## V31 flame-branch note
 
 Flame now implements both accepted specialization branches; the intentionally-open third slot is not exposed by branch cycling. Long Burn extends the projectile's ordinary fire window by 25%-75% without shortening a stronger pre-existing burn. Stacked Ignition requires the target to already be burning, adds roughly 1.0-2.5 seconds per qualifying Flame hit, and caps the branch-added window at roughly 3-8 seconds beyond the normal five-second Flame reference. The branch acts only on projectile hits whose DamageSource carries the enchanted launcher ItemStack.
+
+
+## V32 depth-strider note
+
+Depth Strider now implements all three accepted movement branches with bounded post-tick velocity adjustments. Current Rider reads the real local FluidState flow vector and increases only the portion of horizontal motion already aligned with that current by 10%-30%, with a 0.40 horizontal-speed safety cap. Seabed Runner applies a 10%-25% grounded-underwater horizontal boost capped at 0.35. Diver increases existing vertical underwater movement authority by 10%-35% while clamping vertical speed to +/-0.35; it does not create vertical motion from rest. These caps prevent multiplicative per-tick runaway while preserving the intended specialization.

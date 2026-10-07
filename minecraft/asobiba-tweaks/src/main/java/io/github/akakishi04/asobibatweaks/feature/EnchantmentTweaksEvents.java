@@ -62,6 +62,7 @@ public final class EnchantmentTweaksEvents {
     private static final String PUNCH = "minecraft:punch";
     private static final String IMPALING = "minecraft:impaling";
     private static final String FLAME = "minecraft:flame";
+    private static final String DEPTH_STRIDER = "minecraft:depth_strider";
     private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
     private static final String PROTECTION_LAST_DAMAGE = "asobibatweaks_protection_last_damage";
     private static final String PROJECTILE_LAST_DAMAGE = "asobibatweaks_projectile_last_damage";
@@ -931,6 +932,63 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
+    public void onDepthStriderTick(PlayerTickEvent.Post event) {
+        if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || !(event.getEntity() instanceof ServerPlayer player)
+                || player.level().isClientSide()
+                || !player.isInWater()) {
+            return;
+        }
+
+        BranchRef depthStrider = armorBranch(player, DEPTH_STRIDER);
+        if (depthStrider == null) return;
+
+        double strength = branchScale(depthStrider.mastery(), 0.0D, 1.0D);
+        var motion = player.getDeltaMovement();
+
+        if (depthStrider.branch() == 0) {
+            BlockPos pos = player.blockPosition();
+            var fluid = player.level().getFluidState(pos);
+            if (!fluid.is(net.minecraft.tags.FluidTags.WATER)) return;
+
+            var flow = fluid.getFlow(player.level(), pos);
+            double horizontalFlow = Math.sqrt(flow.x * flow.x + flow.z * flow.z);
+            if (horizontalFlow <= 1.0E-5D) return;
+
+            double ux = flow.x / horizontalFlow;
+            double uz = flow.z / horizontalFlow;
+            double along = motion.x * ux + motion.z * uz;
+            if (along <= 0.0D) return;
+
+            double bonus = 0.10D + 0.20D * strength;
+            double nx = motion.x + ux * along * bonus;
+            double nz = motion.z + uz * along * bonus;
+            double horizontal = Math.sqrt(nx * nx + nz * nz);
+            if (horizontal > 0.40D) {
+                double scale = 0.40D / horizontal;
+                nx *= scale;
+                nz *= scale;
+            }
+            player.setDeltaMovement(nx, motion.y, nz);
+        } else if (depthStrider.branch() == 1 && player.onGround()) {
+            double multiplier = 1.10D + 0.15D * strength;
+            double nx = motion.x * multiplier;
+            double nz = motion.z * multiplier;
+            double horizontal = Math.sqrt(nx * nx + nz * nz);
+            if (horizontal > 0.35D) {
+                double scale = 0.35D / horizontal;
+                nx *= scale;
+                nz *= scale;
+            }
+            player.setDeltaMovement(nx, motion.y, nz);
+        } else if (depthStrider.branch() == 2 && Math.abs(motion.y) > 0.01D) {
+            double multiplier = 1.10D + 0.25D * strength;
+            double ny = Math.max(-0.35D, Math.min(0.35D, motion.y * multiplier));
+            player.setDeltaMovement(motion.x, ny, motion.z);
+        }
+    }
+
+    @SubscribeEvent
     public void onFireProtectionTick(PlayerTickEvent.Post event) {
         if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
                 || !(event.getEntity() instanceof ServerPlayer player)
@@ -1565,7 +1623,8 @@ public final class EnchantmentTweaksEvents {
                 || KNOCKBACK.equals(enchantmentId)
                 || PUNCH.equals(enchantmentId)
                 || IMPALING.equals(enchantmentId)
-                || FLAME.equals(enchantmentId);
+                || FLAME.equals(enchantmentId)
+                || DEPTH_STRIDER.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -1709,6 +1768,14 @@ public final class EnchantmentTweaksEvents {
             return switch (branch) {
                 case 0 -> "Long Burn";
                 case 1 -> "Stacked Ignition";
+                default -> "Unselected";
+            };
+        }
+        if (DEPTH_STRIDER.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Current Rider";
+                case 1 -> "Seabed Runner";
+                case 2 -> "Diver";
                 default -> "Unselected";
             };
         }
