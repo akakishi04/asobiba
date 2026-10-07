@@ -62,6 +62,9 @@ public final class VillageBuildingAdoptionService {
         building.setValidationState("valid");
         building.setLastValidatedGameTime(level.getGameTime());
 
+        data.village(villageId).ifPresent(village ->
+                recordAdoptedCulture(level, village, candidate));
+
         // A clearly storage-dominant player building is considered intentionally integrated.
         // Personal containers in ordinary houses/mixed-use buildings are not auto-enrolled.
         if ("storage".equals(classification)) {
@@ -246,6 +249,51 @@ public final class VillageBuildingAdoptionService {
             if (state.is(Blocks.BELL)) bells++;
         }
         return new Semantic(beds, containers, workstations, nonStorageWorkstations, bells);
+    }
+
+    private static void recordAdoptedCulture(
+            ServerLevel level,
+            VillageSavedData.VillageRecord village,
+            Candidate candidate) {
+        int oak = 0;
+        int spruce = 0;
+        int birch = 0;
+        int jungle = 0;
+        int acacia = 0;
+        int darkOak = 0;
+        int mangrove = 0;
+        int cherry = 0;
+
+        for (BlockPos pos : BlockPos.betweenClosed(candidate.min, candidate.max)) {
+            if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) break;
+            BlockState state = level.getBlockState(pos);
+            if (state.is(Blocks.OAK_PLANKS)) oak++;
+            else if (state.is(Blocks.SPRUCE_PLANKS)) spruce++;
+            else if (state.is(Blocks.BIRCH_PLANKS)) birch++;
+            else if (state.is(Blocks.JUNGLE_PLANKS)) jungle++;
+            else if (state.is(Blocks.ACACIA_PLANKS)) acacia++;
+            else if (state.is(Blocks.DARK_OAK_PLANKS)) darkOak++;
+            else if (state.is(Blocks.MANGROVE_PLANKS)) mangrove++;
+            else if (state.is(Blocks.CHERRY_PLANKS)) cherry++;
+        }
+
+        int[] counts = {oak, spruce, birch, jungle, acacia, darkOak, mangrove, cherry};
+        String[] names = {"oak", "spruce", "birch", "jungle", "acacia", "dark_oak", "mangrove", "cherry"};
+        int best = -1;
+        int bestCount = 0;
+        for (int i = 0; i < counts.length; i++) {
+            if (counts[i] > bestCount) {
+                bestCount = counts[i];
+                best = i;
+            }
+        }
+
+        if (best >= 0 && bestCount >= 4) {
+            village.recordBuildingCulture("plank:" + names[best], 3);
+        }
+
+        int vertical = candidate.max.getY() - candidate.min.getY();
+        village.recordBuildingCulture(vertical >= 7 ? "form:multi_story" : "form:one_story", 2);
     }
 
     private static String classify(Semantic semantic) {
