@@ -572,6 +572,8 @@ public final class VillageSavedData extends SavedData {
         private final Set<UUID> workSiteIds = new LinkedHashSet<>();
         private final Set<UUID> routeIds = new LinkedHashSet<>();
         private final Set<UUID> projectIds = new LinkedHashSet<>();
+        private final Set<Long> districtCenters = new LinkedHashSet<>();
+        private final Map<String, Integer> mergeEvidenceDays = new HashMap<>();
         private final Map<String, Integer> ledgerCounts = new HashMap<>();
         private final Map<String, Integer> reservedCounts = new HashMap<>();
         private final Map<String, Integer> buildingCulture = new HashMap<>();
@@ -598,6 +600,7 @@ public final class VillageSavedData extends SavedData {
             this.id = id;
             this.center = center;
             this.createdGameTime = createdGameTime;
+            this.districtCenters.add(center.asLong());
         }
 
         public UUID id() { return id; }
@@ -611,6 +614,7 @@ public final class VillageSavedData extends SavedData {
         public Set<UUID> workSiteIds() { return Collections.unmodifiableSet(workSiteIds); }
         public Set<UUID> routeIds() { return Collections.unmodifiableSet(routeIds); }
         public Set<UUID> projectIds() { return Collections.unmodifiableSet(projectIds); }
+        public Set<Long> districtCenters() { return Collections.unmodifiableSet(districtCenters); }
         public Map<String, Integer> ledgerCounts() { return Collections.unmodifiableMap(ledgerCounts); }
         public Map<String, Integer> reservedCounts() { return Collections.unmodifiableMap(reservedCounts); }
         public Map<String, Integer> buildingCulture() { return Collections.unmodifiableMap(buildingCulture); }
@@ -645,6 +649,17 @@ public final class VillageSavedData extends SavedData {
 
         public void setCenter(BlockPos center) { this.center = center.immutable(); }
         public void setParentVillageId(UUID value) { parentVillageId = value; }
+        public void addDistrictCenter(BlockPos pos) {
+            if (pos != null) districtCenters.add(pos.asLong());
+        }
+        public int mergeEvidenceDays(UUID otherVillageId) {
+            return Math.max(0, mergeEvidenceDays.getOrDefault(otherVillageId.toString(), 0));
+        }
+        public void setMergeEvidenceDays(UUID otherVillageId, int days) {
+            if (otherVillageId == null) return;
+            if (days <= 0) mergeEvidenceDays.remove(otherVillageId.toString());
+            else mergeEvidenceDays.put(otherVillageId.toString(), Math.min(30, days));
+        }
         public void setLifecycle(String lifecycle) { this.lifecycle = safeText(lifecycle, "active"); }
         public void setStorageBootstrapComplete(boolean value) { this.storageBootstrapComplete = value; }
 
@@ -724,6 +739,14 @@ public final class VillageSavedData extends SavedData {
             tag.put("work_sites", writeUuidSet(workSiteIds));
             tag.put("routes", writeUuidSet(routeIds));
             tag.put("projects", writeUuidSet(projectIds));
+            ListTag districtRows = new ListTag();
+            for (Long packed : districtCenters) {
+                CompoundTag row = new CompoundTag();
+                row.putLong("pos", packed);
+                districtRows.add(row);
+            }
+            tag.put("district_centers", districtRows);
+            tag.put("merge_evidence", writeIntMap(mergeEvidenceDays));
             tag.put("ledger", writeIntMap(ledgerCounts));
             tag.put("reserved", writeIntMap(reservedCounts));
             tag.put("building_culture", writeIntMap(buildingCulture));
@@ -761,6 +784,11 @@ public final class VillageSavedData extends SavedData {
             record.workSiteIds.addAll(readUuidSet(tag, "work_sites"));
             record.routeIds.addAll(readUuidSet(tag, "routes"));
             record.projectIds.addAll(readUuidSet(tag, "projects"));
+            ListTag districtRows = tag.getList("district_centers", Tag.TAG_COMPOUND);
+            for (int i = 0; i < districtRows.size(); i++) {
+                record.districtCenters.add(districtRows.getCompound(i).getLong("pos"));
+            }
+            record.mergeEvidenceDays.putAll(readIntMap(tag, "merge_evidence"));
             record.ledgerCounts.putAll(readIntMap(tag, "ledger"));
             record.reservedCounts.putAll(readIntMap(tag, "reserved"));
             record.buildingCulture.putAll(readIntMap(tag, "building_culture"));
