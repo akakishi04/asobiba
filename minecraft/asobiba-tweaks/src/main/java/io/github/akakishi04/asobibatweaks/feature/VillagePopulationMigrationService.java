@@ -223,7 +223,137 @@ public final class VillagePopulationMigrationService {
         }
 
         retryFoundingChildren(level, data, village);
+        updateMergeEvidence(level, data, village);
         data.touch();
+    }
+
+    private static void retryFoundingChildren(ServerLevel level, VillageSavedData data,
+                                              VillageSavedData.VillageRecord parent) {
+        if (parent.settlementViability() < 60 || "evacuating".equals(parent.lifecycle())
+                || "abandoned".equals(parent.lifecycle()) || "merged".equals(parent.lifecycle())) {
+            return;
+        }
+
+        List<Villager> loadedParents = loadedResidents(level, parent);
+        if (loadedParents.size() < 5) return;
+
+        Villager representative = loadedParents.stream()
+                .filter(v -> !v.isBaby())
+                .filter(v -> VillagerSimData.migrationId(v).isEmpty())
+                .min(Comparator
+                        .comparingInt((Villager v) -> "carpenter".equals(VillagerSimData.duty(v)) ? 0 : 1)
+                        .thenComparing(v -> v.getUUID().toString()))
+                .orElse(null);
+        if (representative == null) return;
+
+        for (VillageSavedData.VillageRecord child : data.villagesView().values()) {
+            if (!parent.id().equals(child.parentVillageId())) continue;
+            if (!"founding".equals(child.lifecycle())) continue;
+            if (!child.residentIds().isEmpty()) continue;
+            if (hasOpenMigrationToDestination(data, child.id())) continue;
+
+            startFoundingGroup(level, representative, child.id(), 4);
+            return;
+        }
+    }
+
+    private static boolean hasOpenMigrationToDestination(VillageSavedData data, UUID destinationVillageId) {
+        for (VillageSavedData.MigrationRecord migration : data.migrationsView().values()) {
+            if (!destinationVillageId.equals(migration.destinationVillageId())) continue;
+            if (!"complete".equals(migration.state()) && !"cancelled".equals(migration.state())) return true;
+        }
+        return false;
+    }
+
+    private static void updateMergeEvidence(ServerLevel level, VillageSavedData data,
+                                            VillageSavedData.VillageRecord village) {
+        if (!"active".equals(village.lifecycle()) || village.settlementViability() < 60) return;
+
+        for (VillageSavedData.VillageRecord other : data.villagesView().values()) {
+            if (other.id().equals(village.id())) continue;
+            if (!"active".equals(other.lifecycle()) || other.settlementViability() < 60) continue;
+            if (village.center().distManhattan(other.center()) > 192) {
+                village.setMergeEvidenceDays(other.id(), 0);
+                continue;
+            }
+
+            boolean roadConnected = roadNetworksTouch(data, village, other);
+            boolean livedCrossing = hasCrossBoundaryResident(level, village, other);
+            int days = roadConnected && livedCrossing
+                    ? village.mergeEvidenceDays(other.id()) + 1
+                    : 0;
+            village.setMergeEvidenceDays(other.id(), days);
+
+            if (days < 5) continue;
+
+            VillageSavedData.VillageRecord target = chooseMergeTarget(village, other);
+            VillageSavedData.VillageRecord source = target.id().equals(village.id()) ? other : village;
+            if (data.mergeVillageInto(source.id(), target.id())) {
+                for (Villager resident : loadedResidents(level, source)) {
+                    VillagerSimData.setVillageId(resident, target.id());
+                    data.registerResident(target.id(), resident.getUUID());
+                }
+                return;
+            }
+        }
+    }
+
+    private static VillageSavedData.VillageRecord chooseMergeTarget(
+            VillageSavedData.VillageRecord a, VillageSavedData.VillageRecord b) {
+        int popA = Math.max(a.lastKnownPopulation(), a.residentIds().size());
+        int popB = Math.max(b.lastKnownPopulation(), b.residentIds().size());
+        if (popA != popB) return popA > popB ? a : b;
+        if (a.createdGameTime() != b.createdGameTime()) {
+            return a.createdGameTime() < b.createdGameTime() ? a : b;
+        }
+        return a.id().toString().compareTo(b.id().toString()) <= 0 ? a : b;
+    }
+
+    private static boolean roadNetworksTouch(VillageSavedData data,
+                                             VillageSavedData.VillageRecord a,
+                                             VillageSavedData.VillageRecord b) {
+        List<VillageSavedData.RouteRecord> routesA = new ArrayList<>();
+        for (UUID id : a.routeIds()) {
+            VillageSavedData.RouteRecord route = data.route(id).orElse(null);
+            if (route != null && "active".equals(route.state())) routesA.add(route);
+        }
+
+        List<VillageSavedData.RouteRecord> routesB = new ArrayList<>();
+        for (UUID id : b.routeIds()) {
+            VillageSavedData.RouteRecord route = data.route(id).orElse(null);
+            if (route != null && "active".equals(route.state())) routesB.add(route);
+        }
+
+        if (routesA.isEmpty() || routesB.isEmpty()) return false;
+        for (VillageSavedData.RouteRecord ra : routesA) {
+            for (VillageSavedData.RouteRecord rb : routesB) {
+                if (routeEndpointNear(ra.from(), rb.from())
+                        || routeEndpointNear(ra.from(), rb.to())
+                        || routeEndpointNear(ra.to(), rb.from())
+                        || routeEndpointNear(ra.to(), rb.to())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean routeEndpointNear(BlockPos a, BlockPos b) {
+        return a.distManhattan(b) <= 24;
+    }
+
+    private static boolean hasCrossBoundaryResident(ServerLevel level,
+                                                    VillageSavedData.VillageRecord a,
+                                                    VillageSavedData.VillageRecord b) {
+        for (Villager villager : loadedResidents(level, a)) {
+            if (VillagerSimData.migrationId(villager).isPresent() || VillagerSimData.displaced(villager)) continue;
+            if (villager.blockPosition().distManhattan(b.center()) <= 48) return true;
+        }
+        for (Villager villager : loadedResidents(level, b)) {
+            if (VillagerSimData.migrationId(villager).isPresent() || VillagerSimData.displaced(villager)) continue;
+            if (villager.blockPosition().distManhattan(a.center()) <= 48) return true;
+        }
+        return false;
     }
 
     private static boolean hasOpenMigration(VillageSavedData data, UUID originVillageId) {
