@@ -38,6 +38,7 @@ public final class VillagerSimData {
     private static final String WORK_CARGO = "work_cargo";
     private static final String REFUSAL = "refusal";
     private static final String LAST_WELFARE_PRICE_PERCENT = "last_welfare_price_percent";
+    private static final String LAST_WELFARE_OFFER_COUNT = "last_welfare_offer_count";
     private static final String LAST_SAMPLE_POS = "last_sample_pos";
     private static final String LAST_MOVE_ACTIVE = "last_move_active";
     private static final String LAST_SLEEP_ACTIVE = "last_sleep_active";
@@ -121,6 +122,14 @@ public final class VillagerSimData {
 
     public static void setLastWelfarePricePercent(Villager villager, int value) {
         root(villager, true).putInt(LAST_WELFARE_PRICE_PERCENT, Math.max(0, value));
+    }
+
+    public static int lastWelfareOfferCount(Villager villager) {
+        return Math.max(0, root(villager, false).getInt(LAST_WELFARE_OFFER_COUNT));
+    }
+
+    public static void setLastWelfareOfferCount(Villager villager, int value) {
+        root(villager, true).putInt(LAST_WELFARE_OFFER_COUNT, Math.max(0, value));
     }
 
     public static Optional<net.minecraft.core.BlockPos> lastSamplePos(Villager villager) {
