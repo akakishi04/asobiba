@@ -222,9 +222,144 @@ public final class VillagePopulationMigrationService {
             village.setLifecycle("abandoned");
         }
 
+        promotePreparedOutposts(level, data, village);
         retryFoundingChildren(level, data, village);
         updateMergeEvidence(level, data, village);
         data.touch();
+    }
+
+    private static void promotePreparedOutposts(ServerLevel level, VillageSavedData data,
+                                                VillageSavedData.VillageRecord parent) {
+        if (!"active".equals(parent.lifecycle()) || parent.settlementViability() < 60) return;
+        long now = level.getGameTime();
+        if (now < parent.nextFissionGameTime()) return;
+
+        for (VillageSavedData.WorkSiteRecord site : data.workSitesForVillage(parent.id())) {
+            if (!"outpost".equals(site.type()) || !site.foundingPrepared()) continue;
+            if (!VillageOutpostLifecycleService.isOperational(level, data, parent, site)) continue;
+
+            BlockPos center = outpostCenter(site);
+            int housing = localHousingCapacity(data, parent, center, 48);
+            int storageCount = localStorageCount(data, parent, center, 48);
+            int food = localFoodCount(data, parent, center, 48);
+
+            if (housing < 6 || storageCount < 1 || food < 48) continue;
+
+            VillageSavedData.VillageRecord daughter = data.createVillage(center, now);
+            daughter.setParentVillageId(parent.id());
+            daughter.setLifecycle("founding");
+            daughter.setNextFissionGameTime(now + 30L * DAY);
+            parent.setNextFissionGameTime(now + 30L * DAY);
+
+            parent.buildingCulture().forEach((key, value) ->
+                    daughter.recordBuildingCulture(key, Math.max(1, value / 2)));
+
+            VillageSavedData.RouteRecord parentLink = activeRouteToOutpost(data, parent, site);
+            data.transferOutpostSite(site.id(), daughter.id());
+            site.setType("founding_site");
+            site.setFoundingPrepared(false);
+            site.setState("active");
+
+            if (parentLink != null) {
+                VillageSavedData.RouteRecord daughterLink = data.createRoute(
+                        daughter.id(), "parent_link", parentLink.from(), parentLink.to());
+                daughterLink.setTrafficScore(parentLink.trafficScore());
+                daughterLink.setState("active");
+            }
+
+            VillageStorageService.reconcileVillage(parent.id(), level);
+            VillageStorageService.reconcileVillage(daughter.id(), level);
+
+            List<Villager> loadedParents = loadedResidents(level, parent);
+            Villager representative = loadedParents.stream()
+                    .filter(v -> !v.isBaby())
+                    .filter(v -> VillagerSimData.migrationId(v).isEmpty())
+                    .min(Comparator
+                            .comparingInt((Villager v) -> "carpenter".equals(VillagerSimData.duty(v)) ? 0 : 1)
+                            .thenComparing(v -> v.getUUID().toString()))
+                    .orElse(null);
+
+            if (representative != null) {
+                startFoundingGroup(level, representative, daughter.id(), 4);
+            }
+            data.touch();
+            return;
+        }
+    }
+
+    private static BlockPos outpostCenter(VillageSavedData.WorkSiteRecord site) {
+        return new BlockPos(
+                (site.min().getX() + site.max().getX()) / 2,
+                (site.min().getY() + site.max().getY()) / 2,
+                (site.min().getZ() + site.max().getZ()) / 2
+        );
+    }
+
+    private static int localHousingCapacity(VillageSavedData data,
+                                            VillageSavedData.VillageRecord village,
+                                            BlockPos center, int radius) {
+        int total = 0;
+        for (UUID buildingId : village.buildingIds()) {
+            VillageSavedData.BuildingRecord building = data.building(buildingId).orElse(null);
+            if (building == null || !"valid".equals(building.validationState())) continue;
+            if (!("residential".equals(building.classification())
+                    || "mixed_use".equals(building.classification()))) continue;
+
+            BlockPos buildingCenter = new BlockPos(
+                    (building.min().getX() + building.max().getX()) / 2,
+                    (building.min().getY() + building.max().getY()) / 2,
+                    (building.min().getZ() + building.max().getZ()) / 2
+            );
+            if (buildingCenter.distManhattan(center) <= radius) total += building.validatedCapacity();
+        }
+        return total;
+    }
+
+    private static int localStorageCount(VillageSavedData data,
+                                         VillageSavedData.VillageRecord village,
+                                         BlockPos center, int radius) {
+        int count = 0;
+        for (VillageSavedData.StorageRecord storage : data.storagesForVillage(village.id())) {
+            if (!"valid".equals(storage.validationState())) continue;
+            if (storage.pos().distManhattan(center) <= radius) count++;
+        }
+        return count;
+    }
+
+    private static int localFoodCount(VillageSavedData data,
+                                      VillageSavedData.VillageRecord village,
+                                      BlockPos center, int radius) {
+        int total = 0;
+        String bread = VillageStorageService.itemKey(Items.BREAD);
+        String carrot = VillageStorageService.itemKey(Items.CARROT);
+        String potato = VillageStorageService.itemKey(Items.POTATO);
+        String beetroot = VillageStorageService.itemKey(Items.BEETROOT);
+
+        for (VillageSavedData.StorageRecord storage : data.storagesForVillage(village.id())) {
+            if (!"valid".equals(storage.validationState())) continue;
+            if (storage.pos().distManhattan(center) > radius) continue;
+
+            total += storage.cachedCounts().getOrDefault(bread, 0);
+            total += storage.cachedCounts().getOrDefault(carrot, 0);
+            total += storage.cachedCounts().getOrDefault(potato, 0);
+            total += storage.cachedCounts().getOrDefault(beetroot, 0);
+        }
+        return total;
+    }
+
+    private static VillageSavedData.RouteRecord activeRouteToOutpost(
+            VillageSavedData data,
+            VillageSavedData.VillageRecord village,
+            VillageSavedData.WorkSiteRecord site) {
+        BlockPos center = outpostCenter(site);
+        for (UUID routeId : village.routeIds()) {
+            VillageSavedData.RouteRecord route = data.route(routeId).orElse(null);
+            if (route == null || !"active".equals(route.state())) continue;
+            if (route.from().distManhattan(center) <= 24 || route.to().distManhattan(center) <= 24) {
+                return route;
+            }
+        }
+        return null;
     }
 
     private static void retryFoundingChildren(ServerLevel level, VillageSavedData data,
