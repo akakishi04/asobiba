@@ -267,7 +267,9 @@ public final class VillageSimulationEvents {
         VillageSavedData.WorkSiteRecord fissionOutpost = findFissionOutpost(
                 data, village, now, population, skill);
         boolean colony = fissionOutpost != null;
+        String outpostPurpose = colony || village == null ? "" : chooseOutpostPurpose(village);
         boolean outpost = !colony
+                && !outpostPurpose.isBlank()
                 && AsobibaTweaksConfig.VILLAGE_OUTPOSTS_ENABLED.getAsBoolean()
                 && !housingNeed && !storageNeed && population >= 6
                 && skill >= 25 && Math.floorMod((int)(now / 24000L) + villager.getId(), 4) == 3;
@@ -290,8 +292,10 @@ public final class VillageSimulationEvents {
         if (colony) {
             BlockPos outpostCenter = workSiteCenter(fissionOutpost);
             site = findBuildSiteNear(level, outpostCenter, villager, 8);
+        } else if (outpost) {
+            site = findOutpostBuildSite(villager, level, outpostPurpose);
         } else {
-            site = findBuildSite(villager, level, outpost, false);
+            site = findBuildSite(villager, level, false, false);
         }
         if (site == null) {
             villager.getPersistentData().putLong(NEXT_BUILD, now + 12000L);
@@ -312,6 +316,7 @@ public final class VillageSimulationEvents {
         project.setAnchor(villager.blockPosition());
         project.setParameter("outpost", Boolean.toString(outpost || colony));
         project.setParameter("colony", Boolean.toString(colony));
+        if (outpost) project.setParameter("outpost_purpose", outpostPurpose);
         if (colony && fissionOutpost != null) project.setParameter("outpost_id", fissionOutpost.id().toString());
         project.setParameter("lead_skill", Integer.toString(skill));
         project.setParameter("plank", plankName(chooseBuildingPlanks(level, site, villager)));
@@ -898,6 +903,117 @@ public final class VillageSimulationEvents {
         return Blocks.OAK_PLANKS;
     }
 
+    private static String chooseOutpostPurpose(VillageSavedData.VillageRecord village) {
+        int best = 1150;
+        String purpose = "";
+
+        int wood = village.marketPermille("wood");
+        if (wood > best) {
+            best = wood;
+            purpose = "forestry";
+        }
+
+        int stone = village.marketPermille("stone");
+        if (stone > best) {
+            best = stone;
+            purpose = "quarry";
+        }
+
+        int fishing = village.marketPermille("fishing");
+        if (fishing > best) {
+            best = fishing;
+            purpose = "fishing";
+        }
+
+        int farming = Math.max(village.marketPermille("farming"), village.marketPermille("food"));
+        if (farming > best) {
+            purpose = "farm";
+        }
+
+        return purpose;
+    }
+
+    private static BlockPos findOutpostBuildSite(Villager villager, ServerLevel level, String purpose) {
+        long salt = villager.getUUID().getLeastSignificantBits() ^ level.getGameTime() / 24000L;
+        for (int attempt = 0; attempt < 20; attempt++) {
+            double angle = ((salt + attempt * 0x9E3779B97F4A7C15L) >>> 11) * 0x1.0p-53 * Math.PI * 2.0D;
+            boolean remote = Math.floorMod(Long.hashCode(salt), 4) == 0;
+            int radius = remote
+                    ? 192 + Math.floorMod(Long.hashCode(salt + attempt * 31L), 129)
+                    : 96 + Math.floorMod(Long.hashCode(salt + attempt * 31L), 97);
+
+            int x = (int)Math.floor(villager.getX() + Math.cos(angle) * radius);
+            int z = (int)Math.floor(villager.getZ() + Math.sin(angle) * radius);
+            BlockPos column = new BlockPos(x, level.getMinBuildHeight(), z);
+            if (!VillageSimulationScheduler.isChunkLoaded(level, column)) continue;
+
+            int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+            BlockPos base = new BlockPos(x - 2, y, z - 2);
+            if (!isBuildSiteClear(level, base, 4)) continue;
+            if (!outpostSupportsPurpose(level, base.offset(2, 0, 2), purpose, villager)) continue;
+            return base;
+        }
+        return null;
+    }
+
+    private static boolean outpostSupportsPurpose(ServerLevel level, BlockPos center,
+                                                  String purpose, Villager villager) {
+        int useful = 0;
+        int samples = 64;
+
+        for (int i = 0; i < samples; i++) {
+            if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) return false;
+
+            int dx = villager.getRandom().nextInt(41) - 20;
+            int dz = villager.getRandom().nextInt(41) - 20;
+            int x = center.getX() + dx;
+            int z = center.getZ() + dz;
+            BlockPos column = new BlockPos(x, level.getMinBuildHeight(), z);
+            if (!VillageSimulationScheduler.isChunkLoaded(level, column)) continue;
+
+            int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+            BlockPos surface = new BlockPos(x, Math.max(level.getMinBuildHeight(), y - 1), z);
+            BlockState state = level.getBlockState(surface);
+
+            switch (purpose) {
+                case "forestry" -> {
+                    for (int dy = 0; dy <= 6; dy++) {
+                        BlockState above = level.getBlockState(surface.above(dy));
+                        if (above.is(BlockTags.LOGS) || above.is(BlockTags.LEAVES)) {
+                            useful++;
+                            break;
+                        }
+                    }
+                }
+                case "quarry" -> {
+                    if (surface.getY() >= 0
+                            && (state.is(Blocks.STONE) || state.is(Blocks.ANDESITE)
+                            || state.is(Blocks.DIORITE) || state.is(Blocks.GRANITE))) {
+                        useful++;
+                    }
+                }
+                case "fishing" -> {
+                    if (level.getFluidState(surface).is(FluidTags.WATER)
+                            || level.getFluidState(surface.above()).is(FluidTags.WATER)) {
+                        useful++;
+                    }
+                }
+                case "farm" -> {
+                    if (state.is(Blocks.GRASS_BLOCK) || state.is(Blocks.DIRT)
+                            || state.is(Blocks.COARSE_DIRT)) {
+                        useful++;
+                    }
+                }
+                default -> {
+                    return false;
+                }
+            }
+
+            if (useful >= 8) return true;
+        }
+        return false;
+    }
+
     private static VillageSavedData.WorkSiteRecord findFissionOutpost(
             VillageSavedData data,
             VillageSavedData.VillageRecord village,
@@ -1436,8 +1552,10 @@ public final class VillageSimulationEvents {
         if (outpost && !colony) {
             VillageSavedData.WorkSiteRecord site =
                     data.createWorkSite(project.villageId(), "outpost", base, base.offset(4, maxY, 4));
+            site.setPurpose(project.parameter("outpost_purpose"));
             site.setCreatedGameTime(level.getGameTime());
             site.setLastUsedGameTime(level.getGameTime());
+            site.setLastLifecycleGameTime(level.getGameTime());
 
             BlockPos localStorage = base.offset(3, 1, 2);
             if (level.getBlockEntity(localStorage) instanceof Container
