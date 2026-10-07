@@ -1342,6 +1342,10 @@ public final class VillageSavedData extends SavedData {
             else reservations.put(itemKey, count);
         }
 
+        public void clearReservations() {
+            reservations.clear();
+        }
+
         private CompoundTag save() {
             CompoundTag tag = new CompoundTag();
             putUuid(tag, "id", id);
