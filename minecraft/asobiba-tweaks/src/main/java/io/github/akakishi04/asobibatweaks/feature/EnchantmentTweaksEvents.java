@@ -11,6 +11,8 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.tags.EntityTypeTags;
@@ -25,6 +27,7 @@ import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.ItemEnchantments;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.common.Tags;
 import net.neoforged.neoforge.event.AnvilUpdateEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
@@ -45,6 +48,7 @@ public final class EnchantmentTweaksEvents {
     private static final String PROJECTILE_PROTECTION = "minecraft:projectile_protection";
     private static final String SHARPNESS = "minecraft:sharpness";
     private static final String SMITE = "minecraft:smite";
+    private static final String BANE_OF_ARTHROPODS = "minecraft:bane_of_arthropods";
     private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
     private static final String PROTECTION_LAST_DAMAGE = "asobibatweaks_protection_last_damage";
     private static final String PROJECTILE_LAST_DAMAGE = "asobibatweaks_projectile_last_damage";
@@ -55,6 +59,8 @@ public final class EnchantmentTweaksEvents {
     private static final String SMITE_HOLY_UNTIL = "asobibatweaks_smite_holy_until";
     private static final String SMITE_HOLY_REDUCTION = "asobibatweaks_smite_holy_reduction";
     private static final String SMITE_ECHO_ACTIVE = "asobibatweaks_smite_echo_active";
+    private static final String BANE_ANTIVENOM_UNTIL = "asobibatweaks_bane_antivenom_until";
+    private static final String BANE_ANTIVENOM_REDUCTION = "asobibatweaks_bane_antivenom_reduction";
 
     @SubscribeEvent
     public void onBlockDrops(BlockDropsEvent event) {
@@ -118,6 +124,59 @@ public final class EnchantmentTweaksEvents {
 
         if (bonus > 0.0D) {
             event.setAmount((float)(event.getAmount() * (1.0D + bonus)));
+        }
+    }
+
+    @SubscribeEvent
+    public void onBaneHurt(LivingHurtEvent event) {
+        if (!(event.getSource().getEntity() instanceof ServerPlayer player)
+                || event.getSource().getDirectEntity() != player
+                || player.level().isClientSide()
+                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || event.getAmount() <= 0.0F
+                || !event.getEntity().getType().is(EntityTypeTags.SENSITIVE_TO_BANE_OF_ARTHROPODS)) {
+            return;
+        }
+
+        ItemStack weapon = player.getMainHandItem();
+        BranchRef bane = branch(weapon, BANE_OF_ARTHROPODS);
+        if (bane == null) return;
+
+        int level = enchantmentLevel(weapon, BANE_OF_ARTHROPODS);
+        if (level <= 0) return;
+
+        double strength = branchScale(bane.mastery(), 0.0D, 1.0D);
+
+        if (bane.branch() == 0) {
+            int estimatedVanillaSlow = 20 + 10 * level;
+            int duration = estimatedVanillaSlow
+                    + (int)Math.round(estimatedVanillaSlow * (0.25D + 0.75D * strength));
+            event.getEntity().addEffect(new MobEffectInstance(
+                    MobEffects.MOVEMENT_SLOWDOWN,
+                    Math.max(1, duration),
+                    3
+            ));
+        } else if (bane.branch() == 1) {
+            int nearby = Math.min(3, player.level().getEntitiesOfClass(
+                    LivingEntity.class,
+                    event.getEntity().getBoundingBox().inflate(6.0D),
+                    e -> e != event.getEntity()
+                            && e.isAlive()
+                            && e.getType().is(EntityTypeTags.SENSITIVE_TO_BANE_OF_ARTHROPODS)
+            ).size());
+            if (nearby > 0) {
+                double vanillaBaneBonus = 2.5D * level;
+                double extra = vanillaBaneBonus * nearby * (0.05D + 0.07D * strength);
+                event.setAmount(event.getAmount() + (float)extra);
+            }
+        } else if (bane.branch() == 2) {
+            long until = player.level().getGameTime() + 80L;
+            double reduction = 0.15D + 0.35D * strength;
+            player.getPersistentData().putLong(BANE_ANTIVENOM_UNTIL, until);
+            player.getPersistentData().putInt(
+                    BANE_ANTIVENOM_REDUCTION,
+                    (int)Math.round(reduction * 1000.0D)
+            );
         }
     }
 
@@ -231,6 +290,31 @@ public final class EnchantmentTweaksEvents {
             };
             event.setNewSpeed(event.getNewSpeed() * factor);
             return;
+        }
+    }
+
+    @SubscribeEvent
+    public void onAntivenomDamage(LivingDamageEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)
+                || player.level().isClientSide()
+                || event.getAmount() <= 0.0F
+                || !event.getSource().is(Tags.DamageTypes.IS_POISON)) {
+            return;
+        }
+
+        var persistent = player.getPersistentData();
+        long now = player.level().getGameTime();
+        if (!persistent.contains(BANE_ANTIVENOM_UNTIL)
+                || now > persistent.getLong(BANE_ANTIVENOM_UNTIL)) {
+            return;
+        }
+
+        double reduction = Math.min(
+                0.50D,
+                Math.max(0.0D, persistent.getInt(BANE_ANTIVENOM_REDUCTION) / 1000.0D)
+        );
+        if (reduction > 0.0D) {
+            event.setAmount((float)(event.getAmount() * (1.0D - reduction)));
         }
     }
 
@@ -761,7 +845,8 @@ public final class EnchantmentTweaksEvents {
                 || PROTECTION.equals(enchantmentId)
                 || PROJECTILE_PROTECTION.equals(enchantmentId)
                 || SHARPNESS.equals(enchantmentId)
-                || SMITE.equals(enchantmentId);
+                || SMITE.equals(enchantmentId)
+                || BANE_OF_ARTHROPODS.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -826,6 +911,14 @@ public final class EnchantmentTweaksEvents {
                 case 0 -> "Exorcism";
                 case 1 -> "Holy Strike";
                 case 2 -> "Gravebreaker";
+                default -> "Unselected";
+            };
+        }
+        if (BANE_OF_ARTHROPODS.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Binding Venom";
+                case 1 -> "Swarm Extermination";
+                case 2 -> "Antivenom";
                 default -> "Unselected";
             };
         }
