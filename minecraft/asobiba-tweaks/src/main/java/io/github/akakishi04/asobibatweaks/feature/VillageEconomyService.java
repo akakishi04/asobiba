@@ -56,6 +56,7 @@ public final class VillageEconomyService {
         if (village == null) return;
 
         VillageStorageService.reconcileVillage(villageId, level);
+        int previousPopulation = village.lastKnownPopulation();
         int population = Math.max(1, village.residentIds().size());
 
         int food = count(village, Items.BREAD, Items.CARROT, Items.POTATO, Items.BEETROOT, Items.WHEAT);
@@ -103,7 +104,7 @@ public final class VillageEconomyService {
         int foodScore = village.storageIds().isEmpty() ? 80 : scoreCapacity(foodCapacity, population);
         int infrastructureScore = scoreCapacity(infrastructureCapacity, population);
         int welfareScore = averageLoadedWelfare(level, villageId, village.center());
-        int safetyScore = 100;
+        int safetyScore = loadedSafetyScore(level, villageId, village.center());
 
         int viability = Mth.clamp(Math.round(
                 housingScore * 0.25F
@@ -114,7 +115,14 @@ public final class VillageEconomyService {
         ), 0, 100);
         village.setSettlementViability(viability);
 
-        if (viability >= 60 && sustainable > population
+        boolean meaningfulPopulationLoss = previousPopulation > 0
+                && previousPopulation - population >= Math.max(2, previousPopulation / 4);
+        boolean recoveredFromStrain = ("strained".equals(village.lifecycle())
+                || "evacuating".equals(village.lifecycle()))
+                && viability >= 60;
+
+        if ((meaningfulPopulationLoss || recoveredFromStrain)
+                && viability >= 60 && sustainable > population
                 && population * 4 <= sustainable * 3) {
             village.setRecoveryGrowthUntil(Math.max(
                     village.recoveryGrowthUntil(),
@@ -233,6 +241,27 @@ public final class VillageEconomyService {
     private static int scoreCapacity(int capacity, int population) {
         if (population <= 0) return 100;
         return Mth.clamp((int)Math.round(capacity * 100.0D / population), 0, 100);
+    }
+
+    private static int loadedSafetyScore(ServerLevel level, UUID villageId, net.minecraft.core.BlockPos center) {
+        List<Villager> villagers = level.getEntitiesOfClass(
+                Villager.class,
+                new net.minecraft.world.phys.AABB(center).inflate(128.0D, 64.0D, 128.0D),
+                v -> v.isAlive() && VillagerSimData.villageId(v).filter(villageId::equals).isPresent()
+        );
+        if (villagers.isEmpty()) return 100;
+
+        long now = level.getGameTime();
+        int distressed = 0;
+        for (Villager villager : villagers) {
+            if (now < villager.getPersistentData().getLong("asobibatweaks_village_distress")) distressed++;
+        }
+        if (distressed == 0) return 100;
+
+        double ratio = distressed / (double)villagers.size();
+        if (ratio >= 0.50D) return 25;
+        if (ratio >= 0.25D) return 50;
+        return 70;
     }
 
     private static int averageLoadedWelfare(ServerLevel level, UUID villageId, net.minecraft.core.BlockPos center) {
