@@ -28,7 +28,6 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.level.block.BaseFireBlock;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -124,19 +123,13 @@ public final class VillageSimulationEvents {
             }
         });
 
-        // Children participate in persistent settlement identity but never execute work Duties.
+        if (VillagerSimData.migrationId(villager).isPresent()) return;
+        if (!"none".equals(VillagerSimData.emergencyDuty(villager))) return;
+
+        // Children participate in persistent settlement identity but never execute ordinary Duties.
         if (villager.isBaby()) return;
 
         String id = villager.getUUID().toString();
-
-        if (AsobibaTweaksConfig.VILLAGE_FIRE_EMERGENCY_ENABLED.getAsBoolean()) {
-            VillageSimulationScheduler.enqueueEmergency(level, "fire:" + id,
-                    () -> runIfActive(villager, level, () -> respondToFire(villager, level)));
-        }
-        if (VillagerSimData.migrationId(villager).isPresent()) {
-            return;
-        }
-
         VillageDutyScheduler.ensureFormalDuty(villager, level.getGameTime());
         String duty = VillagerSimData.duty(villager);
 
@@ -1188,32 +1181,6 @@ public final class VillageSimulationEvents {
         }
     }
 
-    private static void respondToFire(Villager villager, ServerLevel level) {
-        BlockPos center = villager.blockPosition();
-        if (!areaLoaded(level, center, 7, 3, 4)) return;
-
-        BlockPos fire = null;
-        for (BlockPos pos : BlockPos.betweenClosed(center.offset(-7, -3, -7), center.offset(7, 4, 7))) {
-            if (!VillageSimulationScheduler.tryConsumeEmergencyProbe(level)) return;
-            if (level.getBlockState(pos).getBlock() instanceof BaseFireBlock) {
-                fire = pos.immutable();
-                break;
-            }
-        }
-        if (fire == null) return;
-
-        villager.getPersistentData().putLong(DISTRESS, level.getGameTime() + 2L * 24000L);
-        if (nearWater(level, fire, 7)) {
-            if (villager.distanceToSqr(fire.getCenter()) <= 16.0D) {
-                level.setBlock(fire, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
-            } else {
-                villager.getNavigation().moveTo(fire.getX(), fire.getY(), fire.getZ(), 0.9D);
-            }
-        } else {
-            Vec3Away.moveAway(villager, fire);
-        }
-    }
-
     private static void useBuildingsInRain(Villager villager, ServerLevel level) {
         if (!level.isRainingAt(villager.blockPosition()) || villager.getNavigation().isInProgress()) return;
 
@@ -1521,15 +1488,6 @@ public final class VillageSimulationEvents {
         if (log == Blocks.CHERRY_LOG) return Blocks.CHERRY_SAPLING;
         if (log == Blocks.OAK_LOG) return Blocks.OAK_SAPLING;
         return null;
-    }
-
-    private static boolean nearWater(ServerLevel level, BlockPos center, int radius) {
-        if (!areaLoaded(level, center, radius, 2, 2)) return false;
-        for (BlockPos pos : BlockPos.betweenClosed(center.offset(-radius, -2, -radius), center.offset(radius, 2, radius))) {
-            if (!VillageSimulationScheduler.tryConsumeEmergencyProbe(level)) return false;
-            if (level.getFluidState(pos).is(FluidTags.WATER)) return true;
-        }
-        return false;
     }
 
     private static boolean areaLoaded(ServerLevel level, BlockPos center, int horizontal, int down, int up) {
