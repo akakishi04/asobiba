@@ -187,7 +187,12 @@ public final class VillageEconomyService {
 
         if (result.is(Items.EMERALD) && !paid.is(Items.EMERALD)
                 && category(paid.getItem()) != null) {
-            VillageStorageService.insert(villager, level, paid.copy());
+            ItemStack remainder = VillageStorageService.insert(villager, level, paid.copy());
+            if (!remainder.isEmpty()) {
+                // The trade consumed the player's real goods. If no recognized storage is
+                // physically reachable, keep them physical so a Porter can move them later.
+                villager.spawnAtLocation(remainder);
+            }
             VillagerSimData.villageId(villager).ifPresent(villageId ->
                     VillageSimulationScheduler.enqueuePlanning(
                             level,
