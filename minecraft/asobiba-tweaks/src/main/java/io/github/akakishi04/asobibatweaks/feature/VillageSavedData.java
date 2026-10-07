@@ -689,6 +689,10 @@ public final class VillageSavedData extends SavedData {
         private long nextMigrationGameTime;
         private long nextFissionGameTime;
         private long nextRiverSurveyGameTime;
+        private String fireEmergencyState = "none";
+        private BlockPos fireCenter;
+        private long fireCandidateSinceGameTime;
+        private long fireLastSeenGameTime;
         private int lowViability5DayBits;
         private int collapse7DayBits;
         private int overpopulation5DayBits;
@@ -733,6 +737,10 @@ public final class VillageSavedData extends SavedData {
         public long nextMigrationGameTime() { return nextMigrationGameTime; }
         public long nextFissionGameTime() { return nextFissionGameTime; }
         public long nextRiverSurveyGameTime() { return nextRiverSurveyGameTime; }
+        public String fireEmergencyState() { return fireEmergencyState; }
+        public BlockPos fireCenter() { return fireCenter; }
+        public long fireCandidateSinceGameTime() { return fireCandidateSinceGameTime; }
+        public long fireLastSeenGameTime() { return fireLastSeenGameTime; }
         public int stableViabilityDays() { return Math.max(0, stableViabilityDays); }
         public boolean migrationPressure3Of5() {
             return Math.min(demographicSamples, 5) >= 3 && Integer.bitCount(lowViability5DayBits & 0x1F) >= 3;
@@ -818,6 +826,16 @@ public final class VillageSavedData extends SavedData {
         public void setNextMigrationGameTime(long value) { nextMigrationGameTime = value; }
         public void setNextFissionGameTime(long value) { nextFissionGameTime = value; }
         public void setNextRiverSurveyGameTime(long value) { nextRiverSurveyGameTime = value; }
+        public void setFireEmergencyState(String value) { fireEmergencyState = safeText(value, "none"); }
+        public void setFireCenter(BlockPos value) { fireCenter = value == null ? null : value.immutable(); }
+        public void setFireCandidateSinceGameTime(long value) { fireCandidateSinceGameTime = value; }
+        public void setFireLastSeenGameTime(long value) { fireLastSeenGameTime = value; }
+        public void clearFireEmergency() {
+            fireEmergencyState = "none";
+            fireCenter = null;
+            fireCandidateSinceGameTime = 0L;
+            fireLastSeenGameTime = 0L;
+        }
 
         public void recordDemographicDay(boolean below40, boolean below25, boolean overpopulated, boolean stable60) {
             lowViability5DayBits = ((lowViability5DayBits << 1) | (below40 ? 1 : 0)) & 0x1F;
@@ -868,6 +886,10 @@ public final class VillageSavedData extends SavedData {
             tag.putLong("next_migration", nextMigrationGameTime);
             tag.putLong("next_fission", nextFissionGameTime);
             tag.putLong("next_river_survey", nextRiverSurveyGameTime);
+            tag.putString("fire_emergency_state", fireEmergencyState);
+            if (fireCenter != null) tag.putLong("fire_center", fireCenter.asLong());
+            tag.putLong("fire_candidate_since", fireCandidateSinceGameTime);
+            tag.putLong("fire_last_seen", fireLastSeenGameTime);
             tag.putInt("low_viability_5d", lowViability5DayBits);
             tag.putInt("collapse_7d", collapse7DayBits);
             tag.putInt("overpopulation_5d", overpopulation5DayBits);
@@ -913,6 +935,10 @@ public final class VillageSavedData extends SavedData {
             record.nextMigrationGameTime = tag.getLong("next_migration");
             record.nextFissionGameTime = tag.getLong("next_fission");
             record.nextRiverSurveyGameTime = tag.getLong("next_river_survey");
+            record.fireEmergencyState = safeText(tag.getString("fire_emergency_state"), "none");
+            if (tag.contains("fire_center", Tag.TAG_LONG)) record.fireCenter = BlockPos.of(tag.getLong("fire_center"));
+            record.fireCandidateSinceGameTime = tag.getLong("fire_candidate_since");
+            record.fireLastSeenGameTime = tag.getLong("fire_last_seen");
             record.lowViability5DayBits = tag.getInt("low_viability_5d") & 0x1F;
             record.collapse7DayBits = tag.getInt("collapse_7d") & 0x7F;
             record.overpopulation5DayBits = tag.getInt("overpopulation_5d") & 0x1F;
