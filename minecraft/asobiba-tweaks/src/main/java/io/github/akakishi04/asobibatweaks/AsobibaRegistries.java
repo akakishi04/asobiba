@@ -3,6 +3,7 @@ package io.github.akakishi04.asobibatweaks;
 import com.google.common.collect.ImmutableSet;
 import io.github.akakishi04.asobibatweaks.entity.NetherFishEntity;
 import io.github.akakishi04.asobibatweaks.item.AtlasItem;
+import io.github.akakishi04.asobibatweaks.item.QuiverItem;
 import java.util.Collection;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -98,6 +99,11 @@ public final class AsobibaRegistries {
     public static final DeferredItem<AtlasItem> ATLAS = ITEMS.register(
             "atlas",
             () -> new AtlasItem(new Item.Properties().stacksTo(1))
+    );
+
+    public static final DeferredItem<QuiverItem> QUIVER = ITEMS.register(
+            "quiver",
+            () -> new QuiverItem(new Item.Properties().stacksTo(1))
     );
 
     public static final DeferredItem<Item> ARCANE_FOLIO = ITEMS.register(
