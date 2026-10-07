@@ -24,7 +24,7 @@ import net.neoforged.neoforge.event.tick.EntityTickEvent;
 public final class VillagerWelfareService {
     private static final int SAMPLE_TICKS = 200;
 
-    private VillagerWelfareService() {
+    public VillagerWelfareService() {
     }
 
     @SubscribeEvent
