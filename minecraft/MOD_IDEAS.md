@@ -712,14 +712,35 @@ Accepted direction:
 - do not require every village to become vertically dense; biome, available land, local material palette and established architecture influence whether the village grows outward or upward
 
 ### Imperfect construction
-Less experienced builders may make harmless aesthetic mistakes:
-- asymmetric windows
-- mixed roof materials
-- missing decorative fence
-- unusual door placement
-- minor substitutions when exact materials run out
 
-Construction mistakes must not make buildings unusable.
+Accepted direction:
+- less experienced Carpenters may introduce **harmless cosmetic imperfections**, but mistakes never invalidate the building's required function
+- imperfections are chosen when the construction plan is instantiated, not generated as arbitrary per-block accidents during execution
+- this keeps the final plan deterministic/valid while still letting inexperienced builders leave visible personality
+- only **optional / cosmetic / alternate-valid anchors** may be altered by imperfect construction
+- structural and functional requirements are protected:
+  - foundations/support required for safety
+  - required stairs / floor access
+  - minimum headroom
+  - required doors / entrances
+  - beds and workstation access
+  - bridge deck continuity / railings where required for safety
+  - critical storage / public-work anchors
+  may not be removed or made unreachable by a mistake
+- allowed cosmetic imperfections include:
+  - slightly asymmetric but still sensible window placement
+  - mixed compatible roof/trim materials
+  - omitted nonessential fence/trim/decorative blocks
+  - use of an alternate validated door/window anchor
+  - small palette substitutions from the village's accepted Building Culture
+  - mild decorative asymmetry or uneven ornament repetition
+- material substitution never creates free blocks; the substituted material must actually exist in village stock
+- imperfect construction should not deliberately consume large amounts of extra material merely as a punishment
+- if an imperfection later proves to violate navigation/safety during final validation, it is treated as a defect and corrected before the building becomes usable
+- higher-skill Carpenters reduce the frequency/severity of cosmetic imperfections, but **Master builders are not forced to produce identical perfect copies**; intentional cultural variation remains separate from mistakes
+- repairs should normally preserve harmless existing imperfections rather than "perfecting" every old building, allowing construction history to remain visible
+
+Design constraint: inexperience may make a building look slightly handmade, never broken or unusable.
 
 ### Progressive village construction execution
 
@@ -759,12 +780,55 @@ Accepted direction:
 Design constraint: templates describe intended structures, but the visible world change should come from villagers actually building them with real resources over time.
 
 ### Carpenter progression
-Carpenters can gain practical experience:
-- faster work
-- less material waste
-- access to more complex templates
-- better repair behavior
-- fewer cosmetic mistakes
+
+Accepted direction:
+- each Carpenter has a persistent individual **Carpentry Skill from 0 to 100**
+- initial skill bands are:
+  - **0-24: Novice**
+  - **25-49: Trained**
+  - **50-74: Skilled**
+  - **75-100: Master**
+- skill is earned primarily from **successfully completed real construction/repair work**, especially completed phases and validated projects, rather than from idle time
+- repeatedly placing/removing the same trivial block should not be an efficient skill farm
+- larger/more complex projects grant more progress than tiny repairs, but no project can instantly jump a new Carpenter to mastery
+- skill persists with the villager across save/reload and migration
+
+Skill effects:
+- **Work speed:** construction action cadence improves gradually, targeting roughly **1.0x at skill 0 -> 1.35x at skill 100**; pathfinding/travel time is unchanged
+- **Planning quality:** cosmetic-imperfection probability falls as skill rises
+- **Material handling:** higher skill reduces avoidable over-reservation/rework and makes more reliable approved substitutions when exact decorative materials run short; it never duplicates/refunds consumed blocks from nowhere
+- **Repair quality:** higher skill identifies more of a recognized building's intended missing/damaged blocks in one repair pass and is less likely to require repeat visits
+- **Template complexity:** more complex template families become eligible when an appropriately skilled Carpenter can lead the project
+- basic survival-critical construction (simple housing, storage, ordinary paths, basic repairs) is always available and must not require a Master Carpenter
+
+Initial complexity guidance:
+- **Novice:** simple one-story houses, basic storage sheds, routine block replacement, short simple paths
+- **Trained:** ordinary workshops, small bridges, more varied roofs, modest building expansions
+- **Skilled:** two-story houses, mixed-use buildings, larger bridges, more complex roof/interior layouts
+- **Master:** highest-complexity accepted templates, difficult multi-story/terrain-adapted variants and major public works
+- these are template-selection gates, not hard rules that prevent lower-skill assistants from helping with a complex project
+
+Lead / team behavior:
+- a multi-Carpenter project selects a **lead Carpenter**
+- the lead's skill determines whether the chosen complex template can be planned and sets the initial cosmetic-quality envelope
+- lower-skill Carpenters may assist with safe work units after the plan has been validated
+- each worker's own skill still affects their placement cadence / work efficiency
+- losing the lead does not instantly delete the project; another qualified Carpenter may take over, otherwise the project pauses at a safe phase until one is available
+
+Village knowledge:
+- completed template families become part of the village's practical construction history / Building Culture
+- losing one Master Carpenter therefore does not erase the village's architectural history
+- however, starting a new high-complexity project still requires a sufficiently skilled active Carpenter to lead it
+- Satellite Settlements inherit cultural/template history from the parent as already defined, but their individual Carpenters retain their own skill values
+
+Initial cosmetic-imperfection target:
+- Novice-led plan: roughly **15-25%** chance that eligible cosmetic groups receive a harmless imperfection/alternate
+- Trained: roughly **8-15%**
+- Skilled: roughly **3-8%**
+- Master: roughly **0-3%** accidental imperfection
+- deliberate Building Culture variation is evaluated separately and can occur at any skill level
+
+Design constraint: Carpenter progression should make experienced builders visibly faster, more reliable and capable of more ambitious work without turning basic village survival into a skill-gated deadlock.
 
 ### Adaptive plans
 Village-level planning can reprioritize or revise construction when conditions change:
