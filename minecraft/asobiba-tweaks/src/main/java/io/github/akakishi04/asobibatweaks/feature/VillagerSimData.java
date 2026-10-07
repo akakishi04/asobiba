@@ -37,6 +37,7 @@ public final class VillagerSimData {
     private static final String ORIGIN_VILLAGE_ID = "origin_village_id";
     private static final String MIGRATION_ID = "migration_id";
     private static final String DISPLACED_SINCE_ACTIVE = "displaced_since_active";
+    private static final String OUTPOST_SITE_ID = "outpost_site_id";
     private static final String WORK_CARGO = "work_cargo";
     private static final String REFUSAL = "refusal";
     private static final String LAST_WELFARE_PRICE_PERCENT = "last_welfare_price_percent";
@@ -247,6 +248,18 @@ public final class VillagerSimData {
 
     public static void clearMigrationId(Villager villager) {
         root(villager, true).remove(MIGRATION_ID);
+    }
+
+    public static Optional<UUID> outpostSiteId(Villager villager) {
+        return readUuid(root(villager, false), OUTPOST_SITE_ID);
+    }
+
+    public static void setOutpostSiteId(Villager villager, UUID siteId) {
+        putUuid(root(villager, true), OUTPOST_SITE_ID, siteId);
+    }
+
+    public static void clearOutpostSiteId(Villager villager) {
+        root(villager, true).remove(OUTPOST_SITE_ID);
     }
 
     public static long displacedSinceActive(Villager villager) {
