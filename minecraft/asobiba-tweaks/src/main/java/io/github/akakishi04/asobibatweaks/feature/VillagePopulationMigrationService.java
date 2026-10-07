@@ -13,6 +13,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.tick.EntityTickEvent;
 
 /**
@@ -26,6 +27,28 @@ public final class VillagePopulationMigrationService {
     private static final long PERMANENT_DISPLACED_ACTIVE = 7L * DAY;
 
     public VillagePopulationMigrationService() {
+    }
+
+    @SubscribeEvent
+    public void onVillagerDeath(LivingDeathEvent event) {
+        if (!(event.getEntity() instanceof Villager villager)
+                || villager.level().isClientSide()
+                || !(villager.level() instanceof ServerLevel level)) {
+            return;
+        }
+
+        VillageSavedData data = VillageSavedData.get(level);
+        VillagerSimData.villageId(villager)
+                .ifPresent(villageId -> data.unregisterResident(villageId, villager.getUUID()));
+
+        VillagerSimData.migrationId(villager).ifPresent(migrationId -> {
+            VillageSavedData.MigrationRecord migration = data.migration(migrationId).orElse(null);
+            if (migration == null) return;
+            migration.removeMember(villager.getUUID());
+            migration.setUpdatedGameTime(level.getGameTime());
+            if (migration.members().isEmpty()) data.removeMigration(migrationId);
+            else data.touch();
+        });
     }
 
     @SubscribeEvent
