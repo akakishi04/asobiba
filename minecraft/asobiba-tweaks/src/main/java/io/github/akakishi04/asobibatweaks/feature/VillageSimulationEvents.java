@@ -305,25 +305,30 @@ public final class VillageSimulationEvents {
         }
 
         int buildKind = storageNeed && !housingNeed && !colony ? 1 : 0;
+
+        String templateId;
+        if (buildKind == 1) templateId = "storage_5x5";
+        else if (colony) templateId = "house_2story_5x5";
+        else if (outpost) templateId = "house_5x5";
+        else if (skill >= 75 && population >= 16) templateId = "house_3story_5x5";
+        else if (skill >= 50 && population >= 8) templateId = "house_2story_5x5";
+        else if (skill >= 25 && population >= 6) templateId = "house_gabled_5x5";
+        else templateId = "house_5x5";
+
+        int templateMaxY = templateMaxY(templateId);
         BlockPos site;
         if (colony) {
             BlockPos outpostCenter = workSiteCenter(fissionOutpost);
-            site = findBuildSiteNear(level, outpostCenter, villager, 8);
+            site = findBuildSiteNear(level, outpostCenter, villager, templateMaxY);
         } else if (outpost) {
             site = findOutpostBuildSite(villager, level, outpostPurpose);
         } else {
-            site = findBuildSite(villager, level, false, false);
+            site = findBuildSite(villager, level, false, false, templateMaxY);
         }
         if (site == null) {
             villager.getPersistentData().putLong(NEXT_BUILD, now + 12000L);
             return;
         }
-
-        String templateId;
-        if (buildKind == 1) templateId = "storage_5x5";
-        else if (colony) templateId = "house_2story_5x5";
-        else if (!outpost && skill >= 50 && population >= 8) templateId = "house_2story_5x5";
-        else templateId = "house_5x5";
 
         VillageSavedData.ProjectRecord project = data.createProject(
                 villageId.get(), "building", housingNeed ? 80 : storageNeed ? 70 : 40, site);
@@ -777,7 +782,13 @@ public final class VillageSimulationEvents {
         VillageSavedData data = VillageSavedData.get(level);
 
         int skill = VillagerSimData.carpentrySkill(villager);
-        VillagerSimData.setCarpentrySkill(villager, Math.min(100, skill + 2));
+        int skillGain = switch (project.templateId()) {
+            case "house_gabled_5x5" -> 3;
+            case "house_2story_5x5" -> 4;
+            case "house_3story_5x5" -> 6;
+            default -> 2;
+        };
+        VillagerSimData.setCarpentrySkill(villager, Math.min(100, skill + skillGain));
 
         registerCompletedProject(villager, level, project);
 
@@ -810,18 +821,37 @@ public final class VillageSimulationEvents {
 
     private static String projectPhase(VillageSavedData.ProjectRecord project) {
         int cursor = project.workCursor();
-        String template = project.templateId();
         if (cursor < 25) return "foundation";
-        if ("house_2story_5x5".equals(template)) {
-            if (cursor < 75) return "ground_floor";
-            if (cursor < 100) return "second_floor";
-            if (cursor < 150) return "upper_floor";
-            if (cursor < 175) return "roof";
+
+        int total = Math.max(26, projectPlan(project).size());
+        double progress = (cursor - 25) / (double)Math.max(1, total - 25);
+        String template = project.templateId();
+        boolean multiStory = "house_2story_5x5".equals(template)
+                || "house_3story_5x5".equals(template);
+
+        if (multiStory) {
+            if (progress < 0.28D) return "ground_floor";
+            if (progress < 0.55D) return "upper_floor";
+            if (progress < 0.78D) return "roof";
             return "interior";
         }
-        if (cursor < 75) return "walls";
-        if (cursor < 100) return "roof";
+        if ("house_gabled_5x5".equals(template)) {
+            if (progress < 0.58D) return "walls";
+            if (progress < 0.88D) return "gabled_roof";
+            return "interior";
+        }
+        if (progress < 0.65D) return "walls";
+        if (progress < 0.90D) return "roof";
         return "interior";
+    }
+
+    private static int templateMaxY(String templateId) {
+        return switch (templateId) {
+            case "house_gabled_5x5" -> 6;
+            case "house_2story_5x5" -> 8;
+            case "house_3story_5x5" -> 12;
+            default -> 4;
+        };
     }
 
     private static List<BuildStep> projectPlan(VillageSavedData.ProjectRecord project) {
@@ -895,12 +925,36 @@ public final class VillageSimulationEvents {
             steps.add(new BuildStep(base.offset(x, 4, z), plank, plankItem));
         }
 
+        if ("house_gabled_5x5".equals(project.templateId())) {
+            steps.removeIf(step -> step.pos.getY() == base.getY() + 4);
+            for (int z = 0; z < 5; z++) {
+                steps.add(new BuildStep(base.offset(0, 4, z), plank, plankItem));
+                steps.add(new BuildStep(base.offset(4, 4, z), plank, plankItem));
+                steps.add(new BuildStep(base.offset(1, 5, z), plank, plankItem));
+                steps.add(new BuildStep(base.offset(3, 5, z), plank, plankItem));
+                steps.add(new BuildStep(base.offset(2, 6, z), plank, plankItem));
+            }
+        }
+
         BlockState bedFoot = Blocks.WHITE_BED.defaultBlockState()
                 .setValue(BedBlock.PART, BedPart.FOOT)
                 .setValue(HorizontalDirectionalBlock.FACING, Direction.SOUTH);
         BlockState bedHead = bedFoot.setValue(BedBlock.PART, BedPart.HEAD);
         steps.add(new BuildStep(base.offset(2, 1, 2), bedFoot, null));
         steps.add(new BuildStep(base.offset(2, 1, 3), bedHead, null));
+
+        boolean trainedHouse = "house_gabled_5x5".equals(project.templateId())
+                || "house_2story_5x5".equals(project.templateId())
+                || "house_3story_5x5".equals(project.templateId());
+        if (trainedHouse && !Boolean.parseBoolean(project.parameter("outpost"))) {
+            BlockState extraGroundFoot = Blocks.WHITE_BED.defaultBlockState()
+                    .setValue(BedBlock.PART, BedPart.FOOT)
+                    .setValue(HorizontalDirectionalBlock.FACING, Direction.SOUTH);
+            BlockState extraGroundHead = extraGroundFoot.setValue(BedBlock.PART, BedPart.HEAD);
+            steps.add(new BuildStep(base.offset(1, 1, 2), extraGroundFoot, null));
+            steps.add(new BuildStep(base.offset(1, 1, 3), extraGroundHead, null));
+        }
+
         if (Boolean.parseBoolean(project.parameter("outpost"))) {
             BlockState secondBedFoot = Blocks.WHITE_BED.defaultBlockState()
                     .setValue(BedBlock.PART, BedPart.FOOT)
@@ -916,10 +970,13 @@ public final class VillageSimulationEvents {
             }
         }
 
-        if ("house_2story_5x5".equals(project.templateId())) {
+        boolean multiStory = "house_2story_5x5".equals(project.templateId())
+                || "house_3story_5x5".equals(project.templateId());
+        if (multiStory) {
             // Replace the single-story roof layer with a second floor and add an upper shell/roof.
             steps.removeIf(step -> step.pos.getY() == base.getY() + 4);
             for (int x = 0; x < 5; x++) for (int z = 0; z < 5; z++) {
+                if (x == 3 && z == 1) continue; // stair opening
                 steps.add(new BuildStep(base.offset(x, 4, z), plank, plankItem));
             }
             for (int y = 5; y <= 7; y++) {
@@ -952,6 +1009,45 @@ public final class VillageSimulationEvents {
             BlockState extraUpperBedHead = extraUpperBedFoot.setValue(BedBlock.PART, BedPart.HEAD);
             steps.add(new BuildStep(base.offset(3, 5, 2), extraUpperBedFoot, null));
             steps.add(new BuildStep(base.offset(3, 5, 3), extraUpperBedHead, null));
+
+            if ("house_3story_5x5".equals(project.templateId())) {
+                // Turn the second-story roof into a third-story floor with a stair opening.
+                steps.removeIf(step -> step.pos.getY() == base.getY() + 8);
+                for (int x = 0; x < 5; x++) for (int z = 0; z < 5; z++) {
+                    if (x == 3 && z == 1) continue;
+                    steps.add(new BuildStep(base.offset(x, 8, z), plank, plankItem));
+                }
+                for (int y = 9; y <= 11; y++) {
+                    for (int x = 0; x < 5; x++) for (int z = 0; z < 5; z++) {
+                        boolean edge = x == 0 || x == 4 || z == 0 || z == 4;
+                        boolean window = y == 10 && ((x == 0 || x == 4) && z == 2);
+                        if (edge && !window) {
+                            steps.add(new BuildStep(base.offset(x, y, z), plank, plankItem));
+                        }
+                    }
+                }
+                for (int x = 0; x < 5; x++) for (int z = 0; z < 5; z++) {
+                    steps.add(new BuildStep(base.offset(x, 12, z), plank, plankItem));
+                }
+
+                steps.add(new BuildStep(base.offset(1, 5, 1), stairState, plankItem));
+                steps.add(new BuildStep(base.offset(2, 6, 1), stairState, plankItem));
+                steps.add(new BuildStep(base.offset(3, 7, 1), stairState, plankItem));
+
+                BlockState thirdBedFoot = Blocks.WHITE_BED.defaultBlockState()
+                        .setValue(BedBlock.PART, BedPart.FOOT)
+                        .setValue(HorizontalDirectionalBlock.FACING, Direction.SOUTH);
+                BlockState thirdBedHead = thirdBedFoot.setValue(BedBlock.PART, BedPart.HEAD);
+                steps.add(new BuildStep(base.offset(2, 9, 2), thirdBedFoot, null));
+                steps.add(new BuildStep(base.offset(2, 9, 3), thirdBedHead, null));
+
+                BlockState extraThirdBedFoot = Blocks.WHITE_BED.defaultBlockState()
+                        .setValue(BedBlock.PART, BedPart.FOOT)
+                        .setValue(HorizontalDirectionalBlock.FACING, Direction.SOUTH);
+                BlockState extraThirdBedHead = extraThirdBedFoot.setValue(BedBlock.PART, BedPart.HEAD);
+                steps.add(new BuildStep(base.offset(3, 9, 2), extraThirdBedFoot, null));
+                steps.add(new BuildStep(base.offset(3, 9, 3), extraThirdBedHead, null));
+            }
         }
         return steps;
     }
@@ -1338,7 +1434,8 @@ public final class VillageSimulationEvents {
         return true;
     }
 
-    private static BlockPos findBuildSite(Villager villager, ServerLevel level, boolean outpost, boolean colony) {
+    private static BlockPos findBuildSite(
+            Villager villager, ServerLevel level, boolean outpost, boolean colony, int maxY) {
         long salt = villager.getUUID().getLeastSignificantBits() ^ level.getGameTime() / 24000L;
         for (int attempt = 0; attempt < 12; attempt++) {
             double angle = ((salt + attempt * 0x9E3779B97F4A7C15L) >>> 11) * 0x1.0p-53 * Math.PI * 2.0D;
@@ -1358,9 +1455,10 @@ public final class VillageSimulationEvents {
 
             int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
             BlockPos base = new BlockPos(x - 2, y, z - 2);
-            if (!VillageSimulationScheduler.isAreaLoaded(level, base.offset(0, -1, 0), base.offset(4, 4, 4))) continue;
+            if (!VillageSimulationScheduler.isAreaLoaded(
+                    level, base.offset(0, -1, 0), base.offset(4, maxY, 4))) continue;
 
-            if (isBuildSiteClear(level, base, 4)) return base;
+            if (isBuildSiteClear(level, base, maxY)) return base;
         }
         return null;
     }
@@ -1980,10 +2078,12 @@ public final class VillageSimulationEvents {
         VillageSavedData data = VillageSavedData.get(level);
         BlockPos base = project.site();
         boolean storage = "storage_5x5".equals(project.templateId());
+        boolean gabled = "house_gabled_5x5".equals(project.templateId());
         boolean twoStory = "house_2story_5x5".equals(project.templateId());
+        boolean threeStory = "house_3story_5x5".equals(project.templateId());
         boolean outpost = Boolean.parseBoolean(project.parameter("outpost"));
         boolean colony = Boolean.parseBoolean(project.parameter("colony"));
-        int maxY = twoStory ? 8 : 4;
+        int maxY = templateMaxY(project.templateId());
 
         java.util.UUID ownerVillageId = project.villageId();
 
@@ -2007,7 +2107,11 @@ public final class VillageSimulationEvents {
                 ownerVillageId, base, base.offset(4, maxY, 4), true);
         building.setTemplateId(project.templateId());
         building.setClassification(storage ? "storage" : "residential");
-        building.setValidatedCapacity(storage ? 0 : twoStory ? 4 : outpost ? 2 : 1);
+        building.setValidatedCapacity(storage ? 0
+                : threeStory ? 6
+                : twoStory ? 4
+                : gabled ? 2
+                : outpost ? 2 : 1);
         building.setValidationState("valid");
         building.setLastValidatedGameTime(level.getGameTime());
 
@@ -2019,11 +2123,20 @@ public final class VillageSimulationEvents {
                 village.recordDistrictBuildingCulture(base, "plank:" + plank, 10);
             });
         }
-        if (twoStory) {
+        if (threeStory || twoStory) {
+            int formWeight = threeStory ? 12 : 8;
             java.util.UUID finalOwnerVillageId = ownerVillageId;
             data.village(finalOwnerVillageId).ifPresent(village -> {
-                village.recordBuildingCulture("form:multi_story", 8);
-                village.recordDistrictBuildingCulture(base, "form:multi_story", 8);
+                village.recordBuildingCulture("form:multi_story", formWeight);
+                village.recordDistrictBuildingCulture(base, "form:multi_story", formWeight);
+            });
+        } else if (gabled) {
+            java.util.UUID finalOwnerVillageId = ownerVillageId;
+            data.village(finalOwnerVillageId).ifPresent(village -> {
+                village.recordBuildingCulture("form:gabled", 6);
+                village.recordDistrictBuildingCulture(base, "form:gabled", 6);
+                village.recordBuildingCulture("form:one_story", 3);
+                village.recordDistrictBuildingCulture(base, "form:one_story", 3);
             });
         } else {
             java.util.UUID finalOwnerVillageId = ownerVillageId;
