@@ -194,6 +194,7 @@ public final class VillageOutpostLifecycleService {
         );
 
         List<Villager> already = residents.stream()
+                .filter(v -> requiredDuty.equals(VillagerSimData.duty(v)))
                 .filter(v -> VillagerSimData.outpostSiteId(v).filter(site.id()::equals).isPresent())
                 .toList();
         if (already.size() >= target) return;
