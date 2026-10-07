@@ -228,6 +228,52 @@ public final class VillageSavedData extends SavedData {
         return record;
     }
 
+    public boolean transferOutpostSite(UUID workSiteId, UUID targetVillageId) {
+        WorkSiteRecord site = workSites.get(workSiteId);
+        VillageRecord target = villages.get(targetVillageId);
+        if (site == null || target == null) return false;
+
+        UUID sourceVillageId = site.villageId;
+        if (sourceVillageId.equals(targetVillageId)) return true;
+        VillageRecord source = villages.get(sourceVillageId);
+        if (source == null) return false;
+
+        source.workSiteIds.remove(workSiteId);
+        target.workSiteIds.add(workSiteId);
+        site.villageId = targetVillageId;
+
+        for (BuildingRecord building : buildings.values()) {
+            if (!sourceVillageId.equals(building.villageId)) continue;
+            if (!boundsOverlap(building.min, building.max, site.min, site.max)) continue;
+            source.buildingIds.remove(building.id);
+            target.buildingIds.add(building.id);
+            building.villageId = targetVillageId;
+        }
+
+        for (StorageRecord storage : storages.values()) {
+            if (!sourceVillageId.equals(storage.villageId)) continue;
+            if (!inside(storage.pos, site.min, site.max)) continue;
+            source.storageIds.remove(storage.id);
+            target.storageIds.add(storage.id);
+            storage.villageId = targetVillageId;
+        }
+
+        setDirty();
+        return true;
+    }
+
+    private static boolean inside(BlockPos pos, BlockPos min, BlockPos max) {
+        return pos.getX() >= min.getX() && pos.getX() <= max.getX()
+                && pos.getY() >= min.getY() && pos.getY() <= max.getY()
+                && pos.getZ() >= min.getZ() && pos.getZ() <= max.getZ();
+    }
+
+    private static boolean boundsOverlap(BlockPos aMin, BlockPos aMax, BlockPos bMin, BlockPos bMax) {
+        return aMin.getX() <= bMax.getX() && aMax.getX() >= bMin.getX()
+                && aMin.getY() <= bMax.getY() && aMax.getY() >= bMin.getY()
+                && aMin.getZ() <= bMax.getZ() && aMax.getZ() >= bMin.getZ();
+    }
+
     public void registerResident(UUID villageId, UUID villagerId) {
         requireVillage(villageId);
         VillageRecord target = villages.get(villageId);
@@ -738,7 +784,7 @@ public final class VillageSavedData extends SavedData {
 
     public static final class BuildingRecord {
         private final UUID id;
-        private final UUID villageId;
+        private UUID villageId;
         private final BlockPos min;
         private final BlockPos max;
         private final boolean villageBuilt;
@@ -806,7 +852,7 @@ public final class VillageSavedData extends SavedData {
 
     public static final class StorageRecord {
         private final UUID id;
-        private final UUID villageId;
+        private UUID villageId;
         private final BlockPos pos;
         private String category;
         private String validationState = "unknown";
@@ -868,7 +914,7 @@ public final class VillageSavedData extends SavedData {
 
     public static final class WorkSiteRecord {
         private final UUID id;
-        private final UUID villageId;
+        private UUID villageId;
         private String type;
         private final BlockPos min;
         private final BlockPos max;
@@ -927,7 +973,7 @@ public final class VillageSavedData extends SavedData {
 
     public static final class RouteRecord {
         private final UUID id;
-        private final UUID villageId;
+        private UUID villageId;
         private String type;
         private final BlockPos from;
         private final BlockPos to;
@@ -981,7 +1027,7 @@ public final class VillageSavedData extends SavedData {
 
     public static final class ProjectRecord {
         private final UUID id;
-        private final UUID villageId;
+        private UUID villageId;
         private String type;
         private int priority;
         private final BlockPos site;
