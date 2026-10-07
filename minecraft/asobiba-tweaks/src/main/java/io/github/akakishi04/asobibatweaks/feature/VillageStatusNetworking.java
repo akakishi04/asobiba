@@ -74,7 +74,7 @@ public final class VillageStatusNetworking {
             if ("outpost".equals(site.type()) || "founding_site".equals(site.type())) outposts++;
         }
 
-        List<String> needs = buildNeeds(village, population);
+        List<String> needs = buildNeeds(data, village);
         List<String> projects = buildProjects(data, village);
 
         String title = "Village " + village.id().toString().substring(0, 8);
@@ -156,54 +156,48 @@ public final class VillageStatusNetworking {
         return Math.max(0, Math.min(100, Math.round(total / (float)loaded.size())));
     }
 
-    private static List<String> buildNeeds(VillageSavedData.VillageRecord village, int population) {
-        List<NeedLine> lines = new ArrayList<>();
-        addNeed(lines, village, "Food", "food",
-                foodCount(village), Math.max(24, population * 24));
-        addNeed(lines, village, "Wood", "wood",
-                count(village,
-                        Items.OAK_LOG, Items.SPRUCE_LOG, Items.BIRCH_LOG, Items.JUNGLE_LOG,
-                        Items.ACACIA_LOG, Items.DARK_OAK_LOG, Items.MANGROVE_LOG, Items.CHERRY_LOG,
-                        Items.OAK_PLANKS, Items.SPRUCE_PLANKS, Items.BIRCH_PLANKS, Items.JUNGLE_PLANKS,
-                        Items.ACACIA_PLANKS, Items.DARK_OAK_PLANKS, Items.MANGROVE_PLANKS, Items.CHERRY_PLANKS),
-                Math.max(96, population * 16));
-        addNeed(lines, village, "Stone", "stone",
-                count(village, Items.COBBLESTONE, Items.STONE, Items.ANDESITE, Items.DIORITE,
-                        Items.GRANITE, Items.STONE_BRICKS, Items.BRICKS),
-                Math.max(96, population * 16));
-        addNeed(lines, village, "Metal", "metal",
-                count(village, Items.IRON_INGOT, Items.GOLD_INGOT, Items.COPPER_INGOT),
-                Math.max(24, population * 4));
-        addNeed(lines, village, "Farm supplies", "farming",
-                count(village, Items.WHEAT_SEEDS, Items.BEETROOT_SEEDS, Items.PUMPKIN_SEEDS,
-                        Items.MELON_SEEDS, Items.BONE_MEAL),
-                Math.max(32, population * 4));
-        addNeed(lines, village, "Fish", "fishing",
-                count(village, Items.COD, Items.SALMON, Items.TROPICAL_FISH, Items.PUFFERFISH),
-                Math.max(24, population * 3));
-
-        lines.sort(Comparator
-                .comparingInt(NeedLine::permille).reversed()
-                .thenComparing(NeedLine::label));
-
-        return lines.stream()
+    private static List<String> buildNeeds(
+            VillageSavedData data,
+            VillageSavedData.VillageRecord village) {
+        return data.publicRequestsForVillage(village.id()).stream()
                 .limit(5)
-                .map(line -> line.label + ": " + line.current + "/" + line.target
-                        + " (" + urgency(line.permille) + ")")
+                .map(request -> {
+                    String label = requestLabel(request.itemKey());
+                    String amount = request.remainingCount() > 0
+                            ? " " + request.remainingCount()
+                            : "";
+                    String text = urgencyLabel(request.urgency()) + " " + label + amount;
+                    if (!request.reason().isBlank()) text += " - " + request.reason();
+                    if (!request.context().isBlank()) text += " [" + request.context() + "]";
+                    return text;
+                })
                 .toList();
     }
 
-    private static void addNeed(List<NeedLine> lines, VillageSavedData.VillageRecord village,
-                                String label, String category, int current, int target) {
-        int permille = village.marketPermille(category);
-        if (permille <= 1000 || current >= target) return;
-        lines.add(new NeedLine(label, current, target, permille));
+    private static String urgencyLabel(String urgency) {
+        if ("emergency".equals(urgency)) return "Emergency:";
+        if ("high".equals(urgency)) return "High:";
+        return "Normal:";
     }
 
-    private static String urgency(int permille) {
-        if (permille >= 1600) return "Emergency";
-        if (permille >= 1350) return "High";
-        return "Normal";
+    private static String requestLabel(String itemKey) {
+        if (itemKey == null || itemKey.isBlank()) return "Support";
+        if (itemKey.startsWith("category:")) {
+            String category = itemKey.substring("category:".length());
+            return switch (category) {
+                case "food" -> "Food";
+                case "wood" -> "Wood";
+                case "stone" -> "Stone";
+                case "metal" -> "Metal";
+                case "farming" -> "Farm supplies";
+                case "fishing" -> "Fishing stock";
+                default -> category;
+            };
+        }
+        if ("tag:minecraft:planks".equals(itemKey)) return "Planks";
+        if ("tag:minecraft:wool".equals(itemKey)) return "Wool";
+        int colon = itemKey.indexOf(':');
+        return colon >= 0 ? itemKey.substring(colon + 1).replace('_', ' ') : itemKey;
     }
 
     private static List<String> buildProjects(VillageSavedData data, VillageSavedData.VillageRecord village) {
@@ -218,12 +212,4 @@ public final class VillageStatusNetworking {
                 .toList();
     }
 
-    private static int count(VillageSavedData.VillageRecord village, Item... items) {
-        int total = 0;
-        for (Item item : items) total += village.ledgerCount(VillageStorageService.itemKey(item));
-        return total;
-    }
-
-    private record NeedLine(String label, int current, int target, int permille) {
-    }
 }
