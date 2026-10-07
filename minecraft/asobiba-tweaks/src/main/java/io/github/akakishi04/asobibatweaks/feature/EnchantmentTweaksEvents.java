@@ -18,6 +18,7 @@ import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.tags.EntityTypeTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
@@ -31,6 +32,7 @@ import net.neoforged.neoforge.common.Tags;
 import net.neoforged.neoforge.event.AnvilUpdateEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
+import net.neoforged.neoforge.event.entity.living.LivingHealEvent;
 import net.neoforged.neoforge.event.entity.living.LivingHurtEvent;
 import net.neoforged.neoforge.event.entity.living.LivingFallEvent;
 import net.neoforged.neoforge.event.entity.player.AnvilRepairEvent;
@@ -51,6 +53,7 @@ public final class EnchantmentTweaksEvents {
     private static final String BANE_OF_ARTHROPODS = "minecraft:bane_of_arthropods";
     private static final String FIRE_PROTECTION = "minecraft:fire_protection";
     private static final String BLAST_PROTECTION = "minecraft:blast_protection";
+    private static final String FIRE_ASPECT = "minecraft:fire_aspect";
     private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
     private static final String PROTECTION_LAST_DAMAGE = "asobibatweaks_protection_last_damage";
     private static final String PROJECTILE_LAST_DAMAGE = "asobibatweaks_projectile_last_damage";
@@ -70,6 +73,10 @@ public final class EnchantmentTweaksEvents {
     private static final String BLAST_ANCHOR_REDUCTION = "asobibatweaks_blast_anchor_reduction";
     private static final String BLAST_LAST_DAMAGE = "asobibatweaks_blast_last_damage";
     private static final String BLAST_CHAIN_COUNT = "asobibatweaks_blast_chain_count";
+    private static final String FIRE_ASPECT_FLASH_UNTIL = "asobibatweaks_fire_aspect_flash_until";
+    private static final String FIRE_ASPECT_FLASH_MULTIPLIER = "asobibatweaks_fire_aspect_flash_multiplier";
+    private static final String FIRE_ASPECT_CAUTERIZE_UNTIL = "asobibatweaks_fire_aspect_cauterize_until";
+    private static final String FIRE_ASPECT_CAUTERIZE_REDUCTION = "asobibatweaks_fire_aspect_cauterize_reduction";
 
     @SubscribeEvent
     public void onBlockDrops(BlockDropsEvent event) {
@@ -133,6 +140,54 @@ public final class EnchantmentTweaksEvents {
 
         if (bonus > 0.0D) {
             event.setAmount((float)(event.getAmount() * (1.0D + bonus)));
+        }
+    }
+
+    @SubscribeEvent
+    public void onFireAspectHurt(LivingHurtEvent event) {
+        if (!(event.getSource().getEntity() instanceof ServerPlayer player)
+                || event.getSource().getDirectEntity() != player
+                || player.getPersistentData().getBoolean(SMITE_ECHO_ACTIVE)
+                || player.level().isClientSide()
+                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || event.getAmount() <= 0.0F) {
+            return;
+        }
+
+        ItemStack weapon = player.getMainHandItem();
+        BranchRef fireAspect = branch(weapon, FIRE_ASPECT);
+        if (fireAspect == null) return;
+
+        int level = enchantmentLevel(weapon, FIRE_ASPECT);
+        if (level <= 0) return;
+
+        double strength = branchScale(fireAspect.mastery(), 0.0D, 1.0D);
+        int baseBurnTicks = 80 * level;
+        long now = player.level().getGameTime();
+
+        if (fireAspect.branch() == 0) {
+            double extension = 0.25D + 0.50D * strength;
+            int desired = (int)Math.round(baseBurnTicks * (1.0D + extension));
+            event.getEntity().setRemainingFireTicks(
+                    Math.max(event.getEntity().getRemainingFireTicks(), desired)
+            );
+        } else if (fireAspect.branch() == 1) {
+            int duration = Math.max(20, (int)Math.round(baseBurnTicks * 0.60D));
+            event.getEntity().setRemainingFireTicks(duration);
+            var data = event.getEntity().getPersistentData();
+            data.putLong(FIRE_ASPECT_FLASH_UNTIL, now + duration);
+            data.putInt(
+                    FIRE_ASPECT_FLASH_MULTIPLIER,
+                    (int)Math.round((1.20D + 0.40D * strength) * 1000.0D)
+            );
+        } else if (fireAspect.branch() == 2) {
+            int duration = Math.max(baseBurnTicks, event.getEntity().getRemainingFireTicks());
+            var data = event.getEntity().getPersistentData();
+            data.putLong(FIRE_ASPECT_CAUTERIZE_UNTIL, now + duration);
+            data.putInt(
+                    FIRE_ASPECT_CAUTERIZE_REDUCTION,
+                    (int)Math.round((0.10D + 0.20D * strength) * 1000.0D)
+            );
         }
     }
 
@@ -300,6 +355,24 @@ public final class EnchantmentTweaksEvents {
             event.setNewSpeed(event.getNewSpeed() * factor);
             return;
         }
+    }
+
+    @SubscribeEvent
+    public void onFlashBurnDamage(LivingDamageEvent event) {
+        if (event.getAmount() <= 0.0F || !event.getSource().is(DamageTypes.ON_FIRE)) return;
+
+        var data = event.getEntity().getPersistentData();
+        long now = event.getEntity().level().getGameTime();
+        if (!data.contains(FIRE_ASPECT_FLASH_UNTIL)
+                || now > data.getLong(FIRE_ASPECT_FLASH_UNTIL)) {
+            return;
+        }
+
+        double multiplier = Math.min(
+                1.60D,
+                Math.max(1.0D, data.getInt(FIRE_ASPECT_FLASH_MULTIPLIER) / 1000.0D)
+        );
+        event.setAmount((float)(event.getAmount() * multiplier));
     }
 
     @SubscribeEvent
@@ -798,6 +871,26 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
+    public void onCauterizeHeal(LivingHealEvent event) {
+        if (event.getAmount() <= 0.0F || !event.getEntity().isOnFire()) return;
+
+        var data = event.getEntity().getPersistentData();
+        long now = event.getEntity().level().getGameTime();
+        if (!data.contains(FIRE_ASPECT_CAUTERIZE_UNTIL)
+                || now > data.getLong(FIRE_ASPECT_CAUTERIZE_UNTIL)) {
+            return;
+        }
+
+        double reduction = Math.min(
+                0.30D,
+                Math.max(0.0D, data.getInt(FIRE_ASPECT_CAUTERIZE_REDUCTION) / 1000.0D)
+        );
+        if (reduction > 0.0D) {
+            event.setAmount((float)(event.getAmount() * (1.0D - reduction)));
+        }
+    }
+
+    @SubscribeEvent
     public void onAnvilUpdate(AnvilUpdateEvent event) {
         if (!AsobibaTweaksConfig.ENCHANTMENT_SWITCHING_ENABLED.getAsBoolean()) return;
         ItemStack left = event.getLeft();
@@ -1033,7 +1126,8 @@ public final class EnchantmentTweaksEvents {
                 || SMITE.equals(enchantmentId)
                 || BANE_OF_ARTHROPODS.equals(enchantmentId)
                 || FIRE_PROTECTION.equals(enchantmentId)
-                || BLAST_PROTECTION.equals(enchantmentId);
+                || BLAST_PROTECTION.equals(enchantmentId)
+                || FIRE_ASPECT.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -1122,6 +1216,14 @@ public final class EnchantmentTweaksEvents {
                 case 0 -> "Blast Anchor";
                 case 1 -> "Epicenter Resistance";
                 case 2 -> "Chain-Blast Resistance";
+                default -> "Unselected";
+            };
+        }
+        if (FIRE_ASPECT.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Long Burn";
+                case 1 -> "Flash Burn";
+                case 2 -> "Cauterize";
                 default -> "Unselected";
             };
         }

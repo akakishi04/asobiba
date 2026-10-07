@@ -39,7 +39,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Blast / Slipstream Wind Pressure | `PhysicsTransportEvents` | Implemented |
 | Wind Pressure Resistance | datapack enchantment + `PhysicsTransportEvents` | Implemented |
 | Growing Enchantments | `EnchantmentTweaksEvents`, `EnchantmentMasteryData` | Implemented |
-| Enchantment Branches | `EnchantmentTweaksEvents` | **V16+V17 expanded**: explicit branch-selection state plus concrete Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane of Arthropods / Fire Protection / Blast Protection branch effects; Mending is excluded from branch selection as designed. Remaining accepted branch families are still pending |
+| Enchantment Branches | `EnchantmentTweaksEvents` | **V16+V17 expanded**: explicit branch-selection state plus concrete Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane of Arthropods / Fire Protection / Blast Protection / Fire Aspect branch effects; Mending is excluded from branch selection as designed. Remaining accepted branch families are still pending |
 | Curse Growth | `EnchantmentTweaksEvents` | Implemented |
 | Fortune / Silk Touch Switching | `EnchantmentTweaksEvents` | Implemented |
 | Mastery Inheritance | `EnchantmentTweaksEvents` | Implemented |
@@ -239,3 +239,8 @@ Fire Protection now implements all three accepted branches. Rapid Extinguishing 
 ## V24 blast-protection note
 
 Blast Protection now implements all three accepted branches. Blast Anchor marks only a qualifying explosion hit and applies one bounded 20%-55% velocity reduction on the next player tick, then clears the marker so ordinary movement is unaffected. Epicenter Resistance adds 5%-20% post-vanilla damage reduction inside roughly 3 blocks and fades linearly to zero at 6 blocks. Chain-Blast Resistance tracks up to three recent qualifying explosions, adds 5%-12% remaining-damage reduction per prior blast within about 4 seconds, and resets after roughly 5 seconds without another explosion.
+
+
+## V25 fire-aspect note
+
+Fire Aspect now implements all three accepted branches for direct melee hits. Long Burn extends the normal 4-seconds-per-level burn window by 25%-75%. Flash Burn shortens that window to roughly 60% but marks only the resulting on-fire damage window for a 1.2x-1.6x burn-damage multiplier; lava/direct-fire damage is not multiplied. Cauterize marks the target for the expected burn window and reduces healing by 10%-30% only while the target is still burning. Smite Exorcism echo damage is explicitly excluded from re-triggering these weapon branches.
