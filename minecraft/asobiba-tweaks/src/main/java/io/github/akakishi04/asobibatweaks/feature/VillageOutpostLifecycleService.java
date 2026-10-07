@@ -31,6 +31,7 @@ public final class VillageOutpostLifecycleService {
     private static final int LOCAL_OUTPUT_BUFFER = 8;
     private static final int LOCAL_FOOD_TARGET = 24;
     private static final int FOUNDING_FOOD_TARGET = 48;
+    private static final int FARM_PLANTING_TARGET = 8;
 
     public VillageOutpostLifecycleService() {
     }
@@ -177,6 +178,7 @@ public final class VillageOutpostLifecycleService {
             case "forestry" -> "forester";
             case "quarry" -> "quarry";
             case "fishing" -> "fisher";
+            case "farm" -> "farmer";
             default -> "";
         };
         if (requiredDuty.isBlank()) return;
@@ -213,7 +215,8 @@ public final class VillageOutpostLifecycleService {
         VillageSavedData data = VillageSavedData.get(level);
         boolean needsOutputHaul = localOutputCount(data, site) >= 16;
         boolean needsFoodSupply = localFoodCount(data, site) < foodTarget(site);
-        if (!needsOutputHaul && !needsFoodSupply) return;
+        boolean needsFarmSupply = needsFarmPlantingSupply(data, site);
+        if (!needsOutputHaul && !needsFoodSupply && !needsFarmSupply) return;
 
         List<Villager> residents = level.getEntitiesOfClass(
                 Villager.class,
@@ -235,7 +238,8 @@ public final class VillageOutpostLifecycleService {
                 .ifPresent(v -> {
                     VillagerSimData.setOutpostSiteId(v, site.id());
                     VillagerSimData.setOutpostHaulMode(v,
-                            needsFoodSupply ? "supply_pickup" : "output_pickup");
+                            needsFoodSupply ? "supply_pickup"
+                                    : needsFarmSupply ? "farm_supply_pickup" : "output_pickup");
                 });
     }
 
@@ -254,6 +258,8 @@ public final class VillageOutpostLifecycleService {
                 mode = "output_delivery";
             } else if (localFoodCount(data, site) < foodTarget(site)) {
                 mode = "supply_pickup";
+            } else if (needsFarmPlantingSupply(data, site)) {
+                mode = "farm_supply_pickup";
             } else if (localOutputCount(data, site) >= 16) {
                 mode = "output_pickup";
             } else {
@@ -288,6 +294,30 @@ public final class VillageOutpostLifecycleService {
                 }
                 return true;
             }
+            case "farm_supply_pickup" -> {
+                VillageStorageService.LocatedContainer core =
+                        nearestCoreFarmSupplyStorage(level, data, village, site);
+                if (core == null) return true;
+
+                BlockPos target = core.record().pos();
+                if (villager.distanceToSqr(target.getCenter()) > 4.5D * 4.5D) {
+                    moveTowardLoaded(villager, level, target, 0.80D);
+                    return true;
+                }
+
+                int need = Math.min(8,
+                        Math.max(0, FARM_PLANTING_TARGET - localFarmPlantingCount(data, site)));
+                if (need <= 0) {
+                    VillagerSimData.setOutpostHaulMode(villager, "");
+                    return true;
+                }
+
+                if (loadFarmSupplyFromContainer(villager, level, core.container(), need)) {
+                    VillageStorageService.reconcileVillage(village.id(), level);
+                    VillagerSimData.setOutpostHaulMode(villager, "supply_delivery");
+                }
+                return true;
+            }
             case "supply_delivery" -> {
                 VillageStorageService.LocatedContainer local = localOutpostStorage(level, data, site);
                 if (local == null) return true;
@@ -303,7 +333,8 @@ public final class VillageOutpostLifecycleService {
                 site.setLastUsedGameTime(level.getGameTime());
                 data.touch();
                 VillagerSimData.setOutpostHaulMode(villager,
-                        localOutputCount(data, site) >= 16 ? "output_pickup" : "");
+                        localOutputCount(data, site) >= 16 ? "output_pickup"
+                                : needsFarmPlantingSupply(data, site) ? "farm_supply_pickup" : "");
                 return true;
             }
             case "output_pickup" -> {
@@ -336,7 +367,8 @@ public final class VillageOutpostLifecycleService {
                 depositCargo(villager, level, core.container());
                 VillageStorageService.reconcileVillage(village.id(), level);
                 VillagerSimData.setOutpostHaulMode(villager,
-                        localFoodCount(data, site) < foodTarget(site) ? "supply_pickup" : "");
+                        localFoodCount(data, site) < foodTarget(site) ? "supply_pickup"
+                                : needsFarmPlantingSupply(data, site) ? "farm_supply_pickup" : "");
                 return true;
             }
             default -> {
@@ -350,7 +382,7 @@ public final class VillageOutpostLifecycleService {
                                             VillageSavedData data,
                                             VillageSavedData.WorkSiteRecord site) {
         int available = localOutputCount(data, site);
-        int movable = Math.min(32, Math.max(0, available - LOCAL_OUTPUT_BUFFER));
+        int movable = Math.min(32, Math.max(0, available - localOutputReserve(site)));
         if (movable <= 0) return false;
 
         int remaining = movable;
@@ -400,6 +432,33 @@ public final class VillageOutpostLifecycleService {
             total += storage.cachedCounts().getOrDefault(VillageStorageService.itemKey(Items.CARROT), 0);
             total += storage.cachedCounts().getOrDefault(VillageStorageService.itemKey(Items.POTATO), 0);
             total += storage.cachedCounts().getOrDefault(VillageStorageService.itemKey(Items.BEETROOT), 0);
+            total += storage.cachedCounts().getOrDefault(VillageStorageService.itemKey(Items.WHEAT), 0);
+            total += storage.cachedCounts().getOrDefault(VillageStorageService.itemKey(Items.COD), 0);
+            total += storage.cachedCounts().getOrDefault(VillageStorageService.itemKey(Items.SALMON), 0);
+        }
+        return total;
+    }
+
+    private static int localOutputReserve(VillageSavedData.WorkSiteRecord site) {
+        return ("farm".equals(site.purpose()) || "fishing".equals(site.purpose()))
+                ? Math.max(LOCAL_OUTPUT_BUFFER, foodTarget(site))
+                : LOCAL_OUTPUT_BUFFER;
+    }
+
+    private static boolean needsFarmPlantingSupply(
+            VillageSavedData data, VillageSavedData.WorkSiteRecord site) {
+        return "farm".equals(site.purpose()) && localFarmPlantingCount(data, site) < FARM_PLANTING_TARGET;
+    }
+
+    private static int localFarmPlantingCount(
+            VillageSavedData data, VillageSavedData.WorkSiteRecord site) {
+        int total = 0;
+        for (VillageSavedData.StorageRecord storage : data.storagesForVillage(site.villageId())) {
+            if (!inside(storage.pos(), site.min(), site.max())) continue;
+            total += storage.cachedCounts().getOrDefault(
+                    VillageStorageService.itemKey(Items.WHEAT_SEEDS), 0);
+            total += storage.cachedCounts().getOrDefault(
+                    VillageStorageService.itemKey(Items.BEETROOT_SEEDS), 0);
         }
         return total;
     }
@@ -489,6 +548,67 @@ public final class VillageOutpostLifecycleService {
         return best;
     }
 
+    private static VillageStorageService.LocatedContainer nearestCoreFarmSupplyStorage(
+            ServerLevel level,
+            VillageSavedData data,
+            VillageSavedData.VillageRecord village,
+            VillageSavedData.WorkSiteRecord outpost) {
+        VillageStorageService.LocatedContainer best = null;
+        int bestDistance = Integer.MAX_VALUE;
+
+        for (VillageStorageService.LocatedContainer located :
+                VillageStorageService.containers(village.id(), level)) {
+            BlockPos pos = located.record().pos();
+            if (inside(pos, outpost.min(), outpost.max())) continue;
+
+            boolean hasSeed = false;
+            Container container = located.container();
+            for (int slot = 0; slot < container.getContainerSize(); slot++) {
+                ItemStack stack = container.getItem(slot);
+                if (stack.is(Items.WHEAT_SEEDS) || stack.is(Items.BEETROOT_SEEDS)) {
+                    hasSeed = true;
+                    break;
+                }
+            }
+            if (!hasSeed) continue;
+
+            int distance = pos.distManhattan(village.center());
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = located;
+            }
+        }
+        return best;
+    }
+
+    private static boolean loadFarmSupplyFromContainer(
+            Villager villager, ServerLevel level, Container container, int requested) {
+        int remaining = requested;
+        boolean moved = false;
+        for (int slot = 0; slot < container.getContainerSize() && remaining > 0; slot++) {
+            ItemStack stack = container.getItem(slot);
+            if (!(stack.is(Items.WHEAT_SEEDS) || stack.is(Items.BEETROOT_SEEDS))) continue;
+
+            int take = Math.min(remaining, stack.getCount());
+            ItemStack candidate = stack.copyWithCount(take);
+            if (!VillagerSimData.canInsertWorkCargo(
+                    villager, level.registryAccess(), candidate, PORTER_CARGO_SLOTS)) {
+                continue;
+            }
+
+            ItemStack remainder = VillagerSimData.insertWorkCargo(
+                    villager, level.registryAccess(), candidate, PORTER_CARGO_SLOTS);
+            int inserted = take - remainder.getCount();
+            if (inserted <= 0) continue;
+
+            stack.shrink(inserted);
+            container.setChanged();
+            remaining -= inserted;
+            moved = true;
+        }
+        return moved;
+    }
+
     private static int localOutputCount(VillageSavedData data, VillageSavedData.WorkSiteRecord site) {
         int total = 0;
         for (VillageSavedData.StorageRecord storage : data.storagesForVillage(site.villageId())) {
@@ -511,6 +631,10 @@ public final class VillageOutpostLifecycleService {
         if ("fishing".equals(purpose)) {
             return stack.is(Items.COD) || stack.is(Items.SALMON);
         }
+        if ("farm".equals(purpose)) {
+            return stack.is(Items.WHEAT) || stack.is(Items.CARROT)
+                    || stack.is(Items.POTATO) || stack.is(Items.BEETROOT);
+        }
         return false;
     }
 
@@ -525,6 +649,10 @@ public final class VillageOutpostLifecycleService {
         }
         if ("fishing".equals(purpose)) {
             return key.endsWith(":cod") || key.endsWith(":salmon");
+        }
+        if ("farm".equals(purpose)) {
+            return key.endsWith(":wheat") || key.endsWith(":carrot")
+                    || key.endsWith(":potato") || key.endsWith(":beetroot");
         }
         return false;
     }
@@ -598,6 +726,7 @@ public final class VillageOutpostLifecycleService {
             case "forestry" -> village.marketPermille("wood");
             case "quarry" -> village.marketPermille("stone");
             case "fishing" -> village.marketPermille("fishing");
+            case "farm" -> village.marketPermille("food");
             default -> 1000;
         };
     }
@@ -667,11 +796,36 @@ public final class VillageOutpostLifecycleService {
                         || level.getFluidState(surface.below()).is(net.minecraft.tags.FluidTags.WATER)) {
                     useful++;
                 }
+            } else if ("farm".equals(site.purpose())) {
+                var state = level.getBlockState(surface);
+                if ((state.is(Blocks.GRASS_BLOCK) || state.is(Blocks.DIRT)
+                        || state.is(Blocks.COARSE_DIRT) || state.is(Blocks.FARMLAND))
+                        && hasIrrigationWater(level, surface)) {
+                    useful++;
+                }
             }
 
             if (useful >= 4) return ResourceState.AVAILABLE;
         }
         return ResourceState.DEPLETED;
+    }
+
+    private static boolean hasIrrigationWater(ServerLevel level, BlockPos soil) {
+        int[][] directions = {
+                {1, 0}, {-1, 0}, {0, 1}, {0, -1},
+                {1, 1}, {1, -1}, {-1, 1}, {-1, -1}
+        };
+        for (int distance = 1; distance <= 4; distance++) {
+            for (int[] direction : directions) {
+                BlockPos probe = soil.offset(direction[0] * distance, 0, direction[1] * distance);
+                if (level.getFluidState(probe).is(net.minecraft.tags.FluidTags.WATER)
+                        || level.getFluidState(probe.above()).is(net.minecraft.tags.FluidTags.WATER)
+                        || level.getFluidState(probe.below()).is(net.minecraft.tags.FluidTags.WATER)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static boolean moveTowardLoaded(Villager villager, ServerLevel level, BlockPos target, double speed) {

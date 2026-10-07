@@ -36,6 +36,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BedPart;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -171,8 +172,8 @@ public final class VillageSimulationEvents {
                     () -> runIfActive(villager, level, () -> tickFisher(villager, level)));
         } else if (AsobibaTweaksConfig.VILLAGE_LOGISTICS_ENABLED.getAsBoolean()
                 && "farmer".equals(duty)) {
-            VillageSimulationScheduler.enqueueWorker(level, "farmer_export:" + id,
-                    () -> runIfActive(villager, level, () -> exportVillagerFood(villager, level)));
+            VillageSimulationScheduler.enqueueWorker(level, "farmer:" + id,
+                    () -> runIfActive(villager, level, () -> tickFarmer(villager, level)));
         }
 
         if (AsobibaTweaksConfig.MOB_USED_BUILDINGS_ENABLED.getAsBoolean()) {
@@ -923,11 +924,15 @@ public final class VillageSimulationEvents {
 
         int fishing = village.marketPermille("fishing");
         if (fishing > best) {
+            best = fishing;
             purpose = "fishing";
         }
 
-        // Farm Outposts remain accepted but are not selected until their irrigated
-        // crop-site provisioning and physical harvest loop are complete.
+        int food = village.marketPermille("food");
+        if (food > best) {
+            purpose = "farm";
+        }
+
         return purpose;
     }
 
@@ -957,6 +962,7 @@ public final class VillageSimulationEvents {
     private static boolean outpostSupportsPurpose(ServerLevel level, BlockPos center,
                                                   String purpose, Villager villager) {
         int useful = 0;
+        boolean farmWater = false;
         int samples = 64;
 
         for (int i = 0; i < samples; i++) {
@@ -998,8 +1004,9 @@ public final class VillageSimulationEvents {
                 }
                 case "farm" -> {
                     if (state.is(Blocks.GRASS_BLOCK) || state.is(Blocks.DIRT)
-                            || state.is(Blocks.COARSE_DIRT)) {
+                            || state.is(Blocks.COARSE_DIRT) || state.is(Blocks.FARMLAND)) {
                         useful++;
+                        if (hasIrrigationWater(level, surface)) farmWater = true;
                     }
                 }
                 default -> {
@@ -1007,7 +1014,25 @@ public final class VillageSimulationEvents {
                 }
             }
 
-            if (useful >= 8) return true;
+            if (useful >= 8 && (!"farm".equals(purpose) || farmWater)) return true;
+        }
+        return false;
+    }
+
+    private static boolean hasIrrigationWater(ServerLevel level, BlockPos soil) {
+        int[][] directions = {
+                {1, 0}, {-1, 0}, {0, 1}, {0, -1},
+                {1, 1}, {1, -1}, {-1, 1}, {-1, -1}
+        };
+        for (int distance = 1; distance <= 4; distance++) {
+            for (int[] direction : directions) {
+                BlockPos probe = soil.offset(direction[0] * distance, 0, direction[1] * distance);
+                if (level.getFluidState(probe).is(FluidTags.WATER)
+                        || level.getFluidState(probe.above()).is(FluidTags.WATER)
+                        || level.getFluidState(probe.below()).is(FluidTags.WATER)) {
+                    return true;
+                }
+            }
         }
         return false;
     }
@@ -1362,6 +1387,230 @@ public final class VillageSimulationEvents {
         if (source.isEmpty()) nearest.discard();
     }
 
+    private static void tickFarmer(Villager villager, ServerLevel level) {
+        var siteId = VillagerSimData.outpostSiteId(villager);
+        if (siteId.isPresent()) {
+            VillageSavedData data = VillageSavedData.get(level);
+            VillageSavedData.WorkSiteRecord site = data.workSite(siteId.get()).orElse(null);
+            if (site != null && "outpost".equals(site.type()) && "active".equals(site.state())
+                    && "farm".equals(site.purpose())) {
+                tickFarmOutpost(villager, level, data, site);
+                return;
+            }
+        }
+        exportVillagerFood(villager, level);
+    }
+
+    private static void tickFarmOutpost(
+            Villager villager,
+            ServerLevel level,
+            VillageSavedData data,
+            VillageSavedData.WorkSiteRecord site) {
+        if (!isWorkTime(level) || level.getGameTime() % 240 != Math.floorMod(villager.getId(), 240)) return;
+
+        boolean carryingSeed = VillagerSimData.workCargoCount(
+                villager, level.registryAccess(), WORKER_CARGO_SLOTS, Items.WHEAT_SEEDS) > 0
+                || VillagerSimData.workCargoCount(
+                villager, level.registryAccess(), WORKER_CARGO_SLOTS, Items.BEETROOT_SEEDS) > 0;
+        if (carryingSeed) {
+            plantFarmCropFromCargo(villager, level, data, site);
+            return;
+        }
+
+        if (VillagerSimData.hasWorkCargo(villager, level.registryAccess(), WORKER_CARGO_SLOTS)) {
+            depositWorkCargo(villager, level, WORKER_CARGO_SLOTS);
+            return;
+        }
+
+        BlockPos center = workSiteCenter(site);
+        for (int attempt = 0; attempt < 48; attempt++) {
+            if (!VillageSimulationScheduler.tryConsumeWorkerProbe(level)) return;
+
+            int x = site.min().getX() + villager.getRandom().nextInt(
+                    Math.max(1, site.max().getX() - site.min().getX() + 1));
+            int z = site.min().getZ() + villager.getRandom().nextInt(
+                    Math.max(1, site.max().getZ() - site.min().getZ() + 1));
+            BlockPos column = new BlockPos(x, level.getMinBuildHeight(), z);
+            if (!VillageSimulationScheduler.isChunkLoaded(level, column)) continue;
+
+            int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+            BlockPos surface = new BlockPos(x, Math.max(level.getMinBuildHeight(), y - 1), z);
+            for (int dy = 0; dy <= 2; dy++) {
+                BlockPos cropPos = surface.above(dy);
+                BlockState cropState = level.getBlockState(cropPos);
+                ItemStack harvest = matureFarmHarvest(cropState);
+                if (harvest.isEmpty()) continue;
+
+                if (!VillagerSimData.canInsertWorkCargo(
+                        villager, level.registryAccess(), harvest, WORKER_CARGO_SLOTS)) {
+                    depositWorkCargo(villager, level, WORKER_CARGO_SLOTS);
+                    return;
+                }
+                if (villager.distanceToSqr(cropPos.getCenter()) > 6.25D) {
+                    villager.getNavigation().moveTo(
+                            cropPos.getX() + 0.5D, cropPos.getY(), cropPos.getZ() + 0.5D, 0.68D);
+                    return;
+                }
+
+                level.setBlock(cropPos, resetFarmCrop(cropState), Block.UPDATE_ALL);
+                VillagerSimData.insertWorkCargo(
+                        villager, level.registryAccess(), harvest, WORKER_CARGO_SLOTS);
+                site.setLastUsedGameTime(level.getGameTime());
+                data.touch();
+                return;
+            }
+        }
+
+        loadLocalFarmSeedCargo(villager, level, data, site);
+    }
+
+    private static ItemStack matureFarmHarvest(BlockState state) {
+        if (state.is(Blocks.WHEAT)
+                && state.getValue(BlockStateProperties.AGE_7) >= BlockStateProperties.MAX_AGE_7) {
+            return new ItemStack(Items.WHEAT);
+        }
+        if (state.is(Blocks.CARROTS)
+                && state.getValue(BlockStateProperties.AGE_7) >= BlockStateProperties.MAX_AGE_7) {
+            return new ItemStack(Items.CARROT);
+        }
+        if (state.is(Blocks.POTATOES)
+                && state.getValue(BlockStateProperties.AGE_7) >= BlockStateProperties.MAX_AGE_7) {
+            return new ItemStack(Items.POTATO);
+        }
+        if (state.is(Blocks.BEETROOTS)
+                && state.getValue(BlockStateProperties.AGE_3) >= BlockStateProperties.MAX_AGE_3) {
+            return new ItemStack(Items.BEETROOT);
+        }
+        return ItemStack.EMPTY;
+    }
+
+    private static BlockState resetFarmCrop(BlockState state) {
+        if (state.is(Blocks.BEETROOTS)) {
+            return state.setValue(BlockStateProperties.AGE_3, 0);
+        }
+        if (state.is(Blocks.WHEAT) || state.is(Blocks.CARROTS) || state.is(Blocks.POTATOES)) {
+            return state.setValue(BlockStateProperties.AGE_7, 0);
+        }
+        return state;
+    }
+
+    private static void plantFarmCropFromCargo(
+            Villager villager,
+            ServerLevel level,
+            VillageSavedData data,
+            VillageSavedData.WorkSiteRecord site) {
+        BlockPos center = workSiteCenter(site);
+        for (int attempt = 0; attempt < 48; attempt++) {
+            if (!VillageSimulationScheduler.tryConsumeWorkerProbe(level)) return;
+
+            int x = site.min().getX() + villager.getRandom().nextInt(
+                    Math.max(1, site.max().getX() - site.min().getX() + 1));
+            int z = site.min().getZ() + villager.getRandom().nextInt(
+                    Math.max(1, site.max().getZ() - site.min().getZ() + 1));
+            if (Math.abs(x - center.getX()) <= 3 && Math.abs(z - center.getZ()) <= 3) continue;
+
+            BlockPos column = new BlockPos(x, level.getMinBuildHeight(), z);
+            if (!VillageSimulationScheduler.isChunkLoaded(level, column)) continue;
+            int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+            BlockPos soil = new BlockPos(x, Math.max(level.getMinBuildHeight(), y - 1), z);
+            BlockState soilState = level.getBlockState(soil);
+            if (!(soilState.is(Blocks.GRASS_BLOCK) || soilState.is(Blocks.DIRT)
+                    || soilState.is(Blocks.COARSE_DIRT) || soilState.is(Blocks.FARMLAND))) {
+                continue;
+            }
+            if (!level.getBlockState(soil.above()).isAir() || !hasIrrigationWater(level, soil)) continue;
+
+            if (villager.distanceToSqr(soil.getCenter()) > 6.25D) {
+                villager.getNavigation().moveTo(
+                        soil.getX() + 0.5D, soil.getY() + 1.0D, soil.getZ() + 0.5D, 0.68D);
+                return;
+            }
+
+            BlockState crop;
+            if (VillagerSimData.takeWorkCargo(
+                    villager, level.registryAccess(), WORKER_CARGO_SLOTS, Items.WHEAT_SEEDS, 1)) {
+                crop = Blocks.WHEAT.defaultBlockState();
+            } else if (VillagerSimData.takeWorkCargo(
+                    villager, level.registryAccess(), WORKER_CARGO_SLOTS, Items.BEETROOT_SEEDS, 1)) {
+                crop = Blocks.BEETROOTS.defaultBlockState();
+            } else {
+                return;
+            }
+
+            if (!soilState.is(Blocks.FARMLAND)) {
+                level.setBlock(soil, Blocks.FARMLAND.defaultBlockState(), Block.UPDATE_ALL);
+            }
+            level.setBlock(soil.above(), crop, Block.UPDATE_ALL);
+            site.setLastUsedGameTime(level.getGameTime());
+            data.touch();
+            return;
+        }
+    }
+
+    private static void loadLocalFarmSeedCargo(
+            Villager villager,
+            ServerLevel level,
+            VillageSavedData data,
+            VillageSavedData.WorkSiteRecord site) {
+        VillageSavedData.StorageRecord bestRecord = null;
+        Container bestContainer = null;
+        int bestDistance = Integer.MAX_VALUE;
+
+        for (VillageSavedData.StorageRecord storage : data.storagesForVillage(site.villageId())) {
+            BlockPos pos = storage.pos();
+            if (pos.getX() < site.min().getX() || pos.getX() > site.max().getX()
+                    || pos.getY() < site.min().getY() || pos.getY() > site.max().getY()
+                    || pos.getZ() < site.min().getZ() || pos.getZ() > site.max().getZ()) {
+                continue;
+            }
+            if (!VillageSimulationScheduler.isChunkLoaded(level, pos)) continue;
+            if (!(level.getBlockEntity(pos) instanceof Container container)) continue;
+
+            boolean hasSeed = false;
+            for (int slot = 0; slot < container.getContainerSize(); slot++) {
+                ItemStack stack = container.getItem(slot);
+                if (stack.is(Items.WHEAT_SEEDS) || stack.is(Items.BEETROOT_SEEDS)) {
+                    hasSeed = true;
+                    break;
+                }
+            }
+            if (!hasSeed) continue;
+
+            int distance = villager.blockPosition().distManhattan(pos);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestRecord = storage;
+                bestContainer = container;
+            }
+        }
+
+        if (bestRecord == null || bestContainer == null) return;
+        BlockPos target = bestRecord.pos();
+        if (villager.distanceToSqr(target.getCenter()) > 9.0D) {
+            villager.getNavigation().moveTo(
+                    target.getX() + 0.5D, target.getY(), target.getZ() + 0.5D, 0.70D);
+            return;
+        }
+
+        int remaining = 4;
+        for (int slot = 0; slot < bestContainer.getContainerSize() && remaining > 0; slot++) {
+            ItemStack stack = bestContainer.getItem(slot);
+            if (!(stack.is(Items.WHEAT_SEEDS) || stack.is(Items.BEETROOT_SEEDS))) continue;
+
+            int take = Math.min(remaining, stack.getCount());
+            ItemStack candidate = stack.copyWithCount(take);
+            ItemStack remainder = VillagerSimData.insertWorkCargo(
+                    villager, level.registryAccess(), candidate, WORKER_CARGO_SLOTS);
+            int inserted = take - remainder.getCount();
+            if (inserted <= 0) continue;
+
+            stack.shrink(inserted);
+            bestContainer.setChanged();
+            remaining -= inserted;
+        }
+        VillageStorageService.reconcileVillage(site.villageId(), level);
+    }
+
     private static void exportVillagerFood(Villager villager, ServerLevel level) {
         if (level.getGameTime() % 300 != Math.floorMod(villager.getId(), 300)) return;
         if (!areaLoaded(level, villager.blockPosition(), 12, 3, 3)) return;
@@ -1582,9 +1831,14 @@ public final class VillageSimulationEvents {
         }
 
         if (outpost && !colony) {
+            String outpostPurpose = project.parameter("outpost_purpose");
+            BlockPos workMin = "farm".equals(outpostPurpose) ? base.offset(-8, -2, -8) : base;
+            BlockPos workMax = "farm".equals(outpostPurpose)
+                    ? base.offset(12, Math.max(maxY, 4), 12)
+                    : base.offset(4, maxY, 4);
             VillageSavedData.WorkSiteRecord site =
-                    data.createWorkSite(project.villageId(), "outpost", base, base.offset(4, maxY, 4));
-            site.setPurpose(project.parameter("outpost_purpose"));
+                    data.createWorkSite(project.villageId(), "outpost", workMin, workMax);
+            site.setPurpose(outpostPurpose);
             site.setCreatedGameTime(level.getGameTime());
             site.setLastUsedGameTime(level.getGameTime());
             site.setLastLifecycleGameTime(level.getGameTime());
