@@ -137,6 +137,24 @@ public final class AsobibaTweaksConfig {
     public static final ModConfigSpec.DoubleValue ISLAND_THRESHOLD = BUILDER.defineInRange("worldgen.islandThreshold", 0.68D, 0.40D, 0.95D);
     public static final ModConfigSpec.DoubleValue ISLAND_FREQUENCY = BUILDER.defineInRange("worldgen.islandFrequency", 0.32D, 0.0D, 1.0D);
     public static final ModConfigSpec.DoubleValue ARCHIPELAGO_FREQUENCY = BUILDER.defineInRange("worldgen.archipelagoFrequency", 0.12D, 0.0D, 1.0D);
+
+    public static final ModConfigSpec.BooleanValue CONTINENTAL_RIVERS_ENABLED =
+            bool("worldgen.continentalRivers", true, "Generate deterministic connected river networks inside continental world generation.");
+    public static final ModConfigSpec.DoubleValue RIVER_DENSITY =
+            BUILDER.defineInRange("worldgen.rivers.density", 1.0D, 0.25D, 2.0D);
+    public static final ModConfigSpec.DoubleValue MAJOR_RIVER_FREQUENCY =
+            BUILDER.defineInRange("worldgen.rivers.majorFrequency", 0.18D, 0.0D, 1.0D);
+    public static final ModConfigSpec.DoubleValue RIVER_WIDTH_SCALE =
+            BUILDER.defineInRange("worldgen.rivers.widthScale", 1.0D, 0.5D, 2.5D);
+    public static final ModConfigSpec.DoubleValue RIVER_MEANDER_STRENGTH =
+            BUILDER.defineInRange("worldgen.rivers.meanderStrength", 0.65D, 0.0D, 1.5D);
+    public static final ModConfigSpec.DoubleValue RIVER_LAKE_FREQUENCY =
+            BUILDER.defineInRange("worldgen.rivers.lakeFrequency", 0.12D, 0.0D, 1.0D);
+    public static final ModConfigSpec.DoubleValue RIVER_WATERFALL_FREQUENCY =
+            BUILDER.defineInRange("worldgen.rivers.waterfallFrequency", 0.15D, 0.0D, 1.0D);
+    public static final ModConfigSpec.DoubleValue RIVER_DELTA_FREQUENCY =
+            BUILDER.defineInRange("worldgen.rivers.deltaFrequency", 0.18D, 0.0D, 1.0D);
+
     public static final ModConfigSpec.BooleanValue LARGE_BOATS_ENABLED = bool("ocean.largeBoats", true, "Enable large cargo-boat behavior.");
     public static final ModConfigSpec.BooleanValue OCEAN_DEBRIS_ENABLED = bool("ocean.driftDebris", true, "Enable sparse ocean drift debris.");
 
