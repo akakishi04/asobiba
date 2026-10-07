@@ -39,7 +39,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Blast / Slipstream Wind Pressure | `PhysicsTransportEvents` | Implemented |
 | Wind Pressure Resistance | datapack enchantment + `PhysicsTransportEvents` | Implemented |
 | Growing Enchantments | `EnchantmentTweaksEvents`, `EnchantmentMasteryData` | Implemented |
-| Enchantment Branches | `EnchantmentTweaksEvents` | **V16+V17 expanded**: explicit branch-selection state plus concrete Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection branch effects; Mending is excluded from branch selection as designed. Remaining accepted branch families are still pending |
+| Enchantment Branches | `EnchantmentTweaksEvents` | **V16+V17 expanded**: explicit branch-selection state plus concrete Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness branch effects; Mending is excluded from branch selection as designed. Remaining accepted branch families are still pending |
 | Curse Growth | `EnchantmentTweaksEvents` | Implemented |
 | Fortune / Silk Touch Switching | `EnchantmentTweaksEvents` | Implemented |
 | Mastery Inheritance | `EnchantmentTweaksEvents` | Implemented |
@@ -214,3 +214,8 @@ Protection now implements all three accepted specialization branches at the fina
 ## V19 projectile-protection note
 
 Projectile Protection now implements all three accepted branches on post-vanilla projectile damage. Frontal Guard checks the incoming source direction against the player's view and applies its extra reduction only inside the forward ~120-degree arc. Sniper Resistance uses attacker-to-player range as the bounded runtime proxy for projectile travel distance, beginning at 16 blocks and reaching full branch strength at 48+. Barrage Resistance tracks recent qualifying projectile hits in player-persistent state, adds mastery-scaled mitigation for up to three prior hits inside the 3-second chain window, and resets after the accepted quiet period. Damage types that bypass enchantments remain excluded.
+
+
+## V20 sharpness-branch note
+
+Sharpness now implements all three accepted melee specializations before armor mitigation. Duel tracks only the attacker's current target, last direct-melee hit time and a five-stack bounded streak; consecutive hits within about 3 seconds gain +1%-3% damage per prior stack. Heavy Strike applies +5%-15% only to roughly 95%+ charged direct melee hits. Execute applies +5%-20% only while the struck target is already below 25% maximum health. Projectile/indirect player damage does not trigger these branches.

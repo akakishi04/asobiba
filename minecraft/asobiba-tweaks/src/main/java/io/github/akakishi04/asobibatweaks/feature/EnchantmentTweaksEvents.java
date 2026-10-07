@@ -27,6 +27,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.AnvilUpdateEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
+import net.neoforged.neoforge.event.entity.living.LivingHurtEvent;
 import net.neoforged.neoforge.event.entity.living.LivingFallEvent;
 import net.neoforged.neoforge.event.entity.player.AnvilRepairEvent;
 import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
@@ -41,10 +42,14 @@ public final class EnchantmentTweaksEvents {
     private static final String RESPIRATION = "minecraft:respiration";
     private static final String PROTECTION = "minecraft:protection";
     private static final String PROJECTILE_PROTECTION = "minecraft:projectile_protection";
+    private static final String SHARPNESS = "minecraft:sharpness";
     private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
     private static final String PROTECTION_LAST_DAMAGE = "asobibatweaks_protection_last_damage";
     private static final String PROJECTILE_LAST_DAMAGE = "asobibatweaks_projectile_last_damage";
     private static final String PROJECTILE_BARRAGE_COUNT = "asobibatweaks_projectile_barrage_count";
+    private static final String SHARPNESS_DUEL_TARGET = "asobibatweaks_sharpness_duel_target";
+    private static final String SHARPNESS_DUEL_TIME = "asobibatweaks_sharpness_duel_time";
+    private static final String SHARPNESS_DUEL_STACKS = "asobibatweaks_sharpness_duel_stacks";
 
     @SubscribeEvent
     public void onBlockDrops(BlockDropsEvent event) {
@@ -56,6 +61,57 @@ public final class EnchantmentTweaksEvents {
 
         if (AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()) {
             applyFortuneBranch(event, tool, player);
+        }
+    }
+
+    @SubscribeEvent
+    public void onSharpnessHurt(LivingHurtEvent event) {
+        if (!(event.getSource().getEntity() instanceof ServerPlayer player)
+                || event.getSource().getDirectEntity() != player
+                || player.level().isClientSide()
+                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || event.getAmount() <= 0.0F) {
+            return;
+        }
+
+        ItemStack weapon = player.getMainHandItem();
+        BranchRef sharpness = branch(weapon, SHARPNESS);
+        if (sharpness == null) return;
+
+        double strength = branchScale(sharpness.mastery(), 0.0D, 1.0D);
+        double bonus = 0.0D;
+
+        if (sharpness.branch() == 0) {
+            long now = player.level().getGameTime();
+            var persistent = player.getPersistentData();
+            int targetId = event.getEntity().getId();
+            int previousTarget = persistent.getInt(SHARPNESS_DUEL_TARGET);
+            long last = persistent.getLong(SHARPNESS_DUEL_TIME);
+            int stacks = persistent.getInt(SHARPNESS_DUEL_STACKS);
+
+            boolean continuing = persistent.contains(SHARPNESS_DUEL_TIME)
+                    && previousTarget == targetId
+                    && now - last <= 60L;
+            int priorStacks = continuing ? Math.min(5, stacks) : 0;
+            double perStack = 0.01D + 0.02D * strength;
+            bonus = priorStacks * perStack;
+
+            persistent.putInt(SHARPNESS_DUEL_TARGET, targetId);
+            persistent.putLong(SHARPNESS_DUEL_TIME, now);
+            persistent.putInt(SHARPNESS_DUEL_STACKS, continuing ? Math.min(5, stacks + 1) : 1);
+        } else if (sharpness.branch() == 1) {
+            if (player.getAttackStrengthScale(0.5F) >= 0.95F) {
+                bonus = 0.05D + 0.10D * strength;
+            }
+        } else if (sharpness.branch() == 2) {
+            float maxHealth = Math.max(1.0F, event.getEntity().getMaxHealth());
+            if (event.getEntity().getHealth() / maxHealth < 0.25F) {
+                bonus = 0.05D + 0.15D * strength;
+            }
+        }
+
+        if (bonus > 0.0D) {
+            event.setAmount((float)(event.getAmount() * (1.0D + bonus)));
         }
     }
 
@@ -603,7 +659,8 @@ public final class EnchantmentTweaksEvents {
                 || FORTUNE.equals(enchantmentId)
                 || RESPIRATION.equals(enchantmentId)
                 || PROTECTION.equals(enchantmentId)
-                || PROJECTILE_PROTECTION.equals(enchantmentId);
+                || PROJECTILE_PROTECTION.equals(enchantmentId)
+                || SHARPNESS.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -652,6 +709,14 @@ public final class EnchantmentTweaksEvents {
                 case 0 -> "Frontal Guard";
                 case 1 -> "Sniper Resistance";
                 case 2 -> "Barrage Resistance";
+                default -> "Unselected";
+            };
+        }
+        if (SHARPNESS.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Duel";
+                case 1 -> "Heavy Strike";
+                case 2 -> "Execute";
                 default -> "Unselected";
             };
         }
