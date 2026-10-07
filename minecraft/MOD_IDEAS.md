@@ -780,15 +780,42 @@ Design constraint: settlement identity follows persistent lived/logistical integ
 ### Villager breeding overhaul
 Replace the purely bed/food-shaped feel with settlement-aware reproduction.
 
-Candidate rules:
-- couples/households are not required, but repeated proximity and shared home usage can influence pairing.
-- reproduction rate considers food reserves, free beds, housing quality, recent disasters and village population pressure.
-- severe shortages suppress births naturally.
-- abundant food and stable housing allow gradual population growth.
-- newborns should create real future resource demand rather than appearing as free population.
-- population caps scale with available housing/infrastructure, not merely raw bed count.
-- post-disaster recovery can temporarily increase willingness to repopulate once food/housing recover.
-- avoid explicit genetic/eugenic mechanics; the feature is demographic simulation, not trait breeding.
+Accepted direction:
+- each village maintains a lightweight **Population Pressure / sustainable-population estimate**
+- reproduction is evaluated periodically, initially about **once per Minecraft day**, rather than continuously
+- reproduction considers:
+  - usable housing capacity
+  - available/free home space
+  - real village food reserves and expected food production
+  - average villager Welfare
+  - recent fires, raids and other major disasters
+  - infrastructure/logistics capacity
+  - current population relative to estimated sustainable population
+- population capacity is **not equal to raw bed count**
+- the effective sustainable population is constrained by the weakest major support factor among housing, food supply and infrastructure/logistics
+- adding large numbers of beds alone therefore cannot force unlimited population growth
+- initial reproduction eligibility target:
+  - village average Welfare around **60+**
+  - at least **2 usable spare housing spaces**
+  - roughly **3 Minecraft days of food reserve**
+  - current population below about **90% of estimated sustainable population**
+- meeting these thresholds makes reproduction possible rather than guaranteed; healthier surplus conditions increase the chance/rate
+- severe food shortage, overcrowding, poor Welfare or unresolved disaster damage strongly suppresses reproduction
+- villages use a **settlement-wide birth cooldown / rate limiter** so population cannot spike through many simultaneous breeding events
+- small settlements should normally grow on the order of one child every several Minecraft days under healthy conditions rather than multiplying rapidly
+- larger settlements may sustain somewhat more births, but the rate still scales conservatively with real support capacity
+- newborn villagers immediately count as real future demand:
+  - they consume food
+  - require eventual housing
+  - contribute to welfare/infrastructure load
+  - later create profession/work demand when they mature
+- explicit permanent spouse/family simulation is not required
+- repeated proximity and shared-home usage may form lightweight household affinity that helps choose home/social behavior, but it does not create genetics or mandatory family trees
+- after major population loss, a temporary **Recovery Growth** state may modestly increase reproduction once food, housing and Welfare have actually recovered
+- Recovery Growth does not bypass resource requirements and does not activate while the settlement remains unstable
+- avoid explicit genetic/eugenic mechanics; this is demographic/resource simulation, not trait breeding
+
+Design constraint: village population should grow only when the settlement can actually support more people, and every new villager should create visible resource and infrastructure demand.
 
 ### Forest regeneration
 Forests can recover slowly without requiring every sapling to be manually placed.
