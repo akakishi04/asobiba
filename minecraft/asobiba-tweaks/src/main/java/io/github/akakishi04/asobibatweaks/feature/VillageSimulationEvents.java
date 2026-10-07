@@ -146,7 +146,7 @@ public final class VillageSimulationEvents {
         if ("carpenter".equals(duty)
                 && AsobibaTweaksConfig.VILLAGE_CARPENTER_ENABLED.getAsBoolean()
                 && AsobibaTweaksConfig.VILLAGE_AUTONOMOUS_GROWTH_ENABLED.getAsBoolean()) {
-            if (hasActiveBuildingProject(villager, level) || villager.getPersistentData().getBoolean(BUILD_ACTIVE)) {
+            if (hasActiveCarpenterProject(villager, level) || villager.getPersistentData().getBoolean(BUILD_ACTIVE)) {
                 VillageSimulationScheduler.enqueueWorker(level, "carpenter_work:" + id,
                         () -> runIfActive(villager, level, () -> tickCarpenter(villager, level)));
             } else {
@@ -236,10 +236,12 @@ public final class VillageSimulationEvents {
         }
     }
 
-    private static boolean hasActiveBuildingProject(Villager villager, ServerLevel level) {
+    private static boolean hasActiveCarpenterProject(Villager villager, ServerLevel level) {
         var villageId = VillagerSimData.villageId(villager);
         if (villageId.isEmpty()) return false;
-        return selectBuildingProject(VillageSavedData.get(level), villageId.get()) != null;
+        VillageSavedData data = VillageSavedData.get(level);
+        return selectBuildingProject(data, villageId.get()) != null
+                || selectRoadProject(data, villageId.get()) != null;
     }
 
     private static void tickCarpenter(Villager villager, ServerLevel level) {
@@ -258,6 +260,12 @@ public final class VillageSimulationEvents {
                     && !"cancelled".equals(active.phase()); i++) {
                 buildOneProjectStep(villager, level, active);
             }
+            return;
+        }
+
+        VillageSavedData.ProjectRecord road = selectRoadProject(data, villageId.get());
+        if (road != null) {
+            buildOneRoadProjectStep(villager, level, road);
             return;
         }
 
@@ -338,6 +346,13 @@ public final class VillageSimulationEvents {
     private static VillageSavedData.ProjectRecord selectBuildingProject(VillageSavedData data, java.util.UUID villageId) {
         for (VillageSavedData.ProjectRecord project : data.activeProjectsForVillage(villageId)) {
             if ("building".equals(project.type())) return project;
+        }
+        return null;
+    }
+
+    private static VillageSavedData.ProjectRecord selectRoadProject(VillageSavedData data, java.util.UUID villageId) {
+        for (VillageSavedData.ProjectRecord project : data.activeProjectsForVillage(villageId)) {
+            if ("road".equals(project.type())) return project;
         }
         return null;
     }
@@ -459,6 +474,105 @@ public final class VillageSimulationEvents {
 
         project.setPausedReason("");
         project.setPhase(projectPhase(project));
+        VillageSavedData.get(level).touch();
+    }
+
+    private static void buildOneRoadProjectStep(Villager villager, ServerLevel level,
+                                                VillageSavedData.ProjectRecord project) {
+        if (!isWorkTime(level)) return;
+        BlockPos from = project.site();
+        BlockPos to = project.anchor();
+        if (to == null) {
+            project.setPhase("cancelled");
+            project.setPausedReason("missing route endpoint");
+            VillageSavedData.get(level).touch();
+            return;
+        }
+
+        int dx = to.getX() - from.getX();
+        int dz = to.getZ() - from.getZ();
+        int steps = Math.max(Math.abs(dx), Math.abs(dz));
+        if (steps <= 0) {
+            completeRoadProject(level, project);
+            return;
+        }
+        if (steps > 160) {
+            project.setPhase("paused");
+            project.setPausedReason("route exceeds V5 initial range");
+            VillageSavedData.get(level).touch();
+            return;
+        }
+
+        int cursor = project.workCursor();
+        if (cursor > steps) {
+            completeRoadProject(level, project);
+            return;
+        }
+
+        double t = cursor / (double)steps;
+        int x = (int)Math.round(from.getX() + dx * t);
+        int z = (int)Math.round(from.getZ() + dz * t);
+        BlockPos column = new BlockPos(x, level.getMinBuildHeight(), z);
+        if (!VillageSimulationScheduler.isChunkLoaded(level, column)) {
+            project.setPausedReason("waiting for chunk");
+            project.setPhase("paused");
+            VillageSavedData.get(level).touch();
+            return;
+        }
+        if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) return;
+
+        int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+        BlockPos surface = new BlockPos(x, y - 1, z);
+        if (villager.distanceToSqr(surface.getCenter()) > 7.0D * 7.0D) {
+            project.setPausedReason("worker travelling");
+            project.setPhase("roadwork");
+            villager.getNavigation().moveTo(surface.getX() + 0.5D, surface.getY() + 1.0D,
+                    surface.getZ() + 0.5D, 0.75D);
+            VillageSavedData.get(level).touch();
+            return;
+        }
+
+        BlockState state = level.getBlockState(surface);
+        if (level.getFluidState(surface).is(FluidTags.WATER)) {
+            Block plank = plankFromName(project.parameter("plank"));
+            Item plankItem = plank.asItem();
+            if (!ensureCargoItem(villager, level, plankItem, 1, CARPENTER_CARGO_SLOTS)) {
+                project.setPausedReason("missing bridge planks");
+                project.setPhase("paused");
+                VillageSavedData.get(level).touch();
+                return;
+            }
+            if (!VillagerSimData.takeWorkCargo(villager, level.registryAccess(),
+                    CARPENTER_CARGO_SLOTS, plankItem, 1)) return;
+            level.setBlock(surface, plank.defaultBlockState(), Block.UPDATE_ALL);
+            project.setPhase("bridge_deck");
+        } else if (state.is(Blocks.GRASS_BLOCK) || state.is(Blocks.DIRT) || state.is(Blocks.COARSE_DIRT)) {
+            level.setBlock(surface, Blocks.DIRT_PATH.defaultBlockState(), Block.UPDATE_ALL);
+            project.setPhase("roadwork");
+        } else if (!state.is(Blocks.DIRT_PATH)) {
+            // Preserve player/structure blocks; skip rather than bulldozing.
+            project.setPhase("roadwork");
+        }
+
+        project.setPausedReason("");
+        project.setWorkCursor(cursor + 1);
+        VillageSavedData.get(level).touch();
+
+        if (project.workCursor() > steps) completeRoadProject(level, project);
+    }
+
+    private static void completeRoadProject(ServerLevel level, VillageSavedData.ProjectRecord project) {
+        project.setPhase("complete");
+        project.setPausedReason("");
+        String rawRoute = project.parameter("route_id");
+        if (!rawRoute.isBlank()) {
+            try {
+                java.util.UUID routeId = java.util.UUID.fromString(rawRoute);
+                VillageSavedData.get(level).route(routeId).ifPresent(route -> route.setState("active"));
+            } catch (IllegalArgumentException ignored) {
+                // Keep the physical road; only the cached RouteRecord link is malformed.
+            }
+        }
         VillageSavedData.get(level).touch();
     }
 
@@ -766,44 +880,6 @@ public final class VillageSimulationEvents {
             if (clear) return base;
         }
         return null;
-    }
-
-    private static void buildRoadAndBridge(ServerLevel level, Villager villager, BlockPos from, BlockPos to) {
-        int dx = to.getX() - from.getX();
-        int dz = to.getZ() - from.getZ();
-        int steps = Math.min(56, Math.max(Math.abs(dx), Math.abs(dz)));
-        if (steps <= 0) return;
-
-        for (int i = 0; i <= steps; i++) {
-            double t = i / (double)steps;
-            int x = (int)Math.round(from.getX() + dx * t);
-            int z = (int)Math.round(from.getZ() + dz * t);
-            BlockPos columnProbe = new BlockPos(x, level.getMinBuildHeight(), z);
-            if (!VillageSimulationScheduler.isChunkLoaded(level, columnProbe)) break;
-            if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) break;
-            int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
-            BlockPos surface = new BlockPos(x, y - 1, z);
-            if (level.getFluidState(surface).is(FluidTags.WATER)) {
-                if (takeAnyPlank(level, villager)) {
-                    level.setBlock(surface, choosePlanks(level, surface).defaultBlockState(), Block.UPDATE_ALL);
-                }
-            } else {
-                BlockState state = level.getBlockState(surface);
-                if (state.is(Blocks.GRASS_BLOCK) || state.is(Blocks.DIRT) || state.is(Blocks.COARSE_DIRT)) {
-                    level.setBlock(surface, Blocks.DIRT_PATH.defaultBlockState(), Block.UPDATE_ALL);
-                }
-            }
-        }
-    }
-
-    private static boolean takeAnyPlank(ServerLevel level, Villager villager) {
-        return VillageStorageService.take(villager, level, Items.OAK_PLANKS, 1)
-                || VillageStorageService.take(villager, level, Items.SPRUCE_PLANKS, 1)
-                || VillageStorageService.take(villager, level, Items.BIRCH_PLANKS, 1)
-                || VillageStorageService.take(villager, level, Items.ACACIA_PLANKS, 1)
-                || VillageStorageService.take(villager, level, Items.JUNGLE_PLANKS, 1)
-                || VillageStorageService.take(villager, level, Items.MANGROVE_PLANKS, 1)
-                || VillageStorageService.take(villager, level, Items.CHERRY_PLANKS, 1);
     }
 
     private static void sendSettlers(ServerLevel level, Villager carpenter, BlockPos target, int targetCount) {
