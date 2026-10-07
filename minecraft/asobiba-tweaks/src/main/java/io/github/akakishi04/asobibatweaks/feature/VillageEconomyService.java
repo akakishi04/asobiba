@@ -84,7 +84,8 @@ public final class VillageEconomyService {
         for (UUID buildingId : village.buildingIds()) {
             VillageSavedData.BuildingRecord building = data.building(buildingId).orElse(null);
             if (building != null && "valid".equals(building.validationState())
-                    && "residential".equals(building.classification())) {
+                    && ("residential".equals(building.classification())
+                    || "mixed_use".equals(building.classification()))) {
                 recordedHousing += building.validatedCapacity();
             }
         }
