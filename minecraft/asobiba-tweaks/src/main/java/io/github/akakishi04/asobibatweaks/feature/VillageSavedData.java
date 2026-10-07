@@ -228,6 +228,82 @@ public final class VillageSavedData extends SavedData {
         return record;
     }
 
+    public boolean mergeVillageInto(UUID sourceVillageId, UUID targetVillageId) {
+        if (sourceVillageId == null || targetVillageId == null || sourceVillageId.equals(targetVillageId)) return false;
+        VillageRecord source = villages.get(sourceVillageId);
+        VillageRecord target = villages.get(targetVillageId);
+        if (source == null || target == null) return false;
+
+        target.addDistrictCenter(source.center);
+        for (Long packed : source.districtCenters) target.districtCenters.add(packed);
+
+        // Preserve both cultures in the surviving planner instead of replacing either one.
+        source.buildingCulture.forEach((key, value) ->
+                target.buildingCulture.merge(key, Math.max(1, value / 2), Integer::sum));
+
+        for (UUID id : new ArrayList<>(source.buildingIds)) {
+            BuildingRecord record = buildings.get(id);
+            if (record != null) {
+                record.villageId = targetVillageId;
+                target.buildingIds.add(id);
+            }
+        }
+        source.buildingIds.clear();
+
+        for (UUID id : new ArrayList<>(source.storageIds)) {
+            StorageRecord record = storages.get(id);
+            if (record != null) {
+                record.villageId = targetVillageId;
+                target.storageIds.add(id);
+            }
+        }
+        source.storageIds.clear();
+
+        for (UUID id : new ArrayList<>(source.workSiteIds)) {
+            WorkSiteRecord record = workSites.get(id);
+            if (record != null) {
+                record.villageId = targetVillageId;
+                target.workSiteIds.add(id);
+            }
+        }
+        source.workSiteIds.clear();
+
+        for (UUID id : new ArrayList<>(source.routeIds)) {
+            RouteRecord record = routes.get(id);
+            if (record != null) {
+                record.villageId = targetVillageId;
+                target.routeIds.add(id);
+            }
+        }
+        source.routeIds.clear();
+
+        for (UUID id : new ArrayList<>(source.projectIds)) {
+            ProjectRecord record = projects.get(id);
+            if (record != null) {
+                record.villageId = targetVillageId;
+                target.projectIds.add(id);
+            }
+        }
+        source.projectIds.clear();
+
+        for (UUID resident : new ArrayList<>(source.residentIds)) {
+            target.residentIds.add(resident);
+        }
+        source.residentIds.clear();
+
+        source.lifecycle = "merged";
+        source.mergedIntoVillageId = targetVillageId;
+        target.settlementViability = Math.max(target.settlementViability, source.settlementViability);
+        target.sustainablePopulation = Math.max(target.sustainablePopulation,
+                target.lastKnownPopulation + source.lastKnownPopulation);
+        source.mergeEvidenceDays.clear();
+        target.mergeEvidenceDays.remove(sourceVillageId.toString());
+
+        rebuildChunkIndex();
+        setDirty();
+        return true;
+    }
+
     public boolean transferOutpostSite(UUID workSiteId, UUID targetVillageId) {
         WorkSiteRecord site = workSites.get(workSiteId);
         VillageRecord target = villages.get(targetVillageId);
@@ -565,6 +641,7 @@ public final class VillageSavedData extends SavedData {
         private BlockPos center;
         private final long createdGameTime;
         private UUID parentVillageId;
+        private UUID mergedIntoVillageId;
         private String lifecycle = "active";
         private final Set<UUID> residentIds = new LinkedHashSet<>();
         private final Set<UUID> buildingIds = new LinkedHashSet<>();
@@ -608,6 +685,7 @@ public final class VillageSavedData extends SavedData {
         public String lifecycle() { return lifecycle; }
         public long createdGameTime() { return createdGameTime; }
         public UUID parentVillageId() { return parentVillageId; }
+        public UUID mergedIntoVillageId() { return mergedIntoVillageId; }
         public Set<UUID> residentIds() { return Collections.unmodifiableSet(residentIds); }
         public Set<UUID> buildingIds() { return Collections.unmodifiableSet(buildingIds); }
         public Set<UUID> storageIds() { return Collections.unmodifiableSet(storageIds); }
@@ -649,6 +727,7 @@ public final class VillageSavedData extends SavedData {
 
         public void setCenter(BlockPos center) { this.center = center.immutable(); }
         public void setParentVillageId(UUID value) { parentVillageId = value; }
+        public void setMergedIntoVillageId(UUID value) { mergedIntoVillageId = value; }
         public void addDistrictCenter(BlockPos pos) {
             if (pos != null) districtCenters.add(pos.asLong());
         }
@@ -732,6 +811,7 @@ public final class VillageSavedData extends SavedData {
             tag.putLong("center", center.asLong());
             tag.putLong("created", createdGameTime);
             putUuid(tag, "parent_village", parentVillageId);
+            putUuid(tag, "merged_into", mergedIntoVillageId);
             tag.putString("lifecycle", lifecycle);
             tag.put("residents", writeUuidSet(residentIds));
             tag.put("buildings", writeUuidSet(buildingIds));
@@ -777,6 +857,7 @@ public final class VillageSavedData extends SavedData {
 
             VillageRecord record = new VillageRecord(id, BlockPos.of(tag.getLong("center")), tag.getLong("created"));
             record.parentVillageId = readUuid(tag, "parent_village");
+            record.mergedIntoVillageId = readUuid(tag, "merged_into");
             record.lifecycle = safeText(tag.getString("lifecycle"), "active");
             record.residentIds.addAll(readUuidSet(tag, "residents"));
             record.buildingIds.addAll(readUuidSet(tag, "buildings"));
