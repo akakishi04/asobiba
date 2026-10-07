@@ -10,6 +10,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ArrowItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.component.ItemContainerContents;
 
 public final class QuiverData {
@@ -18,6 +19,7 @@ public final class QuiverData {
     private static final String ROOT = "asobibatweaks_quiver";
     private static final String EQUIPPED = "equipped";
     private static final String SELECTED = "selected";
+    private static final String ITEM_SELECTED = "asobibatweaks_selected_ammo";
 
     private QuiverData() {
     }
@@ -46,17 +48,38 @@ public final class QuiverData {
         if (!isQuiver(stack)) return;
 
         root.put(EQUIPPED, stack.copyWithCount(1).saveOptional(player.level().registryAccess()));
-        setSelectedSlot(player, selectedSlot(player));
     }
 
     public static int selectedSlot(Player player) {
+        ItemStack quiver = equipped(player);
+        if (!quiver.isEmpty()) {
+            CustomData custom = quiver.get(DataComponents.CUSTOM_DATA);
+            if (custom != null && custom.contains(ITEM_SELECTED)) {
+                return clampSlot(custom.copyTag().getInt(ITEM_SELECTED));
+            }
+        }
+
+        // Legacy/fallback player state for worlds created before selection moved onto the item.
         CompoundTag root = root(player, false);
-        int selected = root.contains(SELECTED, Tag.TAG_INT) ? root.getInt(SELECTED) : 0;
-        return Math.max(0, Math.min(AMMO_SLOTS - 1, selected));
+        return clampSlot(root.contains(SELECTED, Tag.TAG_INT) ? root.getInt(SELECTED) : 0);
     }
 
     public static void setSelectedSlot(Player player, int slot) {
-        root(player, true).putInt(SELECTED, Math.max(0, Math.min(AMMO_SLOTS - 1, slot)));
+        int selected = clampSlot(slot);
+        root(player, true).putInt(SELECTED, selected);
+
+        ItemStack quiver = equipped(player);
+        if (quiver.isEmpty()) return;
+
+        CustomData.update(
+                DataComponents.CUSTOM_DATA,
+                quiver,
+                tag -> tag.putInt(ITEM_SELECTED, selected)
+        );
+        root(player, true).put(
+                EQUIPPED,
+                quiver.saveOptional(player.level().registryAccess())
+        );
     }
 
     public static ItemStack ammo(Player player, int slot) {
@@ -132,6 +155,10 @@ public final class QuiverData {
         if (contents == null || slot < 0 || slot >= contents.getSlots()) return ItemStack.EMPTY;
         ItemStack stack = contents.getStackInSlot(slot);
         return isAmmo(stack) ? stack : ItemStack.EMPTY;
+    }
+
+    private static int clampSlot(int slot) {
+        return Math.max(0, Math.min(AMMO_SLOTS - 1, slot));
     }
 
     private static CompoundTag root(Player player, boolean create) {
