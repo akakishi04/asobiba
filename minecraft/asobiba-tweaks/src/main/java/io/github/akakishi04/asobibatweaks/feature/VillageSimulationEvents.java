@@ -524,6 +524,7 @@ public final class VillageSimulationEvents {
     private static void buildOneRoadProjectStep(Villager villager, ServerLevel level,
                                                 VillageSavedData.ProjectRecord project) {
         if (!isWorkTime(level)) return;
+        if ("route_planning".equals(project.phase())) return;
         BlockPos from = project.site();
         BlockPos to = project.anchor();
         if (to == null) {
@@ -536,14 +537,13 @@ public final class VillageSimulationEvents {
         VillageSavedData data = VillageSavedData.get(level);
         VillageSavedData.RouteRecord route = routeForProject(data, project);
 
-        int dx = to.getX() - from.getX();
-        int dz = to.getZ() - from.getZ();
-        int steps = Math.max(Math.abs(dx), Math.abs(dz));
-        if (steps <= 0) {
+        List<BlockPos> roadNodes = roadPathNodes(route, from, to);
+        int centerCount = roadCenterlineCount(roadNodes);
+        if (centerCount <= 1) {
             completeRoadProject(level, project);
             return;
         }
-        if (steps > 384) {
+        if (centerCount > 640) {
             project.setPhase("paused");
             project.setPausedReason("route exceeds bounded road range");
             data.touch();
@@ -551,7 +551,7 @@ public final class VillageSimulationEvents {
         }
 
         int targetWidth = roadTargetWidth(project, route);
-        int workUnits = (steps + 1) * targetWidth;
+        int workUnits = centerCount * targetWidth;
         int cursor = project.workCursor();
         if (cursor >= workUnits) {
             completeRoadProject(level, project);
@@ -560,16 +560,16 @@ public final class VillageSimulationEvents {
 
         int centerCursor = cursor / targetWidth;
         int lane = cursor % targetWidth;
-        double t = centerCursor / (double)steps;
-        int x = (int)Math.round(from.getX() + dx * t);
-        int z = (int)Math.round(from.getZ() + dz * t);
+        RoadPoint roadPoint = roadPointAt(roadNodes, centerCursor);
+        int x = roadPoint.pos().getX();
+        int z = roadPoint.pos().getZ();
 
         int laneOffset = switch (targetWidth) {
             case 2 -> lane;
             case 3 -> lane - 1;
             default -> 0;
         };
-        if (Math.abs(dx) >= Math.abs(dz)) z += laneOffset;
+        if (Math.abs(roadPoint.dx()) >= Math.abs(roadPoint.dz())) z += laneOffset;
         else x += laneOffset;
 
         BlockPos column = new BlockPos(x, level.getMinBuildHeight(), z);
@@ -646,6 +646,57 @@ public final class VillageSimulationEvents {
         data.touch();
 
         if (project.workCursor() >= workUnits) completeRoadProject(level, project);
+    }
+
+    private static List<BlockPos> roadPathNodes(
+            VillageSavedData.RouteRecord route, BlockPos from, BlockPos to) {
+        if (route != null && route.waypoints().size() >= 2) return route.waypoints();
+        return List.of(from, to);
+    }
+
+    private static int roadCenterlineCount(List<BlockPos> nodes) {
+        if (nodes.size() < 2) return nodes.size();
+        int count = 1;
+        for (int i = 1; i < nodes.size(); i++) {
+            BlockPos a = nodes.get(i - 1);
+            BlockPos b = nodes.get(i);
+            count += Math.max(Math.abs(b.getX() - a.getX()), Math.abs(b.getZ() - a.getZ()));
+        }
+        return count;
+    }
+
+    private static RoadPoint roadPointAt(List<BlockPos> nodes, int index) {
+        BlockPos first = nodes.get(0);
+        if (index <= 0 || nodes.size() < 2) {
+            BlockPos next = nodes.size() >= 2 ? nodes.get(1) : first;
+            return new RoadPoint(first, next.getX() - first.getX(), next.getZ() - first.getZ());
+        }
+
+        int remaining = index;
+        for (int i = 1; i < nodes.size(); i++) {
+            BlockPos a = nodes.get(i - 1);
+            BlockPos b = nodes.get(i);
+            int dx = b.getX() - a.getX();
+            int dz = b.getZ() - a.getZ();
+            int length = Math.max(Math.abs(dx), Math.abs(dz));
+            if (length <= 0) continue;
+            if (remaining <= length) {
+                double t = remaining / (double)length;
+                BlockPos point = new BlockPos(
+                        (int)Math.round(a.getX() + dx * t),
+                        0,
+                        (int)Math.round(a.getZ() + dz * t));
+                return new RoadPoint(point, dx, dz);
+            }
+            remaining -= length;
+        }
+
+        BlockPos last = nodes.get(nodes.size() - 1);
+        BlockPos previous = nodes.get(Math.max(0, nodes.size() - 2));
+        return new RoadPoint(last, last.getX() - previous.getX(), last.getZ() - previous.getZ());
+    }
+
+    private record RoadPoint(BlockPos pos, int dx, int dz) {
     }
 
     private static VillageSavedData.RouteRecord routeForProject(
@@ -2025,9 +2076,34 @@ public final class VillageSimulationEvents {
         road.setParameter("plank", plankName(chooseBuildingPlanks(level, from, carpenter)));
         road.setParameter("road_quality", route.quality());
         road.setParameter("road_width", Integer.toString(route.width()));
-        road.setPhase("planned");
+        road.setPhase("route_planning");
+        road.setPausedReason("planning terrain route");
         road.setWorkCursor(0);
         data.touch();
+
+        java.util.UUID routeId = route.id();
+        java.util.UUID projectId = road.id();
+        VillageSimulationScheduler.enqueueRouteSearch(
+                level,
+                "road_geometry:" + routeId,
+                () -> {
+                    VillageSavedData latest = VillageSavedData.get(level);
+                    VillageSavedData.RouteRecord plannedRoute = latest.route(routeId).orElse(null);
+                    VillageSavedData.ProjectRecord plannedProject = latest.project(projectId).orElse(null);
+                    if (plannedRoute == null || plannedProject == null
+                            || "complete".equals(plannedProject.phase())
+                            || "cancelled".equals(plannedProject.phase())) {
+                        return;
+                    }
+
+                    List<BlockPos> waypoints =
+                            VillageRoadPlanner.planLoaded(level, plannedRoute.from(), plannedRoute.to());
+                    latest.setRouteWaypoints(routeId, waypoints);
+                    plannedProject.setPhase("planned");
+                    plannedProject.setPausedReason("");
+                    latest.touch();
+                }
+        );
     }
 
     private static int countBlocks(ServerLevel level, BlockPos center, int radius, java.util.function.Predicate<BlockState> predicate) {

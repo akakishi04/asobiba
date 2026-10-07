@@ -26,7 +26,7 @@ import net.minecraft.world.level.saveddata.SavedData;
  * indexes, caches and planning state that later passes can reconcile against loaded chunks.</p>
  */
 public final class VillageSavedData extends SavedData {
-    public static final int SCHEMA_VERSION = 5;
+    public static final int SCHEMA_VERSION = 6;
 
     private static final String NAME = "asobibatweaks_villages";
     private static final Factory<VillageSavedData> FACTORY =
@@ -101,6 +101,15 @@ public final class VillageSavedData extends SavedData {
 
     public Optional<RouteRecord> route(UUID id) {
         return Optional.ofNullable(routes.get(id));
+    }
+
+    public void setRouteWaypoints(UUID routeId, List<BlockPos> points) {
+        RouteRecord route = routes.get(routeId);
+        if (route == null) return;
+        for (ChunkIndexEntry entry : chunkIndex.values()) entry.routeIds.remove(routeId);
+        route.setWaypoints(points);
+        indexRoute(route);
+        setDirty();
     }
 
     public Optional<ProjectRecord> project(UUID id) {
@@ -604,10 +613,18 @@ public final class VillageSavedData extends SavedData {
     }
 
     private void indexRoute(RouteRecord record) {
-        int fromChunkX = record.from.getX() >> 4;
-        int fromChunkZ = record.from.getZ() >> 4;
-        int toChunkX = record.to.getX() >> 4;
-        int toChunkZ = record.to.getZ() >> 4;
+        List<BlockPos> points = record.waypoints();
+        if (points.size() < 2) points = List.of(record.from, record.to);
+        for (int i = 1; i < points.size(); i++) {
+            indexRouteSegment(record.id, points.get(i - 1), points.get(i));
+        }
+    }
+
+    private void indexRouteSegment(UUID routeId, BlockPos from, BlockPos to) {
+        int fromChunkX = from.getX() >> 4;
+        int fromChunkZ = from.getZ() >> 4;
+        int toChunkX = to.getX() >> 4;
+        int toChunkZ = to.getZ() >> 4;
 
         int dx = toChunkX - fromChunkX;
         int dz = toChunkZ - fromChunkZ;
@@ -615,7 +632,7 @@ public final class VillageSavedData extends SavedData {
         if (steps <= 0) {
             chunkIndex.computeIfAbsent(
                     ChunkPos.asLong(fromChunkX, fromChunkZ),
-                    ignored -> new ChunkIndexEntry()).routeIds.add(record.id);
+                    ignored -> new ChunkIndexEntry()).routeIds.add(routeId);
             return;
         }
 
@@ -625,7 +642,7 @@ public final class VillageSavedData extends SavedData {
             int chunkZ = (int)Math.round(fromChunkZ + dz * t);
             chunkIndex.computeIfAbsent(
                     ChunkPos.asLong(chunkX, chunkZ),
-                    ignored -> new ChunkIndexEntry()).routeIds.add(record.id);
+                    ignored -> new ChunkIndexEntry()).routeIds.add(routeId);
         }
     }
 
@@ -1267,6 +1284,7 @@ public final class VillageSavedData extends SavedData {
         private int trafficScore;
         private String quality = "dirt";
         private int width = 1;
+        private final List<Long> waypoints = new ArrayList<>();
         private String state = "active";
 
         private RouteRecord(UUID id, UUID villageId, String type, BlockPos from, BlockPos to) {
@@ -1285,6 +1303,11 @@ public final class VillageSavedData extends SavedData {
         public int trafficScore() { return trafficScore; }
         public String quality() { return quality; }
         public int width() { return Math.max(1, Math.min(3, width)); }
+        public List<BlockPos> waypoints() {
+            List<BlockPos> result = new ArrayList<>(waypoints.size());
+            for (long packed : waypoints) result.add(BlockPos.of(packed));
+            return Collections.unmodifiableList(result);
+        }
         public String state() { return state; }
 
         public void setType(String value) { type = safeText(value, "path"); }
@@ -1294,6 +1317,26 @@ public final class VillageSavedData extends SavedData {
             quality = "stone".equals(normalized) || "gravel".equals(normalized) ? normalized : "dirt";
         }
         public void setWidth(int value) { width = Math.max(1, Math.min(3, value)); }
+        public void setWaypoints(List<BlockPos> points) {
+            waypoints.clear();
+            if (points == null || points.isEmpty()) return;
+            if (points.size() <= 128) {
+                for (BlockPos point : points) {
+                    if (point != null) waypoints.add(point.immutable().asLong());
+                }
+                return;
+            }
+
+            BlockPos first = points.get(0);
+            BlockPos last = points.get(points.size() - 1);
+            if (first != null) waypoints.add(first.immutable().asLong());
+            int stride = Math.max(1, (int)Math.ceil((points.size() - 2) / 126.0D));
+            for (int i = 1; i < points.size() - 1 && waypoints.size() < 127; i += stride) {
+                BlockPos point = points.get(i);
+                if (point != null) waypoints.add(point.immutable().asLong());
+            }
+            if (last != null) waypoints.add(last.immutable().asLong());
+        }
         public void setState(String value) { state = safeText(value, "active"); }
 
         private CompoundTag save() {
@@ -1306,6 +1349,13 @@ public final class VillageSavedData extends SavedData {
             tag.putInt("traffic", trafficScore);
             tag.putString("quality", quality);
             tag.putInt("width", width());
+            ListTag waypointRows = new ListTag();
+            for (long packed : waypoints) {
+                CompoundTag row = new CompoundTag();
+                row.putLong("pos", packed);
+                waypointRows.add(row);
+            }
+            tag.put("waypoints", waypointRows);
             tag.putString("state", state);
             return tag;
         }
@@ -1320,6 +1370,13 @@ public final class VillageSavedData extends SavedData {
             record.trafficScore = Math.max(0, tag.getInt("traffic"));
             record.setQuality(tag.contains("quality", Tag.TAG_STRING) ? tag.getString("quality") : "dirt");
             record.setWidth(tag.contains("width", Tag.TAG_INT) ? tag.getInt("width") : 1);
+            ListTag waypointRows = tag.getList("waypoints", Tag.TAG_COMPOUND);
+            List<BlockPos> loadedWaypoints = new ArrayList<>();
+            for (int i = 0; i < waypointRows.size(); i++) {
+                CompoundTag row = waypointRows.getCompound(i);
+                if (row.contains("pos", Tag.TAG_LONG)) loadedWaypoints.add(BlockPos.of(row.getLong("pos")));
+            }
+            record.setWaypoints(loadedWaypoints);
             record.state = safeText(tag.getString("state"), "active");
             return record;
         }
