@@ -101,6 +101,13 @@ public final class VillageSimulationEvents {
         }
 
         ServerLevel level = (ServerLevel)villager.level();
+
+        // V1 persistence foundation: initialize the namespaced per-villager state and make
+        // sure the dimension-level SavedData is available. Village identity bootstrap is
+        // intentionally deferred until its spatial reconciliation rules are implemented.
+        VillagerSimData.ensureInitialized(villager);
+        VillageSavedData.get(level);
+
         if (AsobibaTweaksConfig.VILLAGE_FIRE_EMERGENCY_ENABLED.getAsBoolean()) {
             respondToFire(villager, level);
         }
