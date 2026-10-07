@@ -1,11 +1,17 @@
 package io.github.akakishi04.asobibatweaks.feature;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 
 /**
  * Compact persistent per-villager simulation state.
@@ -29,6 +35,7 @@ public final class VillagerSimData {
     private static final String REMIGRATION_COOLDOWN_UNTIL = "remigration_cooldown_until";
     private static final String DISPLACED = "displaced";
     private static final String ORIGIN_VILLAGE_ID = "origin_village_id";
+    private static final String WORK_CARGO = "work_cargo";
 
     private VillagerSimData() {
     }
@@ -145,6 +152,110 @@ public final class VillagerSimData {
         CompoundTag root = root(villager, true);
         root.putBoolean(DISPLACED, false);
         root.remove(ORIGIN_VILLAGE_ID);
+    }
+
+    public static List<ItemStack> workCargo(Villager villager, HolderLookup.Provider registries, int capacity) {
+        int safeCapacity = Math.max(0, capacity);
+        List<ItemStack> cargo = new ArrayList<>(safeCapacity);
+        for (int i = 0; i < safeCapacity; i++) cargo.add(ItemStack.EMPTY);
+
+        ListTag rows = root(villager, false).getList(WORK_CARGO, Tag.TAG_COMPOUND);
+        for (int i = 0; i < rows.size(); i++) {
+            CompoundTag row = rows.getCompound(i);
+            int slot = row.getInt("slot");
+            if (slot < 0 || slot >= safeCapacity) continue;
+            ItemStack stack = ItemStack.parseOptional(registries, row.getCompound("stack"));
+            cargo.set(slot, stack);
+        }
+        return cargo;
+    }
+
+    public static void setWorkCargo(Villager villager, HolderLookup.Provider registries, List<ItemStack> cargo, int capacity) {
+        int safeCapacity = Math.max(0, capacity);
+        ListTag rows = new ListTag();
+        for (int slot = 0; slot < Math.min(cargo.size(), safeCapacity); slot++) {
+            ItemStack stack = cargo.get(slot);
+            if (stack == null || stack.isEmpty()) continue;
+            CompoundTag row = new CompoundTag();
+            row.putInt("slot", slot);
+            row.put("stack", stack.saveOptional(registries));
+            rows.add(row);
+        }
+        root(villager, true).put(WORK_CARGO, rows);
+    }
+
+    /**
+     * Inserts into the persistent work cargo and returns the uninserted remainder.
+     */
+    public static ItemStack insertWorkCargo(Villager villager, HolderLookup.Provider registries,
+                                            ItemStack incoming, int capacity) {
+        if (incoming.isEmpty()) return ItemStack.EMPTY;
+        List<ItemStack> cargo = workCargo(villager, registries, capacity);
+        ItemStack work = incoming.copy();
+
+        for (int slot = 0; slot < cargo.size() && !work.isEmpty(); slot++) {
+            ItemStack existing = cargo.get(slot);
+            if (existing.isEmpty() || !ItemStack.isSameItemSameComponents(existing, work)
+                    || existing.getCount() >= existing.getMaxStackSize()) {
+                continue;
+            }
+            int move = Math.min(work.getCount(), existing.getMaxStackSize() - existing.getCount());
+            existing.grow(move);
+            work.shrink(move);
+        }
+
+        for (int slot = 0; slot < cargo.size() && !work.isEmpty(); slot++) {
+            if (!cargo.get(slot).isEmpty()) continue;
+            int move = Math.min(work.getCount(), work.getMaxStackSize());
+            cargo.set(slot, work.copyWithCount(move));
+            work.shrink(move);
+        }
+
+        setWorkCargo(villager, registries, cargo, capacity);
+        return work;
+    }
+
+    public static boolean hasWorkCargo(Villager villager, HolderLookup.Provider registries, int capacity) {
+        for (ItemStack stack : workCargo(villager, registries, capacity)) {
+            if (!stack.isEmpty()) return true;
+        }
+        return false;
+    }
+
+    public static int workCargoCount(Villager villager, HolderLookup.Provider registries,
+                                     int capacity, Item item) {
+        int total = 0;
+        for (ItemStack stack : workCargo(villager, registries, capacity)) {
+            if (stack.is(item)) total += stack.getCount();
+        }
+        return total;
+    }
+
+    public static boolean takeWorkCargo(Villager villager, HolderLookup.Provider registries,
+                                        int capacity, Item item, int count) {
+        if (count <= 0) return true;
+        List<ItemStack> cargo = workCargo(villager, registries, capacity);
+
+        int available = 0;
+        for (ItemStack stack : cargo) if (stack.is(item)) available += stack.getCount();
+        if (available < count) return false;
+
+        int remaining = count;
+        for (int slot = 0; slot < cargo.size() && remaining > 0; slot++) {
+            ItemStack stack = cargo.get(slot);
+            if (!stack.is(item)) continue;
+            int take = Math.min(remaining, stack.getCount());
+            stack.shrink(take);
+            remaining -= take;
+            if (stack.isEmpty()) cargo.set(slot, ItemStack.EMPTY);
+        }
+
+        setWorkCargo(villager, registries, cargo, capacity);
+        return true;
+    }
+
+    public static void clearWorkCargo(Villager villager) {
+        root(villager, true).remove(WORK_CARGO);
     }
 
     private static CompoundTag root(Villager villager, boolean create) {
