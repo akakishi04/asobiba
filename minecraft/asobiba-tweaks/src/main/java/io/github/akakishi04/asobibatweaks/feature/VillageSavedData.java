@@ -395,9 +395,20 @@ public final class VillageSavedData extends SavedData {
         target.workSiteIds.add(workSiteId);
         site.villageId = targetVillageId;
 
+        BlockPos siteCenter = new BlockPos(
+                (site.min.getX() + site.max.getX()) / 2,
+                (site.min.getY() + site.max.getY()) / 2,
+                (site.min.getZ() + site.max.getZ()) / 2
+        );
+
         for (BuildingRecord building : buildings.values()) {
             if (!sourceVillageId.equals(building.villageId)) continue;
-            if (!boundsOverlap(building.min, building.max, site.min, site.max)) continue;
+            BlockPos buildingCenter = new BlockPos(
+                    (building.min.getX() + building.max.getX()) / 2,
+                    (building.min.getY() + building.max.getY()) / 2,
+                    (building.min.getZ() + building.max.getZ()) / 2
+            );
+            if (buildingCenter.distManhattan(siteCenter) > 48) continue;
             source.buildingIds.remove(building.id);
             target.buildingIds.add(building.id);
             building.villageId = targetVillageId;
@@ -405,7 +416,7 @@ public final class VillageSavedData extends SavedData {
 
         for (StorageRecord storage : storages.values()) {
             if (!sourceVillageId.equals(storage.villageId)) continue;
-            if (!inside(storage.pos, site.min, site.max)) continue;
+            if (storage.pos.distManhattan(siteCenter) > 48) continue;
             source.storageIds.remove(storage.id);
             target.storageIds.add(storage.id);
             storage.villageId = targetVillageId;
