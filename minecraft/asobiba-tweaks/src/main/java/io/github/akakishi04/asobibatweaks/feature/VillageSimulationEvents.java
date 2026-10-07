@@ -268,9 +268,10 @@ public final class VillageSimulationEvents {
 
         boolean housingNeed = beds <= population + 1;
         boolean storageNeed = stores < Math.max(2, (population + 3) / 4);
-        boolean colony = AsobibaTweaksConfig.VILLAGE_FISSION_ENABLED.getAsBoolean()
-                && !housingNeed && !storageNeed && population >= 10
-                && skill >= 50 && Math.floorMod((int)(now / 24000L) + villager.getId(), 8) == 7;
+        VillageSavedData.VillageRecord village = data.village(villageId.get()).orElse(null);
+        VillageSavedData.WorkSiteRecord fissionOutpost = findFissionOutpost(
+                data, village, now, population, skill);
+        boolean colony = fissionOutpost != null;
         boolean outpost = !colony
                 && AsobibaTweaksConfig.VILLAGE_OUTPOSTS_ENABLED.getAsBoolean()
                 && !housingNeed && !storageNeed && population >= 6
@@ -289,8 +290,14 @@ public final class VillageSimulationEvents {
             return;
         }
 
-        int buildKind = storageNeed && !housingNeed ? 1 : 0;
-        BlockPos site = findBuildSite(villager, level, outpost, colony);
+        int buildKind = storageNeed && !housingNeed && !colony ? 1 : 0;
+        BlockPos site;
+        if (colony) {
+            BlockPos outpostCenter = workSiteCenter(fissionOutpost);
+            site = findBuildSiteNear(level, outpostCenter, villager, 8);
+        } else {
+            site = findBuildSite(villager, level, outpost, false);
+        }
         if (site == null) {
             villager.getPersistentData().putLong(NEXT_BUILD, now + 12000L);
             return;
@@ -298,7 +305,8 @@ public final class VillageSimulationEvents {
 
         String templateId;
         if (buildKind == 1) templateId = "storage_5x5";
-        else if (!outpost && !colony && skill >= 50 && population >= 8) templateId = "house_2story_5x5";
+        else if (colony) templateId = "house_2story_5x5";
+        else if (!outpost && skill >= 50 && population >= 8) templateId = "house_2story_5x5";
         else templateId = "house_5x5";
 
         VillageSavedData.ProjectRecord project = data.createProject(
@@ -309,6 +317,7 @@ public final class VillageSimulationEvents {
         project.setAnchor(villager.blockPosition());
         project.setParameter("outpost", Boolean.toString(outpost || colony));
         project.setParameter("colony", Boolean.toString(colony));
+        if (colony && fissionOutpost != null) project.setParameter("outpost_id", fissionOutpost.id().toString());
         project.setParameter("lead_skill", Integer.toString(skill));
         project.setParameter("plank", plankName(chooseBuildingPlanks(level, site, villager)));
         project.setPhase("foundation");
@@ -573,7 +582,17 @@ public final class VillageSimulationEvents {
         if (Boolean.parseBoolean(project.parameter("outpost"))
                 && AsobibaTweaksConfig.VILLAGE_REFUGEES_ENABLED.getAsBoolean()) {
             boolean colony = Boolean.parseBoolean(project.parameter("colony"));
-            sendSettlers(level, villager, project.site().offset(2, 1, 2), colony ? 3 : 2);
+            if (colony) {
+                String rawVillage = project.parameter("founded_village_id");
+                try {
+                    java.util.UUID daughterId = java.util.UUID.fromString(rawVillage);
+                    VillagePopulationMigrationService.startFoundingGroup(level, villager, daughterId, 4);
+                } catch (IllegalArgumentException ignored) {
+                    // Founding failed to create a durable daughter VillageRecord.
+                }
+            } else {
+                sendSettlers(level, villager, project.site().offset(2, 1, 2), 2);
+            }
         }
 
         villager.getPersistentData().putLong(
@@ -720,6 +739,20 @@ public final class VillageSimulationEvents {
             BlockState upperBedHead = upperBedFoot.setValue(BedBlock.PART, BedPart.HEAD);
             steps.add(new BuildStep(base.offset(2, 5, 2), upperBedFoot, null));
             steps.add(new BuildStep(base.offset(2, 5, 3), upperBedHead, null));
+
+            BlockState extraGroundBedFoot = Blocks.WHITE_BED.defaultBlockState()
+                    .setValue(BedBlock.PART, BedPart.FOOT)
+                    .setValue(HorizontalDirectionalBlock.FACING, Direction.SOUTH);
+            BlockState extraGroundBedHead = extraGroundBedFoot.setValue(BedBlock.PART, BedPart.HEAD);
+            steps.add(new BuildStep(base.offset(1, 1, 2), extraGroundBedFoot, null));
+            steps.add(new BuildStep(base.offset(1, 1, 3), extraGroundBedHead, null));
+
+            BlockState extraUpperBedFoot = Blocks.WHITE_BED.defaultBlockState()
+                    .setValue(BedBlock.PART, BedPart.FOOT)
+                    .setValue(HorizontalDirectionalBlock.FACING, Direction.SOUTH);
+            BlockState extraUpperBedHead = extraUpperBedFoot.setValue(BedBlock.PART, BedPart.HEAD);
+            steps.add(new BuildStep(base.offset(3, 5, 2), extraUpperBedFoot, null));
+            steps.add(new BuildStep(base.offset(3, 5, 3), extraUpperBedHead, null));
         }
         return steps;
     }
@@ -839,11 +872,15 @@ public final class VillageSimulationEvents {
         long salt = villager.getUUID().getLeastSignificantBits() ^ level.getGameTime() / 24000L;
         for (int attempt = 0; attempt < 12; attempt++) {
             double angle = ((salt + attempt * 0x9E3779B97F4A7C15L) >>> 11) * 0x1.0p-53 * Math.PI * 2.0D;
-            int radius = colony
-                    ? 72 + Math.floorMod(Long.hashCode(salt + attempt), 49)
-                    : outpost
-                    ? 30 + Math.floorMod(Long.hashCode(salt + attempt), 18)
-                    : 10 + Math.floorMod(Long.hashCode(salt + attempt), 9);
+            int radius;
+            if (outpost) {
+                boolean remote = Math.floorMod(Long.hashCode(salt), 4) == 0;
+                radius = remote
+                        ? 192 + Math.floorMod(Long.hashCode(salt + attempt * 31L), 129)
+                        : 96 + Math.floorMod(Long.hashCode(salt + attempt * 31L), 97);
+            } else {
+                radius = 10 + Math.floorMod(Long.hashCode(salt + attempt), 9);
+            }
             int x = (int)Math.floor(villager.getX() + Math.cos(angle) * radius);
             int z = (int)Math.floor(villager.getZ() + Math.sin(angle) * radius);
             BlockPos columnProbe = new BlockPos(x, level.getMinBuildHeight(), z);
@@ -853,21 +890,7 @@ public final class VillageSimulationEvents {
             BlockPos base = new BlockPos(x - 2, y, z - 2);
             if (!VillageSimulationScheduler.isAreaLoaded(level, base.offset(0, -1, 0), base.offset(4, 4, 4))) continue;
 
-            boolean clear = true;
-            for (int dx = 0; dx < 5 && clear; dx++) for (int dz = 0; dz < 5 && clear; dz++) {
-                if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) return null;
-                BlockPos floor = base.offset(dx, -1, dz);
-                if (level.getBlockState(floor).isAir() || !level.getFluidState(floor).isEmpty()) clear = false;
-                for (int dy = 0; dy <= 4; dy++) {
-                    if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) return null;
-                    BlockState state = level.getBlockState(base.offset(dx, dy, dz));
-                    if (!state.canBeReplaced() && !state.is(BlockTags.REPLACEABLE_BY_TREES)) {
-                        clear = false;
-                        break;
-                    }
-                }
-            }
-            if (clear) return base;
+            if (isBuildSiteClear(level, base, 4)) return base;
         }
         return null;
     }
@@ -1242,37 +1265,91 @@ public final class VillageSimulationEvents {
         BlockPos base = project.site();
         boolean storage = "storage_5x5".equals(project.templateId());
         boolean twoStory = "house_2story_5x5".equals(project.templateId());
+        boolean outpost = Boolean.parseBoolean(project.parameter("outpost"));
+        boolean colony = Boolean.parseBoolean(project.parameter("colony"));
         int maxY = twoStory ? 8 : 4;
 
+        java.util.UUID ownerVillageId = project.villageId();
+
+        if (colony) {
+            String rawOutpost = project.parameter("outpost_id");
+            try {
+                java.util.UUID outpostId = java.util.UUID.fromString(rawOutpost);
+                VillageSavedData.WorkSiteRecord site = data.workSite(outpostId).orElse(null);
+                VillageSavedData.VillageRecord parent = data.village(project.villageId()).orElse(null);
+                if (site != null && parent != null) {
+                    BlockPos daughterCenter = workSiteCenter(site);
+                    VillageSavedData.VillageRecord daughter = data.createVillage(daughterCenter, level.getGameTime());
+                    daughter.setLifecycle("founding");
+                    daughter.setNextFissionGameTime(level.getGameTime() + 30L * 24000L);
+                    parent.setNextFissionGameTime(level.getGameTime() + 30L * 24000L);
+
+                    parent.buildingCulture().forEach((key, value) ->
+                            daughter.recordBuildingCulture(key, Math.max(1, value / 2)));
+
+                    data.transferOutpostSite(outpostId, daughter.id());
+                    site.setType("founding_site");
+                    site.setState("active");
+                    ownerVillageId = daughter.id();
+                    project.setParameter("founded_village_id", daughter.id().toString());
+                }
+            } catch (IllegalArgumentException ignored) {
+                // Keep ownership with the parent; founding migration will not start without an ID.
+            }
+        }
+
         VillageSavedData.BuildingRecord building = data.createBuilding(
-                project.villageId(), base, base.offset(4, maxY, 4), true);
+                ownerVillageId, base, base.offset(4, maxY, 4), true);
         building.setTemplateId(project.templateId());
         building.setClassification(storage ? "storage" : "residential");
-        building.setValidatedCapacity(storage ? 0 : Boolean.parseBoolean(project.parameter("outpost")) ? 2 : twoStory ? 2 : 1);
+        building.setValidatedCapacity(storage ? 0 : twoStory ? 4 : outpost ? 2 : 1);
         building.setValidationState("valid");
         building.setLastValidatedGameTime(level.getGameTime());
 
         String plank = project.parameter("plank");
         if (!plank.isBlank()) {
-            data.village(project.villageId()).ifPresent(village -> village.recordBuildingCulture("plank:" + plank, 10));
+            java.util.UUID finalOwnerVillageId = ownerVillageId;
+            data.village(finalOwnerVillageId).ifPresent(village ->
+                    village.recordBuildingCulture("plank:" + plank, 10));
         }
-        if ("house_2story_5x5".equals(project.templateId())) {
-            data.village(project.villageId()).ifPresent(village -> village.recordBuildingCulture("form:multi_story", 8));
+        if (twoStory) {
+            java.util.UUID finalOwnerVillageId = ownerVillageId;
+            data.village(finalOwnerVillageId).ifPresent(village ->
+                    village.recordBuildingCulture("form:multi_story", 8));
         } else {
-            data.village(project.villageId()).ifPresent(village -> village.recordBuildingCulture("form:one_story", 4));
+            java.util.UUID finalOwnerVillageId = ownerVillageId;
+            data.village(finalOwnerVillageId).ifPresent(village ->
+                    village.recordBuildingCulture("form:one_story", 4));
         }
 
         if (storage) {
             for (BlockPos storagePos : List.of(base.offset(1, 1, 2), base.offset(3, 1, 2))) {
                 if (level.getBlockEntity(storagePos) instanceof Container
-                        && data.storageAt(project.villageId(), storagePos).isEmpty()) {
+                        && data.storageAt(ownerVillageId, storagePos).isEmpty()) {
                     VillageSavedData.StorageRecord storageRecord =
-                            data.createStorage(project.villageId(), storagePos, "general");
+                            data.createStorage(ownerVillageId, storagePos, "general");
                     storageRecord.setValidationState("valid");
                     storageRecord.setLastValidatedGameTime(level.getGameTime());
                 }
             }
-            VillageStorageService.reconcileVillage(project.villageId(), level);
+            VillageStorageService.reconcileVillage(ownerVillageId, level);
+        }
+
+        if (outpost && !colony) {
+            VillageSavedData.WorkSiteRecord site =
+                    data.createWorkSite(project.villageId(), "outpost", base, base.offset(4, maxY, 4));
+            site.setCreatedGameTime(level.getGameTime());
+            site.setLastUsedGameTime(level.getGameTime());
+
+            BlockPos localStorage = base.offset(3, 1, 2);
+            if (level.getBlockEntity(localStorage) instanceof Container
+                    && data.storageAt(project.villageId(), localStorage).isEmpty()) {
+                VillageSavedData.StorageRecord storageRecord =
+                        data.createStorage(project.villageId(), localStorage, "general");
+                storageRecord.setValidationState("valid");
+                storageRecord.setLastValidatedGameTime(level.getGameTime());
+                VillageStorageService.reconcileVillage(project.villageId(), level);
+            }
         }
         data.touch();
     }
