@@ -573,6 +573,43 @@ Less experienced builders may make harmless aesthetic mistakes:
 
 Construction mistakes must not make buildings unusable.
 
+### Progressive village construction execution
+
+Accepted direction:
+- village buildings are **not spawned instantly as completed structures**
+- the village planner selects a building need/type and placement, then converts the selected template into an ordered construction plan
+- Carpenter villagers execute that plan by physically transporting and placing real blocks
+- building templates are modular/semantic plans rather than a single opaque paste operation; they may define foundation, walls, floors, roof, stairs, doors, windows, beds, storage, workstations and decorative anchors
+- templates may support rotation, mirroring and approved material substitutions based on local village palette/resources without becoming unrestricted procedural architecture
+- before construction starts, the site is validated for terrain, water, cliffs, existing structures, roads, player-built areas and unsafe voids/cavities
+- small terrain differences may be handled with limited excavation, fill, foundations or support pillars; village AI must not perform large-scale terrain flattening merely to force a template to fit
+- construction proceeds in explicit phases, for example:
+  1. site preparation
+  2. foundation
+  3. structural frame / ground floor
+  4. walls
+  5. upper floors where applicable
+  6. stairs / internal access
+  7. roof
+  8. doors / windows
+  9. beds / workstations / storage
+  10. decoration
+  11. final validation
+- Carpenter villagers withdraw reserved materials from real village storage, carry a bounded work inventory and place blocks only from reachable/safe work positions
+- upper-story and roof work may use temporary Scaffolding or another explicitly allowed temporary construction aid; temporary construction blocks are removed/recovered after the relevant phase
+- multiple Carpenters may cooperate on one larger project by claiming independent work units / placement tasks so they do not fight over the same block positions
+- material shortage pauses the affected construction phase rather than spawning replacement materials
+- incomplete buildings remain visibly incomplete until missing materials arrive and work resumes
+- raids, fire emergencies, night/danger states, loss of the assigned Carpenter, unsafe terrain changes or player edits may pause construction
+- when the world has changed since the plan was created, the site/remaining work is revalidated before continuing
+- player-placed blocks are not blindly overwritten; conflicting changes may cause local replanning or project cancellation
+- a building is not registered as usable housing/workspace merely because its visual shell is complete
+- final validation must confirm usable entrances, navigation between required floors, reachable beds/workstations, adequate headroom and absence of obvious unsafe gaps before the structure contributes functional village capacity
+- if final validation fails, the building remains incomplete/invalid and may generate repair/rework tasks
+- the execution layer is intentionally separate from village strategy: the planner decides **what/where** to build, while Carpenter AI handles **how to carry out the approved construction plan**
+
+Design constraint: templates describe intended structures, but the visible world change should come from villagers actually building them with real resources over time.
+
 ### Carpenter progression
 Carpenters can gain practical experience:
 - faster work
