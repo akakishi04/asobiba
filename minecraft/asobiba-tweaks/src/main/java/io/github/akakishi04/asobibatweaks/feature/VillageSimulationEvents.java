@@ -740,13 +740,6 @@ public final class VillageSimulationEvents {
             steps.add(new BuildStep(base.offset(2, 5, 2), upperBedFoot, null));
             steps.add(new BuildStep(base.offset(2, 5, 3), upperBedHead, null));
 
-            BlockState extraGroundBedFoot = Blocks.WHITE_BED.defaultBlockState()
-                    .setValue(BedBlock.PART, BedPart.FOOT)
-                    .setValue(HorizontalDirectionalBlock.FACING, Direction.SOUTH);
-            BlockState extraGroundBedHead = extraGroundBedFoot.setValue(BedBlock.PART, BedPart.HEAD);
-            steps.add(new BuildStep(base.offset(1, 1, 2), extraGroundBedFoot, null));
-            steps.add(new BuildStep(base.offset(1, 1, 3), extraGroundBedHead, null));
-
             BlockState extraUpperBedFoot = Blocks.WHITE_BED.defaultBlockState()
                     .setValue(BedBlock.PART, BedPart.FOOT)
                     .setValue(HorizontalDirectionalBlock.FACING, Direction.SOUTH);
