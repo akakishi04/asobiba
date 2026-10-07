@@ -1,6 +1,8 @@
 package io.github.akakishi04.asobibatweaks.feature;
 
 import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
+import java.util.ArrayList;
+import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Blocks;
@@ -38,14 +40,26 @@ public final class ContinentalRiverGenerator {
         int baseX = chunk.getPos().getMinBlockX();
         int baseZ = chunk.getPos().getMinBlockZ();
 
+        int minGX = Math.floorDiv(baseX, cellSize) - 2;
+        int maxGX = Math.floorDiv(baseX + 15, cellSize) + 2;
+        int minGZ = Math.floorDiv(baseZ, cellSize) - 2;
+        int maxGZ = Math.floorDiv(baseZ + 15, cellSize) + 2;
+
+        List<DrainageCell> nearbyCells = new ArrayList<>();
+        for (int gx = minGX; gx <= maxGX; gx++) {
+            for (int gz = minGZ; gz <= maxGZ; gz++) {
+                nearbyCells.add(drainageCell(
+                        seed, gx, gz, cellSize, continentScale, continentThreshold,
+                        widthScale, meander, majorFrequency, lakeFrequency, deltaFrequency));
+            }
+        }
+
         for (int lx = 0; lx < 16; lx++) {
             for (int lz = 0; lz < 16; lz++) {
                 int x = baseX + lx;
                 int z = baseZ + lz;
 
-                RiverSample sample = sampleAt(
-                        seed, x, z, cellSize, continentScale, continentThreshold,
-                        widthScale, meander, majorFrequency, lakeFrequency, deltaFrequency);
+                RiverSample sample = sampleAt(x, z, continentThreshold, nearbyCells);
                 if (!sample.active) continue;
 
                 int top = chunk.getHeight(Heightmap.Types.WORLD_SURFACE_WG, x, z);
@@ -85,49 +99,33 @@ public final class ContinentalRiverGenerator {
     }
 
     private static RiverSample sampleAt(
-            long seed,
             int x,
             int z,
-            int cellSize,
-            int continentScale,
             double continentThreshold,
-            double widthScale,
-            double meanderStrength,
-            double majorFrequency,
-            double lakeFrequency,
-            double deltaFrequency) {
-
-        int gx = Math.floorDiv(x, cellSize);
-        int gz = Math.floorDiv(z, cellSize);
+            List<DrainageCell> nearbyCells) {
 
         RiverSample best = RiverSample.NONE;
-        for (int ox = -2; ox <= 2; ox++) {
-            for (int oz = -2; oz <= 2; oz++) {
-                DrainageCell cell = drainageCell(
-                        seed, gx + ox, gz + oz, cellSize, continentScale, continentThreshold,
-                        widthScale, meanderStrength, majorFrequency, lakeFrequency, deltaFrequency);
+        for (DrainageCell cell : nearbyCells) {
+            if (cell.sourcePotential < continentThreshold - 0.08D) continue;
 
-                if (cell.sourcePotential < continentThreshold - 0.08D) continue;
-
-                if (cell.sinkLake) {
-                    double dx = x - cell.x;
-                    double dz = z - cell.z;
-                    double distance = Math.sqrt(dx * dx + dz * dz);
-                    if (distance <= cell.lakeRadius && (!best.active || distance < best.distance)) {
-                        best = new RiverSample(
-                                true, distance, cell.lakeRadius, 0.0D, false, true);
-                    }
-                }
-
-                if (!cell.hasDownstream) continue;
-                double distance = curveDistance(
-                        x, z, cell.x, cell.z, cell.downX, cell.downZ, cell.meanderOffset);
-                if (distance > cell.halfWidth) continue;
-                if (!best.active || distance < best.distance
-                        || (Math.abs(distance - best.distance) < 0.01D && cell.halfWidth > best.halfWidth)) {
+            if (cell.sinkLake) {
+                double dx = x - cell.x;
+                double dz = z - cell.z;
+                double distance = Math.sqrt(dx * dx + dz * dz);
+                if (distance <= cell.lakeRadius && (!best.active || distance < best.distance)) {
                     best = new RiverSample(
-                            true, distance, cell.halfWidth, cell.drop, cell.delta, false);
+                            true, distance, cell.lakeRadius, 0.0D, false, true);
                 }
+            }
+
+            if (!cell.hasDownstream) continue;
+            double distance = curveDistance(
+                    x, z, cell.x, cell.z, cell.downX, cell.downZ, cell.meanderOffset);
+            if (distance > cell.halfWidth) continue;
+            if (!best.active || distance < best.distance
+                    || (Math.abs(distance - best.distance) < 0.01D && cell.halfWidth > best.halfWidth)) {
+                best = new RiverSample(
+                        true, distance, cell.halfWidth, cell.drop, cell.delta, false);
             }
         }
         return best;
