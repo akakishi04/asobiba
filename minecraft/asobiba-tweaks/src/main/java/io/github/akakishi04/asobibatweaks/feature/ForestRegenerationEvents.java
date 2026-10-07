@@ -21,11 +21,26 @@ public final class ForestRegenerationEvents {
         }
 
         ServerLevel level = player.serverLevel();
+        VillageSimulationScheduler.enqueueValidation(
+                level,
+                "forest_regen:" + player.getUUID(),
+                () -> {
+                    if (!player.isAlive() || player.isRemoved() || player.level() != level) return;
+                    regenerateNearPlayer(player, level);
+                }
+        );
+    }
+
+    private static void regenerateNearPlayer(ServerPlayer player, ServerLevel level) {
         for (int attempt = 0; attempt < 12; attempt++) {
             int dx = player.getRandom().nextInt(65) - 32;
             int dz = player.getRandom().nextInt(65) - 32;
             int x = player.blockPosition().getX() + dx;
             int z = player.blockPosition().getZ() + dz;
+            BlockPos column = new BlockPos(x, level.getMinBuildHeight(), z);
+            if (!VillageSimulationScheduler.isChunkLoaded(level, column)) continue;
+            if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) return;
+
             int y = level.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
             BlockPos ground = new BlockPos(x, y - 1, z);
             BlockPos plant = ground.above();
@@ -37,7 +52,7 @@ public final class ForestRegenerationEvents {
                 continue;
             }
 
-            Block sapling = nearbyTreeSapling(level, plant);
+            Block sapling = nearbyTreeSapling(level, plant, player);
             if (sapling == null) continue;
 
             String biome = level.getBiome(plant).unwrapKey()
@@ -52,11 +67,22 @@ public final class ForestRegenerationEvents {
         }
     }
 
-    private static Block nearbyTreeSapling(ServerLevel level, BlockPos center) {
+    private static Block nearbyTreeSapling(ServerLevel level, BlockPos center, ServerPlayer player) {
+        BlockPos min = center.offset(-7, -2, -7);
+        BlockPos max = center.offset(7, 8, 7);
+        if (!VillageSimulationScheduler.isAreaLoaded(level, min, max)) return null;
+
         Block seenLog = null;
         int leaves = 0;
 
-        for (BlockPos pos : BlockPos.betweenClosed(center.offset(-7, -2, -7), center.offset(7, 8, 7))) {
+        // Sampling is intentionally bounded; this is background ecology, not a full forest census.
+        for (int sample = 0; sample < 96; sample++) {
+            if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) return null;
+            BlockPos pos = center.offset(
+                    player.getRandom().nextInt(15) - 7,
+                    player.getRandom().nextInt(11) - 2,
+                    player.getRandom().nextInt(15) - 7
+            );
             var state = level.getBlockState(pos);
             if (state.is(BlockTags.LEAVES)) {
                 leaves++;
@@ -65,7 +91,7 @@ public final class ForestRegenerationEvents {
             }
         }
 
-        if (seenLog == null || leaves < 12) return null;
+        if (seenLog == null || leaves < 4) return null;
         if (seenLog == Blocks.SPRUCE_LOG) return Blocks.SPRUCE_SAPLING;
         if (seenLog == Blocks.BIRCH_LOG) return Blocks.BIRCH_SAPLING;
         if (seenLog == Blocks.JUNGLE_LOG) return Blocks.JUNGLE_SAPLING;
