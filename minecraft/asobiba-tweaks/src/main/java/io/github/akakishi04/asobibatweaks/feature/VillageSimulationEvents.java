@@ -1053,21 +1053,37 @@ public final class VillageSimulationEvents {
                 .flatMap(id -> VillageSavedData.get(level).village(id))
                 .orElse(null);
 
-        if (village != null && !village.buildingCulture().isEmpty()) {
-            int dominant = -1;
-            int dominantWeight = 0;
-            for (int i = 0; i < names.length; i++) {
-                int weight = village.cultureWeight("plank:" + names[i]);
-                if (weight > dominantWeight) {
-                    dominantWeight = weight;
-                    dominant = i;
+        if (village != null) {
+            int districtDominant = -1;
+            int districtDominantWeight = 0;
+            int districtTotal = village.districtCultureTotal(site, "plank:");
+            if (districtTotal > 0) {
+                for (int i = 0; i < names.length; i++) {
+                    int weight = village.districtCultureWeight(site, "plank:" + names[i]);
+                    if (weight > districtDominantWeight) {
+                        districtDominantWeight = weight;
+                        districtDominant = i;
+                    }
                 }
             }
 
-            if (dominant >= 0) {
-                long salt = site.asLong() ^ level.getSeed() ^ (level.getGameTime() / 24000L);
-                int roll = Math.floorMod(Long.hashCode(salt), 100);
-                if (roll < 75) return blocks[dominant];
+            long salt = site.asLong() ^ level.getSeed() ^ (level.getGameTime() / 24000L);
+            int roll = Math.floorMod(Long.hashCode(salt), 100);
+            if (districtDominant >= 0 && roll < 80) {
+                return blocks[districtDominant];
+            }
+
+            if (!village.buildingCulture().isEmpty()) {
+                int dominant = -1;
+                int dominantWeight = 0;
+                for (int i = 0; i < names.length; i++) {
+                    int weight = village.cultureWeight("plank:" + names[i]);
+                    if (weight > dominantWeight) {
+                        dominantWeight = weight;
+                        dominant = i;
+                    }
+                }
+                if (dominant >= 0 && roll < 75) return blocks[dominant];
             }
         }
 
@@ -1998,17 +2014,23 @@ public final class VillageSimulationEvents {
         String plank = project.parameter("plank");
         if (!plank.isBlank()) {
             java.util.UUID finalOwnerVillageId = ownerVillageId;
-            data.village(finalOwnerVillageId).ifPresent(village ->
-                    village.recordBuildingCulture("plank:" + plank, 10));
+            data.village(finalOwnerVillageId).ifPresent(village -> {
+                village.recordBuildingCulture("plank:" + plank, 10);
+                village.recordDistrictBuildingCulture(base, "plank:" + plank, 10);
+            });
         }
         if (twoStory) {
             java.util.UUID finalOwnerVillageId = ownerVillageId;
-            data.village(finalOwnerVillageId).ifPresent(village ->
-                    village.recordBuildingCulture("form:multi_story", 8));
+            data.village(finalOwnerVillageId).ifPresent(village -> {
+                village.recordBuildingCulture("form:multi_story", 8);
+                village.recordDistrictBuildingCulture(base, "form:multi_story", 8);
+            });
         } else {
             java.util.UUID finalOwnerVillageId = ownerVillageId;
-            data.village(finalOwnerVillageId).ifPresent(village ->
-                    village.recordBuildingCulture("form:one_story", 4));
+            data.village(finalOwnerVillageId).ifPresent(village -> {
+                village.recordBuildingCulture("form:one_story", 4);
+                village.recordDistrictBuildingCulture(base, "form:one_story", 4);
+            });
         }
 
         if (storage) {

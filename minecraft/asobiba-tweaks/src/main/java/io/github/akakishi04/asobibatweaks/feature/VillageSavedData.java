@@ -26,7 +26,7 @@ import net.minecraft.world.level.saveddata.SavedData;
  * indexes, caches and planning state that later passes can reconcile against loaded chunks.</p>
  */
 public final class VillageSavedData extends SavedData {
-    public static final int SCHEMA_VERSION = 6;
+    public static final int SCHEMA_VERSION = 7;
 
     private static final String NAME = "asobibatweaks_villages";
     private static final Factory<VillageSavedData> FACTORY =
@@ -320,10 +320,30 @@ public final class VillageSavedData extends SavedData {
         VillageRecord target = villages.get(targetVillageId);
         if (source == null || target == null) return false;
 
+        // Seed legacy/global-only cultures into their original centers before the merge so
+        // the merged settlement can keep visibly different old districts.
+        if (target.districtBuildingCulture.isEmpty()) {
+            target.buildingCulture.forEach((key, value) ->
+                    target.districtBuildingCulture.put(
+                            VillageRecord.districtCultureKey(target.center.asLong(), key), value));
+        }
+
         target.addDistrictCenter(source.center);
         for (Long packed : source.districtCenters) target.districtCenters.add(packed);
 
-        // Preserve both cultures in the surviving planner instead of replacing either one.
+        if (source.districtBuildingCulture.isEmpty()) {
+            source.buildingCulture.forEach((key, value) ->
+                    target.districtBuildingCulture.merge(
+                            VillageRecord.districtCultureKey(source.center.asLong(), key),
+                            value,
+                            Integer::sum));
+        } else {
+            source.districtBuildingCulture.forEach((key, value) ->
+                    target.districtBuildingCulture.merge(key, value, Integer::sum));
+        }
+
+        // Village-wide culture still drifts together slowly, while district weights above
+        // preserve local identity after merge.
         source.buildingCulture.forEach((key, value) ->
                 target.buildingCulture.merge(key, Math.max(1, value / 2), Integer::sum));
 
@@ -788,6 +808,7 @@ public final class VillageSavedData extends SavedData {
         private final Map<String, Integer> ledgerCounts = new HashMap<>();
         private final Map<String, Integer> reservedCounts = new HashMap<>();
         private final Map<String, Integer> buildingCulture = new HashMap<>();
+        private final Map<String, Integer> districtBuildingCulture = new HashMap<>();
         private final Map<String, Integer> marketPermille = new HashMap<>();
         private boolean storageBootstrapComplete;
         private int sustainablePopulation;
@@ -837,6 +858,28 @@ public final class VillageSavedData extends SavedData {
         public Map<String, Integer> reservedCounts() { return Collections.unmodifiableMap(reservedCounts); }
         public Map<String, Integer> buildingCulture() { return Collections.unmodifiableMap(buildingCulture); }
         public int cultureWeight(String key) { return Math.max(0, buildingCulture.getOrDefault(key, 0)); }
+        public Map<String, Integer> districtBuildingCulture() {
+            return Collections.unmodifiableMap(districtBuildingCulture);
+        }
+        public int districtCultureWeight(BlockPos pos, String key) {
+            if (pos == null || key == null || key.isBlank()) return 0;
+            long district = nearestDistrictCenterPacked(pos);
+            return Math.max(0, districtBuildingCulture.getOrDefault(districtCultureKey(district, key), 0));
+        }
+        public int districtCultureTotal(BlockPos pos, String prefix) {
+            if (pos == null) return 0;
+            long district = nearestDistrictCenterPacked(pos);
+            String districtPrefix = Long.toString(district) + "|";
+            int total = 0;
+            for (Map.Entry<String, Integer> entry : districtBuildingCulture.entrySet()) {
+                if (!entry.getKey().startsWith(districtPrefix)) continue;
+                String cultureKey = entry.getKey().substring(districtPrefix.length());
+                if (prefix == null || prefix.isBlank() || cultureKey.startsWith(prefix)) {
+                    total += Math.max(0, entry.getValue());
+                }
+            }
+            return total;
+        }
         public Map<String, Integer> marketPermille() { return Collections.unmodifiableMap(marketPermille); }
         public int marketPermille(String category) { return Math.max(100, marketPermille.getOrDefault(category, 1000)); }
         public boolean storageBootstrapComplete() { return storageBootstrapComplete; }
@@ -925,6 +968,43 @@ public final class VillageSavedData extends SavedData {
             }
         }
 
+        public void recordDistrictBuildingCulture(BlockPos pos, String key, int weight) {
+            if (pos == null || key == null || key.isBlank() || weight <= 0) return;
+            long district = nearestDistrictCenterPacked(pos);
+            String fullKey = districtCultureKey(district, key);
+            districtBuildingCulture.merge(fullKey, weight, Integer::sum);
+
+            String prefix = Long.toString(district) + "|";
+            int max = 0;
+            for (Map.Entry<String, Integer> entry : districtBuildingCulture.entrySet()) {
+                if (entry.getKey().startsWith(prefix)) max = Math.max(max, entry.getValue());
+            }
+            if (max > 10_000) {
+                districtBuildingCulture.replaceAll((storedKey, value) ->
+                        storedKey.startsWith(prefix) ? Math.max(1, value / 2) : value);
+            }
+        }
+
+        private long nearestDistrictCenterPacked(BlockPos pos) {
+            long bestPacked = center.asLong();
+            long bestDistance = Long.MAX_VALUE;
+            for (long packed : districtCenters) {
+                BlockPos district = BlockPos.of(packed);
+                long dx = (long)district.getX() - pos.getX();
+                long dz = (long)district.getZ() - pos.getZ();
+                long distance = dx * dx + dz * dz;
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    bestPacked = packed;
+                }
+            }
+            return bestPacked;
+        }
+
+        private static String districtCultureKey(long packedCenter, String key) {
+            return Long.toString(packedCenter) + "|" + key;
+        }
+
         public void setMarketPermille(String category, int value) {
             if (category == null || category.isBlank()) return;
             marketPermille.put(category, Math.max(100, Math.min(3000, value)));
@@ -988,6 +1068,7 @@ public final class VillageSavedData extends SavedData {
             tag.put("ledger", writeIntMap(ledgerCounts));
             tag.put("reserved", writeIntMap(reservedCounts));
             tag.put("building_culture", writeIntMap(buildingCulture));
+            tag.put("district_building_culture", writeIntMap(districtBuildingCulture));
             tag.put("market_permille", writeIntMap(marketPermille));
             tag.putBoolean("storage_bootstrap_complete", storageBootstrapComplete);
             tag.putInt("sustainable_population", sustainablePopulation);
@@ -1037,6 +1118,7 @@ public final class VillageSavedData extends SavedData {
             record.ledgerCounts.putAll(readIntMap(tag, "ledger"));
             record.reservedCounts.putAll(readIntMap(tag, "reserved"));
             record.buildingCulture.putAll(readIntMap(tag, "building_culture"));
+            record.districtBuildingCulture.putAll(readIntMap(tag, "district_building_culture"));
             record.marketPermille.putAll(readIntMap(tag, "market_permille"));
             record.storageBootstrapComplete = tag.getBoolean("storage_bootstrap_complete");
             record.sustainablePopulation = Math.max(0, tag.getInt("sustainable_population"));
