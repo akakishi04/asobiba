@@ -1360,6 +1360,7 @@ public final class VillageSimulationEvents {
                 if (site != null && parent != null) {
                     BlockPos daughterCenter = workSiteCenter(site);
                     VillageSavedData.VillageRecord daughter = data.createVillage(daughterCenter, level.getGameTime());
+                    daughter.setParentVillageId(parent.id());
                     daughter.setLifecycle("founding");
                     daughter.setNextFissionGameTime(level.getGameTime() + 30L * 24000L);
                     parent.setNextFissionGameTime(level.getGameTime() + 30L * 24000L);
