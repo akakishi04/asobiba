@@ -197,8 +197,7 @@ public final class VillageSavedData extends SavedData {
         RouteRecord record = new RouteRecord(id, villageId, safeText(type, "path"), from.immutable(), to.immutable());
         routes.put(id, record);
         villages.get(villageId).routeIds.add(id);
-        indexOne(from, entryFor(from).routeIds, id);
-        indexOne(to, entryFor(to).routeIds, id);
+        indexRoute(record);
         setDirty();
         return record;
     }
@@ -501,15 +500,38 @@ public final class VillageSavedData extends SavedData {
         for (BuildingRecord record : buildings.values()) indexBuilding(record);
         for (StorageRecord record : storages.values()) indexOne(record.pos, entryFor(record.pos).storageIds, record.id);
         for (WorkSiteRecord record : workSites.values()) indexBounds(record.min, record.max, IndexKind.WORK_SITE, record.id);
-        for (RouteRecord record : routes.values()) {
-            indexOne(record.from, entryFor(record.from).routeIds, record.id);
-            indexOne(record.to, entryFor(record.to).routeIds, record.id);
-        }
+        for (RouteRecord record : routes.values()) indexRoute(record);
         for (ProjectRecord record : projects.values()) indexOne(record.site, entryFor(record.site).projectIds, record.id);
     }
 
     private void indexBuilding(BuildingRecord record) {
         indexBounds(record.min, record.max, IndexKind.BUILDING, record.id);
+    }
+
+    private void indexRoute(RouteRecord record) {
+        int fromChunkX = record.from.getX() >> 4;
+        int fromChunkZ = record.from.getZ() >> 4;
+        int toChunkX = record.to.getX() >> 4;
+        int toChunkZ = record.to.getZ() >> 4;
+
+        int dx = toChunkX - fromChunkX;
+        int dz = toChunkZ - fromChunkZ;
+        int steps = Math.max(Math.abs(dx), Math.abs(dz));
+        if (steps <= 0) {
+            chunkIndex.computeIfAbsent(
+                    ChunkPos.asLong(fromChunkX, fromChunkZ),
+                    ignored -> new ChunkIndexEntry()).routeIds.add(record.id);
+            return;
+        }
+
+        for (int i = 0; i <= steps; i++) {
+            double t = i / (double)steps;
+            int chunkX = (int)Math.round(fromChunkX + dx * t);
+            int chunkZ = (int)Math.round(fromChunkZ + dz * t);
+            chunkIndex.computeIfAbsent(
+                    ChunkPos.asLong(chunkX, chunkZ),
+                    ignored -> new ChunkIndexEntry()).routeIds.add(record.id);
+        }
     }
 
     private void indexBounds(BlockPos min, BlockPos max, IndexKind kind, UUID id) {
