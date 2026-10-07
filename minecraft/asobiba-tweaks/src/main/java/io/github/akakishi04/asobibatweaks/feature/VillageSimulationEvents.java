@@ -186,7 +186,7 @@ public final class VillageSimulationEvents {
         AABB area = parent.getBoundingBox().inflate(28.0D);
         int villagers = level.getEntitiesOfClass(Villager.class, area).size();
         int beds = countBlocks(level, parent.blockPosition(), 24, state -> state.is(BlockTags.BEDS));
-        int food = countStorageItems(level, parent.blockPosition(), 18,
+        int food = VillageStorageService.count(parent, level,
                 Items.BREAD, Items.CARROT, Items.POTATO, Items.BEETROOT);
 
         long now = level.getGameTime();
@@ -237,7 +237,7 @@ public final class VillageSimulationEvents {
         AABB villageArea = villager.getBoundingBox().inflate(28.0D);
         int population = level.getEntitiesOfClass(Villager.class, villageArea).size();
         int beds = countBlocks(level, villager.blockPosition(), 24, state -> state.is(BlockTags.BEDS));
-        int stores = containers(level, villager.blockPosition(), 18).size();
+        int stores = VillageStorageService.containers(villager, level).size();
         if (population < 4) {
             villager.getPersistentData().putLong(NEXT_BUILD, now + 12000L);
             return;
@@ -259,7 +259,7 @@ public final class VillageSimulationEvents {
             return;
         }
 
-        if (countStorageItems(level, villager.blockPosition(), 18, Items.OAK_PLANKS, Items.SPRUCE_PLANKS,
+        if (VillageStorageService.count(villager, level, Items.OAK_PLANKS, Items.SPRUCE_PLANKS,
                 Items.BIRCH_PLANKS, Items.ACACIA_PLANKS, Items.JUNGLE_PLANKS, Items.MANGROVE_PLANKS,
                 Items.CHERRY_PLANKS, Items.COBBLESTONE) < 28) {
             requestMaterials(villager, "planks/cobblestone");
@@ -347,7 +347,7 @@ public final class VillageSimulationEvents {
                 data.putLong(NEXT_BUILD, level.getGameTime() + 12000L);
                 return;
             }
-            if (!consumeBedMaterials(level, villager.blockPosition(), 18)) {
+            if (!consumeBedMaterials(villager, level)) {
                 requestMaterials(villager, "3 wool and 3 planks");
                 return;
             }
@@ -361,7 +361,7 @@ public final class VillageSimulationEvents {
             return;
         }
 
-        if (step.cost != null && !takeFromStorage(level, villager.blockPosition(), 18, step.cost, 1)) {
+        if (step.cost != null && !VillageStorageService.take(villager, level, step.cost, 1)) {
             requestMaterials(villager, step.cost.getDescription().getString().toLowerCase(Locale.ROOT));
             return;
         }
@@ -471,7 +471,8 @@ public final class VillageSimulationEvents {
         };
 
         int[] counts = new int[items.length];
-        for (Container container : containers(level, villageCenter, 18)) {
+        for (VillageStorageService.LocatedContainer located : VillageStorageService.containers(villager, level)) {
+            Container container = located.container();
             for (int slot = 0; slot < container.getContainerSize(); slot++) {
                 ItemStack stack = container.getItem(slot);
                 for (int i = 0; i < items.length; i++) {
@@ -562,7 +563,7 @@ public final class VillageSimulationEvents {
             int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
             BlockPos surface = new BlockPos(x, y - 1, z);
             if (level.getFluidState(surface).is(FluidTags.WATER)) {
-                if (takeAnyPlank(level, villager.blockPosition(), 22)) {
+                if (takeAnyPlank(level, villager)) {
                     level.setBlock(surface, choosePlanks(level, surface).defaultBlockState(), Block.UPDATE_ALL);
                 }
             } else {
@@ -574,14 +575,14 @@ public final class VillageSimulationEvents {
         }
     }
 
-    private static boolean takeAnyPlank(ServerLevel level, BlockPos center, int radius) {
-        return takeFromStorage(level, center, radius, Items.OAK_PLANKS, 1)
-                || takeFromStorage(level, center, radius, Items.SPRUCE_PLANKS, 1)
-                || takeFromStorage(level, center, radius, Items.BIRCH_PLANKS, 1)
-                || takeFromStorage(level, center, radius, Items.ACACIA_PLANKS, 1)
-                || takeFromStorage(level, center, radius, Items.JUNGLE_PLANKS, 1)
-                || takeFromStorage(level, center, radius, Items.MANGROVE_PLANKS, 1)
-                || takeFromStorage(level, center, radius, Items.CHERRY_PLANKS, 1);
+    private static boolean takeAnyPlank(ServerLevel level, Villager villager) {
+        return VillageStorageService.take(villager, level, Items.OAK_PLANKS, 1)
+                || VillageStorageService.take(villager, level, Items.SPRUCE_PLANKS, 1)
+                || VillageStorageService.take(villager, level, Items.BIRCH_PLANKS, 1)
+                || VillageStorageService.take(villager, level, Items.ACACIA_PLANKS, 1)
+                || VillageStorageService.take(villager, level, Items.JUNGLE_PLANKS, 1)
+                || VillageStorageService.take(villager, level, Items.MANGROVE_PLANKS, 1)
+                || VillageStorageService.take(villager, level, Items.CHERRY_PLANKS, 1);
     }
 
     private static void sendSettlers(ServerLevel level, Villager carpenter, BlockPos target, int targetCount) {
@@ -636,7 +637,7 @@ public final class VillageSimulationEvents {
 
         if (!areaLoaded(level, villager.blockPosition(), 18, 5, 5)) return;
         int beds = countBlocks(level, villager.blockPosition(), 18, state -> state.is(BlockTags.BEDS));
-        int food = countStorageItems(level, villager.blockPosition(), 14, Items.BREAD, Items.CARROT, Items.POTATO, Items.BEETROOT);
+        int food = VillageStorageService.count(villager, level, Items.BREAD, Items.CARROT, Items.POTATO, Items.BEETROOT);
         if (beds > 0 && food >= 8) return;
 
         List<Villager> possible = level.getEntitiesOfClass(
@@ -662,8 +663,9 @@ public final class VillageSimulationEvents {
     private static void tickQuartermaster(Villager villager, ServerLevel level) {
         if (level.getGameTime() % 240 != Math.floorMod(villager.getId(), 240)) return;
         if (!areaLoaded(level, villager.blockPosition(), 14, 3, 3)) return;
-        List<Container> stores = containers(level, villager.blockPosition(), 14);
-        for (Container store : stores) {
+        List<VillageStorageService.LocatedContainer> stores = VillageStorageService.containers(villager, level);
+        for (VillageStorageService.LocatedContainer located : stores) {
+            Container store = located.container();
             for (int i = 0; i < store.getContainerSize(); i++) {
                 ItemStack a = store.getItem(i);
                 if (a.isEmpty()) continue;
@@ -711,7 +713,7 @@ public final class VillageSimulationEvents {
             BlockState state = level.getBlockState(pos);
             if (!state.is(Blocks.STONE) && !state.is(Blocks.ANDESITE) && !state.is(Blocks.DIORITE) && !state.is(Blocks.GRANITE)) continue;
             if (!hasExposedFace(level, pos) || nearProtectedBuildingBlock(level, pos)) continue;
-            if (!insertIntoStorage(level, center, 14, new ItemStack(Items.COBBLESTONE))) return;
+            if (!VillageStorageService.insert(villager, level, new ItemStack(Items.COBBLESTONE)).isEmpty()) return;
 
             level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
             villager.getNavigation().moveTo(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D, 0.65D);
@@ -736,7 +738,7 @@ public final class VillageSimulationEvents {
             if (!state.is(BlockTags.LOGS) || !treeLooksNatural(level, pos)) continue;
 
             ItemStack log = new ItemStack(state.getBlock().asItem());
-            if (log.isEmpty() || !insertIntoStorage(level, center, 14, log)) return;
+            if (log.isEmpty() || !VillageStorageService.insert(villager, level, log).isEmpty()) return;
             level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
 
             if (level.getBlockState(pos.below()).is(BlockTags.DIRT)
@@ -785,7 +787,7 @@ public final class VillageSimulationEvents {
         }
 
         ItemStack copy = nearest.getItem().copy();
-        if (insertIntoStorage(level, villager.blockPosition(), 14, copy)) {
+        if (VillageStorageService.insert(villager, level, copy).isEmpty()) {
             nearest.discard();
         }
     }
@@ -798,7 +800,7 @@ public final class VillageSimulationEvents {
             if (!(stack.is(Items.BREAD) || stack.is(Items.CARROT) || stack.is(Items.POTATO) || stack.is(Items.BEETROOT))
                     || stack.getCount() < 8) continue;
             ItemStack exported = stack.copyWithCount(Math.min(4, stack.getCount() - 4));
-            if (insertIntoStorage(level, villager.blockPosition(), 12, exported)) {
+            if (VillageStorageService.insert(villager, level, exported).isEmpty()) {
                 stack.shrink(exported.getCount());
             }
             return;
@@ -853,122 +855,13 @@ public final class VillageSimulationEvents {
         }
     }
 
-    private static boolean consumeBedMaterials(ServerLevel level, BlockPos center, int radius) {
-        if (countStorageMatching(level, center, radius, stack -> stack.is(ItemTags.WOOL)) < 3
-                || countStorageMatching(level, center, radius, stack -> stack.is(ItemTags.PLANKS)) < 3) {
+    private static boolean consumeBedMaterials(Villager villager, ServerLevel level) {
+        if (VillageStorageService.countMatching(villager, level, stack -> stack.is(ItemTags.WOOL)) < 3
+                || VillageStorageService.countMatching(villager, level, stack -> stack.is(ItemTags.PLANKS)) < 3) {
             return false;
         }
-        return takeStorageMatching(level, center, radius, stack -> stack.is(ItemTags.WOOL), 3)
-                && takeStorageMatching(level, center, radius, stack -> stack.is(ItemTags.PLANKS), 3);
-    }
-
-    private static int countStorageMatching(ServerLevel level, BlockPos center, int radius,
-                                            java.util.function.Predicate<ItemStack> predicate) {
-        int count = 0;
-        for (Container container : containers(level, center, radius)) {
-            for (int i = 0; i < container.getContainerSize(); i++) {
-                ItemStack stack = container.getItem(i);
-                if (predicate.test(stack)) count += stack.getCount();
-            }
-        }
-        return count;
-    }
-
-    private static boolean takeStorageMatching(ServerLevel level, BlockPos center, int radius,
-                                               java.util.function.Predicate<ItemStack> predicate,
-                                               int count) {
-        int remaining = count;
-        for (Container container : containers(level, center, radius)) {
-            for (int i = 0; i < container.getContainerSize(); i++) {
-                ItemStack stack = container.getItem(i);
-                if (!predicate.test(stack)) continue;
-                int take = Math.min(remaining, stack.getCount());
-                stack.shrink(take);
-                container.setChanged();
-                remaining -= take;
-                if (remaining <= 0) return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean takeFromStorage(ServerLevel level, BlockPos center, int radius, Item item, int count) {
-        int remaining = count;
-        for (Container container : containers(level, center, radius)) {
-            for (int i = 0; i < container.getContainerSize(); i++) {
-                ItemStack stack = container.getItem(i);
-                if (!stack.is(item)) continue;
-                int take = Math.min(remaining, stack.getCount());
-                stack.shrink(take);
-                container.setChanged();
-                remaining -= take;
-                if (remaining <= 0) return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean insertIntoStorage(ServerLevel level, BlockPos center, int radius, ItemStack incoming) {
-        if (incoming.isEmpty()) return true;
-        ItemStack work = incoming.copy();
-
-        for (Container container : containers(level, center, radius)) {
-            for (int i = 0; i < container.getContainerSize(); i++) {
-                ItemStack stack = container.getItem(i);
-                if (!stack.isEmpty() && ItemStack.isSameItemSameComponents(stack, work)
-                        && stack.getCount() < stack.getMaxStackSize()) {
-                    int move = Math.min(work.getCount(), stack.getMaxStackSize() - stack.getCount());
-                    stack.grow(move);
-                    work.shrink(move);
-                    container.setChanged();
-                    if (work.isEmpty()) return true;
-                }
-            }
-            for (int i = 0; i < container.getContainerSize(); i++) {
-                if (container.getItem(i).isEmpty()) {
-                    container.setItem(i, work.copy());
-                    container.setChanged();
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private static List<Container> containers(ServerLevel level, BlockPos center, int radius) {
-        List<Container> result = new ArrayList<>();
-        Set<Long> loadedChunks = new HashSet<>();
-        Set<Long> unavailableChunks = new HashSet<>();
-
-        for (BlockPos pos : BlockPos.betweenClosed(center.offset(-radius, -3, -radius), center.offset(radius, 3, radius))) {
-            long chunkKey = ChunkPos.asLong(pos.getX() >> 4, pos.getZ() >> 4);
-            if (unavailableChunks.contains(chunkKey)) continue;
-            if (!loadedChunks.contains(chunkKey)) {
-                if (!VillageSimulationScheduler.isChunkLoaded(level, pos)) {
-                    unavailableChunks.add(chunkKey);
-                    continue;
-                }
-                loadedChunks.add(chunkKey);
-            }
-            if (level.getBlockEntity(pos) instanceof Container container) result.add(container);
-        }
-        return result;
-    }
-
-    private static int countStorageItems(ServerLevel level, BlockPos center, int radius, Item... items) {
-        int count = 0;
-        for (Container container : containers(level, center, radius)) {
-            for (int i = 0; i < container.getContainerSize(); i++) {
-                ItemStack stack = container.getItem(i);
-                for (Item item : items) {
-                    if (stack.is(item)) {
-                        count += stack.getCount();
-                        break;
-                    }
-                }
-            }
-        }
-        return count;
+        return VillageStorageService.takeMatching(villager, level, stack -> stack.is(ItemTags.WOOL), 3)
+                && VillageStorageService.takeMatching(villager, level, stack -> stack.is(ItemTags.PLANKS), 3);
     }
 
     private static int countBlocks(ServerLevel level, BlockPos center, int radius, java.util.function.Predicate<BlockState> predicate) {
