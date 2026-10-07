@@ -59,6 +59,7 @@ public final class EnchantmentTweaksEvents {
     private static final String THORNS = "minecraft:thorns";
     private static final String BREACH = "minecraft:breach";
     private static final String KNOCKBACK = "minecraft:knockback";
+    private static final String PUNCH = "minecraft:punch";
     private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
     private static final String PROTECTION_LAST_DAMAGE = "asobibatweaks_protection_last_damage";
     private static final String PROJECTILE_LAST_DAMAGE = "asobibatweaks_projectile_last_damage";
@@ -91,6 +92,9 @@ public final class EnchantmentTweaksEvents {
     private static final String KNOCKBACK_STRENGTH = "asobibatweaks_knockback_strength";
     private static final String KNOCKBACK_ATTACKER_ID = "asobibatweaks_knockback_attacker_id";
     private static final String KNOCKBACK_UNTIL = "asobibatweaks_knockback_until";
+    private static final String PUNCH_BRANCH = "asobibatweaks_punch_branch";
+    private static final String PUNCH_STRENGTH = "asobibatweaks_punch_strength";
+    private static final String PUNCH_UNTIL = "asobibatweaks_punch_until";
 
     @SubscribeEvent
     public void onBlockDrops(BlockDropsEvent event) {
@@ -103,6 +107,29 @@ public final class EnchantmentTweaksEvents {
         if (AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()) {
             applyFortuneBranch(event, tool, player);
         }
+    }
+
+    @SubscribeEvent
+    public void onPunchProjectileHurt(LivingHurtEvent event) {
+        if (!(event.getSource().getEntity() instanceof ServerPlayer player)
+                || event.getSource().getDirectEntity() == player
+                || player.level().isClientSide()
+                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || event.getAmount() <= 0.0F) {
+            return;
+        }
+
+        ItemStack weapon = event.getSource().getWeaponItem();
+        if (weapon == null || weapon.isEmpty()) return;
+
+        BranchRef punch = branch(weapon, PUNCH);
+        if (punch == null) return;
+
+        double strength = branchScale(punch.mastery(), 0.0D, 1.0D);
+        var data = event.getEntity().getPersistentData();
+        data.putInt(PUNCH_BRANCH, punch.branch());
+        data.putInt(PUNCH_STRENGTH, (int)Math.round(strength * 1000.0D));
+        data.putLong(PUNCH_UNTIL, player.level().getGameTime() + 2L);
     }
 
     @SubscribeEvent
@@ -1045,6 +1072,47 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
+    public void onPunchKnockback(LivingKnockBackEvent event) {
+        var target = event.getEntity();
+        var data = target.getPersistentData();
+        if (!data.contains(PUNCH_UNTIL)) return;
+
+        long now = target.level().getGameTime();
+        if (now > data.getLong(PUNCH_UNTIL)) {
+            data.remove(PUNCH_BRANCH);
+            data.remove(PUNCH_STRENGTH);
+            data.remove(PUNCH_UNTIL);
+            return;
+        }
+
+        int branch = data.getInt(PUNCH_BRANCH);
+        double masteryStrength = Math.min(1.0D, Math.max(0.0D, data.getInt(PUNCH_STRENGTH) / 1000.0D));
+
+        data.remove(PUNCH_BRANCH);
+        data.remove(PUNCH_STRENGTH);
+        data.remove(PUNCH_UNTIL);
+
+        if (branch == 0) {
+            double multiplier = 1.15D + 0.25D * masteryStrength;
+            event.setStrength((float)(event.getStrength() * multiplier));
+        } else if (branch == 1) {
+            double conversion = 0.30D + 0.30D * masteryStrength;
+            float original = event.getStrength();
+            event.setStrength((float)(original * (1.0D - conversion)));
+            target.push(0.0D, original * conversion, 0.0D);
+        } else if (branch == 2) {
+            event.setStrength(event.getStrength() * 0.25F);
+            int duration = (int)Math.round(20.0D + 30.0D * masteryStrength);
+            int amplifier = masteryStrength >= 0.75D ? 2 : 1;
+            target.addEffect(new MobEffectInstance(
+                    MobEffects.MOVEMENT_SLOWDOWN,
+                    Math.max(1, duration),
+                    amplifier
+            ));
+        }
+    }
+
+    @SubscribeEvent
     public void onKnockback(LivingKnockBackEvent event) {
         var target = event.getEntity();
         var data = target.getPersistentData();
@@ -1374,7 +1442,8 @@ public final class EnchantmentTweaksEvents {
                 || FIRE_ASPECT.equals(enchantmentId)
                 || THORNS.equals(enchantmentId)
                 || BREACH.equals(enchantmentId)
-                || KNOCKBACK.equals(enchantmentId);
+                || KNOCKBACK.equals(enchantmentId)
+                || PUNCH.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -1495,6 +1564,14 @@ public final class EnchantmentTweaksEvents {
                 case 0 -> "Launch";
                 case 1 -> "Blowback";
                 case 2 -> "Recoil Step";
+                default -> "Unselected";
+            };
+        }
+        if (PUNCH.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Blowback";
+                case 1 -> "Launch";
+                case 2 -> "Pinning Shot";
                 default -> "Unselected";
             };
         }
