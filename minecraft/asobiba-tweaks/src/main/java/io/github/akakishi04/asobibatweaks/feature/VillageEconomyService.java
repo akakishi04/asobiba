@@ -187,6 +187,13 @@ public final class VillageEconomyService {
         if (result.is(Items.EMERALD) && !paid.is(Items.EMERALD)
                 && category(paid.getItem()) != null) {
             VillageStorageService.insert(villager, level, paid.copy());
+            VillagerSimData.villageId(villager).ifPresent(villageId ->
+                    VillageSimulationScheduler.enqueuePlanning(
+                            level,
+                            "public_works_trade:" + villageId,
+                            () -> VillagePublicWorksService.refresh(level, villageId)
+                    )
+            );
         }
     }
 
