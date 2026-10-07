@@ -15,6 +15,7 @@ import io.github.akakishi04.asobibatweaks.feature.MovementTweaksEvents;
 import io.github.akakishi04.asobibatweaks.feature.NetherFishingEvents;
 import io.github.akakishi04.asobibatweaks.feature.OceanAndDisplayEvents;
 import io.github.akakishi04.asobibatweaks.feature.PlayTimeLimitEvents;
+import io.github.akakishi04.asobibatweaks.feature.QuiverNetworking;
 import io.github.akakishi04.asobibatweaks.feature.PhysicsTransportEvents;
 import io.github.akakishi04.asobibatweaks.feature.TransportTweaksEvents;
 import io.github.akakishi04.asobibatweaks.feature.UniversalBondEvents;
@@ -45,6 +46,7 @@ public final class AsobibaTweaks {
     public AsobibaTweaks(IEventBus modBus, ModContainer container) {
         AsobibaRegistries.register(modBus);
         modBus.addListener(VillageStatusNetworking::registerPayloads);
+        modBus.addListener(QuiverNetworking::registerPayloads);
         container.registerConfig(ModConfig.Type.COMMON, AsobibaTweaksConfig.SPEC);
         NeoForge.EVENT_BUS.register(new GrowingItemsEvents());
         NeoForge.EVENT_BUS.register(new GiantOrganismEvents());
