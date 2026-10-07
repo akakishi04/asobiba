@@ -206,6 +206,34 @@ public final class VillageSavedData extends SavedData {
         return entry.snapshot();
     }
 
+    /**
+     * Marks indexed physical records in one chunk for lazy revalidation.
+     * The physical world remains authoritative; this only invalidates cached knowledge.
+     */
+    public boolean invalidateChunk(ChunkPos chunk) {
+        ChunkIndexEntry entry = chunkIndex.get(chunk.toLong());
+        if (entry == null) return false;
+
+        boolean changed = false;
+        for (UUID id : entry.buildingIds) {
+            BuildingRecord record = buildings.get(id);
+            if (record != null && !"dirty".equals(record.validationState)) {
+                record.validationState = "dirty";
+                changed = true;
+            }
+        }
+        for (UUID id : entry.storageIds) {
+            StorageRecord record = storages.get(id);
+            if (record != null && !"dirty".equals(record.validationState)) {
+                record.validationState = "dirty";
+                changed = true;
+            }
+        }
+
+        if (changed) setDirty();
+        return changed;
+    }
+
     public void touch() {
         setDirty();
     }
