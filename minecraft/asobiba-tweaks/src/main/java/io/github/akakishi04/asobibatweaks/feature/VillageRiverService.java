@@ -24,7 +24,7 @@ public final class VillageRiverService {
     private static final int SEARCH_RADIUS = 48;
     private static final int GRID_STEP = 8;
     private static final int WALK_STEP = 4;
-    private static final int MAX_COMPONENT_NODES = 144;
+    private static final int MAX_COMPONENT_NODES = 80;
 
     public VillageRiverService() {
     }
