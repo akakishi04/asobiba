@@ -619,14 +619,43 @@ Structure identity / persistence:
 Design constraint: villagers should understand and use plausible spaces built by either the game or the player, while recognition remains cheap, non-destructive and grounded in actual navigability rather than ownership flags or perfect-room geometry.
 
 ### Building culture
-Village architecture can drift over time based on:
-- biome
-- locally available materials
-- materials repeatedly supplied by the player
-- established local building palette
-- carpenter skill
 
-A plains village repeatedly supplied with spruce and stone brick may gradually develop a visibly different architectural identity.
+Accepted direction:
+- each village maintains a lightweight persistent **Building Culture** rather than using one fixed biome template set forever
+- Building Culture tracks weighted preferences such as:
+  - primary structural material
+  - foundation material
+  - roof material
+  - window / trim material
+  - fence / decorative material
+  - wood-versus-masonry tendency
+  - common roof-form family
+  - one-story versus multi-story tendency
+- initial culture is seeded from biome, original village architecture and locally available materials
+- culture then drifts gradually from actual building history rather than changing immediately from inventory contents alone
+- strongest long-term influences are:
+  1. materials repeatedly used in completed village construction
+  2. locally renewable/available building resources
+  3. materials repeatedly supplied by the player and then actually consumed in construction
+  4. recognized player-built structures that become part of normal village use
+  5. Carpenter experience / unlocked template complexity
+- merely placing a large stack of material into village storage once does not instantly redefine village architecture
+- materials gain cultural weight primarily when they are repeatedly selected and visibly used in completed structures
+- new buildings draw from a weighted material/style palette rather than copying one exact design
+- the dominant local style should normally appear in roughly **70-80%** of suitable new construction choices, while older/minority styles and practical substitutions remain visible in the remaining share
+- material shortages may temporarily substitute compatible blocks without immediately rewriting long-term culture
+- repeated successful substitutions can gradually become part of the accepted palette over time
+- Building Culture influences template/material selection but does not override structural validity, navigation or real-resource requirements
+- multi-story preference may rise naturally in mature/dense settlements without forcing every mature village into vertical construction
+- when villages merge, former settlement cultures are not instantly averaged away
+- merged villages may preserve **district-level cultural weights**, allowing old Village A and Village B districts to retain visibly different architecture while slowly influencing one another over long periods
+- newly founded Satellite Settlements inherit part of the parent culture but may drift independently based on their biome, resources and subsequent construction history
+- abandoned/old buildings remain physical historical evidence even when current village culture has shifted away from their style
+
+Example:
+- a plains village beginning with mostly Oak architecture but repeatedly building with supplied Spruce and Stone Bricks may gradually evolve toward Stone-Brick foundations and Spruce roofs while still retaining some older Oak structures and variants
+
+Design constraint: village architecture should develop visible local history from what the settlement actually builds with, not from abrupt random palette changes or one-time player inventory manipulation.
 
 ### Housing demand and new-house decisions
 
