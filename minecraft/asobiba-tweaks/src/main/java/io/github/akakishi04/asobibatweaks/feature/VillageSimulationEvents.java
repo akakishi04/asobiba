@@ -3,6 +3,7 @@ package io.github.akakishi04.asobibatweaks.feature;
 import io.github.akakishi04.asobibatweaks.AsobibaRegistries;
 import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -316,6 +317,7 @@ public final class VillageSimulationEvents {
         project.setPhase("foundation");
         project.setWorkCursor(0);
         project.setPausedReason("");
+        initializeProjectReservations(project, projectPlan(project), 0);
         data.touch();
 
         villager.getNavigation().moveTo(site.getX() + 2.0D, site.getY(), site.getZ() + 2.0D, 0.7D);
@@ -358,6 +360,7 @@ public final class VillageSimulationEvents {
         project.setParameter("plank", plankName(chooseBuildingPlanks(level, site, villager)));
         project.setWorkCursor(Math.max(0, legacy.getInt(BUILD_STEP)));
         project.setPhase(projectPhase(project));
+        initializeProjectReservations(project, projectPlan(project), project.workCursor());
         data.touch();
 
         legacy.putBoolean(BUILD_ACTIVE, false);
@@ -440,6 +443,8 @@ public final class VillageSimulationEvents {
             level.updateNeighborsAt(step.pos, step.state.getBlock());
             level.updateNeighborsAt(headPos, head.getBlock());
             project.setWorkCursor(Math.min(plan.size(), stepIndex + 2));
+            decrementProjectReservation(project, "tag:minecraft:wool", 3);
+            decrementProjectReservation(project, "tag:minecraft:planks", 3);
         } else {
             if (step.cost != null
                     && !VillagerSimData.takeWorkCargo(villager, level.registryAccess(),
@@ -448,11 +453,45 @@ public final class VillageSimulationEvents {
             }
             level.setBlock(step.pos, step.state, Block.UPDATE_ALL);
             project.setWorkCursor(stepIndex + 1);
+            if (step.cost != null) {
+                decrementProjectReservation(project, VillageStorageService.itemKey(step.cost), 1);
+            }
         }
 
         project.setPausedReason("");
         project.setPhase(projectPhase(project));
         VillageSavedData.get(level).touch();
+    }
+
+    private static void initializeProjectReservations(
+            VillageSavedData.ProjectRecord project,
+            List<BuildStep> plan,
+            int fromIndex) {
+        project.clearReservations();
+        Map<String, Integer> counts = new HashMap<>();
+
+        for (int i = Math.max(0, fromIndex); i < plan.size(); i++) {
+            BuildStep step = plan.get(i);
+            boolean bedFoot = step.state.getBlock() instanceof BedBlock
+                    && step.state.hasProperty(BedBlock.PART)
+                    && step.state.getValue(BedBlock.PART) == BedPart.FOOT;
+            if (bedFoot) {
+                counts.merge("tag:minecraft:wool", 3, Integer::sum);
+                counts.merge("tag:minecraft:planks", 3, Integer::sum);
+            } else if (step.cost != null) {
+                counts.merge(VillageStorageService.itemKey(step.cost), 1, Integer::sum);
+            }
+        }
+
+        counts.forEach(project::setReservation);
+    }
+
+    private static void decrementProjectReservation(
+            VillageSavedData.ProjectRecord project,
+            String key,
+            int count) {
+        int remaining = Math.max(0, project.reservations().getOrDefault(key, 0) - count);
+        project.setReservation(key, remaining);
     }
 
     private static void buildOneRoadProjectStep(Villager villager, ServerLevel level,
