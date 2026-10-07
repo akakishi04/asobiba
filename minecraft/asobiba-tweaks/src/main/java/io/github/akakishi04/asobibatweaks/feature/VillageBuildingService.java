@@ -19,6 +19,134 @@ public final class VillageBuildingService {
     private VillageBuildingService() {
     }
 
+    public static BlockPos findIndexedShelter(ServerLevel level, BlockPos center, int radius) {
+        VillageSavedData data = VillageSavedData.get(level);
+        Set<UUID> candidates = new HashSet<>();
+
+        int minChunkX = (center.getX() - radius) >> 4;
+        int maxChunkX = (center.getX() + radius) >> 4;
+        int minChunkZ = (center.getZ() - radius) >> 4;
+        int maxChunkZ = (center.getZ() + radius) >> 4;
+
+        for (int cx = minChunkX; cx <= maxChunkX; cx++) {
+            for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
+                candidates.addAll(data.recordsForChunk(new ChunkPos(cx, cz)).buildingIds());
+            }
+        }
+
+        BlockPos best = null;
+        int bestDistance = Integer.MAX_VALUE;
+        for (UUID id : candidates) {
+            VillageSavedData.BuildingRecord building = data.building(id).orElse(null);
+            if (building == null || !"valid".equals(building.validationState())) continue;
+            if (!VillageSimulationScheduler.isAreaLoaded(level, building.min(), building.max())) continue;
+            if (distanceToBounds(center, building.min(), building.max()) > radius) continue;
+
+            BlockPos cell = firstUsableShelterCell(level, building);
+            if (cell == null) continue;
+            int distance = center.distManhattan(cell);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = cell;
+            }
+        }
+        return best;
+    }
+
+    public static boolean isMaintainedVillageSpace(ServerLevel level, BlockPos pos, int margin) {
+        VillageSavedData data = VillageSavedData.get(level);
+        int chunkRadius = Math.max(1, (margin + 15) / 16 + 1);
+        ChunkPos origin = new ChunkPos(pos);
+
+        Set<UUID> buildingIds = new HashSet<>();
+        Set<UUID> workSiteIds = new HashSet<>();
+        Set<UUID> routeIds = new HashSet<>();
+        for (int dx = -chunkRadius; dx <= chunkRadius; dx++) {
+            for (int dz = -chunkRadius; dz <= chunkRadius; dz++) {
+                VillageSavedData.ChunkIndexView indexed =
+                        data.recordsForChunk(new ChunkPos(origin.x + dx, origin.z + dz));
+                buildingIds.addAll(indexed.buildingIds());
+                workSiteIds.addAll(indexed.workSiteIds());
+                routeIds.addAll(indexed.routeIds());
+            }
+        }
+
+        for (UUID id : buildingIds) {
+            VillageSavedData.BuildingRecord building = data.building(id).orElse(null);
+            if (building != null && distanceToBounds(pos, building.min(), building.max()) <= margin) return true;
+        }
+        for (UUID id : workSiteIds) {
+            VillageSavedData.WorkSiteRecord site = data.workSite(id).orElse(null);
+            if (site != null && distanceToBounds(pos, site.min(), site.max()) <= margin) return true;
+        }
+        for (UUID id : routeIds) {
+            VillageSavedData.RouteRecord route = data.route(id).orElse(null);
+            if (route != null && "active".equals(route.state())
+                    && distanceToSegment2D(pos, route.from(), route.to()) <= margin + 2.0D) return true;
+        }
+        return false;
+    }
+
+    private static BlockPos firstUsableShelterCell(ServerLevel level, VillageSavedData.BuildingRecord building) {
+        BlockPos min = building.min();
+        BlockPos max = building.max();
+        int probes = 0;
+
+        for (int y = min.getY(); y <= max.getY(); y++) {
+            for (int x = min.getX(); x <= max.getX(); x++) {
+                for (int z = min.getZ(); z <= max.getZ(); z++) {
+                    if (probes++ >= 96 || !VillageSimulationScheduler.tryConsumeBlockProbe(level)) return null;
+                    BlockPos pos = new BlockPos(x, y, z);
+                    if (!level.getBlockState(pos).isAir()
+                            || !level.getBlockState(pos.above()).isAir()
+                            || !level.getBlockState(pos.below()).isFaceSturdy(
+                            level, pos.below(), net.minecraft.core.Direction.UP)
+                            || level.canSeeSky(pos)) {
+                        continue;
+                    }
+                    return pos;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static int distanceToBounds(BlockPos pos, BlockPos min, BlockPos max) {
+        int dx = pos.getX() < min.getX() ? min.getX() - pos.getX()
+                : pos.getX() > max.getX() ? pos.getX() - max.getX() : 0;
+        int dy = pos.getY() < min.getY() ? min.getY() - pos.getY()
+                : pos.getY() > max.getY() ? pos.getY() - max.getY() : 0;
+        int dz = pos.getZ() < min.getZ() ? min.getZ() - pos.getZ()
+                : pos.getZ() > max.getZ() ? pos.getZ() - max.getZ() : 0;
+        return dx + dy + dz;
+    }
+
+    private static double distanceToSegment2D(BlockPos p, BlockPos a, BlockPos b) {
+        double ax = a.getX();
+        double az = a.getZ();
+        double bx = b.getX();
+        double bz = b.getZ();
+        double px = p.getX();
+        double pz = p.getZ();
+
+        double vx = bx - ax;
+        double vz = bz - az;
+        double len2 = vx * vx + vz * vz;
+        if (len2 <= 0.0001D) {
+            double dx = px - ax;
+            double dz = pz - az;
+            return Math.sqrt(dx * dx + dz * dz);
+        }
+
+        double t = ((px - ax) * vx + (pz - az) * vz) / len2;
+        t = Math.max(0.0D, Math.min(1.0D, t));
+        double qx = ax + vx * t;
+        double qz = az + vz * t;
+        double dx = px - qx;
+        double dz = pz - qz;
+        return Math.sqrt(dx * dx + dz * dz);
+    }
+
     public static void revalidateChunk(ServerLevel level, ChunkPos chunk) {
         VillageSavedData data = VillageSavedData.get(level);
         VillageSavedData.ChunkIndexView indexed = data.recordsForChunk(chunk);
