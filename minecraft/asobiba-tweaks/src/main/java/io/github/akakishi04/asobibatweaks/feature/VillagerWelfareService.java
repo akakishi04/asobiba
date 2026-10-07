@@ -30,6 +30,7 @@ public final class VillagerWelfareService {
     @SubscribeEvent
     public void onVillagerTick(EntityTickEvent.Post event) {
         if (!AsobibaTweaksConfig.VILLAGE_SIMULATION_ENABLED.getAsBoolean()
+                || !AsobibaTweaksConfig.VILLAGE_WELFARE_ENABLED.getAsBoolean()
                 || !(event.getEntity() instanceof Villager villager)
                 || villager.level().isClientSide()
                 || villager.isBaby()
@@ -44,7 +45,8 @@ public final class VillagerWelfareService {
 
     @SubscribeEvent
     public void onEntityInteract(PlayerInteractEvent.EntityInteract event) {
-        if (!(event.getTarget() instanceof Villager villager)
+        if (!AsobibaTweaksConfig.VILLAGE_WELFARE_ENABLED.getAsBoolean()
+                || !(event.getTarget() instanceof Villager villager)
                 || villager.level().isClientSide()
                 || !VillagerSimData.refusal(villager)) {
             return;
