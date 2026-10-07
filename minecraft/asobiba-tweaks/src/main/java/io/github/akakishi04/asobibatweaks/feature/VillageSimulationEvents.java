@@ -44,6 +44,10 @@ import net.neoforged.neoforge.event.tick.EntityTickEvent;
 import net.neoforged.neoforge.event.village.VillagerTradesEvent;
 
 public final class VillageSimulationEvents {
+    private static final int WORKER_CARGO_SLOTS = 8;
+    private static final int CARPENTER_CARGO_SLOTS = 8;
+    private static final int PORTER_CARGO_SLOTS = 16;
+
     private static final String BUILD_X = "asobibatweaks_build_x";
     private static final String BUILD_Y = "asobibatweaks_build_y";
     private static final String BUILD_Z = "asobibatweaks_build_z";
@@ -302,6 +306,7 @@ public final class VillageSimulationEvents {
             data.putBoolean(BUILD_ACTIVE, false);
             data.putLong(NEXT_BUILD, level.getGameTime() + (colony ? 10L : 5L) * 24000L);
             data.putInt(BUILDER_XP, data.getInt(BUILDER_XP) + 1);
+            registerCompletedLegacyBuild(villager, level, base, data.getInt(BUILD_KIND));
             BlockPos anchor = new BlockPos(data.getInt(BUILD_ANCHOR_X), base.getY(), data.getInt(BUILD_ANCHOR_Z));
             if (AsobibaTweaksConfig.VILLAGE_ROADS_ENABLED.getAsBoolean()) {
                 BlockPos roadFrom = base.offset(2, 0, -1).immutable();
@@ -321,9 +326,22 @@ public final class VillageSimulationEvents {
         }
 
         BuildStep step = plan.get(stepIndex);
-        if (!VillageSimulationScheduler.isChunkLoaded(level, step.pos)) {
+        if (!VillageSimulationScheduler.isChunkLoaded(level, step.pos)) return;
+
+        boolean bedFoot = step.state.getBlock() instanceof BedBlock
+                && step.state.hasProperty(BedBlock.PART)
+                && step.state.getValue(BedBlock.PART) == BedPart.FOOT;
+
+        if (bedFoot) {
+            if (!ensureBedCargo(villager, level)) {
+                requestMaterials(villager, "3 wool and 3 planks");
+                return;
+            }
+        } else if (step.cost != null && !ensureCargoItem(villager, level, step.cost, 1, CARPENTER_CARGO_SLOTS)) {
+            requestMaterials(villager, step.cost.getDescription().getString().toLowerCase(Locale.ROOT));
             return;
         }
+
         if (villager.distanceToSqr(step.pos.getCenter()) > 7.0D * 7.0D) {
             villager.getNavigation().moveTo(step.pos.getX() + 0.5D, step.pos.getY(), step.pos.getZ() + 0.5D, 0.75D);
             return;
@@ -335,9 +353,6 @@ public final class VillageSimulationEvents {
             return;
         }
 
-        boolean bedFoot = step.state.getBlock() instanceof BedBlock
-                && step.state.hasProperty(BedBlock.PART)
-                && step.state.getValue(BedBlock.PART) == BedPart.FOOT;
         if (bedFoot) {
             Direction facing = step.state.getValue(HorizontalDirectionalBlock.FACING);
             BlockPos headPos = step.pos.relative(facing);
@@ -347,10 +362,7 @@ public final class VillageSimulationEvents {
                 data.putLong(NEXT_BUILD, level.getGameTime() + 12000L);
                 return;
             }
-            if (!consumeBedMaterials(villager, level)) {
-                requestMaterials(villager, "3 wool and 3 planks");
-                return;
-            }
+            if (!consumeBedCargo(villager, level)) return;
 
             BlockState head = step.state.setValue(BedBlock.PART, BedPart.HEAD);
             level.setBlock(step.pos, step.state, Block.UPDATE_CLIENTS);
@@ -361,8 +373,9 @@ public final class VillageSimulationEvents {
             return;
         }
 
-        if (step.cost != null && !VillageStorageService.take(villager, level, step.cost, 1)) {
-            requestMaterials(villager, step.cost.getDescription().getString().toLowerCase(Locale.ROOT));
+        if (step.cost != null
+                && !VillagerSimData.takeWorkCargo(villager, level.registryAccess(),
+                CARPENTER_CARGO_SLOTS, step.cost, 1)) {
             return;
         }
 
@@ -681,7 +694,7 @@ public final class VillageSimulationEvents {
             }
         }
 
-        int food = countStorageItems(level, villager.blockPosition(), 14, Items.BREAD, Items.CARROT, Items.POTATO, Items.BEETROOT);
+        int food = VillageStorageService.count(villager, level, Items.BREAD, Items.CARROT, Items.POTATO, Items.BEETROOT);
         if (food < 16) {
             requestMaterials(villager, "food reserves");
             int streak = villager.getPersistentData().getInt(SHORTAGE_STREAK) + 1;
@@ -697,6 +710,10 @@ public final class VillageSimulationEvents {
 
     private static void tickQuarryWorker(Villager villager, ServerLevel level) {
         if (!isWorkTime(level) || level.getGameTime() % 200 != Math.floorMod(villager.getId(), 200)) return;
+        if (VillagerSimData.hasWorkCargo(villager, level.registryAccess(), WORKER_CARGO_SLOTS)) {
+            depositWorkCargo(villager, level, WORKER_CARGO_SLOTS);
+            return;
+        }
 
         BlockPos center = villager.blockPosition();
         if (center.getY() < 0 || !areaLoaded(level, center, 11, 5, 5)) return;
@@ -713,16 +730,29 @@ public final class VillageSimulationEvents {
             BlockState state = level.getBlockState(pos);
             if (!state.is(Blocks.STONE) && !state.is(Blocks.ANDESITE) && !state.is(Blocks.DIORITE) && !state.is(Blocks.GRANITE)) continue;
             if (!hasExposedFace(level, pos) || nearProtectedBuildingBlock(level, pos)) continue;
-            if (!VillageStorageService.insert(villager, level, new ItemStack(Items.COBBLESTONE)).isEmpty()) return;
+
+            ItemStack mined = new ItemStack(Items.COBBLESTONE);
+            if (!VillagerSimData.canInsertWorkCargo(villager, level.registryAccess(), mined, WORKER_CARGO_SLOTS)) {
+                depositWorkCargo(villager, level, WORKER_CARGO_SLOTS);
+                return;
+            }
+            if (villager.distanceToSqr(pos.getCenter()) > 2.25D) {
+                villager.getNavigation().moveTo(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D, 0.65D);
+                return;
+            }
 
             level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
-            villager.getNavigation().moveTo(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D, 0.65D);
+            VillagerSimData.insertWorkCargo(villager, level.registryAccess(), mined, WORKER_CARGO_SLOTS);
             return;
         }
     }
 
     private static void tickForester(Villager villager, ServerLevel level) {
         if (!isWorkTime(level) || level.getGameTime() % 240 != Math.floorMod(villager.getId(), 240)) return;
+        if (VillagerSimData.hasWorkCargo(villager, level.registryAccess(), WORKER_CARGO_SLOTS)) {
+            depositWorkCargo(villager, level, WORKER_CARGO_SLOTS);
+            return;
+        }
 
         BlockPos center = villager.blockPosition();
         if (!areaLoaded(level, center, 13, 4, 7)) return;
@@ -738,15 +768,24 @@ public final class VillageSimulationEvents {
             if (!state.is(BlockTags.LOGS) || !treeLooksNatural(level, pos)) continue;
 
             ItemStack log = new ItemStack(state.getBlock().asItem());
-            if (log.isEmpty() || !VillageStorageService.insert(villager, level, log).isEmpty()) return;
+            if (log.isEmpty()) continue;
+            if (!VillagerSimData.canInsertWorkCargo(villager, level.registryAccess(), log, WORKER_CARGO_SLOTS)) {
+                depositWorkCargo(villager, level, WORKER_CARGO_SLOTS);
+                return;
+            }
+            if (villager.distanceToSqr(pos.getCenter()) > 2.25D) {
+                villager.getNavigation().moveTo(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D, 0.7D);
+                return;
+            }
+
             level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
+            VillagerSimData.insertWorkCargo(villager, level.registryAccess(), log, WORKER_CARGO_SLOTS);
 
             if (level.getBlockState(pos.below()).is(BlockTags.DIRT)
                     && level.getBlockState(pos).isAir()) {
                 Block sapling = saplingFor(state.getBlock());
                 if (sapling != null) level.setBlock(pos, sapling.defaultBlockState(), Block.UPDATE_ALL);
             }
-            villager.getNavigation().moveTo(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D, 0.7D);
             return;
         }
     }
@@ -773,6 +812,12 @@ public final class VillageSimulationEvents {
     private static void tickPorter(Villager villager, ServerLevel level) {
         if (level.getGameTime() % 100 != Math.floorMod(villager.getId(), 100)) return;
         if (!areaLoaded(level, villager.blockPosition(), 14, 3, 3)) return;
+
+        if (VillagerSimData.hasWorkCargo(villager, level.registryAccess(), PORTER_CARGO_SLOTS)) {
+            depositWorkCargo(villager, level, PORTER_CARGO_SLOTS);
+            return;
+        }
+
         List<ItemEntity> drops = level.getEntitiesOfClass(
                 ItemEntity.class,
                 villager.getBoundingBox().inflate(7.0D),
@@ -786,23 +831,35 @@ public final class VillageSimulationEvents {
             return;
         }
 
-        ItemStack copy = nearest.getItem().copy();
-        if (VillageStorageService.insert(villager, level, copy).isEmpty()) {
-            nearest.discard();
-        }
+        ItemStack source = nearest.getItem();
+        ItemStack remainder = VillagerSimData.insertWorkCargo(
+                villager, level.registryAccess(), source.copy(), PORTER_CARGO_SLOTS);
+        int inserted = source.getCount() - remainder.getCount();
+        if (inserted <= 0) return;
+
+        source.shrink(inserted);
+        if (source.isEmpty()) nearest.discard();
     }
 
     private static void exportVillagerFood(Villager villager, ServerLevel level) {
         if (level.getGameTime() % 300 != Math.floorMod(villager.getId(), 300)) return;
         if (!areaLoaded(level, villager.blockPosition(), 12, 3, 3)) return;
+
+        if (VillagerSimData.hasWorkCargo(villager, level.registryAccess(), WORKER_CARGO_SLOTS)) {
+            depositWorkCargo(villager, level, WORKER_CARGO_SLOTS);
+            return;
+        }
+
         for (int i = 0; i < villager.getInventory().getContainerSize(); i++) {
             ItemStack stack = villager.getInventory().getItem(i);
             if (!(stack.is(Items.BREAD) || stack.is(Items.CARROT) || stack.is(Items.POTATO) || stack.is(Items.BEETROOT))
                     || stack.getCount() < 8) continue;
+
             ItemStack exported = stack.copyWithCount(Math.min(4, stack.getCount() - 4));
-            if (VillageStorageService.insert(villager, level, exported).isEmpty()) {
-                stack.shrink(exported.getCount());
-            }
+            ItemStack remainder = VillagerSimData.insertWorkCargo(
+                    villager, level.registryAccess(), exported, WORKER_CARGO_SLOTS);
+            int inserted = exported.getCount() - remainder.getCount();
+            if (inserted > 0) stack.shrink(inserted);
             return;
         }
     }
@@ -855,13 +912,133 @@ public final class VillageSimulationEvents {
         }
     }
 
-    private static boolean consumeBedMaterials(Villager villager, ServerLevel level) {
-        if (VillageStorageService.countMatching(villager, level, stack -> stack.is(ItemTags.WOOL)) < 3
-                || VillageStorageService.countMatching(villager, level, stack -> stack.is(ItemTags.PLANKS)) < 3) {
+    private static boolean depositWorkCargo(Villager villager, ServerLevel level, int capacity) {
+        if (!VillagerSimData.hasWorkCargo(villager, level.registryAccess(), capacity)) return true;
+
+        var nearest = VillageStorageService.nearestContainer(villager, level);
+        if (nearest.isEmpty()) return false;
+
+        BlockPos target = nearest.get().record().pos();
+        if (villager.distanceToSqr(target.getCenter()) > 9.0D) {
+            villager.getNavigation().moveTo(target.getX() + 0.5D, target.getY(), target.getZ() + 0.5D, 0.72D);
             return false;
         }
-        return VillageStorageService.takeMatching(villager, level, stack -> stack.is(ItemTags.WOOL), 3)
-                && VillageStorageService.takeMatching(villager, level, stack -> stack.is(ItemTags.PLANKS), 3);
+
+        List<ItemStack> cargo = VillagerSimData.workCargo(villager, level.registryAccess(), capacity);
+        boolean changed = false;
+        for (int slot = 0; slot < cargo.size(); slot++) {
+            ItemStack stack = cargo.get(slot);
+            if (stack.isEmpty()) continue;
+            ItemStack remainder = VillageStorageService.insert(villager, level, stack);
+            cargo.set(slot, remainder);
+            changed = true;
+        }
+        if (changed) VillagerSimData.setWorkCargo(villager, level.registryAccess(), cargo, capacity);
+        return !VillagerSimData.hasWorkCargo(villager, level.registryAccess(), capacity);
+    }
+
+    private static boolean ensureCargoItem(Villager villager, ServerLevel level, Item item, int count, int capacity) {
+        int current = VillagerSimData.workCargoCount(villager, level.registryAccess(), capacity, item);
+        if (current >= count) return true;
+
+        int needed = count - current;
+        ItemStack probe = new ItemStack(item, needed);
+        if (!VillagerSimData.canInsertWorkCargo(villager, level.registryAccess(), probe, capacity)) return false;
+
+        var nearest = VillageStorageService.nearestContainer(villager, level);
+        if (nearest.isEmpty()) return false;
+        BlockPos target = nearest.get().record().pos();
+        if (villager.distanceToSqr(target.getCenter()) > 9.0D) {
+            villager.getNavigation().moveTo(target.getX() + 0.5D, target.getY(), target.getZ() + 0.5D, 0.72D);
+            return false;
+        }
+
+        List<ItemStack> extracted = VillageStorageService.extract(villager, level, item, needed);
+        if (extracted.isEmpty()) return false;
+        for (ItemStack stack : extracted) {
+            ItemStack remainder = VillagerSimData.insertWorkCargo(
+                    villager, level.registryAccess(), stack, capacity);
+            if (!remainder.isEmpty()) {
+                VillageStorageService.insert(villager, level, remainder);
+                return false;
+            }
+        }
+        return VillagerSimData.workCargoCount(villager, level.registryAccess(), capacity, item) >= count;
+    }
+
+    private static boolean ensureCargoMatching(Villager villager, ServerLevel level,
+                                               java.util.function.Predicate<ItemStack> predicate,
+                                               int count, int capacity) {
+        int current = VillagerSimData.workCargoCountMatching(
+                villager, level.registryAccess(), capacity, predicate);
+        if (current >= count) return true;
+
+        var nearest = VillageStorageService.nearestContainer(villager, level);
+        if (nearest.isEmpty()) return false;
+        BlockPos target = nearest.get().record().pos();
+        if (villager.distanceToSqr(target.getCenter()) > 9.0D) {
+            villager.getNavigation().moveTo(target.getX() + 0.5D, target.getY(), target.getZ() + 0.5D, 0.72D);
+            return false;
+        }
+
+        int needed = count - current;
+        List<ItemStack> extracted = VillageStorageService.extractMatching(villager, level, predicate, needed);
+        if (extracted.isEmpty()) return false;
+
+        for (ItemStack stack : extracted) {
+            if (!VillagerSimData.canInsertWorkCargo(villager, level.registryAccess(), stack, capacity)) {
+                VillageStorageService.insert(villager, level, stack);
+                return false;
+            }
+            ItemStack remainder = VillagerSimData.insertWorkCargo(
+                    villager, level.registryAccess(), stack, capacity);
+            if (!remainder.isEmpty()) {
+                VillageStorageService.insert(villager, level, remainder);
+                return false;
+            }
+        }
+        return VillagerSimData.workCargoCountMatching(
+                villager, level.registryAccess(), capacity, predicate) >= count;
+    }
+
+    private static boolean ensureBedCargo(Villager villager, ServerLevel level) {
+        return ensureCargoMatching(villager, level, stack -> stack.is(ItemTags.WOOL), 3, CARPENTER_CARGO_SLOTS)
+                && ensureCargoMatching(villager, level, stack -> stack.is(ItemTags.PLANKS), 3, CARPENTER_CARGO_SLOTS);
+    }
+
+    private static boolean consumeBedCargo(Villager villager, ServerLevel level) {
+        return VillagerSimData.takeWorkCargoMatching(
+                villager, level.registryAccess(), CARPENTER_CARGO_SLOTS,
+                stack -> stack.is(ItemTags.WOOL), 3)
+                && VillagerSimData.takeWorkCargoMatching(
+                villager, level.registryAccess(), CARPENTER_CARGO_SLOTS,
+                stack -> stack.is(ItemTags.PLANKS), 3);
+    }
+
+    private static void registerCompletedLegacyBuild(Villager villager, ServerLevel level, BlockPos base, int buildKind) {
+        var villageId = VillagerSimData.villageId(villager);
+        if (villageId.isEmpty()) return;
+
+        VillageSavedData data = VillageSavedData.get(level);
+        VillageSavedData.BuildingRecord building = data.createBuilding(
+                villageId.get(), base, base.offset(4, 4, 4), true);
+        building.setTemplateId(buildKind == 1 ? "legacy_storage_5x5" : "legacy_hut_5x5");
+        building.setClassification(buildKind == 1 ? "storage" : "residential");
+        building.setValidationState("valid");
+        building.setLastValidatedGameTime(level.getGameTime());
+
+        if (buildKind == 1) {
+            for (BlockPos storagePos : List.of(base.offset(1, 1, 2), base.offset(3, 1, 2))) {
+                if (level.getBlockEntity(storagePos) instanceof Container
+                        && data.storageAt(villageId.get(), storagePos).isEmpty()) {
+                    VillageSavedData.StorageRecord storage = data.createStorage(villageId.get(), storagePos, "general");
+                    storage.setValidationState("valid");
+                    storage.setLastValidatedGameTime(level.getGameTime());
+                }
+            }
+            VillageStorageService.reconcileVillage(villageId.get(), level);
+        }
+        data.touch();
     }
 
     private static int countBlocks(ServerLevel level, BlockPos center, int radius, java.util.function.Predicate<BlockState> predicate) {
