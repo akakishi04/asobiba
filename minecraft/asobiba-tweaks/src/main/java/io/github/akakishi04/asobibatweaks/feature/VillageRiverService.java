@@ -89,6 +89,11 @@ public final class VillageRiverService {
             return;
         }
 
+        if (existing != null && !overlaps(existing, component, 16)) {
+            existing.setState("inactive");
+            existing = null;
+        }
+
         if (existing == null) {
             existing = data.createWorkSite(
                     villageId,
@@ -102,6 +107,14 @@ public final class VillageRiverService {
         existing.setState("active");
         existing.setLastUsedGameTime(level.getGameTime());
         data.touch();
+    }
+
+    private static boolean overlaps(VillageSavedData.WorkSiteRecord site,
+                                    WaterComponent component, int margin) {
+        return site.min().getX() - margin <= component.maxX
+                && site.max().getX() + margin >= component.minX
+                && site.min().getZ() - margin <= component.maxZ
+                && site.max().getZ() + margin >= component.minZ;
     }
 
     private static BlockPos findWaterStart(ServerLevel level, BlockPos center) {
