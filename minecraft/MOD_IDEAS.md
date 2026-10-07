@@ -389,6 +389,53 @@ Accepted direction:
 
 Design constraint: real containers are authoritative; the ledger exists for efficient planning, reservations and visibility, never as a hidden source of free materials.
 
+### Resource-site assignment and bounded gathering
+
+Accepted direction:
+- autonomous gathering is **site-based** rather than free-form resource chasing
+- the village planner first designates a recognized work site, then assigns suitable workers to that site
+- workers may gather only inside their assigned site's boundary
+- workers do not continue following a resource vein/tree line/crop patch beyond the assigned boundary
+- if a site becomes depleted or unsuitable, workers stop and the planner must approve a replacement or new site
+- gathering is demand-driven: when the relevant village stockpile is at or above its target reserve, ordinary gathering for that resource pauses
+- player structures, recognized roads, occupied buildings and clearly artificial/protected-use areas are excluded from autonomous harvesting
+- remote sites may become linked Outposts / Satellite Sites and use the established logistics system rather than teleporting resources
+
+#### Forestry sites
+- Foresters operate only inside recognized **Forestry Sites**
+- an initial Forestry Site should usually cover roughly a **24-32 block radius**
+- normal tree logs are the main target
+- leaves are normally left to natural decay unless a specific cleanup action is needed
+- after harvesting, Foresters replant a compatible/same-family sapling whenever practical
+- the site should retain enough standing trees and/or planted saplings to avoid deliberate clear-cutting
+- the same patch is not harvested continuously without allowing meaningful regrowth
+- logs that appear to be part of player/village structures, roofs, pillars, bridges or other artificial construction are not harvested
+- unusually complex/giant trees may be skipped if safe complete harvesting cannot be performed without leaving severe floating remnants
+- Forestry Sites are intended to behave as renewable managed woodland rather than disposable forest removal zones
+
+#### Quarry sites
+- Quarry workers operate only inside recognized **Quarry Sites**
+- sites prefer exposed stone, cliffs, hillsides and shallow stone deposits
+- autonomous quarrying remains at **Y >= 0**
+- ordinary quarry depth should stay roughly **8-16 blocks below the site's initial working surface**, while still respecting the Y>=0 hard floor
+- workers do not follow natural caves, ravines or ore veins beyond the Quarry Site boundary
+- quarrying does not intentionally tunnel beneath recognized homes, roads or village infrastructure
+- major uncontrolled water/lava ingress causes the affected work face to be suspended rather than blindly excavated through
+- the primary purpose is construction material such as stone/cobblestone and related common blocks
+- coal, iron or other useful ore exposed naturally inside the approved quarry may be collected as a byproduct
+- workers do not deepen or extend the quarry specifically to pursue ore
+
+#### Village farms
+- Farmers harvest only recognized **Village Farm** areas
+- mature crops are harvested and normally replanted with the same crop
+- required seeds/planting items may be drawn from village storage when available
+- crop mix may gradually respond to actual village food/resource demand rather than remaining permanently fixed
+- arbitrary nearby player farms are not harvested
+- a player-built farm may later be adopted as a Village Farm only when it lies within village use context and has been intentionally/consistently used as village agricultural infrastructure
+- temporary crop shortages do not authorize farmers to harvest outside recognized farm boundaries
+
+Design constraint: workers gather from places the settlement has explicitly decided to use, not from every reachable resource in the loaded world.
+
 ### Outposts and satellite sites
 Villages may establish small functional sites away from the core settlement:
 - forester huts
