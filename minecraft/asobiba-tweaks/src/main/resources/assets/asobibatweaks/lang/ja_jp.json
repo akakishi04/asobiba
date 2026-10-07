@@ -20,5 +20,8 @@
   "message.asobibatweaks.atlas.empty": "地図帳は空です",
   "block.asobibatweaks.arcane_bookshelf": "秘術の本棚",
   "button.asobibatweaks.enchantment_reroll": "再抽選 (%s Lv)",
-  "item.asobibatweaks.arcane_folio": "秘術の書片"
+  "item.asobibatweaks.arcane_folio": "秘術の書片",
+  "item.asobibatweaks.quiver": "矢筒",
+  "tooltip.asobibatweaks.quiver.slots": "使用中の弾薬枠: %s / %s",
+  "message.asobibatweaks.quiver.selected": "矢筒スロット %s: %s"
 }
