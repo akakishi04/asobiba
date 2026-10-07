@@ -1548,18 +1548,18 @@ public final class VillageSimulationEvents {
     }
 
     private static void requestMaterials(Villager villager, String what) {
-        if (!AsobibaTweaksConfig.VILLAGE_PUBLIC_WORKS_ENABLED.getAsBoolean()) return;
-        long now = villager.level().getGameTime();
-        long last = villager.getPersistentData().getLong("asobibatweaks_last_request");
-        if (now - last < 1200L) return;
-        villager.getPersistentData().putLong("asobibatweaks_last_request", now);
-
-        var nearest = ((ServerLevel)villager.level()).getNearestPlayer(villager, 20.0D);
-        if (nearest instanceof ServerPlayer player) {
-            player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                    "Village carpenter needs " + what + " for current work."
-            ).withStyle(ChatFormatting.YELLOW));
+        if (!AsobibaTweaksConfig.VILLAGE_PUBLIC_WORKS_ENABLED.getAsBoolean()
+                || !(villager.level() instanceof ServerLevel level)) {
+            return;
         }
+
+        VillagerSimData.villageId(villager).ifPresent(villageId ->
+                VillageSimulationScheduler.enqueuePlanning(
+                        level,
+                        "public_works_immediate:" + villageId,
+                        () -> VillagePublicWorksService.refresh(level, villageId)
+                )
+        );
     }
 
     private record BuildStep(BlockPos pos, BlockState state, Item cost) {}
