@@ -449,11 +449,49 @@ Villages may establish small functional sites away from the core settlement:
 These sites should remain linked to the parent settlement through logistics rather than becoming free resource generators.
 
 ### Roads and bridges
-- New buildings should tend to receive paths connecting them to the settlement.
-- Satellite sites may gradually gain roads.
-- Terrain can create public-works jobs.
-- Small rivers/gaps can trigger bridge construction.
-- Roads/bridges consume real materials and should be built incrementally.
+Accepted direction:
+- roads are created from **actual movement/logistics demand**, not by connecting every structure immediately
+- important path nodes include village center/bell, housing clusters, workplaces, shared storage, farms, resource sites, satellite sites and existing recognized road junctions
+- the village planner uses a road-building cost map rather than straight-line placement
+- preferred terrain order is roughly: **existing road -> flat ground -> gentle slope -> minor grading -> steep slope -> water crossing -> major excavation**
+- routes should bend around difficult terrain when that is cheaper and more natural than forcing a direct line
+- ordinary village paths are usually **1-2 blocks wide**
+- primary village roads are normally **2 blocks wide**
+- heavily used logistics routes may later widen toward **3 blocks** when justified by traffic
+- road materials follow biome/local building palette and available resources
+- roads may mature over time, for example **dirt path -> gravel -> stone/cobblestone paving**, with every upgrade consuming real materials
+- road construction and upgrades are performed progressively by Carpenter/public-works jobs rather than appearing instantly
+- existing player-built paths/bridges that are recognized as usable infrastructure should be preferred and integrated instead of duplicated or overwritten
+
+Traffic / demand behavior:
+- one incidental traversal does not create a road
+- repeated villager movement, frequent Porter routes, new occupied buildings and active satellite logistics increase route demand
+- once demand crosses the planning threshold, the route becomes a public-works candidate
+- road quality may improve as sustained traffic increases
+- abandoned/rarely used routes do not need continual upgrading
+
+Bridge decisions:
+- bridges are considered only when a planned route encounters water, ravines, gaps or similar obstacles
+- the planner compares the bridge cost against the practical detour cost
+- relatively short crossings, initially around **2-12 blocks**, are suitable bridge candidates when a detour would be materially longer
+- if a short safe detour exists, the planner should prefer the detour rather than constructing an unnecessary bridge
+- initial bridge families may include:
+  - simple wooden bridge for minor crossings
+  - standard wood/stone bridge for normal village roads
+  - more substantial stone bridge for mature/high-traffic settlements
+- bridge width should normally match the road it serves
+- bridge construction is phased, such as supports/piers where required -> deck -> railings -> road connection
+- bridges consume real stored materials and are physically built by Carpenter/public-works workers
+- bridge placement must validate safe foundations/support positions and avoid obviously impossible spans
+
+Elevation handling:
+- minor height changes use normal path blocks/terrain adaptation
+- moderate slopes may use stairs and short graded sections
+- steep slopes should prefer switchbacks or alternate routing
+- cliffs or terrain requiring excessive excavation should usually cause rerouting instead of forced construction
+
+Design constraint: roads should emerge because the settlement actually uses a route, and bridges should exist because they solve a real movement problem rather than as decorative automatic generation.
+
 
 ### Workstation placement and building function
 
