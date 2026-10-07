@@ -45,6 +45,8 @@ public final class ForestRegenerationEvents {
             BlockPos ground = new BlockPos(x, y - 1, z);
             BlockPos plant = ground.above();
 
+            if (VillageBuildingService.isMaintainedVillageSpace(level, plant, 5)) continue;
+
             if (!level.getBlockState(plant).isAir()
                     || !(level.getBlockState(ground).is(Blocks.GRASS_BLOCK)
                     || level.getBlockState(ground).is(Blocks.DIRT)
