@@ -60,6 +60,7 @@ public final class EnchantmentTweaksEvents {
     private static final String BREACH = "minecraft:breach";
     private static final String KNOCKBACK = "minecraft:knockback";
     private static final String PUNCH = "minecraft:punch";
+    private static final String IMPALING = "minecraft:impaling";
     private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
     private static final String PROTECTION_LAST_DAMAGE = "asobibatweaks_protection_last_damage";
     private static final String PROJECTILE_LAST_DAMAGE = "asobibatweaks_projectile_last_damage";
@@ -95,6 +96,8 @@ public final class EnchantmentTweaksEvents {
     private static final String PUNCH_BRANCH = "asobibatweaks_punch_branch";
     private static final String PUNCH_STRENGTH = "asobibatweaks_punch_strength";
     private static final String PUNCH_UNTIL = "asobibatweaks_punch_until";
+    private static final String IMPALING_HARPOON_STRENGTH = "asobibatweaks_impaling_harpoon_strength";
+    private static final String IMPALING_HARPOON_UNTIL = "asobibatweaks_impaling_harpoon_until";
 
     @SubscribeEvent
     public void onBlockDrops(BlockDropsEvent event) {
@@ -106,6 +109,52 @@ public final class EnchantmentTweaksEvents {
 
         if (AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()) {
             applyFortuneBranch(event, tool, player);
+        }
+    }
+
+    @SubscribeEvent
+    public void onImpalingHurt(LivingHurtEvent event) {
+        if (!(event.getSource().getEntity() instanceof ServerPlayer player)
+                || player.level().isClientSide()
+                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || event.getAmount() <= 0.0F) {
+            return;
+        }
+
+        ItemStack weapon = event.getSource().getWeaponItem();
+        if (weapon == null || weapon.isEmpty()) {
+            if (event.getSource().getDirectEntity() != player) return;
+            weapon = player.getMainHandItem();
+        }
+
+        BranchRef impaling = branch(weapon, IMPALING);
+        if (impaling == null) return;
+
+        int level = enchantmentLevel(weapon, IMPALING);
+        if (level <= 0) return;
+
+        double strength = branchScale(impaling.mastery(), 0.0D, 1.0D);
+        double vanillaBonus = 2.5D * level;
+
+        if (impaling.branch() == 0) {
+            boolean vanillaSensitive = event.getEntity().getType().is(EntityTypeTags.SENSITIVE_TO_IMPALING);
+            if (!vanillaSensitive && event.getEntity().isInWaterOrRain()) {
+                double fraction = 0.50D + 0.50D * strength;
+                event.setAmount(event.getAmount() + (float)(vanillaBonus * fraction));
+            }
+        } else if (impaling.branch() == 1) {
+            var data = event.getEntity().getPersistentData();
+            data.putInt(
+                    IMPALING_HARPOON_STRENGTH,
+                    (int)Math.round((0.15D + 0.30D * strength) * 1000.0D)
+            );
+            data.putLong(IMPALING_HARPOON_UNTIL, player.level().getGameTime() + 2L);
+        } else if (impaling.branch() == 2
+                && event.getEntity().getType().is(EntityTypeTags.SENSITIVE_TO_IMPALING)
+                && player.isUnderWater()
+                && underwaterDepth(player) >= 8) {
+            double extra = 0.10D + 0.20D * strength;
+            event.setAmount(event.getAmount() + (float)(vanillaBonus * extra));
         }
     }
 
@@ -1072,6 +1121,31 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
+    public void onImpalingHarpoonKnockback(LivingKnockBackEvent event) {
+        var target = event.getEntity();
+        var data = target.getPersistentData();
+        if (!data.contains(IMPALING_HARPOON_UNTIL)) return;
+
+        long now = target.level().getGameTime();
+        if (now > data.getLong(IMPALING_HARPOON_UNTIL)) {
+            data.remove(IMPALING_HARPOON_STRENGTH);
+            data.remove(IMPALING_HARPOON_UNTIL);
+            return;
+        }
+
+        float strength = (float)Math.min(
+                0.45D,
+                Math.max(0.15D, data.getInt(IMPALING_HARPOON_STRENGTH) / 1000.0D)
+        );
+        data.remove(IMPALING_HARPOON_STRENGTH);
+        data.remove(IMPALING_HARPOON_UNTIL);
+
+        event.setStrength(strength);
+        event.setRatioX(-event.getRatioX());
+        event.setRatioZ(-event.getRatioZ());
+    }
+
+    @SubscribeEvent
     public void onPunchKnockback(LivingKnockBackEvent event) {
         var target = event.getEntity();
         var data = target.getPersistentData();
@@ -1301,6 +1375,17 @@ public final class EnchantmentTweaksEvents {
         return null;
     }
 
+    private static int underwaterDepth(ServerPlayer player) {
+        BlockPos origin = player.blockPosition();
+        int depth = 0;
+        for (int dy = 0; dy <= 32; dy++) {
+            BlockPos pos = origin.above(dy);
+            if (!player.level().getFluidState(pos).is(net.minecraft.tags.FluidTags.WATER)) break;
+            depth++;
+        }
+        return depth;
+    }
+
     private static int enchantmentLevel(ItemStack stack, String enchantmentId) {
         for (var entry : EnchantmentMasteryData.enchantments(stack).entrySet()) {
             if (enchantmentId.equals(EnchantmentMasteryData.id(entry.getKey()))) {
@@ -1443,7 +1528,8 @@ public final class EnchantmentTweaksEvents {
                 || THORNS.equals(enchantmentId)
                 || BREACH.equals(enchantmentId)
                 || KNOCKBACK.equals(enchantmentId)
-                || PUNCH.equals(enchantmentId);
+                || PUNCH.equals(enchantmentId)
+                || IMPALING.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -1572,6 +1658,14 @@ public final class EnchantmentTweaksEvents {
                 case 0 -> "Blowback";
                 case 1 -> "Launch";
                 case 2 -> "Pinning Shot";
+                default -> "Unselected";
+            };
+        }
+        if (IMPALING.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Wet Hunt";
+                case 1 -> "Harpoon";
+                case 2 -> "Deep Hunter";
                 default -> "Unselected";
             };
         }
