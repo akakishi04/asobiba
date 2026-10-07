@@ -1175,8 +1175,11 @@ public final class VillageSavedData extends SavedData {
         private final BlockPos min;
         private final BlockPos max;
         private String state = "active";
+        private String purpose = "";
+        private int idleDays;
         private long createdGameTime;
         private long lastUsedGameTime;
+        private long lastLifecycleGameTime;
 
         private WorkSiteRecord(UUID id, UUID villageId, String type, BlockPos min, BlockPos max) {
             this.id = id;
@@ -1192,13 +1195,19 @@ public final class VillageSavedData extends SavedData {
         public BlockPos min() { return min; }
         public BlockPos max() { return max; }
         public String state() { return state; }
+        public String purpose() { return purpose; }
+        public int idleDays() { return Math.max(0, idleDays); }
         public long createdGameTime() { return createdGameTime; }
         public long lastUsedGameTime() { return lastUsedGameTime; }
+        public long lastLifecycleGameTime() { return lastLifecycleGameTime; }
 
         public void setType(String value) { type = safeText(value, "generic"); }
         public void setState(String value) { state = safeText(value, "active"); }
+        public void setPurpose(String value) { purpose = value == null ? "" : value; }
+        public void setIdleDays(int value) { idleDays = Math.max(0, value); }
         public void setCreatedGameTime(long value) { createdGameTime = value; }
         public void setLastUsedGameTime(long value) { lastUsedGameTime = value; }
+        public void setLastLifecycleGameTime(long value) { lastLifecycleGameTime = value; }
 
         private CompoundTag save() {
             CompoundTag tag = new CompoundTag();
@@ -1208,8 +1217,11 @@ public final class VillageSavedData extends SavedData {
             tag.putLong("min", min.asLong());
             tag.putLong("max", max.asLong());
             tag.putString("state", state);
+            tag.putString("purpose", purpose);
+            tag.putInt("idle_days", idleDays);
             tag.putLong("created", createdGameTime);
             tag.putLong("last_used", lastUsedGameTime);
+            tag.putLong("last_lifecycle", lastLifecycleGameTime);
             return tag;
         }
 
@@ -1221,8 +1233,11 @@ public final class VillageSavedData extends SavedData {
             WorkSiteRecord record = new WorkSiteRecord(id, villageId, safeText(tag.getString("type"), "generic"),
                     BlockPos.of(tag.getLong("min")), BlockPos.of(tag.getLong("max")));
             record.state = safeText(tag.getString("state"), "active");
+            record.purpose = tag.getString("purpose");
+            record.idleDays = Math.max(0, tag.getInt("idle_days"));
             record.createdGameTime = tag.getLong("created");
             record.lastUsedGameTime = tag.getLong("last_used");
+            record.lastLifecycleGameTime = tag.getLong("last_lifecycle");
             return record;
         }
     }
