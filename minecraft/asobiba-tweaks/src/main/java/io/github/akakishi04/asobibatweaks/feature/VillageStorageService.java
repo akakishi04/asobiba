@@ -161,6 +161,52 @@ public final class VillageStorageService {
         return total;
     }
 
+    public static List<ItemStack> extract(Villager villager, ServerLevel level, Item item, int count) {
+        if (count <= 0) return List.of();
+        return extractMatching(villager, level, stack -> stack.is(item), count);
+    }
+
+    public static List<ItemStack> extractMatching(Villager villager, ServerLevel level,
+                                                  Predicate<ItemStack> predicate, int count) {
+        if (count <= 0) return List.of();
+        if (countMatching(villager, level, predicate) < count) return List.of();
+
+        int remaining = count;
+        List<ItemStack> extracted = new ArrayList<>();
+        for (LocatedContainer located : containers(villager, level)) {
+            Container container = located.container;
+            for (int slot = 0; slot < container.getContainerSize() && remaining > 0; slot++) {
+                ItemStack stack = container.getItem(slot);
+                if (!predicate.test(stack)) continue;
+
+                int take = Math.min(remaining, stack.getCount());
+                extracted.add(stack.copyWithCount(take));
+                stack.shrink(take);
+                remaining -= take;
+                container.setChanged();
+            }
+            if (remaining <= 0) break;
+        }
+
+        if (remaining > 0) {
+            // This should be unreachable after the pre-count under a single-threaded server tick.
+            // Restore what was extracted rather than allowing a partial silent withdrawal.
+            for (ItemStack stack : extracted) {
+                ItemStack remainder = insert(villager, level, stack);
+                if (!remainder.isEmpty()) {
+                    // If the container topology changed unexpectedly, preserve the item physically
+                    // by placing it in the villager's normal inventory as a last-resort recovery.
+                    villager.getInventory().addItem(remainder);
+                }
+            }
+            reconcileVillage(villager, level);
+            return List.of();
+        }
+
+        reconcileVillage(villager, level);
+        return extracted;
+    }
+
     public static boolean take(Villager villager, ServerLevel level, Item item, int count) {
         if (count <= 0) return true;
         int remaining = count;
