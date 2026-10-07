@@ -104,6 +104,28 @@ public final class AsobibaTweaksConfig {
     public static final ModConfigSpec.BooleanValue VILLAGE_PUBLIC_WORKS_ENABLED = bool("village.publicWorksRequests", true, "Surface real village shortages to nearby players.");
     public static final ModConfigSpec.BooleanValue MOB_USED_BUILDINGS_ENABLED = bool("village.mobUsedBuildings", true, "Allow villagers and passive mobs to seek plausible shelter and gathering spaces.");
     public static final ModConfigSpec.BooleanValue REGIONAL_TRADE_VALUE_ENABLED = bool("village.regionalTradeValue", true, "Enable simple distance/region trade-value bonuses.");
+
+    // Bounded V2 scheduler defaults. These caps limit work already requested by loaded gameplay;
+    // they never authorize chunk loading or offline simulation.
+    public static final ModConfigSpec.IntValue VILLAGE_MAX_EMERGENCY_JOBS_PER_TICK =
+            BUILDER.defineInRange("village.scheduler.emergencyJobsPerTick", 4, 1, 64);
+    public static final ModConfigSpec.IntValue VILLAGE_MAX_WORKER_JOBS_PER_TICK =
+            BUILDER.defineInRange("village.scheduler.workerJobsPerTick", 8, 1, 128);
+    public static final ModConfigSpec.IntValue VILLAGE_MAX_PLANNING_JOBS_PER_TICK =
+            BUILDER.defineInRange("village.scheduler.planningJobsPerTick", 2, 1, 32);
+    public static final ModConfigSpec.IntValue VILLAGE_MAX_RECONCILE_JOBS_PER_TICK =
+            BUILDER.defineInRange("village.scheduler.reconcileJobsPerTick", 4, 1, 64);
+    public static final ModConfigSpec.IntValue VILLAGE_MAX_VALIDATION_JOBS_PER_TICK =
+            BUILDER.defineInRange("village.scheduler.validationJobsPerTick", 2, 1, 32);
+    public static final ModConfigSpec.IntValue VILLAGE_ROUTE_SEARCH_INTERVAL_TICKS =
+            BUILDER.defineInRange("village.scheduler.routeSearchIntervalTicks", 10, 1, 200);
+    public static final ModConfigSpec.IntValue VILLAGE_BACKGROUND_PROBES_PER_TICK =
+            BUILDER.defineInRange("village.scheduler.backgroundProbesPerTick", 256, 16, 16384);
+    public static final ModConfigSpec.IntValue VILLAGE_WORKER_PROBES_PER_TICK =
+            BUILDER.defineInRange("village.scheduler.workerProbesPerTick", 2048, 64, 65536);
+    public static final ModConfigSpec.IntValue VILLAGE_EMERGENCY_PROBES_PER_TICK =
+            BUILDER.defineInRange("village.scheduler.emergencyProbesPerTick", 4096, 128, 131072);
+
     public static final ModConfigSpec.BooleanValue FOREST_REGENERATION_ENABLED = bool("world.forestRegeneration", true, "Enable very slow natural forest-edge regeneration.");
 
     public static final ModConfigSpec.BooleanValue CONTINENTAL_WORLDGEN_ENABLED = bool("worldgen.continentalOceans", false, "Enable optional continent/ocean-biased world generation hooks for new worlds.");
