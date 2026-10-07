@@ -8,7 +8,7 @@
   ],
   "key": {
     "P": { "tag": "minecraft:planks" },
-    "C": { "item": "minecraft:oak_log" },
+    "C": { "tag": "minecraft:logs" },
     "T": { "item": "minecraft:crafting_table" }
   },
   "result": {

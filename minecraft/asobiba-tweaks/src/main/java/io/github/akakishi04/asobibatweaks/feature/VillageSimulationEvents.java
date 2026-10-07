@@ -79,16 +79,28 @@ public final class VillageSimulationEvents {
         if (!AsobibaTweaksConfig.VILLAGE_CARPENTER_ENABLED.getAsBoolean()
                 || event.getType() != AsobibaRegistries.CARPENTER.value()) return;
 
-        event.getTrades().get(1).add(new BasicItemListing(
-                new ItemStack(Items.OAK_LOG, 16), new ItemStack(Items.EMERALD), 16, 2, 0.05F));
+        event.getTrades().get(1).add((trader, random) -> {
+            CarpenterTradeWood wood = carpenterTradeWood(trader);
+            return new net.minecraft.world.item.trading.MerchantOffer(
+                    new net.minecraft.world.item.trading.ItemCost(wood.log(), 16),
+                    new ItemStack(Items.EMERALD), 16, 2, 0.05F);
+        });
         event.getTrades().get(1).add(new BasicItemListing(
                 1, new ItemStack(Items.SCAFFOLDING, 8), 12, 1));
         event.getTrades().get(2).add(new BasicItemListing(
                 new ItemStack(Items.COBBLESTONE, 24), new ItemStack(Items.EMERALD), 12, 5, 0.05F));
-        event.getTrades().get(2).add(new BasicItemListing(
-                2, new ItemStack(Items.OAK_DOOR, 4), 12, 5));
-        event.getTrades().get(3).add(new BasicItemListing(
-                2, new ItemStack(Items.OAK_FENCE, 12), 12, 10));
+        event.getTrades().get(2).add((trader, random) -> {
+            CarpenterTradeWood wood = carpenterTradeWood(trader);
+            return new net.minecraft.world.item.trading.MerchantOffer(
+                    new net.minecraft.world.item.trading.ItemCost(Items.EMERALD, 2),
+                    new ItemStack(wood.door(), 4), 12, 5, 0.05F);
+        });
+        event.getTrades().get(3).add((trader, random) -> {
+            CarpenterTradeWood wood = carpenterTradeWood(trader);
+            return new net.minecraft.world.item.trading.MerchantOffer(
+                    new net.minecraft.world.item.trading.ItemCost(Items.EMERALD, 2),
+                    new ItemStack(wood.fence(), 12), 12, 10, 0.05F);
+        });
         event.getTrades().get(4).add(new BasicItemListing(
                 3, new ItemStack(Items.BRICKS, 16), 8, 15));
         event.getTrades().get(5).add(new BasicItemListing(
@@ -836,6 +848,39 @@ public final class VillageSimulationEvents {
         if (plank == Blocks.MANGROVE_PLANKS) return Blocks.MANGROVE_STAIRS;
         if (plank == Blocks.CHERRY_PLANKS) return Blocks.CHERRY_STAIRS;
         return Blocks.OAK_STAIRS;
+    }
+
+    private static CarpenterTradeWood carpenterTradeWood(Entity trader) {
+        Block plank = Blocks.OAK_PLANKS;
+        if (trader instanceof Villager villager && villager.level() instanceof ServerLevel level) {
+            plank = chooseBuildingPlanks(level, villager.blockPosition(), villager);
+        }
+
+        if (plank == Blocks.SPRUCE_PLANKS) {
+            return new CarpenterTradeWood(Items.SPRUCE_LOG, Items.SPRUCE_DOOR, Items.SPRUCE_FENCE);
+        }
+        if (plank == Blocks.BIRCH_PLANKS) {
+            return new CarpenterTradeWood(Items.BIRCH_LOG, Items.BIRCH_DOOR, Items.BIRCH_FENCE);
+        }
+        if (plank == Blocks.JUNGLE_PLANKS) {
+            return new CarpenterTradeWood(Items.JUNGLE_LOG, Items.JUNGLE_DOOR, Items.JUNGLE_FENCE);
+        }
+        if (plank == Blocks.ACACIA_PLANKS) {
+            return new CarpenterTradeWood(Items.ACACIA_LOG, Items.ACACIA_DOOR, Items.ACACIA_FENCE);
+        }
+        if (plank == Blocks.DARK_OAK_PLANKS) {
+            return new CarpenterTradeWood(Items.DARK_OAK_LOG, Items.DARK_OAK_DOOR, Items.DARK_OAK_FENCE);
+        }
+        if (plank == Blocks.MANGROVE_PLANKS) {
+            return new CarpenterTradeWood(Items.MANGROVE_LOG, Items.MANGROVE_DOOR, Items.MANGROVE_FENCE);
+        }
+        if (plank == Blocks.CHERRY_PLANKS) {
+            return new CarpenterTradeWood(Items.CHERRY_LOG, Items.CHERRY_DOOR, Items.CHERRY_FENCE);
+        }
+        return new CarpenterTradeWood(Items.OAK_LOG, Items.OAK_DOOR, Items.OAK_FENCE);
+    }
+
+    private record CarpenterTradeWood(Item log, Item door, Item fence) {
     }
 
     private static Block chooseBuildingPlanks(ServerLevel level, BlockPos site, Villager villager) {
