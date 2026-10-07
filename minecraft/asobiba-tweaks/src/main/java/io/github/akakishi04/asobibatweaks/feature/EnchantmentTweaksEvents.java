@@ -61,6 +61,7 @@ public final class EnchantmentTweaksEvents {
     private static final String KNOCKBACK = "minecraft:knockback";
     private static final String PUNCH = "minecraft:punch";
     private static final String IMPALING = "minecraft:impaling";
+    private static final String FLAME = "minecraft:flame";
     private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
     private static final String PROTECTION_LAST_DAMAGE = "asobibatweaks_protection_last_damage";
     private static final String PROJECTILE_LAST_DAMAGE = "asobibatweaks_projectile_last_damage";
@@ -109,6 +110,40 @@ public final class EnchantmentTweaksEvents {
 
         if (AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()) {
             applyFortuneBranch(event, tool, player);
+        }
+    }
+
+    @SubscribeEvent
+    public void onFlameProjectileHurt(LivingHurtEvent event) {
+        if (!(event.getSource().getEntity() instanceof ServerPlayer player)
+                || event.getSource().getDirectEntity() == player
+                || player.level().isClientSide()
+                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || event.getAmount() <= 0.0F) {
+            return;
+        }
+
+        ItemStack weapon = event.getSource().getWeaponItem();
+        if (weapon == null || weapon.isEmpty()) return;
+
+        BranchRef flame = branch(weapon, FLAME);
+        if (flame == null) return;
+
+        double strength = branchScale(flame.mastery(), 0.0D, 1.0D);
+        int current = Math.max(0, event.getEntity().getRemainingFireTicks());
+        int vanillaReference = 100;
+
+        if (flame.branch() == 0) {
+            int reference = Math.max(vanillaReference, current);
+            int desired = (int)Math.round(reference * (1.25D + 0.50D * strength));
+            event.getEntity().setRemainingFireTicks(Math.max(current, desired));
+        } else if (flame.branch() == 1 && current > 0) {
+            int add = (int)Math.round(20.0D + 30.0D * strength);
+            int extraCap = (int)Math.round(60.0D + 100.0D * strength);
+            int cappedTarget = vanillaReference + extraCap;
+            if (current < cappedTarget) {
+                event.getEntity().setRemainingFireTicks(Math.min(cappedTarget, current + add));
+            }
         }
     }
 
@@ -1529,7 +1564,8 @@ public final class EnchantmentTweaksEvents {
                 || BREACH.equals(enchantmentId)
                 || KNOCKBACK.equals(enchantmentId)
                 || PUNCH.equals(enchantmentId)
-                || IMPALING.equals(enchantmentId);
+                || IMPALING.equals(enchantmentId)
+                || FLAME.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -1666,6 +1702,13 @@ public final class EnchantmentTweaksEvents {
                 case 0 -> "Wet Hunt";
                 case 1 -> "Harpoon";
                 case 2 -> "Deep Hunter";
+                default -> "Unselected";
+            };
+        }
+        if (FLAME.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Long Burn";
+                case 1 -> "Stacked Ignition";
                 default -> "Unselected";
             };
         }

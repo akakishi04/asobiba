@@ -58,7 +58,8 @@ public final class EnchantmentMasteryData {
         CompoundTag branches = root.getCompound(BRANCHES);
         String key = id(enchantment);
         int current = branches.contains(key) ? branches.getInt(key) : -1;
-        int next = (current + 1) % 3;
+        int branchCount = "minecraft:flame".equals(key) ? 2 : 3;
+        int next = (current + 1) % branchCount;
         branches.putInt(key, next);
         root.put(BRANCHES, branches);
         setCustom(stack, root);

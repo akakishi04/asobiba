@@ -39,7 +39,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Blast / Slipstream Wind Pressure | `PhysicsTransportEvents` | Implemented |
 | Wind Pressure Resistance | datapack enchantment + `PhysicsTransportEvents` | Implemented |
 | Growing Enchantments | `EnchantmentTweaksEvents`, `EnchantmentMasteryData` | Implemented |
-| Enchantment Branches | `EnchantmentTweaksEvents` | **V16+V17 expanded**: explicit branch-selection state plus concrete Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane of Arthropods / Fire Protection / Blast Protection / Fire Aspect / Thorns / Breach / Knockback / Punch / Impaling branch effects; Mending is excluded from branch selection as designed. Remaining accepted branch families are still pending |
+| Enchantment Branches | `EnchantmentTweaksEvents` | **V16+V17 expanded**: explicit branch-selection state plus concrete Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane of Arthropods / Fire Protection / Blast Protection / Fire Aspect / Thorns / Breach / Knockback / Punch / Impaling / Flame branch effects; Mending is excluded from branch selection as designed. Remaining accepted branch families are still pending |
 | Curse Growth | `EnchantmentTweaksEvents` | Implemented |
 | Fortune / Silk Touch Switching | `EnchantmentTweaksEvents` | Implemented |
 | Mastery Inheritance | `EnchantmentTweaksEvents` | Implemented |
@@ -269,3 +269,8 @@ Punch now implements all three accepted projectile-control branches using the we
 ## V30 impaling-branch note
 
 Impaling now implements all three accepted specializations for both direct and weapon-attributed projectile hits. Wet Hunt grants wet non-Impaling-sensitive targets 50%-100% of the weapon's ordinary 2.5-damage-per-level Impaling bonus while leaving dry non-aquatic targets unchanged. Harpoon writes a two-tick target marker and reverses only the next actual knockback vector into a 0.15-0.45 pull toward the source path. Deep Hunter adds 10%-30% of the ordinary Impaling bonus when the attacker is fully underwater at least eight water blocks below the local surface and the target is normally Impaling-sensitive. The depth check is a bounded same-column 32-block scan.
+
+
+## V31 flame-branch note
+
+Flame now implements both accepted specialization branches; the intentionally-open third slot is not exposed by branch cycling. Long Burn extends the projectile's ordinary fire window by 25%-75% without shortening a stronger pre-existing burn. Stacked Ignition requires the target to already be burning, adds roughly 1.0-2.5 seconds per qualifying Flame hit, and caps the branch-added window at roughly 3-8 seconds beyond the normal five-second Flame reference. The branch acts only on projectile hits whose DamageSource carries the enchanted launcher ItemStack.
