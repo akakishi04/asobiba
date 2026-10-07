@@ -87,7 +87,18 @@ public final class VillageSavedData extends SavedData {
     }
 
     public VillageRecord createVillage(BlockPos center, long createdGameTime) {
-        UUID id = nextId(villages);
+        return ensureVillage(nextId(villages), center, createdGameTime);
+    }
+
+    /**
+     * Creates a missing record with a caller-supplied stable ID, or returns the existing one.
+     * This is used by conservative bootstrap/recovery when a Villager already carries a
+     * persistent Village ID but the shared record has not yet been materialized.
+     */
+    public VillageRecord ensureVillage(UUID id, BlockPos center, long createdGameTime) {
+        VillageRecord existing = villages.get(id);
+        if (existing != null) return existing;
+
         VillageRecord record = new VillageRecord(id, center.immutable(), createdGameTime);
         villages.put(id, record);
         setDirty();
@@ -167,16 +178,17 @@ public final class VillageSavedData extends SavedData {
 
     public void registerResident(UUID villageId, UUID villagerId) {
         requireVillage(villageId);
+        VillageRecord target = villages.get(villageId);
+        if (target.residentIds.contains(villagerId)) return;
+
         boolean changed = false;
         for (VillageRecord village : villages.values()) {
             if (!village.id.equals(villageId)) {
                 changed |= village.residentIds.remove(villagerId);
             }
         }
-        changed |= villages.get(villageId).residentIds.add(villagerId);
-        if (changed) {
-            setDirty();
-        }
+        changed |= target.residentIds.add(villagerId);
+        if (changed) setDirty();
     }
 
     public void unregisterResident(UUID villageId, UUID villagerId) {
@@ -255,14 +267,8 @@ public final class VillageSavedData extends SavedData {
     }
 
     private void repairReferences() {
-        for (VillageRecord village : villages.values()) {
-            village.buildingIds.removeIf(id -> !buildings.containsKey(id));
-            village.storageIds.removeIf(id -> !storages.containsKey(id));
-            village.workSiteIds.removeIf(id -> !workSites.containsKey(id));
-            village.routeIds.removeIf(id -> !routes.containsKey(id));
-            village.projectIds.removeIf(id -> !projects.containsKey(id));
-        }
-
+        // Drop orphan child records first, then clean each VillageRecord's ID sets.
+        // Physical world state is never deleted by this cache repair.
         buildings.values().removeIf(record -> !villages.containsKey(record.villageId));
         storages.values().removeIf(record -> !villages.containsKey(record.villageId));
         workSites.values().removeIf(record -> !villages.containsKey(record.villageId));
@@ -270,6 +276,14 @@ public final class VillageSavedData extends SavedData {
         projects.values().removeIf(record -> !villages.containsKey(record.villageId));
         migrations.values().removeIf(record -> !villages.containsKey(record.originVillageId)
                 || (record.destinationVillageId != null && !villages.containsKey(record.destinationVillageId)));
+
+        for (VillageRecord village : villages.values()) {
+            village.buildingIds.removeIf(id -> !buildings.containsKey(id));
+            village.storageIds.removeIf(id -> !storages.containsKey(id));
+            village.workSiteIds.removeIf(id -> !workSites.containsKey(id));
+            village.routeIds.removeIf(id -> !routes.containsKey(id));
+            village.projectIds.removeIf(id -> !projects.containsKey(id));
+        }
     }
 
     private void rebuildChunkIndex() {
