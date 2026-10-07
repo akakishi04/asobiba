@@ -108,39 +108,60 @@ public final class VillageSimulationEvents {
         // Children participate in persistent settlement identity but never execute work Duties.
         if (villager.isBaby()) return;
 
+        String id = villager.getUUID().toString();
+
         if (AsobibaTweaksConfig.VILLAGE_FIRE_EMERGENCY_ENABLED.getAsBoolean()) {
-            respondToFire(villager, level);
+            VillageSimulationScheduler.enqueueEmergency(level, "fire:" + id,
+                    () -> runIfActive(villager, level, () -> respondToFire(villager, level)));
         }
         if (AsobibaTweaksConfig.VILLAGE_REFUGEES_ENABLED.getAsBoolean()) {
-            tickSettlementTravel(villager, level);
-            tickRefugeeMigration(villager, level);
+            VillageSimulationScheduler.enqueueWorker(level, "settlement_travel:" + id,
+                    () -> runIfActive(villager, level, () -> tickSettlementTravel(villager, level)));
+            VillageSimulationScheduler.enqueuePlanning(level, "refugee_plan:" + id,
+                    () -> runIfActive(villager, level, () -> tickRefugeeMigration(villager, level)));
         }
 
         VillagerProfession profession = villager.getVillagerData().getProfession();
         if (profession == AsobibaRegistries.CARPENTER.value()
                 && AsobibaTweaksConfig.VILLAGE_CARPENTER_ENABLED.getAsBoolean()
                 && AsobibaTweaksConfig.VILLAGE_AUTONOMOUS_GROWTH_ENABLED.getAsBoolean()) {
-            tickCarpenter(villager, level);
+            if (villager.getPersistentData().getBoolean(BUILD_ACTIVE)) {
+                VillageSimulationScheduler.enqueueWorker(level, "carpenter_work:" + id,
+                        () -> runIfActive(villager, level, () -> tickCarpenter(villager, level)));
+            } else {
+                VillageSimulationScheduler.enqueuePlanning(level, "carpenter_plan:" + id,
+                        () -> runIfActive(villager, level, () -> tickCarpenter(villager, level)));
+            }
         } else if (AsobibaTweaksConfig.VILLAGE_LOGISTICS_ENABLED.getAsBoolean()
                 && profession == VillagerProfession.MASON) {
-            tickQuarryWorker(villager, level);
+            VillageSimulationScheduler.enqueueWorker(level, "quarry:" + id,
+                    () -> runIfActive(villager, level, () -> tickQuarryWorker(villager, level)));
         } else if (AsobibaTweaksConfig.VILLAGE_LOGISTICS_ENABLED.getAsBoolean()
                 && profession == VillagerProfession.FLETCHER) {
-            tickForester(villager, level);
+            VillageSimulationScheduler.enqueueWorker(level, "forester:" + id,
+                    () -> runIfActive(villager, level, () -> tickForester(villager, level)));
         } else if (AsobibaTweaksConfig.VILLAGE_LOGISTICS_ENABLED.getAsBoolean()
                 && (profession == VillagerProfession.NONE || profession == VillagerProfession.NITWIT)) {
-            if ((villager.getUUID().hashCode() & 3) == 0) tickQuartermaster(villager, level);
-            else tickPorter(villager, level);
+            if ((villager.getUUID().hashCode() & 3) == 0) {
+                VillageSimulationScheduler.enqueueReconciliation(level, "quartermaster:" + id,
+                        () -> runIfActive(villager, level, () -> tickQuartermaster(villager, level)));
+            } else {
+                VillageSimulationScheduler.enqueueWorker(level, "porter:" + id,
+                        () -> runIfActive(villager, level, () -> tickPorter(villager, level)));
+            }
         } else if (AsobibaTweaksConfig.VILLAGE_LOGISTICS_ENABLED.getAsBoolean()
                 && profession == VillagerProfession.SHEPHERD) {
-            tickShepherd(villager, level);
+            VillageSimulationScheduler.enqueueWorker(level, "shepherd:" + id,
+                    () -> runIfActive(villager, level, () -> tickShepherd(villager, level)));
         } else if (AsobibaTweaksConfig.VILLAGE_LOGISTICS_ENABLED.getAsBoolean()
                 && profession == VillagerProfession.FARMER) {
-            exportVillagerFood(villager, level);
+            VillageSimulationScheduler.enqueueWorker(level, "farmer_export:" + id,
+                    () -> runIfActive(villager, level, () -> exportVillagerFood(villager, level)));
         }
 
         if (AsobibaTweaksConfig.MOB_USED_BUILDINGS_ENABLED.getAsBoolean()) {
-            useBuildingsInRain(villager, level);
+            VillageSimulationScheduler.enqueueValidation(level, "villager_shelter:" + id,
+                    () -> runIfActive(villager, level, () -> useBuildingsInRain(villager, level)));
         }
     }
 
@@ -927,6 +948,11 @@ public final class VillageSimulationEvents {
             if (level.getFluidState(pos).is(FluidTags.WATER)) return true;
         }
         return false;
+    }
+
+    private static void runIfActive(Villager villager, ServerLevel level, Runnable work) {
+        if (!villager.isAlive() || villager.isRemoved() || villager.level() != level) return;
+        work.run();
     }
 
     private static boolean isWorkTime(ServerLevel level) {
