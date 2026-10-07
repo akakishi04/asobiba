@@ -34,6 +34,7 @@ import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.living.LivingHealEvent;
 import net.neoforged.neoforge.event.entity.living.LivingHurtEvent;
+import net.neoforged.neoforge.event.entity.living.LivingKnockBackEvent;
 import net.neoforged.neoforge.event.entity.living.ShieldBlockEvent;
 import net.neoforged.neoforge.event.entity.living.LivingFallEvent;
 import net.neoforged.neoforge.event.entity.player.AnvilRepairEvent;
@@ -57,6 +58,7 @@ public final class EnchantmentTweaksEvents {
     private static final String FIRE_ASPECT = "minecraft:fire_aspect";
     private static final String THORNS = "minecraft:thorns";
     private static final String BREACH = "minecraft:breach";
+    private static final String KNOCKBACK = "minecraft:knockback";
     private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
     private static final String PROTECTION_LAST_DAMAGE = "asobibatweaks_protection_last_damage";
     private static final String PROJECTILE_LAST_DAMAGE = "asobibatweaks_projectile_last_damage";
@@ -85,6 +87,10 @@ public final class EnchantmentTweaksEvents {
     private static final String BREACH_FRACTURE_ATTACKER = "asobibatweaks_breach_fracture_attacker";
     private static final String BREACH_FRACTURE_UNTIL = "asobibatweaks_breach_fracture_until";
     private static final String BREACH_FRACTURE_BONUS = "asobibatweaks_breach_fracture_bonus";
+    private static final String KNOCKBACK_BRANCH = "asobibatweaks_knockback_branch";
+    private static final String KNOCKBACK_STRENGTH = "asobibatweaks_knockback_strength";
+    private static final String KNOCKBACK_ATTACKER_ID = "asobibatweaks_knockback_attacker_id";
+    private static final String KNOCKBACK_UNTIL = "asobibatweaks_knockback_until";
 
     @SubscribeEvent
     public void onBlockDrops(BlockDropsEvent event) {
@@ -97,6 +103,30 @@ public final class EnchantmentTweaksEvents {
         if (AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()) {
             applyFortuneBranch(event, tool, player);
         }
+    }
+
+    @SubscribeEvent
+    public void onKnockbackWeaponHurt(LivingHurtEvent event) {
+        if (!(event.getSource().getEntity() instanceof ServerPlayer player)
+                || event.getSource().getDirectEntity() != player
+                || event.getSource().is(DamageTypes.THORNS)
+                || player.getPersistentData().getBoolean(SMITE_ECHO_ACTIVE)
+                || player.getPersistentData().getBoolean(THORNS_RELEASE_ACTIVE)
+                || player.level().isClientSide()
+                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || event.getAmount() <= 0.0F) {
+            return;
+        }
+
+        BranchRef knockback = branch(player.getMainHandItem(), KNOCKBACK);
+        if (knockback == null) return;
+
+        double strength = branchScale(knockback.mastery(), 0.0D, 1.0D);
+        var data = event.getEntity().getPersistentData();
+        data.putInt(KNOCKBACK_BRANCH, knockback.branch());
+        data.putInt(KNOCKBACK_STRENGTH, (int)Math.round(strength * 1000.0D));
+        data.putInt(KNOCKBACK_ATTACKER_ID, player.getId());
+        data.putLong(KNOCKBACK_UNTIL, player.level().getGameTime() + 2L);
     }
 
     @SubscribeEvent
@@ -1015,6 +1045,51 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
+    public void onKnockback(LivingKnockBackEvent event) {
+        var target = event.getEntity();
+        var data = target.getPersistentData();
+        if (!data.contains(KNOCKBACK_UNTIL)) return;
+
+        long now = target.level().getGameTime();
+        if (now > data.getLong(KNOCKBACK_UNTIL)) {
+            data.remove(KNOCKBACK_BRANCH);
+            data.remove(KNOCKBACK_STRENGTH);
+            data.remove(KNOCKBACK_ATTACKER_ID);
+            data.remove(KNOCKBACK_UNTIL);
+            return;
+        }
+
+        int branch = data.getInt(KNOCKBACK_BRANCH);
+        double masteryStrength = Math.min(1.0D, Math.max(0.0D, data.getInt(KNOCKBACK_STRENGTH) / 1000.0D));
+        int attackerId = data.getInt(KNOCKBACK_ATTACKER_ID);
+
+        data.remove(KNOCKBACK_BRANCH);
+        data.remove(KNOCKBACK_STRENGTH);
+        data.remove(KNOCKBACK_ATTACKER_ID);
+        data.remove(KNOCKBACK_UNTIL);
+
+        if (branch == 0) {
+            double conversion = 0.30D + 0.30D * masteryStrength;
+            float original = event.getStrength();
+            event.setStrength((float)(original * (1.0D - conversion)));
+            target.push(0.0D, original * conversion, 0.0D);
+        } else if (branch == 1) {
+            double multiplier = 1.15D + 0.25D * masteryStrength;
+            event.setStrength((float)(event.getStrength() * multiplier));
+        } else if (branch == 2) {
+            var attackerEntity = target.level().getEntity(attackerId);
+            if (attackerEntity instanceof ServerPlayer attacker && attacker.isAlive()) {
+                var away = attacker.position().subtract(target.position());
+                double horizontal = Math.sqrt(away.x * away.x + away.z * away.z);
+                if (horizontal > 1.0E-4D) {
+                    double recoil = event.getStrength() * (0.10D + 0.20D * masteryStrength);
+                    attacker.push(away.x / horizontal * recoil, 0.0D, away.z / horizontal * recoil);
+                }
+            }
+        }
+    }
+
+    @SubscribeEvent
     public void onBreachShieldBlock(ShieldBlockEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer blocker)
                 || !(event.getDamageSource().getEntity() instanceof ServerPlayer attacker)
@@ -1298,7 +1373,8 @@ public final class EnchantmentTweaksEvents {
                 || BLAST_PROTECTION.equals(enchantmentId)
                 || FIRE_ASPECT.equals(enchantmentId)
                 || THORNS.equals(enchantmentId)
-                || BREACH.equals(enchantmentId);
+                || BREACH.equals(enchantmentId)
+                || KNOCKBACK.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -1411,6 +1487,14 @@ public final class EnchantmentTweaksEvents {
                 case 0 -> "Heavy Armor Crusher";
                 case 1 -> "Shield Breaker";
                 case 2 -> "Fracture";
+                default -> "Unselected";
+            };
+        }
+        if (KNOCKBACK.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Launch";
+                case 1 -> "Blowback";
+                case 2 -> "Recoil Step";
                 default -> "Unselected";
             };
         }

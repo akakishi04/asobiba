@@ -39,7 +39,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Blast / Slipstream Wind Pressure | `PhysicsTransportEvents` | Implemented |
 | Wind Pressure Resistance | datapack enchantment + `PhysicsTransportEvents` | Implemented |
 | Growing Enchantments | `EnchantmentTweaksEvents`, `EnchantmentMasteryData` | Implemented |
-| Enchantment Branches | `EnchantmentTweaksEvents` | **V16+V17 expanded**: explicit branch-selection state plus concrete Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane of Arthropods / Fire Protection / Blast Protection / Fire Aspect / Thorns / Breach branch effects; Mending is excluded from branch selection as designed. Remaining accepted branch families are still pending |
+| Enchantment Branches | `EnchantmentTweaksEvents` | **V16+V17 expanded**: explicit branch-selection state plus concrete Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane of Arthropods / Fire Protection / Blast Protection / Fire Aspect / Thorns / Breach / Knockback branch effects; Mending is excluded from branch selection as designed. Remaining accepted branch families are still pending |
 | Curse Growth | `EnchantmentTweaksEvents` | Implemented |
 | Fortune / Silk Touch Switching | `EnchantmentTweaksEvents` | Implemented |
 | Mastery Inheritance | `EnchantmentTweaksEvents` | Implemented |
@@ -254,3 +254,8 @@ Thorns now implements all three accepted specializations around actual vanilla T
 ## V27 breach-branch note
 
 Breach now implements all three accepted branches. Heavy Armor Crusher applies a mastery-scaled +5%-15% adjustment to post-vanilla remaining damage only against targets with substantial armor (initial threshold: 10 armor), approximating additional removal of the armor effectiveness left after ordinary Breach. Shield Breaker listens only to successful ShieldBlockEvent instances caused by a direct player hit, stops the active guard and adds a 0.5-1.5 second item cooldown to the shield that actually blocked. Fracture stores an attacker-specific 2-4 second mark on the target; subsequent direct Breach hits by that same attacker gain +5%-15% remaining damage and refresh the mark rather than stacking multiple marks.
+
+
+## V28 knockback-branch note
+
+Knockback now implements all three accepted direct-melee branches without altering unrelated knockback sources. A qualifying hit writes a two-tick marker to that specific target and the next actual LivingKnockBackEvent consumes it. Launch converts 30%-60% of the normal horizontal knockback strength into an upward impulse instead of adding free total horizontal force. Blowback multiplies normal knockback strength by 1.15x-1.40x. Recoil Step leaves the target's ordinary knockback intact and pushes the attacking player away by 10%-30% of that event's strength. Explosion, mob and environmental knockback never receive these weapon markers.
