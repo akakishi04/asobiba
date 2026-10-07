@@ -30,6 +30,7 @@ public final class VillageOutpostLifecycleService {
     private static final int PORTER_CARGO_SLOTS = 16;
     private static final int LOCAL_OUTPUT_BUFFER = 8;
     private static final int LOCAL_FOOD_TARGET = 24;
+    private static final int FOUNDING_FOOD_TARGET = 48;
 
     public VillageOutpostLifecycleService() {
     }
@@ -209,7 +210,7 @@ public final class VillageOutpostLifecycleService {
                                      VillageSavedData.WorkSiteRecord site) {
         VillageSavedData data = VillageSavedData.get(level);
         boolean needsOutputHaul = localOutputCount(data, site) >= 16;
-        boolean needsFoodSupply = localFoodCount(data, site) < LOCAL_FOOD_TARGET;
+        boolean needsFoodSupply = localFoodCount(data, site) < foodTarget(site);
         if (!needsOutputHaul && !needsFoodSupply) return;
 
         List<Villager> residents = level.getEntitiesOfClass(
@@ -249,7 +250,7 @@ public final class VillageOutpostLifecycleService {
         if (mode.isBlank()) {
             if (hasCargo) {
                 mode = "output_delivery";
-            } else if (localFoodCount(data, site) < LOCAL_FOOD_TARGET) {
+            } else if (localFoodCount(data, site) < foodTarget(site)) {
                 mode = "supply_pickup";
             } else if (localOutputCount(data, site) >= 16) {
                 mode = "output_pickup";
@@ -272,7 +273,7 @@ public final class VillageOutpostLifecycleService {
                     return true;
                 }
 
-                int need = Math.min(16, Math.max(0, LOCAL_FOOD_TARGET - localFoodCount(data, site)));
+                int need = Math.min(16, Math.max(0, foodTarget(site) - localFoodCount(data, site)));
                 if (need <= 0) {
                     VillagerSimData.setOutpostHaulMode(villager,
                             localOutputCount(data, site) >= 16 ? "output_pickup" : "");
@@ -333,7 +334,7 @@ public final class VillageOutpostLifecycleService {
                 depositCargo(villager, level, core.container());
                 VillageStorageService.reconcileVillage(village.id(), level);
                 VillagerSimData.setOutpostHaulMode(villager,
-                        localFoodCount(data, site) < LOCAL_FOOD_TARGET ? "supply_pickup" : "");
+                        localFoodCount(data, site) < foodTarget(site) ? "supply_pickup" : "");
                 return true;
             }
             default -> {
@@ -383,6 +384,10 @@ public final class VillageOutpostLifecycleService {
 
         if (moved) VillageStorageService.reconcileVillage(site.villageId(), level);
         return moved;
+    }
+
+    private static int foodTarget(VillageSavedData.WorkSiteRecord site) {
+        return site.foundingPrepared() ? FOUNDING_FOOD_TARGET : LOCAL_FOOD_TARGET;
     }
 
     private static int localFoodCount(VillageSavedData data, VillageSavedData.WorkSiteRecord site) {
