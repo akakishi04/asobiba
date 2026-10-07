@@ -21,6 +21,7 @@ public record VillageStatusPayload(
         int averageWelfare,
         int viability,
         String lifecycle,
+        String emergency,
         int districtCount,
         int outpostCount,
         List<String> needs,
@@ -49,6 +50,7 @@ public record VillageStatusPayload(
                 buf.readVarInt(),
                 buf.readVarInt(),
                 buf.readUtf(32),
+                buf.readUtf(32),
                 buf.readVarInt(),
                 buf.readVarInt(),
                 readStrings(buf, 5),
@@ -68,6 +70,7 @@ public record VillageStatusPayload(
         buf.writeVarInt(Math.max(0, Math.min(100, averageWelfare)));
         buf.writeVarInt(Math.max(0, Math.min(100, viability)));
         buf.writeUtf(lifecycle, 32);
+        buf.writeUtf(emergency, 32);
         buf.writeVarInt(Math.max(0, districtCount));
         buf.writeVarInt(Math.max(0, outpostCount));
         writeStrings(buf, needs, 5);
