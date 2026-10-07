@@ -1372,7 +1372,7 @@ public final class VillageSimulationEvents {
         ItemStack probe = new ItemStack(item, needed);
         if (!VillagerSimData.canInsertWorkCargo(villager, level.registryAccess(), probe, capacity)) return false;
 
-        var nearest = VillageStorageService.nearestContainer(villager, level);
+        var nearest = VillageStorageService.nearestContainerWith(villager, level, item);
         if (nearest.isEmpty()) return false;
         BlockPos target = nearest.get().record().pos();
         if (villager.distanceToSqr(target.getCenter()) > 9.0D) {
@@ -1400,7 +1400,7 @@ public final class VillageSimulationEvents {
                 villager, level.registryAccess(), capacity, predicate);
         if (current >= count) return true;
 
-        var nearest = VillageStorageService.nearestContainer(villager, level);
+        var nearest = VillageStorageService.nearestContainerMatching(villager, level, predicate);
         if (nearest.isEmpty()) return false;
         BlockPos target = nearest.get().record().pos();
         if (villager.distanceToSqr(target.getCenter()) > 9.0D) {
