@@ -919,17 +919,9 @@ public final class VillageSimulationEvents {
             purpose = "quarry";
         }
 
-        int fishing = village.marketPermille("fishing");
-        if (fishing > best) {
-            best = fishing;
-            purpose = "fishing";
-        }
-
-        int farming = Math.max(village.marketPermille("farming"), village.marketPermille("food"));
-        if (farming > best) {
-            purpose = "farm";
-        }
-
+        // Fishing/Farm Outposts remain in the accepted design, but their dedicated
+        // physical work-site execution is not complete yet. Do not create decorative/non-working
+        // Outposts for those categories.
         return purpose;
     }
 
