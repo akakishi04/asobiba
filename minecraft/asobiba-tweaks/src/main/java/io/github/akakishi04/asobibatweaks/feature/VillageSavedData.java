@@ -26,7 +26,7 @@ import net.minecraft.world.level.saveddata.SavedData;
  * indexes, caches and planning state that later passes can reconcile against loaded chunks.</p>
  */
 public final class VillageSavedData extends SavedData {
-    public static final int SCHEMA_VERSION = 2;
+    public static final int SCHEMA_VERSION = 3;
 
     private static final String NAME = "asobibatweaks_villages";
     private static final Factory<VillageSavedData> FACTORY =
@@ -509,8 +509,15 @@ public final class VillageSavedData extends SavedData {
         private final Map<String, Integer> ledgerCounts = new HashMap<>();
         private final Map<String, Integer> reservedCounts = new HashMap<>();
         private final Map<String, Integer> buildingCulture = new HashMap<>();
+        private final Map<String, Integer> marketPermille = new HashMap<>();
         private boolean storageBootstrapComplete;
+        private int sustainablePopulation;
+        private int settlementViability = 100;
+        private int lastKnownPopulation;
         private long nextPlanningGameTime;
+        private long nextMarketUpdateGameTime;
+        private long nextBirthGameTime;
+        private long recoveryGrowthUntil;
         private long lastValidatedGameTime;
 
         private VillageRecord(UUID id, BlockPos center, long createdGameTime) {
@@ -532,7 +539,15 @@ public final class VillageSavedData extends SavedData {
         public Map<String, Integer> reservedCounts() { return Collections.unmodifiableMap(reservedCounts); }
         public Map<String, Integer> buildingCulture() { return Collections.unmodifiableMap(buildingCulture); }
         public int cultureWeight(String key) { return Math.max(0, buildingCulture.getOrDefault(key, 0)); }
+        public Map<String, Integer> marketPermille() { return Collections.unmodifiableMap(marketPermille); }
+        public int marketPermille(String category) { return Math.max(100, marketPermille.getOrDefault(category, 1000)); }
         public boolean storageBootstrapComplete() { return storageBootstrapComplete; }
+        public int sustainablePopulation() { return Math.max(0, sustainablePopulation); }
+        public int settlementViability() { return Math.max(0, Math.min(100, settlementViability)); }
+        public int lastKnownPopulation() { return Math.max(0, lastKnownPopulation); }
+        public long nextMarketUpdateGameTime() { return nextMarketUpdateGameTime; }
+        public long nextBirthGameTime() { return nextBirthGameTime; }
+        public long recoveryGrowthUntil() { return recoveryGrowthUntil; }
         public int ledgerCount(String itemKey) { return Math.max(0, ledgerCounts.getOrDefault(itemKey, 0)); }
         public int reservedCount(String itemKey) { return Math.max(0, reservedCounts.getOrDefault(itemKey, 0)); }
         public int availableCount(String itemKey) { return Math.max(0, ledgerCount(itemKey) - reservedCount(itemKey)); }
@@ -580,6 +595,18 @@ public final class VillageSavedData extends SavedData {
             }
         }
 
+        public void setMarketPermille(String category, int value) {
+            if (category == null || category.isBlank()) return;
+            marketPermille.put(category, Math.max(100, Math.min(3000, value)));
+        }
+
+        public void setSustainablePopulation(int value) { sustainablePopulation = Math.max(0, value); }
+        public void setSettlementViability(int value) { settlementViability = Math.max(0, Math.min(100, value)); }
+        public void setLastKnownPopulation(int value) { lastKnownPopulation = Math.max(0, value); }
+        public void setNextMarketUpdateGameTime(long value) { nextMarketUpdateGameTime = value; }
+        public void setNextBirthGameTime(long value) { nextBirthGameTime = value; }
+        public void setRecoveryGrowthUntil(long value) { recoveryGrowthUntil = value; }
+
         public void setNextPlanningGameTime(long value) { this.nextPlanningGameTime = value; }
         public void setLastValidatedGameTime(long value) { this.lastValidatedGameTime = value; }
 
@@ -598,8 +625,15 @@ public final class VillageSavedData extends SavedData {
             tag.put("ledger", writeIntMap(ledgerCounts));
             tag.put("reserved", writeIntMap(reservedCounts));
             tag.put("building_culture", writeIntMap(buildingCulture));
+            tag.put("market_permille", writeIntMap(marketPermille));
             tag.putBoolean("storage_bootstrap_complete", storageBootstrapComplete);
+            tag.putInt("sustainable_population", sustainablePopulation);
+            tag.putInt("settlement_viability", settlementViability);
+            tag.putInt("last_population", lastKnownPopulation);
             tag.putLong("next_planning", nextPlanningGameTime);
+            tag.putLong("next_market_update", nextMarketUpdateGameTime);
+            tag.putLong("next_birth", nextBirthGameTime);
+            tag.putLong("recovery_growth_until", recoveryGrowthUntil);
             tag.putLong("last_validated", lastValidatedGameTime);
             return tag;
         }
@@ -619,8 +653,16 @@ public final class VillageSavedData extends SavedData {
             record.ledgerCounts.putAll(readIntMap(tag, "ledger"));
             record.reservedCounts.putAll(readIntMap(tag, "reserved"));
             record.buildingCulture.putAll(readIntMap(tag, "building_culture"));
+            record.marketPermille.putAll(readIntMap(tag, "market_permille"));
             record.storageBootstrapComplete = tag.getBoolean("storage_bootstrap_complete");
+            record.sustainablePopulation = Math.max(0, tag.getInt("sustainable_population"));
+            record.settlementViability = tag.contains("settlement_viability", Tag.TAG_INT)
+                    ? Math.max(0, Math.min(100, tag.getInt("settlement_viability"))) : 100;
+            record.lastKnownPopulation = Math.max(0, tag.getInt("last_population"));
             record.nextPlanningGameTime = tag.getLong("next_planning");
+            record.nextMarketUpdateGameTime = tag.getLong("next_market_update");
+            record.nextBirthGameTime = tag.getLong("next_birth");
+            record.recoveryGrowthUntil = tag.getLong("recovery_growth_until");
             record.lastValidatedGameTime = tag.getLong("last_validated");
             return record;
         }
