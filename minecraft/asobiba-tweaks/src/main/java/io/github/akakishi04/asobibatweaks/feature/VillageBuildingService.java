@@ -229,6 +229,7 @@ public final class VillageBuildingService {
             building.setValidatedCapacity(valid ? Math.max(1, building.validatedCapacity()) : 0);
         } else {
             valid = usableInteriorCells >= 1;
+            building.setValidatedCapacity(0);
         }
 
         // Village-built enclosed structures normally have a doorway, but do not invalidate
@@ -243,6 +244,21 @@ public final class VillageBuildingService {
 
         building.setValidationState(valid ? "valid" : "invalid");
         building.setLastValidatedGameTime(level.getGameTime());
+
+        if (valid && !building.villageBuilt() && "storage".equals(building.classification())) {
+            VillageSavedData data = VillageSavedData.get(level);
+            for (BlockPos pos : BlockPos.betweenClosed(building.min(), building.max())) {
+                if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) break;
+                if (!(level.getBlockEntity(pos) instanceof Container)) continue;
+                if (data.storageAt(building.villageId(), pos).isPresent()) continue;
+
+                VillageSavedData.StorageRecord storage =
+                        data.createStorage(building.villageId(), pos, "general");
+                storage.setValidationState("valid");
+                storage.setLastValidatedGameTime(level.getGameTime());
+            }
+        }
+
         return true;
     }
 }
