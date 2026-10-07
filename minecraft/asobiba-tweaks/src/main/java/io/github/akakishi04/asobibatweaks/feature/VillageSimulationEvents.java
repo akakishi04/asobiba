@@ -112,6 +112,18 @@ public final class VillageSimulationEvents {
         // namespaced persistent state and conservative stable Village-ID bootstrap.
         VillageIdentityBootstrap.ensure(villager, level);
 
+        // Periodic reconciliation is limited to already-recognized StorageRecords; it never
+        // scans arbitrary containers outside the V3 storage index.
+        VillagerSimData.villageId(villager).ifPresent(villageId -> {
+            if (villager.tickCount % 200 == Math.floorMod(villager.getId(), 200)) {
+                VillageSimulationScheduler.enqueueReconciliation(
+                        level,
+                        "storage_reconcile:" + villageId,
+                        () -> VillageStorageService.reconcileVillage(villageId, level)
+                );
+            }
+        });
+
         // Children participate in persistent settlement identity but never execute work Duties.
         if (villager.isBaby()) return;
 
