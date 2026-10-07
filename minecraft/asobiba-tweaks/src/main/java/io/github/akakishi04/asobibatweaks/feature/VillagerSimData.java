@@ -242,26 +242,38 @@ public final class VillagerSimData {
 
     public static int workCargoCount(Villager villager, HolderLookup.Provider registries,
                                      int capacity, Item item) {
+        return workCargoCountMatching(villager, registries, capacity, stack -> stack.is(item));
+    }
+
+    public static int workCargoCountMatching(Villager villager, HolderLookup.Provider registries,
+                                             int capacity, java.util.function.Predicate<ItemStack> predicate) {
         int total = 0;
         for (ItemStack stack : workCargo(villager, registries, capacity)) {
-            if (stack.is(item)) total += stack.getCount();
+            if (predicate.test(stack)) total += stack.getCount();
         }
         return total;
     }
 
     public static boolean takeWorkCargo(Villager villager, HolderLookup.Provider registries,
                                         int capacity, Item item, int count) {
+        return takeWorkCargoMatching(villager, registries, capacity, stack -> stack.is(item), count);
+    }
+
+    public static boolean takeWorkCargoMatching(Villager villager, HolderLookup.Provider registries,
+                                                int capacity,
+                                                java.util.function.Predicate<ItemStack> predicate,
+                                                int count) {
         if (count <= 0) return true;
         List<ItemStack> cargo = workCargo(villager, registries, capacity);
 
         int available = 0;
-        for (ItemStack stack : cargo) if (stack.is(item)) available += stack.getCount();
+        for (ItemStack stack : cargo) if (predicate.test(stack)) available += stack.getCount();
         if (available < count) return false;
 
         int remaining = count;
         for (int slot = 0; slot < cargo.size() && remaining > 0; slot++) {
             ItemStack stack = cargo.get(slot);
-            if (!stack.is(item)) continue;
+            if (!predicate.test(stack)) continue;
             int take = Math.min(remaining, stack.getCount());
             stack.shrink(take);
             remaining -= take;
