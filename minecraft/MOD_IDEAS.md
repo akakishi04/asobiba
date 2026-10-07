@@ -984,14 +984,99 @@ Visibility:
 Design constraint: public works requests tell the player what the village genuinely needs right now; helping works because the real resources enter the same storage/logistics/planning system, not because a parallel quest system pretends they did.
 
 ### Refugees and migration
-Villagers can relocate after severe local failure:
-- repeated raids
-- major fires
-- food collapse
-- loss of housing
-- settlement destruction
 
-Survivors may move to nearby villages, causing secondary housing/food pressure there.
+Accepted direction:
+- population movement is split into three distinct cases:
+  1. **Local reassignment** inside one Village ID/district network; this is ordinary housing/work reassignment, not migration
+  2. **Planned migration** between settlements when one village has persistent population/resource pressure and another can sustainably accept people
+  3. **Emergency refugee displacement** caused by major immediate or repeated settlement failure
+- villagers always move as real entities with real supplies; migration never teleports population or creates free destination resources
+- migration does not force-load chunks; traveling groups become dormant when their chunks unload and resume when active again
+
+Settlement Viability:
+- each village maintains a lightweight **Settlement Viability score from 0 to 100**, updated about once per Active Minecraft day
+- the initial weighting is:
+  - **Housing / usable shelter: 25%**
+  - **Food reserve / production outlook: 25%**
+  - **Safety / recent disaster pressure: 20%**
+  - **Infrastructure / logistics functionality: 15%**
+  - **Average villager Welfare: 15%**
+- initial interpretation:
+  - **60-100: Stable**
+  - **40-59: Strained**
+  - **20-39: Migration pressure**
+  - **0-19: Collapse / emergency territory**
+- Cached/unloaded time does not count as observed bad living time; viability that depends on physical state is not degraded merely because chunks are unloaded
+
+Planned migration:
+- planned inter-village migration becomes eligible when either:
+  - Settlement Viability remains below roughly **40 for 3 of the last 5 Active days**, or
+  - population remains above roughly **110% of sustainable population for about 3 Active days**
+- the village first attempts local recovery: repair housing, restore food/logistics, reassign homes/work and use valid nearby districts
+- if pressure persists and a suitable destination exists, one migration wave normally contains about **2-6 villagers** and should usually move no more than roughly **10-25% of the source population** at once
+- a non-emergency village waits roughly **5 Minecraft days** before launching another planned migration wave
+- planned migrants are considered permanent movers on arrival unless a later independent migration decision occurs
+- a villager that permanently migrates receives roughly a **7 Minecraft day non-emergency remigration cooldown** to avoid ping-pong movement
+
+Emergency refugee displacement:
+- emergency displacement may begin immediately after severe events such as:
+  - major fire / settlement destruction
+  - repeated raid devastation
+  - sudden loss of a large share of usable housing
+  - critical food collapse with no short-term recovery path
+  - an immediately unsafe local district
+- a useful initial trigger for sudden housing disaster is loss of roughly **35%+ of currently usable housing capacity**, though event context may override the exact percentage
+- emergency movement may bypass the normal 5-day migration-wave cooldown
+- emergency groups still travel physically and normally use small waves of roughly **2-6 villagers** rather than teleporting the entire settlement at once
+- children should travel with a suitable adult/social group where practical; lightweight household affinity is used to avoid unnecessarily splitting established home groups
+- emergency evacuation first prefers a safe district / functioning Outpost already belonging to the same settlement before sending people to an unrelated village
+
+Destination selection:
+- destinations are scored using:
+  - safe/reachable route
+  - spare usable housing
+  - food reserve
+  - sustainable-population headroom
+  - destination Welfare / Settlement Viability
+  - logistics/road/water connection
+  - distance
+- preferred destination order is generally:
+  1. safe district of the same Village ID
+  2. stable linked Outpost / Satellite Site
+  3. nearby stable independent village
+  4. Refugee Settlement founding at a viable Outpost when no existing settlement can absorb the population
+- normal planned migration requires the destination to have genuine spare sustainable capacity
+- emergency refugee reception may temporarily exceed the destination's normal target population, but should not normally push it above roughly **120% of estimated sustainable population**
+- if the first destination cannot safely absorb the whole group, choose another destination or split later waves rather than intentionally collapsing the receiving village
+- new refugee arrivals receive a short roughly **2 Active day grace period** before their arrival alone can drive a secondary non-emergency outbound-migration decision; genuine emergencies still override this
+
+Travel and supplies:
+- groups prefer recognized roads, bridges, safe paths and docks/water routes where appropriate
+- ordinary migration does not require a new special teleport/caravan dimension
+- planned migration should take real travel supplies from source storage, initially targeting roughly **2-3 days of food for the traveling group**
+- larger planned relocation may assign Porters / pack animals / Cargo Rafts to move additional real supplies
+- all transported items are removed from actual source storage and remain physical cargo
+- emergency refugees may depart with less than the planned supply target if waiting would be more dangerous
+- professions, villager XP/offer data and persistent personal state survive migration
+- old bed/workstation assignments are released when permanently leaving the source; new assignments are acquired normally at the destination
+- villager Welfare itself is not reset to 100 by migration; it recovers or worsens according to the new living conditions
+
+Displaced-refugee state and return:
+- emergency arrivals enter a persistent **Displaced** state containing their origin settlement/history
+- they may temporarily use destination food/housing and count toward real destination population pressure
+- a return becomes eligible only when the origin has recovered to roughly **Viability 60+ for 3 consecutive Active days**, has usable housing/food for the returning group and has a safe route
+- refugees are not forced to return instantly when the origin recovers
+- if the origin remains nonviable and the refugees live successfully at the destination for roughly **7 Active days**, they may convert to permanent destination residents
+- becoming a permanent resident releases the special return expectation but retains lightweight origin/history metadata
+- temporary refugee presence alone never forces two villages to merge
+
+Economic / planning integration:
+- arriving refugees immediately create real housing, food and infrastructure demand at the receiving settlement
+- destination housing/public-works requests may therefore arise from refugee pressure
+- no separate free refugee-support resources are spawned
+- regional trade and public-needs systems may naturally make food/building-material imports more valuable during refugee absorption
+
+Design constraint: migration relieves persistent real pressure and preserves people after disasters, but never becomes teleportation, free population balancing or an automatic cascade between villages.
 
 ### Village fission / new settlements
 
@@ -1024,11 +1109,88 @@ Emergency founding:
 - refugee founding may relax some normal prosperity requirements when survival requires relocation
 - an existing stable Outpost is the preferred emergency destination when available
 - emergency founding still requires real people/resources and may fail; it is not a free teleport/rebuild mechanic
+- detailed refugee-group sizing, destination selection, Displaced state, travel supplies and return/permanent-settlement behavior follow the accepted Refugees and migration rules
 
 
 ### Village relocation
-If a location remains chronically nonviable, part of the population may abandon it rather than endlessly rebuilding.
-This is a rare high-level outcome, not a frequent behavior.
+
+Accepted direction:
+- Village Relocation is a **rare high-level failure/recovery state**, distinct from ordinary migration and one-time emergency evacuation
+- before abandoning the settlement, the planner attempts, where practical:
+  1. emergency response / immediate safety
+  2. repair and reconstruction
+  3. restoring food/logistics
+  4. moving residents into another safe district of the same Village ID
+  5. using an existing viable Outpost / Satellite Site
+  6. ordinary migration to nearby stable settlements
+- full/major relocation is considered when the original location remains chronically nonviable despite those recovery attempts
+
+Initial relocation trigger:
+- candidate when Settlement Viability remains below roughly **25 for 5 of the last 7 Active days**
+- major repeated disasters may accelerate candidacy, for example multiple severe destructive events within roughly **10 Minecraft days**
+- one isolated bad day, temporary siege, short food shortage or unloaded period is never sufficient by itself
+- Cached state is not enough to declare a settlement abandoned; the affected core must be adequately revalidated while Active before the high-impact decision is finalized
+
+Relocation modes:
+- **Partial relocation:** enough residents leave to bring population back within sustainable housing/food/infrastructure capacity while a viable core remains
+- **District abandonment:** one geographically damaged/nonviable district is evacuated while the rest of a multi-district Village ID continues
+- **Major settlement relocation:** most surviving residents leave the original core over several physical migration waves
+- **Complete abandonment:** no permanent resident population remains and no active recovery/return plan exists
+
+Destination priority for major relocation:
+1. safe viable district of the same Village ID
+2. stable existing Outpost that can become a Refugee Settlement
+3. nearby stable village with real spare capacity
+4. a new Refugee Settlement path using the already accepted emergency-founding rules
+- relocation never invents an arbitrary distant destination solely to despawn villagers
+
+Population / group handling:
+- relocation happens in multiple **2-6 villager** waves when practical
+- children move with suitable adults
+- preserve useful profession diversity when forming a Refugee Settlement rather than moving only one profession type
+- no hard family-tree simulation is required; household affinity is sufficient for keeping familiar groups together
+- residents who intentionally remain in a still-viable remnant are allowed; relocation is not required to be 100% unanimous unless complete abandonment becomes the only viable state
+
+Material evacuation:
+- planned relocation may salvage portable shared resources before leaving
+- priorities are initially:
+  1. travel food
+  2. seeds / renewable food-start resources
+  3. portable essential workstations / tools already available in storage
+  4. useful construction materials
+  5. valuable trade/special stock
+- salvaged resources must be physically removed from source containers and transported
+- the system does not silently dismantle arbitrary player-built structures for materials
+- urgent evacuation may leave most village storage behind
+- abandoned buildings, roads, bridges, farms and unsalvaged storage normally remain in the world
+
+Source-settlement state:
+- during relocation the source may enter **Evacuating**
+- after residents leave, a still-populated viable remainder becomes a smaller active village/district
+- a core with no permanent residents and no active return plan becomes **Abandoned**
+- Abandoned status stops ordinary village planning, breeding and public works but preserves the persistent historical structure/site record
+- abandoned physical structures are not deleted or regenerated
+- if villagers later return or a new population intentionally resettles the site, the old record can be revalidated and the settlement may become active again
+- resettlement does not magically restore destroyed buildings or inventory
+
+Return / recovery:
+- a partially evacuated village may cancel further relocation if Viability recovers to roughly **60+ for 3 consecutive Active days**
+- refugees already settled permanently elsewhere are not automatically recalled
+- Displaced villagers still within their return window may become return candidates under the separate refugee-return rules
+- this hysteresis prevents rapid relocate/return oscillation
+
+Interaction with fission / merging:
+- emergency Refugee Settlement creation uses the existing fission/founding machinery but is tagged as an emergency origin rather than normal prosperous expansion
+- relocation into another village does not immediately merge the source and destination Village IDs
+- normal merge rules still require long-term lived/logistical integration
+- if an old source empties completely, its identity becomes historical/abandoned rather than being merged merely because its former residents moved
+
+Chunk/loading behavior:
+- migration/relocation never keeps the full route force-loaded
+- traveling entities and cargo pause naturally when unloaded, using the accepted Active/Cached/Dormant village rules
+- elapsed unloaded time does not count as completed travel or successful resettlement
+
+Design constraint: villages should sometimes shrink, evacuate or die when a site genuinely fails, but only after visible recovery attempts and real physical movement of people/resources.
 
 ### Village merge / district integration
 
