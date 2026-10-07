@@ -375,6 +375,39 @@ These sites should remain linked to the parent settlement through logistics rath
 - Small rivers/gaps can trigger bridge construction.
 - Roads/bridges consume real materials and should be built incrementally.
 
+### Workstation placement and building function
+
+Accepted direction:
+- workstation placement is driven by **building function first**, not by placing job-site blocks into arbitrary empty cells
+- the planning order is:
+  1. village planner determines which profession / function is needed
+  2. building planner chooses reuse, expansion or a suitable building type
+  3. the building template exposes semantic placement anchors
+  4. a placement validator confirms that the chosen workstation position is actually usable by villagers
+- building templates may define semantic anchors such as:
+  - `WORKSTATION_PRIMARY`
+  - `WORKSTATION_SECONDARY`
+  - `BED`
+  - `STORAGE`
+  - `DOOR`
+  - `WINDOW`
+  - `DECORATION`
+- the actual workstation block placed into a workstation anchor depends on the profession/function selected for that building
+- workstation anchors should prefer positions that are indoors, have valid floor/headroom, leave a usable standing position in front of the block, remain path-reachable from the building entrance and do not obstruct doors, stairs or major circulation paths
+- invalid placements such as doorways, stair traffic cells, unsafe drops, submerged positions or unreachable interaction faces are rejected
+- existing recognized/player-built structures may receive workstations later if a valid semantic/use position can be found without damaging the structure
+- retrofit candidate positions are scored by shelter, floor/headroom, path reachability, circulation safety and compatibility with nearby related facilities
+- buildings have practical workstation-capacity limits; the system should prefer several plausible workplaces over packing arbitrarily many identical job-site blocks into one room
+- related professions may share a larger functional building when appropriate, such as multiple smithing professions in one smithy
+- large numbers of the same profession should be distributed across suitable buildings rather than creating dense workstation rows
+- multi-story mixed-use buildings are valid:
+  - ground floor may serve as shop/workspace
+  - upper floors may serve as bedrooms, storage or secondary work/living space
+- workstation/home proximity is allowed and often desirable, but villagers must still be able to leave the building and participate in ordinary village movement/social life for welfare purposes
+- a workstation does not count as valid village capacity until its pathing and interaction-space validation succeeds
+
+Design constraint: decide what a building is for before deciding exactly where its workstation block goes.
+
 ### Building recognition and occupancy
 Villagers can recognize plausible player-built structures using lightweight heuristics such as:
 - roof/cover
