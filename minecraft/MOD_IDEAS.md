@@ -329,7 +329,7 @@ Village simulation is now an accepted feature family. The goal is a lightweight,
 - Carpenter: executes construction and repair jobs, including post-fire reconstruction.
 - Quartermaster: manages shared village storage and exposes shortages/surpluses.
 - Forester: harvests wood conservatively and replants saplings.
-- Quarry worker: gathers stone from bounded/recognized quarry areas instead of free-form underground strip mining.
+- Quarry worker: gathers stone from bounded/recognized quarry areas instead of free-form underground strip mining. Village quarrying is intentionally shallow: autonomous workers should normally remain at **Y >= 0** and must not dig into negative-Y deep-slate/deep-cave layers.
 - Porter: moves resources between farms, quarries, forests, storage and build sites; later may use llamas/donkeys.
 - Fire responder role: maintains access to water and prioritizes emergency response when fires occur.
 
@@ -357,10 +357,43 @@ Accepted direction:
 - Existing roads/buildings influence placement.
 - Player structures and protected/obviously artificial areas should not be harvested or bulldozed.
 
+### Village shared storage and logistics
+
+Accepted direction:
+- village resources are backed by **real item containers** rather than an abstract infinite resource counter
+- recognized village storage uses actual Chests, Barrels and other explicitly supported container blocks
+- the contents of those containers are the source of truth for village resources
+- a lightweight **Village Resource Ledger** may cache totals for planner performance, but it must be reconciled against real container contents
+- villagers physically deposit gathered resources into recognized storage and physically withdraw materials for construction, repair and other work
+- player-added items immediately become usable village resources once placed into recognized village storage
+- player-removed items are genuinely gone from village supply; there is no hidden replacement inventory
+- initial logical storage categories may include:
+  - Food
+  - Construction
+  - General
+  - Emergency
+- category-specific storage is optional; General storage remains a valid fallback so villages do not require a rigid warehouse-management minigame
+- Emergency storage is preferred for firefighting / disaster-response supplies when available
+- construction and repair jobs reserve required materials in the village ledger before work starts so multiple jobs do not simultaneously claim the same physical stock
+- reserved items remain physically present until withdrawn, but other village jobs treat the reserved quantity as unavailable
+- reservations are reduced as materials are actually collected and are released if the associated job is cancelled
+- when recognized storage approaches practical capacity limits, the village may create a storage-expansion need:
+  1. add storage to a suitable existing storage building
+  2. expand an existing warehouse/storage structure
+  3. build a new storage building
+- Outposts and Satellite Sites may maintain small local storage
+- resources gathered at remote sites must be transported into the parent village logistics network rather than teleporting directly into the central stockpile
+- Porters move goods between farms, forests, quarries, satellite storage, village storage and active work sites
+- later transport upgrades may use donkeys, llamas or other suitable pack animals without changing the underlying physical-resource model
+- storage is not a claim/protection system: players may use, remove, add or destroy recognized village containers normally, and the simulation reacts to the resulting real inventory state
+
+Design constraint: real containers are authoritative; the ledger exists for efficient planning, reservations and visibility, never as a hidden source of free materials.
+
 ### Outposts and satellite sites
 Villages may establish small functional sites away from the core settlement:
 - forester huts
 - quarries
+  - quarry sites favor exposed stone, hillsides and shallow excavations; village AI does not create deep mines descending below Y=0
 - fishing huts
 - satellite farms
 - grazing areas
