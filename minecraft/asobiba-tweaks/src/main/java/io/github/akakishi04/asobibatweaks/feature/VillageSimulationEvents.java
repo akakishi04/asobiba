@@ -265,7 +265,7 @@ public final class VillageSimulationEvents {
         boolean storageNeed = stores < Math.max(2, (population + 3) / 4);
         VillageSavedData.VillageRecord village = data.village(villageId.get()).orElse(null);
         VillageSavedData.WorkSiteRecord fissionOutpost = findFissionOutpost(
-                data, village, now, population, skill);
+                level, data, village, now, population, skill);
         boolean colony = fissionOutpost != null;
         String outpostPurpose = colony || village == null ? "" : chooseOutpostPurpose(village);
         boolean outpost = !colony
@@ -1005,6 +1005,7 @@ public final class VillageSimulationEvents {
     }
 
     private static VillageSavedData.WorkSiteRecord findFissionOutpost(
+            ServerLevel level,
             VillageSavedData data,
             VillageSavedData.VillageRecord village,
             long now,
