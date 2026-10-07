@@ -26,7 +26,7 @@ import net.minecraft.world.level.saveddata.SavedData;
  * indexes, caches and planning state that later passes can reconcile against loaded chunks.</p>
  */
 public final class VillageSavedData extends SavedData {
-    public static final int SCHEMA_VERSION = 3;
+    public static final int SCHEMA_VERSION = 4;
 
     private static final String NAME = "asobibatweaks_villages";
     private static final Factory<VillageSavedData> FACTORY =
@@ -39,6 +39,7 @@ public final class VillageSavedData extends SavedData {
     private final Map<UUID, RouteRecord> routes = new HashMap<>();
     private final Map<UUID, ProjectRecord> projects = new HashMap<>();
     private final Map<UUID, MigrationRecord> migrations = new HashMap<>();
+    private final Map<UUID, PublicRequestRecord> publicRequests = new HashMap<>();
 
     /**
      * Derived runtime index. It is rebuilt from persistent records after load so a stale
@@ -108,6 +109,83 @@ public final class VillageSavedData extends SavedData {
 
     public Optional<MigrationRecord> migration(UUID id) {
         return Optional.ofNullable(migrations.get(id));
+    }
+
+    public Optional<PublicRequestRecord> publicRequest(UUID id) {
+        return Optional.ofNullable(publicRequests.get(id));
+    }
+
+    public List<PublicRequestRecord> publicRequestsForVillage(UUID villageId) {
+        List<PublicRequestRecord> result = new ArrayList<>();
+        for (PublicRequestRecord request : publicRequests.values()) {
+            if (!villageId.equals(request.villageId)) continue;
+            if (!"active".equals(request.state)) continue;
+            result.add(request);
+        }
+        result.sort(java.util.Comparator
+                .comparingInt((PublicRequestRecord request) -> request.urgencyRank()).reversed()
+                .thenComparingLong(PublicRequestRecord::createdGameTime)
+                .thenComparing(request -> request.id.toString()));
+        return Collections.unmodifiableList(result);
+    }
+
+    public PublicRequestRecord upsertPublicRequest(
+            UUID villageId,
+            String key,
+            String urgency,
+            String itemKey,
+            int requestedCount,
+            int remainingCount,
+            String reason,
+            String context,
+            UUID projectId,
+            long gameTime) {
+        requireVillage(villageId);
+        String safeKey = safeText(key, "generic");
+        for (PublicRequestRecord existing : publicRequests.values()) {
+            if (villageId.equals(existing.villageId)
+                    && safeKey.equals(existing.key)
+                    && "active".equals(existing.state)) {
+                existing.urgency = safeText(urgency, "normal");
+                existing.itemKey = itemKey == null ? "" : itemKey;
+                existing.requestedCount = Math.max(0, requestedCount);
+                existing.remainingCount = Math.max(0, remainingCount);
+                existing.reason = reason == null ? "" : reason;
+                existing.context = context == null ? "" : context;
+                existing.projectId = projectId;
+                existing.updatedGameTime = gameTime;
+                setDirty();
+                return existing;
+            }
+        }
+
+        UUID id = nextId(publicRequests);
+        PublicRequestRecord created = new PublicRequestRecord(id, villageId, safeKey);
+        created.urgency = safeText(urgency, "normal");
+        created.itemKey = itemKey == null ? "" : itemKey;
+        created.requestedCount = Math.max(0, requestedCount);
+        created.remainingCount = Math.max(0, remainingCount);
+        created.reason = reason == null ? "" : reason;
+        created.context = context == null ? "" : context;
+        created.projectId = projectId;
+        created.createdGameTime = gameTime;
+        created.updatedGameTime = gameTime;
+        publicRequests.put(id, created);
+        setDirty();
+        return created;
+    }
+
+    public void closeInactivePublicRequests(UUID villageId, Set<String> activeKeys, long gameTime) {
+        boolean changed = false;
+        for (PublicRequestRecord request : publicRequests.values()) {
+            if (!villageId.equals(request.villageId) || !"active".equals(request.state)) continue;
+            if (activeKeys.contains(request.key)) continue;
+            request.state = "resolved";
+            request.remainingCount = 0;
+            request.updatedGameTime = gameTime;
+            changed = true;
+        }
+        if (changed) setDirty();
     }
 
     public Map<UUID, VillageRecord> villagesView() {
@@ -456,6 +534,10 @@ public final class VillageSavedData extends SavedData {
             MigrationRecord record = MigrationRecord.load(row);
             if (record != null) data.migrations.put(record.id, record);
         });
+        loadRows(tag, "public_requests", row -> {
+            PublicRequestRecord record = PublicRequestRecord.load(row);
+            if (record != null) data.publicRequests.put(record.id, record);
+        });
 
         data.repairReferences();
         data.rebuildChunkIndex();
@@ -472,6 +554,7 @@ public final class VillageSavedData extends SavedData {
         tag.put("routes", saveRows(routes.values().stream().map(RouteRecord::save).toList()));
         tag.put("projects", saveRows(projects.values().stream().map(ProjectRecord::save).toList()));
         tag.put("migrations", saveRows(migrations.values().stream().map(MigrationRecord::save).toList()));
+        tag.put("public_requests", saveRows(publicRequests.values().stream().map(PublicRequestRecord::save).toList()));
         return tag;
     }
 
@@ -485,6 +568,7 @@ public final class VillageSavedData extends SavedData {
         projects.values().removeIf(record -> !villages.containsKey(record.villageId));
         migrations.values().removeIf(record -> !villages.containsKey(record.originVillageId)
                 || (record.destinationVillageId != null && !villages.containsKey(record.destinationVillageId)));
+        publicRequests.values().removeIf(record -> !villages.containsKey(record.villageId));
 
         for (VillageRecord village : villages.values()) {
             village.buildingIds.removeIf(id -> !buildings.containsKey(id));
@@ -1318,6 +1402,86 @@ public final class VillageSavedData extends SavedData {
                 int count = row.getInt("count");
                 if (!item.isBlank() && count > 0) record.reservations.put(item, count);
             }
+            return record;
+        }
+    }
+
+    public static final class PublicRequestRecord {
+        private final UUID id;
+        private final UUID villageId;
+        private final String key;
+        private String urgency = "normal";
+        private String itemKey = "";
+        private int requestedCount;
+        private int remainingCount;
+        private String reason = "";
+        private String context = "";
+        private UUID projectId;
+        private String state = "active";
+        private long createdGameTime;
+        private long updatedGameTime;
+
+        private PublicRequestRecord(UUID id, UUID villageId, String key) {
+            this.id = id;
+            this.villageId = villageId;
+            this.key = key;
+        }
+
+        public UUID id() { return id; }
+        public UUID villageId() { return villageId; }
+        public String key() { return key; }
+        public String urgency() { return urgency; }
+        public String itemKey() { return itemKey; }
+        public int requestedCount() { return requestedCount; }
+        public int remainingCount() { return remainingCount; }
+        public String reason() { return reason; }
+        public String context() { return context; }
+        public UUID projectId() { return projectId; }
+        public String state() { return state; }
+        public long createdGameTime() { return createdGameTime; }
+        public long updatedGameTime() { return updatedGameTime; }
+
+        public int urgencyRank() {
+            if ("emergency".equals(urgency)) return 3;
+            if ("high".equals(urgency)) return 2;
+            return 1;
+        }
+
+        private CompoundTag save() {
+            CompoundTag tag = new CompoundTag();
+            putUuid(tag, "id", id);
+            putUuid(tag, "village", villageId);
+            tag.putString("key", key);
+            tag.putString("urgency", urgency);
+            tag.putString("item_key", itemKey);
+            tag.putInt("requested", requestedCount);
+            tag.putInt("remaining", remainingCount);
+            tag.putString("reason", reason);
+            tag.putString("context", context);
+            putUuid(tag, "project", projectId);
+            tag.putString("state", state);
+            tag.putLong("created", createdGameTime);
+            tag.putLong("updated", updatedGameTime);
+            return tag;
+        }
+
+        private static PublicRequestRecord load(CompoundTag tag) {
+            UUID id = readUuid(tag, "id");
+            UUID villageId = readUuid(tag, "village");
+            String key = tag.getString("key");
+            if (id == null || villageId == null || key.isBlank()) return null;
+
+            PublicRequestRecord record = new PublicRequestRecord(id, villageId, key);
+            record.urgency = safeText(tag.getString("urgency"), "normal");
+            record.itemKey = tag.getString("item_key");
+            record.requestedCount = Math.max(0, tag.getInt("requested"));
+            record.remainingCount = Math.max(0, tag.getInt("remaining"));
+            record.reason = tag.getString("reason");
+            record.context = tag.getString("context");
+            record.projectId = readUuid(tag, "project");
+            record.state = safeText(tag.getString("state"), "active");
+            record.createdGameTime = tag.getLong("created");
+            record.updatedGameTime = tag.getLong("updated");
             return record;
         }
     }
