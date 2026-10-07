@@ -12,6 +12,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
@@ -24,6 +25,7 @@ import net.minecraft.world.item.enchantment.ItemEnchantments;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.AnvilUpdateEvent;
+import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.living.LivingFallEvent;
 import net.neoforged.neoforge.event.entity.player.AnvilRepairEvent;
@@ -37,7 +39,9 @@ public final class EnchantmentTweaksEvents {
     private static final String FORTUNE = "minecraft:fortune";
     private static final String SILK_TOUCH = "minecraft:silk_touch";
     private static final String RESPIRATION = "minecraft:respiration";
+    private static final String PROTECTION = "minecraft:protection";
     private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
+    private static final String PROTECTION_LAST_DAMAGE = "asobibatweaks_protection_last_damage";
 
     @SubscribeEvent
     public void onBlockDrops(BlockDropsEvent event) {
@@ -77,6 +81,46 @@ public final class EnchantmentTweaksEvents {
             };
             event.setNewSpeed(event.getNewSpeed() * factor);
             return;
+        }
+    }
+
+    @SubscribeEvent
+    public void onLivingDamage(LivingDamageEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)
+                || player.level().isClientSide()
+                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || event.getAmount() <= 0.0F
+                || event.getSource().is(DamageTypeTags.BYPASSES_ENCHANTMENTS)) {
+            return;
+        }
+
+        BranchRef protection = armorBranch(player, PROTECTION);
+        if (protection == null) return;
+
+        double strength = branchScale(protection.mastery(), 0.0D, 1.0D);
+        double reduction = 0.0D;
+
+        if (protection.branch() == 0) {
+            reduction = 0.03D + 0.05D * strength;
+        } else if (protection.branch() == 1) {
+            long now = player.level().getGameTime();
+            var persistent = player.getPersistentData();
+            boolean armed = !persistent.contains(PROTECTION_LAST_DAMAGE)
+                    || now - persistent.getLong(PROTECTION_LAST_DAMAGE) >= 160L;
+            persistent.putLong(PROTECTION_LAST_DAMAGE, now);
+            if (armed) reduction = 0.10D + 0.15D * strength;
+        } else if (protection.branch() == 2) {
+            float maxHealth = Math.max(1.0F, player.getMaxHealth());
+            double healthRatio = player.getHealth() / (double)maxHealth;
+            if (healthRatio < 0.40D) {
+                double healthRamp = Math.min(1.0D, Math.max(0.0D, (0.40D - healthRatio) / 0.30D));
+                double maxReduction = 0.05D + 0.15D * strength;
+                reduction = maxReduction * healthRamp;
+            }
+        }
+
+        if (reduction > 0.0D) {
+            event.setAmount((float)(event.getAmount() * Math.max(0.0D, 1.0D - reduction)));
         }
     }
 
@@ -493,7 +537,8 @@ public final class EnchantmentTweaksEvents {
         return "minecraft:efficiency".equals(enchantmentId)
                 || "minecraft:feather_falling".equals(enchantmentId)
                 || FORTUNE.equals(enchantmentId)
-                || RESPIRATION.equals(enchantmentId);
+                || RESPIRATION.equals(enchantmentId)
+                || PROTECTION.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -526,6 +571,14 @@ public final class EnchantmentTweaksEvents {
                 case 0 -> "Deep Breath";
                 case 1 -> "Quiet Breath";
                 case 2 -> "Rapid Ventilation";
+                default -> "Unselected";
+            };
+        }
+        if (PROTECTION.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "General Defense";
+                case 1 -> "First-Hit Defense";
+                case 2 -> "Crisis Defense";
                 default -> "Unselected";
             };
         }
