@@ -37,7 +37,8 @@ public final class MobBuildingUseEvents {
 
     private static void tickBuildingUse(PathfinderMob mob, ServerLevel level) {
         if (level.isRainingAt(mob.blockPosition()) && !mob.getNavigation().isInProgress()) {
-            BlockPos shelter = findShelter(level, mob.blockPosition(), 9, mob);
+            BlockPos shelter = VillageBuildingService.findIndexedShelter(level, mob.blockPosition(), 24);
+            if (shelter == null) shelter = findShelter(level, mob.blockPosition(), 9, mob);
             if (shelter != null) {
                 mob.getNavigation().moveTo(shelter.getX() + 0.5D, shelter.getY(), shelter.getZ() + 0.5D, 0.75D);
                 return;
