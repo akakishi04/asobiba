@@ -2,6 +2,7 @@ package io.github.akakishi04.asobibatweaks;
 
 import io.github.akakishi04.asobibatweaks.client.EnchantingScreenEvents;
 import io.github.akakishi04.asobibatweaks.client.NetherFishRenderer;
+import io.github.akakishi04.asobibatweaks.client.QuiverClientEvents;
 import io.github.akakishi04.asobibatweaks.client.VillageStatusScreen;
 import io.github.akakishi04.asobibatweaks.feature.VillageStatusNetworking;
 import net.neoforged.api.distmarker.Dist;
@@ -20,6 +21,7 @@ public final class AsobibaTweaksClient {
         VillageStatusNetworking.installClientHandler(VillageStatusScreen::open);
         modBus.addListener(this::registerRenderers);
         NeoForge.EVENT_BUS.register(new EnchantingScreenEvents());
+        NeoForge.EVENT_BUS.register(new QuiverClientEvents());
     }
 
     private void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
