@@ -36,6 +36,14 @@ public final class VillagerSimData {
     private static final String DISPLACED = "displaced";
     private static final String ORIGIN_VILLAGE_ID = "origin_village_id";
     private static final String WORK_CARGO = "work_cargo";
+    private static final String REFUSAL = "refusal";
+    private static final String LAST_WELFARE_PRICE_PERCENT = "last_welfare_price_percent";
+    private static final String LAST_SAMPLE_POS = "last_sample_pos";
+    private static final String LAST_MOVE_ACTIVE = "last_move_active";
+    private static final String LAST_SLEEP_ACTIVE = "last_sleep_active";
+    private static final String LAST_WORK_ACTIVE = "last_work_active";
+    private static final String LAST_OPEN_ACTIVE = "last_open_active";
+    private static final String LAST_SOCIAL_ACTIVE = "last_social_active";
 
     private VillagerSimData() {
     }
@@ -46,6 +54,7 @@ public final class VillagerSimData {
         if (!root.contains(DUTY, Tag.TAG_STRING)) root.putString(DUTY, "none");
         if (!root.contains(WELFARE, Tag.TAG_INT)) root.putInt(WELFARE, 100);
         if (!root.contains(CARPENTRY_SKILL, Tag.TAG_INT)) root.putInt(CARPENTRY_SKILL, 0);
+        if (!root.contains(REFUSAL, Tag.TAG_BYTE)) root.putBoolean(REFUSAL, false);
     }
 
     public static Optional<UUID> villageId(Villager villager) {
@@ -97,6 +106,44 @@ public final class VillagerSimData {
     public static void setWelfare(Villager villager, int welfare) {
         root(villager, true).putInt(WELFARE, Mth.clamp(welfare, 0, 100));
     }
+
+    public static boolean refusal(Villager villager) {
+        return root(villager, false).getBoolean(REFUSAL);
+    }
+
+    public static void setRefusal(Villager villager, boolean value) {
+        root(villager, true).putBoolean(REFUSAL, value);
+    }
+
+    public static int lastWelfarePricePercent(Villager villager) {
+        return Math.max(0, root(villager, false).getInt(LAST_WELFARE_PRICE_PERCENT));
+    }
+
+    public static void setLastWelfarePricePercent(Villager villager, int value) {
+        root(villager, true).putInt(LAST_WELFARE_PRICE_PERCENT, Math.max(0, value));
+    }
+
+    public static Optional<net.minecraft.core.BlockPos> lastSamplePos(Villager villager) {
+        CompoundTag root = root(villager, false);
+        return root.contains(LAST_SAMPLE_POS, Tag.TAG_LONG)
+                ? Optional.of(net.minecraft.core.BlockPos.of(root.getLong(LAST_SAMPLE_POS)))
+                : Optional.empty();
+    }
+
+    public static void setLastSamplePos(Villager villager, net.minecraft.core.BlockPos pos) {
+        root(villager, true).putLong(LAST_SAMPLE_POS, pos.asLong());
+    }
+
+    public static long lastMoveActive(Villager villager) { return root(villager, false).getLong(LAST_MOVE_ACTIVE); }
+    public static void setLastMoveActive(Villager villager, long value) { root(villager, true).putLong(LAST_MOVE_ACTIVE, value); }
+    public static long lastSleepActive(Villager villager) { return root(villager, false).getLong(LAST_SLEEP_ACTIVE); }
+    public static void setLastSleepActive(Villager villager, long value) { root(villager, true).putLong(LAST_SLEEP_ACTIVE, value); }
+    public static long lastWorkActive(Villager villager) { return root(villager, false).getLong(LAST_WORK_ACTIVE); }
+    public static void setLastWorkActive(Villager villager, long value) { root(villager, true).putLong(LAST_WORK_ACTIVE, value); }
+    public static long lastOpenActive(Villager villager) { return root(villager, false).getLong(LAST_OPEN_ACTIVE); }
+    public static void setLastOpenActive(Villager villager, long value) { root(villager, true).putLong(LAST_OPEN_ACTIVE, value); }
+    public static long lastSocialActive(Villager villager) { return root(villager, false).getLong(LAST_SOCIAL_ACTIVE); }
+    public static void setLastSocialActive(Villager villager, long value) { root(villager, true).putLong(LAST_SOCIAL_ACTIVE, value); }
 
     public static int carpentrySkill(Villager villager) {
         CompoundTag root = root(villager, false);
