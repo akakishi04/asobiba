@@ -3,7 +3,9 @@ package io.github.akakishi04.asobibatweaks.feature;
 import io.github.akakishi04.asobibatweaks.AsobibaRegistries;
 import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.Locale;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
@@ -25,6 +27,7 @@ import net.minecraft.world.entity.npc.VillagerProfession;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.BaseFireBlock;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Block;
@@ -517,14 +520,20 @@ public final class VillageSimulationEvents {
                     : 10 + Math.floorMod(Long.hashCode(salt + attempt), 9);
             int x = (int)Math.floor(villager.getX() + Math.cos(angle) * radius);
             int z = (int)Math.floor(villager.getZ() + Math.sin(angle) * radius);
+            BlockPos columnProbe = new BlockPos(x, level.getMinBuildHeight(), z);
+            if (!VillageSimulationScheduler.isChunkLoaded(level, columnProbe)) continue;
+
             int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
             BlockPos base = new BlockPos(x - 2, y, z - 2);
+            if (!VillageSimulationScheduler.isAreaLoaded(level, base.offset(0, -1, 0), base.offset(4, 4, 4))) continue;
 
             boolean clear = true;
             for (int dx = 0; dx < 5 && clear; dx++) for (int dz = 0; dz < 5 && clear; dz++) {
+                if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) return null;
                 BlockPos floor = base.offset(dx, -1, dz);
                 if (level.getBlockState(floor).isAir() || !level.getFluidState(floor).isEmpty()) clear = false;
                 for (int dy = 0; dy <= 4; dy++) {
+                    if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) return null;
                     BlockState state = level.getBlockState(base.offset(dx, dy, dz));
                     if (!state.canBeReplaced() && !state.is(BlockTags.REPLACEABLE_BY_TREES)) {
                         clear = false;
@@ -547,6 +556,9 @@ public final class VillageSimulationEvents {
             double t = i / (double)steps;
             int x = (int)Math.round(from.getX() + dx * t);
             int z = (int)Math.round(from.getZ() + dz * t);
+            BlockPos columnProbe = new BlockPos(x, level.getMinBuildHeight(), z);
+            if (!VillageSimulationScheduler.isChunkLoaded(level, columnProbe)) break;
+            if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) break;
             int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
             BlockPos surface = new BlockPos(x, y - 1, z);
             if (level.getFluidState(surface).is(FluidTags.WATER)) {
@@ -611,6 +623,7 @@ public final class VillageSimulationEvents {
             villager.getPersistentData().remove(SETTLE_UNTIL);
             return;
         }
+        if (!VillageSimulationScheduler.isChunkLoaded(level, target)) return;
         villager.getNavigation().moveTo(target.getX() + 0.5D, target.getY(), target.getZ() + 0.5D, 0.78D);
     }
 
@@ -621,6 +634,7 @@ public final class VillageSimulationEvents {
             return;
         }
 
+        if (!areaLoaded(level, villager.blockPosition(), 18, 5, 5)) return;
         int beds = countBlocks(level, villager.blockPosition(), 18, state -> state.is(BlockTags.BEDS));
         int food = countStorageItems(level, villager.blockPosition(), 14, Items.BREAD, Items.CARROT, Items.POTATO, Items.BEETROOT);
         if (beds > 0 && food >= 8) return;
@@ -630,6 +644,7 @@ public final class VillageSimulationEvents {
                 villager.getBoundingBox().inflate(112.0D),
                 other -> other != villager
                         && other.distanceToSqr(villager) > 48.0D * 48.0D
+                        && areaLoaded(level, other.blockPosition(), 12, 5, 5)
                         && countBlocks(level, other.blockPosition(), 12, state -> state.is(BlockTags.BEDS)) > 0
         );
         if (possible.isEmpty()) return;
@@ -646,6 +661,7 @@ public final class VillageSimulationEvents {
 
     private static void tickQuartermaster(Villager villager, ServerLevel level) {
         if (level.getGameTime() % 240 != Math.floorMod(villager.getId(), 240)) return;
+        if (!areaLoaded(level, villager.blockPosition(), 14, 3, 3)) return;
         List<Container> stores = containers(level, villager.blockPosition(), 14);
         for (Container store : stores) {
             for (int i = 0; i < store.getContainerSize(); i++) {
@@ -681,7 +697,17 @@ public final class VillageSimulationEvents {
         if (!isWorkTime(level) || level.getGameTime() % 200 != Math.floorMod(villager.getId(), 200)) return;
 
         BlockPos center = villager.blockPosition();
-        for (BlockPos pos : BlockPos.betweenClosed(center.offset(-8, -3, -8), center.offset(8, 3, 8))) {
+        if (center.getY() < 0 || !areaLoaded(level, center, 11, 5, 5)) return;
+
+        for (int attempt = 0; attempt < 32; attempt++) {
+            if (!VillageSimulationScheduler.tryConsumeWorkerProbe(level)) return;
+            BlockPos pos = center.offset(
+                    villager.getRandom().nextInt(17) - 8,
+                    villager.getRandom().nextInt(7) - 3,
+                    villager.getRandom().nextInt(17) - 8
+            );
+            if (pos.getY() < 0) continue;
+
             BlockState state = level.getBlockState(pos);
             if (!state.is(Blocks.STONE) && !state.is(Blocks.ANDESITE) && !state.is(Blocks.DIORITE) && !state.is(Blocks.GRANITE)) continue;
             if (!hasExposedFace(level, pos) || nearProtectedBuildingBlock(level, pos)) continue;
@@ -697,7 +723,15 @@ public final class VillageSimulationEvents {
         if (!isWorkTime(level) || level.getGameTime() % 240 != Math.floorMod(villager.getId(), 240)) return;
 
         BlockPos center = villager.blockPosition();
-        for (BlockPos pos : BlockPos.betweenClosed(center.offset(-10, -2, -10), center.offset(10, 5, 10))) {
+        if (!areaLoaded(level, center, 13, 4, 7)) return;
+
+        for (int attempt = 0; attempt < 32; attempt++) {
+            if (!VillageSimulationScheduler.tryConsumeWorkerProbe(level)) return;
+            BlockPos pos = center.offset(
+                    villager.getRandom().nextInt(21) - 10,
+                    villager.getRandom().nextInt(8) - 2,
+                    villager.getRandom().nextInt(21) - 10
+            );
             BlockState state = level.getBlockState(pos);
             if (!state.is(BlockTags.LOGS) || !treeLooksNatural(level, pos)) continue;
 
@@ -736,6 +770,7 @@ public final class VillageSimulationEvents {
 
     private static void tickPorter(Villager villager, ServerLevel level) {
         if (level.getGameTime() % 100 != Math.floorMod(villager.getId(), 100)) return;
+        if (!areaLoaded(level, villager.blockPosition(), 14, 3, 3)) return;
         List<ItemEntity> drops = level.getEntitiesOfClass(
                 ItemEntity.class,
                 villager.getBoundingBox().inflate(7.0D),
@@ -757,6 +792,7 @@ public final class VillageSimulationEvents {
 
     private static void exportVillagerFood(Villager villager, ServerLevel level) {
         if (level.getGameTime() % 300 != Math.floorMod(villager.getId(), 300)) return;
+        if (!areaLoaded(level, villager.blockPosition(), 12, 3, 3)) return;
         for (int i = 0; i < villager.getInventory().getContainerSize(); i++) {
             ItemStack stack = villager.getInventory().getItem(i);
             if (!(stack.is(Items.BREAD) || stack.is(Items.CARROT) || stack.is(Items.POTATO) || stack.is(Items.BEETROOT))
@@ -771,8 +807,11 @@ public final class VillageSimulationEvents {
 
     private static void respondToFire(Villager villager, ServerLevel level) {
         BlockPos center = villager.blockPosition();
+        if (!areaLoaded(level, center, 7, 3, 4)) return;
+
         BlockPos fire = null;
         for (BlockPos pos : BlockPos.betweenClosed(center.offset(-7, -3, -7), center.offset(7, 4, 7))) {
+            if (!VillageSimulationScheduler.tryConsumeEmergencyProbe(level)) return;
             if (level.getBlockState(pos).getBlock() instanceof BaseFireBlock) {
                 fire = pos.immutable();
                 break;
@@ -796,9 +835,18 @@ public final class VillageSimulationEvents {
         if (!level.isRainingAt(villager.blockPosition()) || villager.getNavigation().isInProgress()) return;
 
         BlockPos center = villager.blockPosition();
-        for (BlockPos pos : BlockPos.betweenClosed(center.offset(-8, -1, -8), center.offset(8, 2, 8))) {
+        if (!areaLoaded(level, center, 9, 2, 4)) return;
+
+        for (int attempt = 0; attempt < 64; attempt++) {
+            if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) return;
+            BlockPos pos = center.offset(
+                    villager.getRandom().nextInt(17) - 8,
+                    villager.getRandom().nextInt(4) - 1,
+                    villager.getRandom().nextInt(17) - 8
+            );
             if (!level.getBlockState(pos).isAir()) continue;
-            if (!level.getBlockState(pos.above(2)).isAir() && level.getBlockState(pos.below()).isFaceSturdy(level, pos.below(), Direction.UP)) {
+            if (!level.getBlockState(pos.above(2)).isAir()
+                    && level.getBlockState(pos.below()).isFaceSturdy(level, pos.below(), Direction.UP)) {
                 villager.getNavigation().moveTo(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D, 0.65D);
                 return;
             }
@@ -889,7 +937,19 @@ public final class VillageSimulationEvents {
 
     private static List<Container> containers(ServerLevel level, BlockPos center, int radius) {
         List<Container> result = new ArrayList<>();
+        Set<Long> loadedChunks = new HashSet<>();
+        Set<Long> unavailableChunks = new HashSet<>();
+
         for (BlockPos pos : BlockPos.betweenClosed(center.offset(-radius, -3, -radius), center.offset(radius, 3, radius))) {
+            long chunkKey = ChunkPos.asLong(pos.getX() >> 4, pos.getZ() >> 4);
+            if (unavailableChunks.contains(chunkKey)) continue;
+            if (!loadedChunks.contains(chunkKey)) {
+                if (!VillageSimulationScheduler.isChunkLoaded(level, pos)) {
+                    unavailableChunks.add(chunkKey);
+                    continue;
+                }
+                loadedChunks.add(chunkKey);
+            }
             if (level.getBlockEntity(pos) instanceof Container container) result.add(container);
         }
         return result;
@@ -914,6 +974,7 @@ public final class VillageSimulationEvents {
     private static int countBlocks(ServerLevel level, BlockPos center, int radius, java.util.function.Predicate<BlockState> predicate) {
         int count = 0;
         for (BlockPos pos : BlockPos.betweenClosed(center.offset(-radius, -5, -radius), center.offset(radius, 5, radius))) {
+            if (!VillageSimulationScheduler.isChunkLoaded(level, pos)) continue;
             if (predicate.test(level.getBlockState(pos)) && ++count >= 64) break;
         }
         return count;
@@ -921,13 +982,18 @@ public final class VillageSimulationEvents {
 
     private static boolean hasExposedFace(ServerLevel level, BlockPos pos) {
         for (Direction direction : Direction.values()) {
-            if (level.getBlockState(pos.relative(direction)).isAir()) return true;
+            BlockPos adjacent = pos.relative(direction);
+            if (!VillageSimulationScheduler.isChunkLoaded(level, adjacent)) return false;
+            if (!VillageSimulationScheduler.tryConsumeWorkerProbe(level)) return false;
+            if (level.getBlockState(adjacent).isAir()) return true;
         }
         return false;
     }
 
     private static boolean nearProtectedBuildingBlock(ServerLevel level, BlockPos pos) {
         for (BlockPos p : BlockPos.betweenClosed(pos.offset(-3, -2, -3), pos.offset(3, 3, 3))) {
+            if (!VillageSimulationScheduler.isChunkLoaded(level, p)) return true;
+            if (!VillageSimulationScheduler.tryConsumeWorkerProbe(level)) return true;
             BlockState state = level.getBlockState(p);
             if (state.is(BlockTags.BEDS) || state.is(Blocks.CHEST) || state.is(Blocks.BARREL)
                     || state.is(AsobibaRegistries.CARPENTER_WORKBENCH.get())) return true;
@@ -938,6 +1004,8 @@ public final class VillageSimulationEvents {
     private static boolean treeLooksNatural(ServerLevel level, BlockPos pos) {
         boolean leaves = false;
         for (BlockPos p : BlockPos.betweenClosed(pos.offset(-3, 0, -3), pos.offset(3, 5, 3))) {
+            if (!VillageSimulationScheduler.isChunkLoaded(level, p)) return false;
+            if (!VillageSimulationScheduler.tryConsumeWorkerProbe(level)) return false;
             if (level.getBlockState(p).is(BlockTags.LEAVES)) {
                 leaves = true;
                 break;
@@ -960,9 +1028,19 @@ public final class VillageSimulationEvents {
 
     private static boolean nearWater(ServerLevel level, BlockPos center, int radius) {
         for (BlockPos pos : BlockPos.betweenClosed(center.offset(-radius, -2, -radius), center.offset(radius, 2, radius))) {
+            if (!VillageSimulationScheduler.isChunkLoaded(level, pos)) continue;
+            if (!VillageSimulationScheduler.tryConsumeEmergencyProbe(level)) return false;
             if (level.getFluidState(pos).is(FluidTags.WATER)) return true;
         }
         return false;
+    }
+
+    private static boolean areaLoaded(ServerLevel level, BlockPos center, int horizontal, int down, int up) {
+        return VillageSimulationScheduler.isAreaLoaded(
+                level,
+                center.offset(-horizontal, -down, -horizontal),
+                center.offset(horizontal, up, horizontal)
+        );
     }
 
     private static void runIfActive(Villager villager, ServerLevel level, Runnable work) {
