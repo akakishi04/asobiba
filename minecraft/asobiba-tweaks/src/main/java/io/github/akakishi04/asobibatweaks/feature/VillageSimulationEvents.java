@@ -868,6 +868,93 @@ public final class VillageSimulationEvents {
         return Blocks.OAK_PLANKS;
     }
 
+    private static VillageSavedData.WorkSiteRecord findFissionOutpost(
+            VillageSavedData data,
+            VillageSavedData.VillageRecord village,
+            long now,
+            int population,
+            int carpenterSkill) {
+        if (village == null
+                || !AsobibaTweaksConfig.VILLAGE_FISSION_ENABLED.getAsBoolean()
+                || population < 12
+                || carpenterSkill < 50
+                || village.settlementViability() < 60
+                || village.sustainablePopulation() < population
+                || now < village.nextFissionGameTime()) {
+            return null;
+        }
+
+        for (VillageSavedData.WorkSiteRecord site : data.workSitesForVillage(village.id())) {
+            if (!"outpost".equals(site.type()) || !"active".equals(site.state())) continue;
+            if (site.createdGameTime() <= 0L || now - site.createdGameTime() < 7L * 24000L) continue;
+
+            BlockPos center = workSiteCenter(site);
+            if (village.center().distManhattan(center) < 256) continue;
+
+            boolean tooCloseToOtherVillage = data.villagesView().values().stream()
+                    .filter(other -> !other.id().equals(village.id()))
+                    .filter(other -> !"abandoned".equals(other.lifecycle()))
+                    .anyMatch(other -> other.center().distManhattan(center) < 256);
+            if (!tooCloseToOtherVillage) return site;
+        }
+        return null;
+    }
+
+    private static BlockPos workSiteCenter(VillageSavedData.WorkSiteRecord site) {
+        return new BlockPos(
+                (site.min().getX() + site.max().getX()) / 2,
+                (site.min().getY() + site.max().getY()) / 2,
+                (site.min().getZ() + site.max().getZ()) / 2
+        );
+    }
+
+    private static BlockPos findBuildSiteNear(ServerLevel level, BlockPos anchor, Villager villager, int maxY) {
+        long salt = anchor.asLong() ^ villager.getUUID().getMostSignificantBits() ^ (level.getGameTime() / 24000L);
+        for (int attempt = 0; attempt < 16; attempt++) {
+            double angle = (attempt / 16.0D) * Math.PI * 2.0D;
+            int radius = 8 + Math.floorMod(Long.hashCode(salt + attempt * 17L), 11);
+            int x = (int)Math.floor(anchor.getX() + Math.cos(angle) * radius);
+            int z = (int)Math.floor(anchor.getZ() + Math.sin(angle) * radius);
+
+            BlockPos column = new BlockPos(x, level.getMinBuildHeight(), z);
+            if (!VillageSimulationScheduler.isChunkLoaded(level, column)) continue;
+
+            int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+            BlockPos base = new BlockPos(x - 2, y, z - 2);
+            if (isBuildSiteClear(level, base, maxY)) return base;
+        }
+        return null;
+    }
+
+    private static boolean isBuildSiteClear(ServerLevel level, BlockPos base, int maxY) {
+        if (!VillageSimulationScheduler.isAreaLoaded(
+                level,
+                base.offset(0, -1, 0),
+                base.offset(4, maxY, 4))) {
+            return false;
+        }
+
+        for (int dx = 0; dx < 5; dx++) {
+            for (int dz = 0; dz < 5; dz++) {
+                if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) return false;
+
+                BlockPos floor = base.offset(dx, -1, dz);
+                if (level.getBlockState(floor).isAir() || !level.getFluidState(floor).isEmpty()) {
+                    return false;
+                }
+
+                for (int dy = 0; dy <= maxY; dy++) {
+                    if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) return false;
+                    BlockState state = level.getBlockState(base.offset(dx, dy, dz));
+                    if (!state.canBeReplaced() && !state.is(BlockTags.REPLACEABLE_BY_TREES)) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
     private static BlockPos findBuildSite(Villager villager, ServerLevel level, boolean outpost, boolean colony) {
         long salt = villager.getUUID().getLeastSignificantBits() ^ level.getGameTime() / 24000L;
         for (int attempt = 0; attempt < 12; attempt++) {
