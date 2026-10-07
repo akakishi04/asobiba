@@ -212,4 +212,10 @@ public final class VillageStatusNetworking {
                 .toList();
     }
 
+    private static int count(VillageSavedData.VillageRecord village, Item... items) {
+        int total = 0;
+        for (Item item : items) total += village.ledgerCount(VillageStorageService.itemKey(item));
+        return total;
+    }
+
 }
