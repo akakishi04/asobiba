@@ -1,6 +1,9 @@
 package io.github.akakishi04.asobibatweaks.feature;
 
+import net.minecraft.core.BlockPos;
+
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.ChunkPos;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
@@ -17,6 +20,15 @@ public final class VillageDirtyEvents {
     public void onBlockPlaced(BlockEvent.EntityPlaceEvent event) {
         if (!(event.getLevel() instanceof ServerLevel level)) return;
         enqueueChunkInvalidation(level, new ChunkPos(event.getPos()), "place");
+
+        if (event.getEntity() instanceof Player) {
+            BlockPos adoptionPos = event.getPos().immutable();
+            VillageSimulationScheduler.enqueueValidation(
+                    level,
+                    "adopt_building:" + adoptionPos.asLong(),
+                    () -> VillageBuildingAdoptionService.tryAdoptNear(level, adoptionPos)
+            );
+        }
     }
 
     @SubscribeEvent
