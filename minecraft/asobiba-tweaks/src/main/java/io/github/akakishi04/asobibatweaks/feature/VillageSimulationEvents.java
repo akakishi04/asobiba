@@ -133,11 +133,8 @@ public final class VillageSimulationEvents {
             VillageSimulationScheduler.enqueueEmergency(level, "fire:" + id,
                     () -> runIfActive(villager, level, () -> respondToFire(villager, level)));
         }
-        if (AsobibaTweaksConfig.VILLAGE_REFUGEES_ENABLED.getAsBoolean()) {
-            VillageSimulationScheduler.enqueueWorker(level, "settlement_travel:" + id,
-                    () -> runIfActive(villager, level, () -> tickSettlementTravel(villager, level)));
-            VillageSimulationScheduler.enqueuePlanning(level, "refugee_plan:" + id,
-                    () -> runIfActive(villager, level, () -> tickRefugeeMigration(villager, level)));
+        if (VillagerSimData.migrationId(villager).isPresent()) {
+            return;
         }
 
         VillageDutyScheduler.ensureFormalDuty(villager, level.getGameTime());
@@ -189,30 +186,13 @@ public final class VillageSimulationEvents {
     public void onBaby(BabyEntitySpawnEvent event) {
         if (!AsobibaTweaksConfig.VILLAGE_SIMULATION_ENABLED.getAsBoolean()
                 || !AsobibaTweaksConfig.VILLAGE_BREEDING_ENABLED.getAsBoolean()
-                || !(event.getParentA() instanceof Villager parent)
-                || !(event.getParentB() instanceof Villager)) {
+                || !(event.getParentA() instanceof Villager parentA)
+                || !(event.getParentB() instanceof Villager parentB)
+                || !(parentA.level() instanceof ServerLevel level)) {
             return;
         }
 
-        ServerLevel level = (ServerLevel)parent.level();
-        if (!areaLoaded(level, parent.blockPosition(), 24, 5, 5)) {
-            // Conservative partial-load behavior: never infer spare housing/food from missing chunks.
-            event.setCanceled(true);
-            return;
-        }
-        AABB area = parent.getBoundingBox().inflate(28.0D);
-        int villagers = level.getEntitiesOfClass(Villager.class, area).size();
-        int beds = countBlocks(level, parent.blockPosition(), 24, state -> state.is(BlockTags.BEDS));
-        int food = VillageStorageService.count(parent, level,
-                Items.BREAD, Items.CARROT, Items.POTATO, Items.BEETROOT);
-
-        long now = level.getGameTime();
-        boolean distressed = now < parent.getPersistentData().getLong(DISTRESS);
-        boolean recovering = !distressed && now < parent.getPersistentData().getLong(RECOVERY_UNTIL);
-        int infrastructureCap = Math.max(2, beds + Math.max(0, food / 24));
-        if (recovering) infrastructureCap += Math.max(1, beds / 3);
-        int minimumFood = recovering ? 8 : 12;
-        if (distressed || food < minimumFood || villagers >= infrastructureCap) {
+        if (!VillagePopulationMigrationService.allowBirth(parentA, parentB, level)) {
             event.setCanceled(true);
         }
     }
@@ -920,59 +900,6 @@ public final class VillageSimulationEvents {
             settler.getNavigation().moveTo(target.getX() + 0.5D, target.getY(), target.getZ() + 0.5D, 0.75D);
             if (++sent >= targetCount) break;
         }
-    }
-
-    private static void tickSettlementTravel(Villager villager, ServerLevel level) {
-        long until = villager.getPersistentData().getLong(SETTLE_UNTIL);
-        if (until <= 0L) return;
-        if (level.getGameTime() > until) {
-            villager.getPersistentData().remove(SETTLE_UNTIL);
-            return;
-        }
-
-        BlockPos target = new BlockPos(
-                villager.getPersistentData().getInt(SETTLE_X),
-                villager.getPersistentData().getInt(SETTLE_Y),
-                villager.getPersistentData().getInt(SETTLE_Z)
-        );
-        if (villager.distanceToSqr(target.getCenter()) < 16.0D) {
-            villager.getPersistentData().remove(SETTLE_UNTIL);
-            return;
-        }
-        if (!VillageSimulationScheduler.isChunkLoaded(level, target)) return;
-        villager.getNavigation().moveTo(target.getX() + 0.5D, target.getY(), target.getZ() + 0.5D, 0.78D);
-    }
-
-    private static void tickRefugeeMigration(Villager villager, ServerLevel level) {
-        if (level.getGameTime() >= villager.getPersistentData().getLong(DISTRESS)
-                || villager.getPersistentData().getLong(SETTLE_UNTIL) > 0L
-                || villager.tickCount % 400 != Math.floorMod(villager.getId(), 400)) {
-            return;
-        }
-
-        if (!areaLoaded(level, villager.blockPosition(), 18, 5, 5)) return;
-        int beds = countBlocks(level, villager.blockPosition(), 18, state -> state.is(BlockTags.BEDS));
-        int food = VillageStorageService.count(villager, level, Items.BREAD, Items.CARROT, Items.POTATO, Items.BEETROOT);
-        if (beds > 0 && food >= 8) return;
-
-        List<Villager> possible = level.getEntitiesOfClass(
-                Villager.class,
-                villager.getBoundingBox().inflate(112.0D),
-                other -> other != villager
-                        && other.distanceToSqr(villager) > 48.0D * 48.0D
-                        && areaLoaded(level, other.blockPosition(), 12, 5, 5)
-                        && countBlocks(level, other.blockPosition(), 12, state -> state.is(BlockTags.BEDS)) > 0
-        );
-        if (possible.isEmpty()) return;
-
-        Villager targetVillager = possible.getFirst();
-        BlockPos target = targetVillager.blockPosition();
-        var data = villager.getPersistentData();
-        data.putInt(SETTLE_X, target.getX());
-        data.putInt(SETTLE_Y, target.getY());
-        data.putInt(SETTLE_Z, target.getZ());
-        data.putLong(SETTLE_UNTIL, level.getGameTime() + 2L * 24000L);
-        villager.getNavigation().moveTo(targetVillager, 0.85D);
     }
 
     private static void tickQuartermaster(Villager villager, ServerLevel level) {
