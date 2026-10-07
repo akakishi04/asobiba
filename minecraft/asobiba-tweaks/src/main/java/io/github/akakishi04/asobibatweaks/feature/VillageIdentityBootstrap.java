@@ -28,7 +28,15 @@ public final class VillageIdentityBootstrap {
         Optional<UUID> existingId = VillagerSimData.villageId(villager);
         if (existingId.isPresent()) {
             UUID id = existingId.get();
-            if (data.village(id).isPresent()) {
+            VillageSavedData.VillageRecord existing = data.village(id).orElse(null);
+            if (existing != null) {
+                if ("merged".equals(existing.lifecycle()) && existing.mergedIntoVillageId() != null
+                        && data.village(existing.mergedIntoVillageId()).isPresent()) {
+                    UUID redirected = existing.mergedIntoVillageId();
+                    VillagerSimData.setVillageId(villager, redirected);
+                    data.registerResident(redirected, villager.getUUID());
+                    return Optional.of(redirected);
+                }
                 data.registerResident(id, villager.getUUID());
                 return existingId;
             }
