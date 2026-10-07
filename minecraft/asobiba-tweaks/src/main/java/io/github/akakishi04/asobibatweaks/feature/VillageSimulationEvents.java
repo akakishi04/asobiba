@@ -375,6 +375,10 @@ public final class VillageSimulationEvents {
 
         List<BuildStep> plan = projectPlan(project);
         int stepIndex = project.workCursor();
+        if (project.reservations().isEmpty() && stepIndex < plan.size()) {
+            initializeProjectReservations(project, plan, stepIndex);
+            VillageSavedData.get(level).touch();
+        }
         if (stepIndex >= plan.size()) {
             completeBuildingProject(villager, level, project, plan);
             return;
