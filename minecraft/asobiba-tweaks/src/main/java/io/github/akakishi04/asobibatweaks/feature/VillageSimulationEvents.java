@@ -247,7 +247,7 @@ public final class VillageSimulationEvents {
         AABB villageArea = villager.getBoundingBox().inflate(28.0D);
         int population = level.getEntitiesOfClass(Villager.class, villageArea).size();
         int beds = countBlocks(level, villager.blockPosition(), 24, state -> state.is(BlockTags.BEDS));
-        int stores = VillageStorageService.containers(villager, level).size();
+        int stores = data.storagesForVillage(villageId.get()).size();
         if (population < 4) {
             villager.getPersistentData().putLong(NEXT_BUILD, now + 12000L);
             return;
