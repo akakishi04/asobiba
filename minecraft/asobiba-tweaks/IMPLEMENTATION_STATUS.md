@@ -53,25 +53,29 @@ This file maps the accepted implementation backlog in `../MOD_IDEAS.md` to its c
 | Giant Crops | `GiantOrganismEvents` | Implemented |
 | Giant Mobs | `GiantOrganismEvents`, `GiantCreeperMixin` | Implemented |
 | Continental Oceans / Islands / Archipelagos | `ContinentalWorldgenEvents` | Implemented; default OFF |
+| Continental River Networks | planned continental worldgen drainage/river layer | **Planned; accepted spec, not yet implemented** |
 | Large Boats / Cargo Rafts | `OceanAndDisplayEvents`, `BoatMixin` | Implemented |
 | Ocean Drift Debris | `OceanAndDisplayEvents` | Implemented |
 | Nether / Lava Fishing | `NetherFishingEvents` | Implemented |
 | Nether Fish | `NetherFishEntity`, `NetherFishingEvents`, renderer/registry | Implemented |
 | Mob-Used Buildings | `MobBuildingUseEvents`, village shelter logic | Implemented |
-| Regional Trade Value | `VillageSimulationEvents` | Implemented |
-| Fire Village Emergency | `VillageSimulationEvents` | Implemented |
-| Autonomous Village Growth | `VillageSimulationEvents` | Implemented |
-| Carpenter Profession | `AsobibaRegistries`, `VillageSimulationEvents` | Implemented |
-| Village Logistics Roles | `VillageSimulationEvents` | Implemented |
-| Outposts / Satellite Sites | `VillageSimulationEvents` | Implemented |
-| Roads / Bridges / River Use | `VillageSimulationEvents` | Implemented |
-| Building Recognition / Occupancy | vanilla POI + `MobBuildingUseEvents` heuristics | Implemented MVP |
-| Building Culture | `VillageSimulationEvents` material palette selection | Implemented |
-| Imperfect Construction | `VillageSimulationEvents` | Implemented |
-| Carpenter Progression | `VillageSimulationEvents` | Implemented |
-| Adaptive Plans / Public Works | `VillageSimulationEvents` | Implemented |
-| Refugees / Migration / Village Fission | `VillageSimulationEvents` | Implemented MVP |
-| Villager Breeding Overhaul | `VillageSimulationEvents` | Implemented |
+| Villager Welfare / Confinement | planned village-state / villager persistent data | **Planned; accepted spec, not yet implemented** |
+| Village Status / Public Needs UI | planned Bell interaction + server status DTO/screen | **Planned; accepted spec, not yet implemented** |
+| Village persistent state / indexes / simulation budgets | planned SavedData + per-villager persistent simulation data | **Planned; accepted architecture, not yet implemented** |
+| Regional Trade Value | `VillageSimulationEvents` | MVP implemented; accepted inventory-backed scarcity, Welfare and UI integration pending |
+| Fire Village Emergency | `VillageSimulationEvents` | MVP implemented; accepted resource-aware multi-role emergency flow pending |
+| Autonomous Village Growth | `VillageSimulationEvents` | MVP implemented; accepted dynamic-boundary, real-storage and phased-project architecture pending |
+| Carpenter Profession | `AsobibaRegistries`, `VillageSimulationEvents` | Core implemented; accepted final work-cargo, trade/palette and profession-duty integration pending |
+| Village Logistics Roles | `VillageSimulationEvents` | MVP implemented; accepted Duty scheduler, staffing rules and persistent cargo pending |
+| Outposts / Satellite Sites | `VillageSimulationEvents` | MVP implemented; accepted parent-linked lifecycle, lodging/logistics and shutdown behavior pending |
+| Roads / Bridges / River Use | `VillageSimulationEvents` | MVP implemented; accepted demand-driven roads/bridges and River Corridor integration pending |
+| Building Recognition / Occupancy | vanilla POI + `MobBuildingUseEvents` heuristics | MVP implemented; accepted persistent functional records/revalidation pending |
+| Building Culture | `VillageSimulationEvents` material palette selection | MVP implemented; accepted weighted persistent/district culture pending |
+| Imperfect Construction | `VillageSimulationEvents` | MVP implemented; accepted plan-time safe cosmetic-variant model pending |
+| Carpenter Progression | `VillageSimulationEvents` | MVP implemented; accepted 0-100 skill, lead-builder and complexity gates pending |
+| Adaptive Plans / Public Works | `VillageSimulationEvents` | MVP implemented; accepted priority queue, real request lifecycle and status-UI integration pending |
+| Refugees / Migration / Village Fission | `VillageSimulationEvents` | MVP implemented; accepted Viability, refugee return, relocation and merge lifecycle pending |
+| Villager Breeding Overhaul | `VillageSimulationEvents` | MVP implemented; accepted sustainable-population model and Recovery Growth pending |
 | Forest Regeneration | `ForestRegenerationEvents` | Implemented |
 | Play Time Limit | `PlayTimeLimitEvents` | Implemented; default OFF |
 
@@ -84,3 +88,10 @@ This file maps the accepted implementation backlog in `../MOD_IDEAS.md` to its c
 The implementation label means the accepted behavior has a working MVP code path. It does not mean final art, balance, performance tuning or long-duration world testing is complete.
 
 For enchantment mastery branches specifically, "MVP framework implemented" means mastery storage, branch selection/cycling and some representative effects exist. It does **not** mean every accepted or pending vanilla-enchantment branch in `MOD_IDEAS.md` has a concrete runtime effect yet.
+
+
+## Village-simulation status note
+
+The village rows above distinguish the existing runtime MVP from the much more detailed accepted design in `../MOD_IDEAS.md`. In particular, the current `VillageSimulationEvents` implementation still contains provisional profession-based role routing (for example Mason/Fletcher/unemployed/Nitwit branches) and does **not** yet represent the accepted final Duty scheduler. Nitwits are excluded from routine labor in the accepted design.
+
+The accepted final village architecture now also includes persistent Village IDs/records, Active/Cached/Unknown chunk handling, real-container-backed ledgers/reservations, bounded project scheduling, Bell-based read-only status UI, Welfare/Confinement, migration/relocation lifecycle, and event-driven indexed validation. These are implementation backlog items until their concrete code paths and validation gates exist.
