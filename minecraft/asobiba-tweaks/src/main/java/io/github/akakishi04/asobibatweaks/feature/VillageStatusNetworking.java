@@ -89,6 +89,7 @@ public final class VillageStatusNetworking {
                 averageWelfare,
                 village.settlementViability(),
                 village.lifecycle(),
+                village.fireEmergencyState(),
                 Math.max(1, village.districtCenters().size()),
                 outposts,
                 needs,
