@@ -1,5 +1,7 @@
 package io.github.akakishi04.asobibatweaks.feature;
 
+import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
+
 import java.util.ArrayDeque;
 import java.util.HashSet;
 import java.util.Map;
@@ -40,13 +42,14 @@ public final class VillageSimulationScheduler {
         LevelState state = state(level);
         state.beginTick(level.getGameTime());
 
-        drain(state.emergency, state.emergencyKeys, MAX_EMERGENCY_PER_TICK);
-        drain(state.worker, state.workerKeys, MAX_WORKER_PER_TICK);
-        drain(state.planning, state.planningKeys, MAX_PLANNING_PER_TICK);
-        drain(state.reconcile, state.reconcileKeys, MAX_RECONCILE_PER_TICK);
-        drain(state.validation, state.validationKeys, MAX_VALIDATION_PER_TICK);
+        drain(state.emergency, state.emergencyKeys, AsobibaTweaksConfig.VILLAGE_MAX_EMERGENCY_JOBS_PER_TICK.getAsInt());
+        drain(state.worker, state.workerKeys, AsobibaTweaksConfig.VILLAGE_MAX_WORKER_JOBS_PER_TICK.getAsInt());
+        drain(state.planning, state.planningKeys, AsobibaTweaksConfig.VILLAGE_MAX_PLANNING_JOBS_PER_TICK.getAsInt());
+        drain(state.reconcile, state.reconcileKeys, AsobibaTweaksConfig.VILLAGE_MAX_RECONCILE_JOBS_PER_TICK.getAsInt());
+        drain(state.validation, state.validationKeys, AsobibaTweaksConfig.VILLAGE_MAX_VALIDATION_JOBS_PER_TICK.getAsInt());
 
-        if (level.getGameTime() % 10L == 0L && event.hasTime()) {
+        int routeInterval = AsobibaTweaksConfig.VILLAGE_ROUTE_SEARCH_INTERVAL_TICKS.getAsInt();
+        if (level.getGameTime() % routeInterval == 0L && event.hasTime()) {
             drain(state.route, state.routeKeys, 1);
         }
     }
@@ -82,7 +85,7 @@ public final class VillageSimulationScheduler {
     public static boolean tryConsumeBlockProbe(ServerLevel level) {
         LevelState state = state(level);
         state.beginTick(level.getGameTime());
-        if (state.backgroundProbes >= MAX_BACKGROUND_PROBES_PER_TICK) return false;
+        if (state.backgroundProbes >= AsobibaTweaksConfig.VILLAGE_BACKGROUND_PROBES_PER_TICK.getAsInt()) return false;
         state.backgroundProbes++;
         return true;
     }
@@ -90,7 +93,7 @@ public final class VillageSimulationScheduler {
     public static boolean tryConsumeWorkerProbe(ServerLevel level) {
         LevelState state = state(level);
         state.beginTick(level.getGameTime());
-        if (state.workerProbes >= MAX_WORKER_PROBES_PER_TICK) return false;
+        if (state.workerProbes >= AsobibaTweaksConfig.VILLAGE_WORKER_PROBES_PER_TICK.getAsInt()) return false;
         state.workerProbes++;
         return true;
     }
@@ -98,7 +101,7 @@ public final class VillageSimulationScheduler {
     public static boolean tryConsumeEmergencyProbe(ServerLevel level) {
         LevelState state = state(level);
         state.beginTick(level.getGameTime());
-        if (state.emergencyProbes >= MAX_EMERGENCY_PROBES_PER_TICK) return false;
+        if (state.emergencyProbes >= AsobibaTweaksConfig.VILLAGE_EMERGENCY_PROBES_PER_TICK.getAsInt()) return false;
         state.emergencyProbes++;
         return true;
     }
