@@ -221,6 +221,8 @@ public final class VillagePopulationMigrationService {
         if (population <= 0 && "evacuating".equals(village.lifecycle())) {
             village.setLifecycle("abandoned");
         }
+
+        retryFoundingChildren(level, data, village);
         data.touch();
     }
 
