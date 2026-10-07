@@ -113,6 +113,11 @@ public final class VillageFireEmergencyService {
         }
 
         data.touch();
+        VillageSimulationScheduler.enqueuePlanning(
+                level,
+                "public_works_fire:" + villageId,
+                () -> VillagePublicWorksService.refresh(level, villageId)
+        );
     }
 
     private static FireScan scanVillage(
