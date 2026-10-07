@@ -86,6 +86,10 @@ public final class VillageSavedData extends SavedData {
         return Collections.unmodifiableMap(projects);
     }
 
+    public Map<UUID, StorageRecord> storagesView() {
+        return Collections.unmodifiableMap(storages);
+    }
+
     public VillageRecord createVillage(BlockPos center, long createdGameTime) {
         return ensureVillage(nextId(villages), center, createdGameTime);
     }
@@ -414,6 +418,30 @@ public final class VillageSavedData extends SavedData {
         return rows;
     }
 
+    private static ListTag writeIntMap(Map<String, Integer> values) {
+        ListTag rows = new ListTag();
+        for (var entry : values.entrySet()) {
+            if (entry.getKey() == null || entry.getKey().isBlank() || entry.getValue() == null || entry.getValue() <= 0) continue;
+            CompoundTag row = new CompoundTag();
+            row.putString("key", entry.getKey());
+            row.putInt("value", entry.getValue());
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    private static Map<String, Integer> readIntMap(CompoundTag tag, String key) {
+        Map<String, Integer> values = new HashMap<>();
+        ListTag rows = tag.getList(key, Tag.TAG_COMPOUND);
+        for (int i = 0; i < rows.size(); i++) {
+            CompoundTag row = rows.getCompound(i);
+            String itemKey = row.getString("key");
+            int value = row.getInt("value");
+            if (!itemKey.isBlank() && value > 0) values.put(itemKey, value);
+        }
+        return values;
+    }
+
     private static void loadRows(CompoundTag tag, String key, java.util.function.Consumer<CompoundTag> consumer) {
         ListTag rows = tag.getList(key, Tag.TAG_COMPOUND);
         for (int i = 0; i < rows.size(); i++) consumer.accept(rows.getCompound(i));
@@ -441,6 +469,9 @@ public final class VillageSavedData extends SavedData {
         private final Set<UUID> workSiteIds = new LinkedHashSet<>();
         private final Set<UUID> routeIds = new LinkedHashSet<>();
         private final Set<UUID> projectIds = new LinkedHashSet<>();
+        private final Map<String, Integer> ledgerCounts = new HashMap<>();
+        private final Map<String, Integer> reservedCounts = new HashMap<>();
+        private boolean storageBootstrapComplete;
         private long nextPlanningGameTime;
         private long lastValidatedGameTime;
 
@@ -459,11 +490,45 @@ public final class VillageSavedData extends SavedData {
         public Set<UUID> workSiteIds() { return Collections.unmodifiableSet(workSiteIds); }
         public Set<UUID> routeIds() { return Collections.unmodifiableSet(routeIds); }
         public Set<UUID> projectIds() { return Collections.unmodifiableSet(projectIds); }
+        public Map<String, Integer> ledgerCounts() { return Collections.unmodifiableMap(ledgerCounts); }
+        public Map<String, Integer> reservedCounts() { return Collections.unmodifiableMap(reservedCounts); }
+        public boolean storageBootstrapComplete() { return storageBootstrapComplete; }
+        public int ledgerCount(String itemKey) { return Math.max(0, ledgerCounts.getOrDefault(itemKey, 0)); }
+        public int reservedCount(String itemKey) { return Math.max(0, reservedCounts.getOrDefault(itemKey, 0)); }
+        public int availableCount(String itemKey) { return Math.max(0, ledgerCount(itemKey) - reservedCount(itemKey)); }
         public long nextPlanningGameTime() { return nextPlanningGameTime; }
         public long lastValidatedGameTime() { return lastValidatedGameTime; }
 
         public void setCenter(BlockPos center) { this.center = center.immutable(); }
         public void setLifecycle(String lifecycle) { this.lifecycle = safeText(lifecycle, "active"); }
+        public void setStorageBootstrapComplete(boolean value) { this.storageBootstrapComplete = value; }
+
+        public void replaceLedger(Map<String, Integer> counts) {
+            ledgerCounts.clear();
+            counts.forEach((key, value) -> {
+                if (key != null && !key.isBlank() && value != null && value > 0) ledgerCounts.put(key, value);
+            });
+            reservedCounts.entrySet().removeIf(entry -> entry.getValue() <= 0 || !ledgerCounts.containsKey(entry.getKey()));
+        }
+
+        public boolean reserve(String itemKey, int count) {
+            if (itemKey == null || itemKey.isBlank() || count <= 0) return false;
+            if (availableCount(itemKey) < count) return false;
+            reservedCounts.merge(itemKey, count, Integer::sum);
+            return true;
+        }
+
+        public void releaseReservation(String itemKey, int count) {
+            if (itemKey == null || itemKey.isBlank() || count <= 0) return;
+            int next = reservedCounts.getOrDefault(itemKey, 0) - count;
+            if (next > 0) reservedCounts.put(itemKey, next);
+            else reservedCounts.remove(itemKey);
+        }
+
+        public void clearReservations() {
+            reservedCounts.clear();
+        }
+
         public void setNextPlanningGameTime(long value) { this.nextPlanningGameTime = value; }
         public void setLastValidatedGameTime(long value) { this.lastValidatedGameTime = value; }
 
@@ -479,6 +544,9 @@ public final class VillageSavedData extends SavedData {
             tag.put("work_sites", writeUuidSet(workSiteIds));
             tag.put("routes", writeUuidSet(routeIds));
             tag.put("projects", writeUuidSet(projectIds));
+            tag.put("ledger", writeIntMap(ledgerCounts));
+            tag.put("reserved", writeIntMap(reservedCounts));
+            tag.putBoolean("storage_bootstrap_complete", storageBootstrapComplete);
             tag.putLong("next_planning", nextPlanningGameTime);
             tag.putLong("last_validated", lastValidatedGameTime);
             return tag;
@@ -496,6 +564,9 @@ public final class VillageSavedData extends SavedData {
             record.workSiteIds.addAll(readUuidSet(tag, "work_sites"));
             record.routeIds.addAll(readUuidSet(tag, "routes"));
             record.projectIds.addAll(readUuidSet(tag, "projects"));
+            record.ledgerCounts.putAll(readIntMap(tag, "ledger"));
+            record.reservedCounts.putAll(readIntMap(tag, "reserved"));
+            record.storageBootstrapComplete = tag.getBoolean("storage_bootstrap_complete");
             record.nextPlanningGameTime = tag.getLong("next_planning");
             record.lastValidatedGameTime = tag.getLong("last_validated");
             return record;
