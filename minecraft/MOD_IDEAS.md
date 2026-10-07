@@ -555,15 +555,68 @@ Accepted direction:
 Design constraint: decide what a building is for before deciding exactly where its workstation block goes.
 
 ### Building recognition and occupancy
-Villagers can recognize plausible player-built structures using lightweight heuristics such as:
-- roof/cover
-- usable interior space
-- door/access
-- bed or relevant workstation
-- lighting
-- path connectivity
 
-Valid empty structures may become homes/workspaces without requiring a special claim block.
+Accepted direction:
+- building recognition uses **lightweight functional heuristics**, not a strict sealed-room flood fill and not a special claim block
+- the system asks whether a structure contains a stable, reachable, sheltered space that villagers can actually use
+- recognition is limited to structures within the village activity context or directly connected to recognized village roads / sites; the village does not scan the entire loaded world for buildings
+- candidate structures are evaluated when relevant blocks change and through infrequent background validation rather than expensive full-volume scans every tick
+
+Core recognition signals:
+- meaningful roof / weather cover over the usable area
+- walkable interior floor area
+- at least one usable entrance / access route
+- sufficient headroom for villager navigation
+- safe path connectivity from the village road / local circulation network
+- basic lighting / absence of persistently dangerous darkness where practical
+- absence of obvious hazards such as open lava, unavoidable deep drops or blocked entrances
+- semantic contents such as beds, workstations, storage, seating/common-space features or other recognized functional anchors
+- one signal alone is insufficient; the classifier combines several signals into a practical usability score
+
+Interior / usable-space rules:
+- a building does **not** need to be perfectly airtight or geometrically rectangular
+- porches, open workshops, market stalls with roofs and partially open structures may still count when they provide a safe usable work/shelter space
+- caves, overhangs or raw terrain are not automatically buildings merely because they are covered
+- tiny decorative boxes and inaccessible sealed rooms do not count as usable buildings
+- multi-story structures are evaluated by reachable floor regions; upper floors count only when stairs/ladders/approved access actually connect them
+- separate connected rooms may belong to one building when they share practical circulation and one coherent exterior footprint
+
+Initial functional classification:
+- **Residential**: usable beds/home space dominate the function
+- **Workshop / Profession Building**: one or more valid workstations plus usable worker standing/path space
+- **Storage**: recognized village containers and practical loading/access space dominate
+- **Public / Common Building**: sheltered shared space, bell/common facilities, meeting/seating-type use or other public anchors
+- **Mixed-use**: multiple strong functions coexist, such as shop/workshop below and residence above
+- **Generic Shelter / Unassigned**: structurally usable but lacking enough semantic anchors for a stronger classification
+- classification may change later when beds, workstations, storage or other functional blocks are added/removed
+
+Occupancy:
+- recognized capacity is based on **usable reachable spaces**, not raw block counts
+- beds/workstations that cannot be path-reached do not contribute capacity
+- a Residential building contributes only beds and home spaces that pass navigation/safety checks
+- a Workshop contributes only workstations with a valid interaction position
+- occupancy assignments prefer nearby available buildings before creating unnecessary new construction
+- villagers may share larger buildings where the template/recognized space has enough actual capacity
+- overcrowding beyond validated capacity is discouraged and feeds into the existing housing/welfare systems
+
+Player-built structures:
+- valid player-built structures may be recognized and used without requiring a claim/registration block
+- recognition does **not** transfer ownership, lock the structure, protect it, or prevent the player from editing it
+- ordinary recognition is non-destructive: villagers may occupy/use valid anchors, but do not demolish or rewrite arbitrary player construction merely because it was recognized
+- an empty player-built house inside the village may therefore become housing if it has valid beds/access
+- a player-built warehouse may become recognized storage if its containers are intentionally integrated into village use
+- a player-built workshop may be adopted if its workstation is reachable and compatible
+- later non-destructive retrofit may add explicitly approved workstation/storage/decorative elements only to validated free anchor positions; existing player blocks are not blindly replaced
+- if player edits make a structure unusable, its capacity/classification is revalidated and may be reduced or removed without deleting the physical building
+
+Structure identity / persistence:
+- once recognized, a building receives a lightweight persistent structure record containing its footprint/bounds, entrances, usable floors, functional anchors, classification and current validation state
+- the record is a cache/reference for simulation; the physical world remains authoritative
+- significant edits trigger local revalidation rather than rebuilding the entire village model
+- destroyed or heavily damaged structures become Invalid/Damaged and may generate repair demand if they are village-owned/planned infrastructure
+- merely recognized player buildings are not automatically scheduled for reconstruction after the player intentionally changes/removes them
+
+Design constraint: villagers should understand and use plausible spaces built by either the game or the player, while recognition remains cheap, non-destructive and grounded in actual navigability rather than ownership flags or perfect-room geometry.
 
 ### Building culture
 Village architecture can drift over time based on:
