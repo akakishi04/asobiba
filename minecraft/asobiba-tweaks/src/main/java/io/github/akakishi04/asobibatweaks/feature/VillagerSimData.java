@@ -47,6 +47,9 @@ public final class VillagerSimData {
     private static final String LAST_WORK_ACTIVE = "last_work_active";
     private static final String LAST_OPEN_ACTIVE = "last_open_active";
     private static final String LAST_SOCIAL_ACTIVE = "last_social_active";
+    private static final String EMERGENCY_DUTY = "emergency_duty";
+    private static final String FIRE_WATER_READY = "fire_water_ready";
+    private static final String FIRE_WATER_FROM_BUCKET = "fire_water_from_bucket";
 
     private VillagerSimData() {
     }
@@ -58,6 +61,7 @@ public final class VillagerSimData {
         if (!root.contains(WELFARE, Tag.TAG_INT)) root.putInt(WELFARE, 100);
         if (!root.contains(CARPENTRY_SKILL, Tag.TAG_INT)) root.putInt(CARPENTRY_SKILL, 0);
         if (!root.contains(REFUSAL, Tag.TAG_BYTE)) root.putBoolean(REFUSAL, false);
+        if (!root.contains(EMERGENCY_DUTY, Tag.TAG_STRING)) root.putString(EMERGENCY_DUTY, "none");
     }
 
     public static Optional<UUID> villageId(Villager villager) {
@@ -99,6 +103,39 @@ public final class VillagerSimData {
 
     public static long dutyAssignedAt(Villager villager) {
         return root(villager, false).getLong(DUTY_ASSIGNED_AT);
+    }
+
+    public static String emergencyDuty(Villager villager) {
+        String value = root(villager, false).getString(EMERGENCY_DUTY);
+        return value.isBlank() ? "none" : value;
+    }
+
+    public static void setEmergencyDuty(Villager villager, String duty) {
+        root(villager, true).putString(
+                EMERGENCY_DUTY,
+                duty == null || duty.isBlank() ? "none" : duty
+        );
+    }
+
+    public static void clearEmergencyDuty(Villager villager) {
+        CompoundTag root = root(villager, true);
+        root.putString(EMERGENCY_DUTY, "none");
+        root.remove(FIRE_WATER_READY);
+        root.remove(FIRE_WATER_FROM_BUCKET);
+    }
+
+    public static boolean fireWaterReady(Villager villager) {
+        return root(villager, false).getBoolean(FIRE_WATER_READY);
+    }
+
+    public static void setFireWaterReady(Villager villager, boolean ready, boolean fromBucket) {
+        CompoundTag root = root(villager, true);
+        root.putBoolean(FIRE_WATER_READY, ready);
+        root.putBoolean(FIRE_WATER_FROM_BUCKET, ready && fromBucket);
+    }
+
+    public static boolean fireWaterFromBucket(Villager villager) {
+        return root(villager, false).getBoolean(FIRE_WATER_FROM_BUCKET);
     }
 
     public static int welfare(Villager villager) {
