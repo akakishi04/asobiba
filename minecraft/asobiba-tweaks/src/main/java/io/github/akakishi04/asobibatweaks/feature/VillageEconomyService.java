@@ -126,6 +126,14 @@ public final class VillageEconomyService {
         data.touch();
     }
 
+    public static void applyTradePriceModifier(Villager villager) {
+        if (!AsobibaTweaksConfig.REGIONAL_TRADE_VALUE_ENABLED.getAsBoolean()) return;
+        for (MerchantOffer offer : villager.getOffers()) {
+            int adjustment = tradePriceAdjustment(villager, offer);
+            if (adjustment != 0) offer.addToSpecialPriceDiff(adjustment);
+        }
+    }
+
     public static int tradePriceAdjustment(Villager villager, MerchantOffer offer) {
         if (!AsobibaTweaksConfig.REGIONAL_TRADE_VALUE_ENABLED.getAsBoolean()
                 || !(villager.level() instanceof ServerLevel level)) {
