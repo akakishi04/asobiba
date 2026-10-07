@@ -38,6 +38,7 @@ public final class VillagerSimData {
     private static final String MIGRATION_ID = "migration_id";
     private static final String DISPLACED_SINCE_ACTIVE = "displaced_since_active";
     private static final String OUTPOST_SITE_ID = "outpost_site_id";
+    private static final String OUTPOST_HAUL_MODE = "outpost_haul_mode";
     private static final String WORK_CARGO = "work_cargo";
     private static final String REFUSAL = "refusal";
     private static final String LAST_WELFARE_PRICE_PERCENT = "last_welfare_price_percent";
@@ -260,6 +261,17 @@ public final class VillagerSimData {
 
     public static void clearOutpostSiteId(Villager villager) {
         root(villager, true).remove(OUTPOST_SITE_ID);
+        root(villager, true).remove(OUTPOST_HAUL_MODE);
+    }
+
+    public static String outpostHaulMode(Villager villager) {
+        return root(villager, false).getString(OUTPOST_HAUL_MODE);
+    }
+
+    public static void setOutpostHaulMode(Villager villager, String mode) {
+        CompoundTag root = root(villager, true);
+        if (mode == null || mode.isBlank()) root.remove(OUTPOST_HAUL_MODE);
+        else root.putString(OUTPOST_HAUL_MODE, mode);
     }
 
     public static long displacedSinceActive(Villager villager) {
