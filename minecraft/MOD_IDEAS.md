@@ -715,15 +715,67 @@ Villagers can relocate after severe local failure:
 Survivors may move to nearby villages, causing secondary housing/food pressure there.
 
 ### Village fission / new settlements
-A mature or failing settlement may eventually send a small group to establish a new settlement elsewhere.
-- Requires population and supplies.
-- New group should physically travel where practical.
-- New settlement begins small.
-- Avoid uncontrolled exponential expansion via hard cooldowns/caps.
+
+Accepted direction:
+- an Outpost does not become an independent settlement merely because it grows physically; independence requires an explicit village-level **fission / founding decision**
+- normal Satellite Settlement candidacy requires roughly:
+  - parent-village distance of about **192+ blocks**
+  - at least **7 Minecraft days** of stable Outpost operation
+  - a sustained need for roughly **4+ resident/regular workers**
+  - at least **6 usable housing spaces**
+  - about **3 days of food reserve**
+  - independent shared storage
+  - minimum viable food/water/living infrastructure
+  - a safe recognized road/logistics connection
+  - no recent major collapse such as severe fire, raid loss or food failure
+- meeting the threshold creates a founding candidate rather than an instant new village
+- the parent village physically allocates a founding group, initially around **4-6 villagers**, plus real food, beds, construction materials and required profession equipment
+- the group must physically establish a minimum viable settlement; failure through losses, missing resources or invalid infrastructure may abort the founding attempt
+- a new Village ID is created only after the founding site successfully validates housing, storage, food support and required work access
+- once independent, the settlement has its own population, housing pressure, welfare, storage ledger and construction planning while retaining roads/trade/logistics relationships with the parent
+- the former Outpost may remain recorded as the new settlement's founding site/history
+- ordinary fission is restricted to mature settlements, initially around **12-16+ population**, and is blocked while the parent village itself has serious food/housing instability
+- a parent village has roughly a **30 Minecraft day** cooldown after successfully founding a new settlement
+- a newly founded settlement should itself wait roughly **30 Minecraft days** before becoming eligible to found another settlement
+- newly founded independent villages should normally be separated by at least roughly **256 blocks**, unless terrain/history provides a strong exceptional reason
+- these limits exist to prevent exponential self-replication
+
+Emergency founding:
+- a second path exists for **Refugee Settlement** formation after severe repeated raids, major fire, housing destruction, food collapse or comparable long-term failure
+- refugee founding may relax some normal prosperity requirements when survival requires relocation
+- an existing stable Outpost is the preferred emergency destination when available
+- emergency founding still requires real people/resources and may fail; it is not a free teleport/rebuild mechanic
+
 
 ### Village relocation
 If a location remains chronically nonviable, part of the population may abandon it rather than endlessly rebuilding.
 This is a rare high-level outcome, not a frequent behavior.
+
+### Village merge / district integration
+
+Accepted direction:
+- two villages may merge when their lived settlement networks have effectively become one community
+- geographic proximity alone is **not** sufficient
+- merge candidacy considers sustained evidence such as:
+  - overlapping/continuous occupied building areas
+  - villagers routinely crossing the old boundary for work, sleep or social activity
+  - regular Porter/resource logistics between both settlements
+  - connected recognized road infrastructure
+  - several Minecraft days to roughly a week of stable integration rather than temporary disaster/evacuation overlap
+- neighboring villages may remain separate indefinitely if they trade/connect but still function as distinct settlements
+- a merge does not delete one physical settlement or force a single geometric center
+- after merging, the result uses **one Village ID with multiple district/sub-centers**
+- former bells/centers may remain recognized as district centers
+- existing local storage remains physically distributed; the unified planner may view total resources while logistics still prefer nearby storage and account for transport distance
+- housing, population pressure, public works and high-level planning may be evaluated village-wide, while local district demand remains spatially aware
+- architectural/building-culture history from both former villages may continue to influence their respective districts rather than being immediately homogenized
+- a small declining village may be absorbed by a nearby larger village when sustained daily integration makes independent planning meaningless
+- a former parent village and its previously independent Satellite Settlement may later merge again if development physically/socially connects them
+- temporary refugee presence, one shared road or occasional trade is not sufficient to force a merge
+- the model should preserve the possibility of later re-fission if a very large merged settlement develops weakly connected districts with little shared logistics/social activity
+
+Design constraint: settlement identity follows persistent lived/logistical integration, not just radius overlap.
+
 
 ### Villager breeding overhaul
 Replace the purely bed/food-shaped feel with settlement-aware reproduction.
