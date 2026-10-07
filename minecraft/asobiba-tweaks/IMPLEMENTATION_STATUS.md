@@ -4,6 +4,8 @@ Target: Minecraft 1.21.1 / NeoForge 21.1.219 / Java 21
 
 This file maps the accepted implementation backlog in `../MOD_IDEAS.md` to its current MVP implementation.
 
+Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATION_AUDIT.md`](VILLAGE_IMPLEMENTATION_AUDIT.md).
+
 | Accepted feature | Main implementation | Status |
 |---|---|---|
 | Growing Items / mining-tier mutation | `GrowingItemsEvents`, `GrowingItemData` | Implemented |
