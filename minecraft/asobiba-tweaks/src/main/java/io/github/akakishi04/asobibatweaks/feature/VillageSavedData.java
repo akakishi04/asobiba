@@ -26,7 +26,7 @@ import net.minecraft.world.level.saveddata.SavedData;
  * indexes, caches and planning state that later passes can reconcile against loaded chunks.</p>
  */
 public final class VillageSavedData extends SavedData {
-    public static final int SCHEMA_VERSION = 4;
+    public static final int SCHEMA_VERSION = 5;
 
     private static final String NAME = "asobibatweaks_villages";
     private static final Factory<VillageSavedData> FACTORY =
@@ -1265,6 +1265,8 @@ public final class VillageSavedData extends SavedData {
         private final BlockPos from;
         private final BlockPos to;
         private int trafficScore;
+        private String quality = "dirt";
+        private int width = 1;
         private String state = "active";
 
         private RouteRecord(UUID id, UUID villageId, String type, BlockPos from, BlockPos to) {
@@ -1281,10 +1283,17 @@ public final class VillageSavedData extends SavedData {
         public BlockPos from() { return from; }
         public BlockPos to() { return to; }
         public int trafficScore() { return trafficScore; }
+        public String quality() { return quality; }
+        public int width() { return Math.max(1, Math.min(3, width)); }
         public String state() { return state; }
 
         public void setType(String value) { type = safeText(value, "path"); }
         public void setTrafficScore(int value) { trafficScore = Math.max(0, value); }
+        public void setQuality(String value) {
+            String normalized = safeText(value, "dirt");
+            quality = "stone".equals(normalized) || "gravel".equals(normalized) ? normalized : "dirt";
+        }
+        public void setWidth(int value) { width = Math.max(1, Math.min(3, value)); }
         public void setState(String value) { state = safeText(value, "active"); }
 
         private CompoundTag save() {
@@ -1295,6 +1304,8 @@ public final class VillageSavedData extends SavedData {
             tag.putLong("from", from.asLong());
             tag.putLong("to", to.asLong());
             tag.putInt("traffic", trafficScore);
+            tag.putString("quality", quality);
+            tag.putInt("width", width());
             tag.putString("state", state);
             return tag;
         }
@@ -1307,6 +1318,8 @@ public final class VillageSavedData extends SavedData {
             RouteRecord record = new RouteRecord(id, villageId, safeText(tag.getString("type"), "path"),
                     BlockPos.of(tag.getLong("from")), BlockPos.of(tag.getLong("to")));
             record.trafficScore = Math.max(0, tag.getInt("traffic"));
+            record.setQuality(tag.contains("quality", Tag.TAG_STRING) ? tag.getString("quality") : "dirt");
+            record.setWidth(tag.contains("width", Tag.TAG_INT) ? tag.getInt("width") : 1);
             record.state = safeText(tag.getString("state"), "active");
             return record;
         }

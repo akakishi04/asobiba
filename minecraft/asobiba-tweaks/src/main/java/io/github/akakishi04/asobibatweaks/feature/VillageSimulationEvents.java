@@ -533,6 +533,9 @@ public final class VillageSimulationEvents {
             return;
         }
 
+        VillageSavedData data = VillageSavedData.get(level);
+        VillageSavedData.RouteRecord route = routeForProject(data, project);
+
         int dx = to.getX() - from.getX();
         int dz = to.getZ() - from.getZ();
         int steps = Math.max(Math.abs(dx), Math.abs(dz));
@@ -540,22 +543,35 @@ public final class VillageSimulationEvents {
             completeRoadProject(level, project);
             return;
         }
-        if (steps > 160) {
+        if (steps > 384) {
             project.setPhase("paused");
-            project.setPausedReason("route exceeds V5 initial range");
-            VillageSavedData.get(level).touch();
+            project.setPausedReason("route exceeds bounded road range");
+            data.touch();
             return;
         }
 
+        int targetWidth = roadTargetWidth(project, route);
+        int workUnits = (steps + 1) * targetWidth;
         int cursor = project.workCursor();
-        if (cursor > steps) {
+        if (cursor >= workUnits) {
             completeRoadProject(level, project);
             return;
         }
 
-        double t = cursor / (double)steps;
+        int centerCursor = cursor / targetWidth;
+        int lane = cursor % targetWidth;
+        double t = centerCursor / (double)steps;
         int x = (int)Math.round(from.getX() + dx * t);
         int z = (int)Math.round(from.getZ() + dz * t);
+
+        int laneOffset = switch (targetWidth) {
+            case 2 -> lane;
+            case 3 -> lane - 1;
+            default -> 0;
+        };
+        if (Math.abs(dx) >= Math.abs(dz)) z += laneOffset;
+        else x += laneOffset;
+
         BlockPos column = new BlockPos(x, level.getMinBuildHeight(), z);
         if (!VillageSimulationScheduler.isChunkLoaded(level, column)) {
             project.setPausedReason("waiting for chunk");
@@ -577,32 +593,110 @@ public final class VillageSimulationEvents {
         }
 
         BlockState state = level.getBlockState(surface);
+        String targetQuality = roadTargetQuality(project, route);
+
         if (level.getFluidState(surface).is(FluidTags.WATER)) {
-            Block plank = plankFromName(project.parameter("plank"));
-            Item plankItem = plank.asItem();
-            if (!ensureCargoItem(villager, level, plankItem, 1, CARPENTER_CARGO_SLOTS)) {
-                project.setPausedReason("missing bridge planks");
-                project.setPhase("paused");
-                VillageSavedData.get(level).touch();
-                return;
+            if ("stone".equals(targetQuality)) {
+                if (!placeRoadMaterial(villager, level, project, surface,
+                        Items.COBBLESTONE, Blocks.COBBLESTONE, "missing bridge stone")) return;
+                project.setPhase("bridge_stone_deck");
+            } else {
+                Block plank = plankFromName(project.parameter("plank"));
+                Item plankItem = plank.asItem();
+                if (!placeRoadMaterial(villager, level, project, surface,
+                        plankItem, plank, "missing bridge planks")) return;
+                project.setPhase("bridge_deck");
             }
-            if (!VillagerSimData.takeWorkCargo(villager, level.registryAccess(),
-                    CARPENTER_CARGO_SLOTS, plankItem, 1)) return;
-            level.setBlock(surface, plank.defaultBlockState(), Block.UPDATE_ALL);
-            project.setPhase("bridge_deck");
-        } else if (state.is(Blocks.GRASS_BLOCK) || state.is(Blocks.DIRT) || state.is(Blocks.COARSE_DIRT)) {
+        } else if ("stone".equals(targetQuality)) {
+            if (state.is(Blocks.COBBLESTONE) || state.is(Blocks.STONE)
+                    || state.is(Blocks.STONE_BRICKS)) {
+                project.setPhase("road_paving");
+            } else if (state.is(Blocks.DIRT_PATH) || state.is(Blocks.GRAVEL)
+                    || state.is(Blocks.GRASS_BLOCK) || state.is(Blocks.DIRT)
+                    || state.is(Blocks.COARSE_DIRT) || state.is(BlockTags.PLANKS)) {
+                if (!placeRoadMaterial(villager, level, project, surface,
+                        Items.COBBLESTONE, Blocks.COBBLESTONE, "missing road stone")) return;
+                project.setPhase("road_paving");
+            } else {
+                project.setPhase("roadwork");
+            }
+        } else if ("gravel".equals(targetQuality)) {
+            if (state.is(Blocks.GRAVEL) || state.is(Blocks.COBBLESTONE)
+                    || state.is(Blocks.STONE) || state.is(Blocks.STONE_BRICKS)) {
+                project.setPhase("road_gravel");
+            } else if (state.is(Blocks.DIRT_PATH) || state.is(Blocks.GRASS_BLOCK)
+                    || state.is(Blocks.DIRT) || state.is(Blocks.COARSE_DIRT)) {
+                if (!placeRoadMaterial(villager, level, project, surface,
+                        Items.GRAVEL, Blocks.GRAVEL, "missing road gravel")) return;
+                project.setPhase("road_gravel");
+            } else {
+                project.setPhase("roadwork");
+            }
+        } else if (state.is(Blocks.GRASS_BLOCK) || state.is(Blocks.DIRT)
+                || state.is(Blocks.COARSE_DIRT)) {
             level.setBlock(surface, Blocks.DIRT_PATH.defaultBlockState(), Block.UPDATE_ALL);
             project.setPhase("roadwork");
-        } else if (!state.is(Blocks.DIRT_PATH)) {
-            // Preserve player/structure blocks; skip rather than bulldozing.
+        } else {
+            // Preserve player/structure blocks and already-higher-quality paving.
             project.setPhase("roadwork");
         }
 
         project.setPausedReason("");
         project.setWorkCursor(cursor + 1);
-        VillageSavedData.get(level).touch();
+        data.touch();
 
-        if (project.workCursor() > steps) completeRoadProject(level, project);
+        if (project.workCursor() >= workUnits) completeRoadProject(level, project);
+    }
+
+    private static VillageSavedData.RouteRecord routeForProject(
+            VillageSavedData data, VillageSavedData.ProjectRecord project) {
+        String rawRoute = project.parameter("route_id");
+        if (rawRoute.isBlank()) return null;
+        try {
+            return data.route(java.util.UUID.fromString(rawRoute)).orElse(null);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private static int roadTargetWidth(
+            VillageSavedData.ProjectRecord project, VillageSavedData.RouteRecord route) {
+        int fallback = route == null ? 1 : route.width();
+        try {
+            String raw = project.parameter("road_width");
+            return raw.isBlank() ? fallback : Math.max(1, Math.min(3, Integer.parseInt(raw)));
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private static String roadTargetQuality(
+            VillageSavedData.ProjectRecord project, VillageSavedData.RouteRecord route) {
+        String raw = project.parameter("road_quality");
+        if ("stone".equals(raw) || "gravel".equals(raw) || "dirt".equals(raw)) return raw;
+        return route == null ? "dirt" : route.quality();
+    }
+
+    private static boolean placeRoadMaterial(
+            Villager villager,
+            ServerLevel level,
+            VillageSavedData.ProjectRecord project,
+            BlockPos surface,
+            Item item,
+            Block block,
+            String missingReason) {
+        if (!ensureCargoItem(villager, level, item, 1, CARPENTER_CARGO_SLOTS)) {
+            project.setPausedReason(missingReason);
+            project.setPhase("paused");
+            VillageSavedData.get(level).touch();
+            return false;
+        }
+        if (!VillagerSimData.takeWorkCargo(
+                villager, level.registryAccess(), CARPENTER_CARGO_SLOTS, item, 1)) {
+            return false;
+        }
+        level.setBlock(surface, block.defaultBlockState(), Block.UPDATE_ALL);
+        return true;
     }
 
     private static void completeRoadProject(ServerLevel level, VillageSavedData.ProjectRecord project) {
@@ -612,7 +706,11 @@ public final class VillageSimulationEvents {
         if (!rawRoute.isBlank()) {
             try {
                 java.util.UUID routeId = java.util.UUID.fromString(rawRoute);
-                VillageSavedData.get(level).route(routeId).ifPresent(route -> route.setState("active"));
+                VillageSavedData.get(level).route(routeId).ifPresent(route -> {
+                    route.setQuality(roadTargetQuality(project, route));
+                    route.setWidth(roadTargetWidth(project, route));
+                    route.setState("active");
+                });
             } catch (IllegalArgumentException ignored) {
                 // Keep the physical road; only the cached RouteRecord link is malformed.
             }
@@ -1914,15 +2012,19 @@ public final class VillageSimulationEvents {
 
         VillageSavedData.RouteRecord route = data.createRoute(villageId, "road", from, to);
         route.setTrafficScore(1);
+        route.setQuality("dirt");
+        route.setWidth(from.distManhattan(to) >= 64 ? 2 : 1);
         route.setState("planned");
 
         VillageSavedData.ProjectRecord road = data.createProject(villageId, "road", 30, from);
-        road.setTemplateId("road_path_v1");
+        road.setTemplateId("road_path_v2");
         road.setVariantSeed(from.asLong() ^ to.asLong());
         road.setLeadCarpenterId(carpenter.getUUID());
         road.setAnchor(to);
         road.setParameter("route_id", route.id().toString());
         road.setParameter("plank", plankName(chooseBuildingPlanks(level, from, carpenter)));
+        road.setParameter("road_quality", route.quality());
+        road.setParameter("road_width", Integer.toString(route.width()));
         road.setPhase("planned");
         road.setWorkCursor(0);
         data.touch();

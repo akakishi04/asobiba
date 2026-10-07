@@ -141,15 +141,22 @@ public final class VillageOutpostLifecycleService {
             }
 
             boolean demand = purposeDemandPermille(village, site.purpose()) > 1000;
-            boolean route = hasActiveRoute(data, village, site);
+            VillageSavedData.RouteRecord activeRoute = findActiveRoute(data, village, site);
+            boolean route = activeRoute != null;
             ResourceState resources = localResourceState(level, site);
 
             if (demand && route && resources != ResourceState.DEPLETED) {
+                activeRoute.setTrafficScore(Math.min(100, activeRoute.trafficScore() + 1));
+                ensureRoadUpgradeProject(data, village, activeRoute);
                 site.setState("active");
                 site.setIdleDays(0);
                 assignWorkers(level, village, site);
                 assignPorter(level, village, site);
                 continue;
+            }
+
+            if (activeRoute != null && activeRoute.trafficScore() > 0) {
+                activeRoute.setTrafficScore(activeRoute.trafficScore() - 1);
             }
 
             if (!route && now - site.createdGameTime() < ESTABLISHING_GRACE) {
@@ -735,6 +742,13 @@ public final class VillageOutpostLifecycleService {
             VillageSavedData data,
             VillageSavedData.VillageRecord village,
             VillageSavedData.WorkSiteRecord site) {
+        return findActiveRoute(data, village, site) != null;
+    }
+
+    private static VillageSavedData.RouteRecord findActiveRoute(
+            VillageSavedData data,
+            VillageSavedData.VillageRecord village,
+            VillageSavedData.WorkSiteRecord site) {
         BlockPos outpost = center(site);
         for (UUID routeId : village.routeIds()) {
             VillageSavedData.RouteRecord route = data.route(routeId).orElse(null);
@@ -748,11 +762,59 @@ public final class VillageOutpostLifecycleService {
                 BlockPos district = BlockPos.of(packedCenter);
                 if (route.from().distManhattan(district) <= 64
                         || route.to().distManhattan(district) <= 64) {
-                    return true;
+                    return route;
                 }
             }
         }
-        return false;
+        return null;
+    }
+
+    private static void ensureRoadUpgradeProject(
+            VillageSavedData data,
+            VillageSavedData.VillageRecord village,
+            VillageSavedData.RouteRecord route) {
+        if (!AsobibaTweaksConfig.VILLAGE_ROADS_ENABLED.getAsBoolean()) return;
+
+        String desiredQuality = route.quality();
+        if (route.trafficScore() >= 18) desiredQuality = "stone";
+        else if (route.trafficScore() >= 6 && "dirt".equals(desiredQuality)) desiredQuality = "gravel";
+
+        int desiredWidth = route.width();
+        if (route.trafficScore() >= 30) desiredWidth = Math.max(desiredWidth, 3);
+        else if (route.trafficScore() >= 10) desiredWidth = Math.max(desiredWidth, 2);
+
+        if (desiredQuality.equals(route.quality()) && desiredWidth <= route.width()) return;
+
+        for (VillageSavedData.ProjectRecord project : data.activeProjectsForVillage(village.id())) {
+            if (!"road".equals(project.type())) continue;
+            if (route.id().toString().equals(project.parameter("route_id"))) return;
+        }
+
+        VillageSavedData.ProjectRecord project =
+                data.createProject(village.id(), "road", 15, route.from());
+        project.setTemplateId("road_upgrade_v1");
+        project.setVariantSeed(route.id().getLeastSignificantBits() ^ route.trafficScore());
+        project.setAnchor(route.to());
+        project.setParameter("route_id", route.id().toString());
+        project.setParameter("road_quality", desiredQuality);
+        project.setParameter("road_width", Integer.toString(desiredWidth));
+        project.setParameter("plank", dominantPlankName(village));
+        project.setPhase("planned");
+        project.setWorkCursor(0);
+    }
+
+    private static String dominantPlankName(VillageSavedData.VillageRecord village) {
+        String[] names = {"oak", "spruce", "birch", "jungle", "acacia", "dark_oak", "mangrove", "cherry"};
+        String best = "oak";
+        int bestWeight = 0;
+        for (String name : names) {
+            int weight = village.cultureWeight("plank:" + name);
+            if (weight > bestWeight) {
+                bestWeight = weight;
+                best = name;
+            }
+        }
+        return best;
     }
 
     private static ResourceState localResourceState(ServerLevel level, VillageSavedData.WorkSiteRecord site) {
