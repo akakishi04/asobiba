@@ -50,6 +50,7 @@ public final class EnchantmentTweaksEvents {
     private static final String SMITE = "minecraft:smite";
     private static final String BANE_OF_ARTHROPODS = "minecraft:bane_of_arthropods";
     private static final String FIRE_PROTECTION = "minecraft:fire_protection";
+    private static final String BLAST_PROTECTION = "minecraft:blast_protection";
     private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
     private static final String PROTECTION_LAST_DAMAGE = "asobibatweaks_protection_last_damage";
     private static final String PROJECTILE_LAST_DAMAGE = "asobibatweaks_projectile_last_damage";
@@ -65,6 +66,10 @@ public final class EnchantmentTweaksEvents {
     private static final String FIRE_PROTECTION_PREV_TICKS = "asobibatweaks_fire_protection_prev_ticks";
     private static final String FIRE_EXPOSURE_START = "asobibatweaks_fire_exposure_start";
     private static final String FIRE_EXPOSURE_LAST = "asobibatweaks_fire_exposure_last";
+    private static final String BLAST_ANCHOR_UNTIL = "asobibatweaks_blast_anchor_until";
+    private static final String BLAST_ANCHOR_REDUCTION = "asobibatweaks_blast_anchor_reduction";
+    private static final String BLAST_LAST_DAMAGE = "asobibatweaks_blast_last_damage";
+    private static final String BLAST_CHAIN_COUNT = "asobibatweaks_blast_chain_count";
 
     @SubscribeEvent
     public void onBlockDrops(BlockDropsEvent event) {
@@ -323,6 +328,64 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
+    public void onBlastProtectionDamage(LivingDamageEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)
+                || player.level().isClientSide()
+                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || event.getAmount() <= 0.0F
+                || !event.getSource().is(DamageTypeTags.IS_EXPLOSION)
+                || event.getSource().is(DamageTypeTags.BYPASSES_ENCHANTMENTS)) {
+            return;
+        }
+
+        BranchRef blastProtection = armorBranch(player, BLAST_PROTECTION);
+        if (blastProtection == null) return;
+
+        double strength = branchScale(blastProtection.mastery(), 0.0D, 1.0D);
+        double reduction = 0.0D;
+        long now = player.level().getGameTime();
+
+        if (blastProtection.branch() == 0) {
+            double knockbackReduction = 0.20D + 0.35D * strength;
+            player.getPersistentData().putLong(BLAST_ANCHOR_UNTIL, now + 2L);
+            player.getPersistentData().putInt(
+                    BLAST_ANCHOR_REDUCTION,
+                    (int)Math.round(knockbackReduction * 1000.0D)
+            );
+        } else if (blastProtection.branch() == 1) {
+            var sourcePos = event.getSource().getSourcePosition();
+            if (sourcePos != null) {
+                double distance = sourcePos.distanceTo(player.position());
+                if (distance <= 6.0D) {
+                    double distanceRamp = distance <= 3.0D
+                            ? 1.0D
+                            : Math.max(0.0D, (6.0D - distance) / 3.0D);
+                    double maxReduction = 0.05D + 0.15D * strength;
+                    reduction = maxReduction * distanceRamp;
+                }
+            }
+        } else if (blastProtection.branch() == 2) {
+            var persistent = player.getPersistentData();
+            long last = persistent.getLong(BLAST_LAST_DAMAGE);
+            int previous = persistent.getInt(BLAST_CHAIN_COUNT);
+            if (!persistent.contains(BLAST_LAST_DAMAGE) || now - last > 100L) previous = 0;
+
+            if (previous > 0 && now - last <= 80L) {
+                double perPriorBlast = 0.05D + 0.07D * strength;
+                reduction = Math.min(3, previous) * perPriorBlast;
+            }
+
+            int next = now - last <= 80L ? Math.min(3, previous + 1) : 1;
+            persistent.putLong(BLAST_LAST_DAMAGE, now);
+            persistent.putInt(BLAST_CHAIN_COUNT, next);
+        }
+
+        if (reduction > 0.0D) {
+            event.setAmount((float)(event.getAmount() * Math.max(0.0D, 1.0D - reduction)));
+        }
+    }
+
+    @SubscribeEvent
     public void onFireProtectionDamage(LivingDamageEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer player)
                 || player.level().isClientSide()
@@ -479,6 +542,34 @@ public final class EnchantmentTweaksEvents {
                 }
             }
         }
+    }
+
+    @SubscribeEvent
+    public void onBlastAnchorTick(PlayerTickEvent.Post event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)
+                || player.level().isClientSide()) {
+            return;
+        }
+
+        var persistent = player.getPersistentData();
+        if (!persistent.contains(BLAST_ANCHOR_UNTIL)) return;
+
+        long now = player.level().getGameTime();
+        long until = persistent.getLong(BLAST_ANCHOR_UNTIL);
+        if (now > until) {
+            persistent.remove(BLAST_ANCHOR_UNTIL);
+            persistent.remove(BLAST_ANCHOR_REDUCTION);
+            return;
+        }
+
+        double reduction = Math.min(
+                0.55D,
+                Math.max(0.0D, persistent.getInt(BLAST_ANCHOR_REDUCTION) / 1000.0D)
+        );
+        var motion = player.getDeltaMovement();
+        player.setDeltaMovement(motion.scale(1.0D - reduction));
+        persistent.remove(BLAST_ANCHOR_UNTIL);
+        persistent.remove(BLAST_ANCHOR_REDUCTION);
     }
 
     @SubscribeEvent
@@ -941,7 +1032,8 @@ public final class EnchantmentTweaksEvents {
                 || SHARPNESS.equals(enchantmentId)
                 || SMITE.equals(enchantmentId)
                 || BANE_OF_ARTHROPODS.equals(enchantmentId)
-                || FIRE_PROTECTION.equals(enchantmentId);
+                || FIRE_PROTECTION.equals(enchantmentId)
+                || BLAST_PROTECTION.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -1022,6 +1114,14 @@ public final class EnchantmentTweaksEvents {
                 case 0 -> "Rapid Extinguishing";
                 case 1 -> "Heat Adaptation";
                 case 2 -> "Lava Adaptation";
+                default -> "Unselected";
+            };
+        }
+        if (BLAST_PROTECTION.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Blast Anchor";
+                case 1 -> "Epicenter Resistance";
+                case 2 -> "Chain-Blast Resistance";
                 default -> "Unselected";
             };
         }
