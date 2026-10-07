@@ -184,6 +184,24 @@ public final class VillagerSimData {
         root(villager, true).put(WORK_CARGO, rows);
     }
 
+    public static boolean canInsertWorkCargo(Villager villager, HolderLookup.Provider registries,
+                                             ItemStack incoming, int capacity) {
+        if (incoming.isEmpty()) return true;
+        List<ItemStack> cargo = workCargo(villager, registries, capacity);
+        int remaining = incoming.getCount();
+
+        for (ItemStack existing : cargo) {
+            if (remaining <= 0) return true;
+            if (existing.isEmpty() || !ItemStack.isSameItemSameComponents(existing, incoming)) continue;
+            remaining -= Math.max(0, existing.getMaxStackSize() - existing.getCount());
+        }
+        for (ItemStack existing : cargo) {
+            if (remaining <= 0) return true;
+            if (existing.isEmpty()) remaining -= incoming.getMaxStackSize();
+        }
+        return remaining <= 0;
+    }
+
     /**
      * Inserts into the persistent work cargo and returns the uninserted remainder.
      */
