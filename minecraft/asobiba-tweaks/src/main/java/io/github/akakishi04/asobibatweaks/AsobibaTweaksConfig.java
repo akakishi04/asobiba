@@ -77,6 +77,7 @@ public final class AsobibaTweaksConfig {
     public static final ModConfigSpec.BooleanValue POTION_MIXING_ENABLED = bool("alchemy.potionMixing", true, "Allow weaker multi-effect potion mixtures.");
     public static final ModConfigSpec.BooleanValue TNT_DESIGN_ENABLED = bool("explosives.tntDesign", true, "Enable configurable TNT behavior.");
     public static final ModConfigSpec.BooleanValue FLETCHING_TABLE_ENABLED = bool("crafting.fletchingTableExpansion", true, "Give the vanilla Fletching Table survival uses.");
+    public static final ModConfigSpec.BooleanValue QUIVER_ENABLED = bool("combat.quiver", true, "Enable the dedicated Quiver equipment/ammunition slots.");
 
     public static final ModConfigSpec.BooleanValue GIANT_CROPS_ENABLED = bool("organisms.giantCrops", true, "Enable very rare giant crop outcomes.");
     public static final ModConfigSpec.DoubleValue GIANT_CROP_CHANCE = BUILDER.defineInRange("organisms.giantCropChance", 0.002D, 0.0D, 1.0D);
