@@ -80,6 +80,15 @@ public final class VillageOutpostLifecycleService {
         }
 
         if (!"active".equals(site.state())) {
+            // Keep the one real Porter/cargo path alive on an inactive site:
+            // return outstanding supplies and recover approved leftover
+            // construction/food materials before ending the assignment.
+            if ("porter".equals(VillagerSimData.duty(villager))
+                    && (VillagerSimData.outpostHaulMode(villager).startsWith("salvage_")
+                        || VillagerSimData.hasWorkCargo(
+                                villager, level.registryAccess(), PORTER_CARGO_SLOTS))) {
+                return handleOutpostRecovery(villager, level, data, village, site);
+            }
             if (moveTowardLoaded(villager, level, village.center(), 0.78D)) return true;
             if (villager.blockPosition().distManhattan(village.center()) <= 32) {
                 VillagerSimData.clearOutpostSiteId(villager);
@@ -137,6 +146,7 @@ public final class VillageOutpostLifecycleService {
 
             if ("abandoned".equals(site.state())) {
                 releaseLoadedWorkers(level, village, site.id());
+                assignRecoveryPorter(level, data, village, site);
                 continue;
             }
 
@@ -174,9 +184,198 @@ public final class VillageOutpostLifecycleService {
             if (idle >= ABANDON_AFTER_IDLE_DAYS) site.setState("abandoned");
             else if (idle >= INACTIVE_AFTER_IDLE_DAYS) site.setState("inactive");
 
-            if (!"active".equals(site.state())) releaseLoadedWorkers(level, village, site.id());
+            if (!"active".equals(site.state())) {
+                releaseLoadedWorkers(level, village, site.id());
+                assignRecoveryPorter(level, data, village, site);
+            }
         }
         data.touch();
+    }
+
+    /**
+     * A site may stop producing resources but still contain real recoverable
+     * stocks. A single existing or idle Porter can make physical salvage trips
+     * along an already recognized active route. Never generate free stock,
+     * reserve a new villager, or sweep arbitrary personal equipment.
+     */
+    private static void assignRecoveryPorter(
+            ServerLevel level, VillageSavedData data,
+            VillageSavedData.VillageRecord village, VillageSavedData.WorkSiteRecord site) {
+        if (!VillageSimulationScheduler.isAreaLoaded(level, site.min(), site.max())
+                || !hasActiveRoute(data, village, site)
+                || !hasRecoverableOutpostStock(level, data, site)) return;
+
+        List<Villager> porters = level.getEntitiesOfClass(
+                Villager.class,
+                new net.minecraft.world.phys.AABB(village.center()).inflate(384.0D, 96.0D, 384.0D),
+                v -> v.isAlive() && !v.isBaby()
+                        && "porter".equals(VillagerSimData.duty(v))
+                        && VillagerSimData.villageId(v)
+                                .filter(village.id()::equals).isPresent()
+                        && VillagerSimData.migrationId(v).isEmpty());
+        Villager selected = porters.stream()
+                .filter(v -> VillagerSimData.outpostSiteId(v)
+                        .filter(site.id()::equals).isPresent())
+                .min(Comparator.comparing(v -> v.getUUID().toString()))
+                .orElseGet(() -> porters.stream()
+                        .filter(v -> VillagerSimData.outpostSiteId(v).isEmpty())
+                        .min(Comparator.comparing(v -> v.getUUID().toString()))
+                        .orElse(null));
+        if (selected == null) return;
+
+        VillagerSimData.setOutpostSiteId(selected, site.id());
+        if (!VillagerSimData.outpostHaulMode(selected).startsWith("salvage_")) {
+            boolean loaded = VillagerSimData.hasWorkCargo(
+                    selected, level.registryAccess(), PORTER_CARGO_SLOTS);
+            VillagerSimData.setOutpostHaulMode(selected,
+                    loaded ? "salvage_delivery" : "salvage_pickup");
+        }
+    }
+
+    /**
+     * A completed transfer is recognized only when the actual carried
+     * inventory reaches an already recognized storage container at home.
+     * If storage is full or chunks are not loaded, the Porter waits with
+     * its persisted cargo; nothing teleports or silently disappears.
+     */
+    private static boolean handleOutpostRecovery(
+            Villager porter, ServerLevel level,
+            VillageSavedData data, VillageSavedData.VillageRecord village,
+            VillageSavedData.WorkSiteRecord site) {
+        boolean carrying = VillagerSimData.hasWorkCargo(
+                porter, level.registryAccess(), PORTER_CARGO_SLOTS);
+        if (carrying) {
+            VillagerSimData.setOutpostHaulMode(porter, "salvage_delivery");
+            VillageStorageService.LocatedContainer core =
+                    nearestCoreStorage(level, data, village, site);
+            if (core == null) {
+                moveTowardLoaded(porter, level, village.center(), 0.8D);
+                return true;
+            }
+            BlockPos destination = core.record().pos();
+            if (porter.distanceToSqr(destination.getCenter()) > 4.5D * 4.5D) {
+                moveTowardLoaded(porter, level, destination, 0.8D);
+                return true;
+            }
+
+            depositCargo(porter, level, core.container());
+            VillageStorageService.reconcileVillage(village.id(), level);
+            if (VillagerSimData.hasWorkCargo(
+                    porter, level.registryAccess(), PORTER_CARGO_SLOTS)) {
+                // Partial delivery or full home inventory: retain the
+                // exact remaining cargo until a slot becomes available.
+                return true;
+            }
+        }
+
+        if (!VillageSimulationScheduler.isAreaLoaded(level, site.min(), site.max())) {
+            VillagerSimData.setOutpostHaulMode(porter, "salvage_pickup");
+            return true;
+        }
+        if (!hasRecoverableOutpostStock(level, data, site)) {
+            VillagerSimData.clearOutpostSiteId(porter);
+            moveTowardLoaded(porter, level, village.center(), 0.8D);
+            return true;
+        }
+        if (!hasActiveRoute(data, village, site)) {
+            // The route was lost. Finish any carried delivery, but do not
+            // initiate an unbounded new trip across unsafe terrain.
+            VillagerSimData.clearOutpostSiteId(porter);
+            moveTowardLoaded(porter, level, village.center(), 0.8D);
+            return true;
+        }
+
+        VillagerSimData.setOutpostHaulMode(porter, "salvage_pickup");
+        BlockPos destination = center(site);
+        if (porter.blockPosition().distManhattan(destination) > 20) {
+            moveTowardLoaded(porter, level, destination, 0.8D);
+            return true;
+        }
+
+        if (loadRecoverableOutpostCargo(porter, level, data, site)) {
+            VillagerSimData.setOutpostHaulMode(porter, "salvage_delivery");
+        }
+        return true;
+    }
+
+    private static boolean recoverableMaterial(ItemStack stack) {
+        if (stack.isEmpty()) return false;
+        return stack.is(ItemTags.LOGS)
+                || stack.is(ItemTags.PLANKS)
+                || stack.is(ItemTags.WOOL)
+                || stack.is(Items.COBBLESTONE)
+                || stack.is(Items.STONE)
+                || stack.is(Items.ANDESITE)
+                || stack.is(Items.DIORITE)
+                || stack.is(Items.GRANITE)
+                || stack.is(Items.DIRT)
+                || stack.is(Items.GRAVEL)
+                || stack.is(Items.BREAD)
+                || stack.is(Items.WHEAT)
+                || stack.is(Items.CARROT)
+                || stack.is(Items.POTATO)
+                || stack.is(Items.BEETROOT)
+                || stack.is(Items.WHEAT_SEEDS)
+                || stack.is(Items.BEETROOT_SEEDS)
+                || stack.is(Items.PUMPKIN_SEEDS)
+                || stack.is(Items.MELON_SEEDS)
+                || stack.is(Items.COD)
+                || stack.is(Items.SALMON)
+                || stack.is(Items.OAK_SAPLING)
+                || stack.is(Items.SPRUCE_SAPLING)
+                || stack.is(Items.BIRCH_SAPLING);
+    }
+
+    private static boolean hasRecoverableOutpostStock(
+            ServerLevel level, VillageSavedData data,
+            VillageSavedData.WorkSiteRecord site) {
+        for (VillageSavedData.StorageRecord storage :
+                data.storagesForVillage(site.villageId())) {
+            if (!inside(storage.pos(), site.min(), site.max())
+                    || !VillageSimulationScheduler.isChunkLoaded(level, storage.pos())
+                    || !(level.getBlockEntity(storage.pos()) instanceof Container container)) {
+                continue;
+            }
+            for (int slot = 0; slot < container.getContainerSize(); slot++) {
+                if (recoverableMaterial(container.getItem(slot))) return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean loadRecoverableOutpostCargo(
+            Villager porter, ServerLevel level, VillageSavedData data,
+            VillageSavedData.WorkSiteRecord site) {
+        int remaining = 32; // bounded per visit, never drain arbitrary chests instantly
+        boolean loaded = false;
+        for (VillageSavedData.StorageRecord storage :
+                data.storagesForVillage(site.villageId())) {
+            if (!inside(storage.pos(), site.min(), site.max())
+                    || !VillageSimulationScheduler.isChunkLoaded(level, storage.pos())
+                    || !(level.getBlockEntity(storage.pos()) instanceof Container container)) {
+                continue;
+            }
+            for (int i = 0; i < container.getContainerSize() && remaining > 0; i++) {
+                ItemStack in = container.getItem(i);
+                if (!recoverableMaterial(in)) continue;
+                int wanted = Math.min(remaining, in.getCount());
+                ItemStack proposed = in.copyWithCount(wanted);
+                if (!VillagerSimData.canInsertWorkCargo(
+                        porter, level.registryAccess(), proposed, PORTER_CARGO_SLOTS)) continue;
+
+                ItemStack leftover = VillagerSimData.insertWorkCargo(
+                        porter, level.registryAccess(), proposed, PORTER_CARGO_SLOTS);
+                int carried = wanted - leftover.getCount();
+                if (carried <= 0) continue;
+                in.shrink(carried);
+                container.setChanged();
+                remaining -= carried;
+                loaded = true;
+            }
+            if (remaining <= 0) break;
+        }
+        if (loaded) VillageStorageService.reconcileVillage(site.villageId(), level);
+        return loaded;
     }
 
     private static void assignWorkers(ServerLevel level, VillageSavedData.VillageRecord village,
