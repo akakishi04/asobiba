@@ -499,3 +499,12 @@ Still pending: arrow Power drag preservation; Punch and Breach; Wind Burst and C
 Power on ammunition now compensates normal air-flight velocity decay by 8% per level (up to 80% at X); water/lava drag is unchanged and gravity is preserved separately. The projectile never gains net air acceleration from this correction. Wind Burst impacts generate a bounded radial impulse for loaded nearby entities and items with radius 2.5..4.75 blocks and strength 1.0..1.9 across levels I-X. Arrow Channeling triggers an ordinary physical lightning strike for open-sky impacts during thunderstorms, including valid block hits. These effects are resolved for each Piercing impact without an artificial per-projectile trigger cap.
 
 Remaining arrow systems: Punch, Breach, Looting and Loyalty; arrow recovery/embedded-arrow death drops; exact inter-mod/creature interaction tests.
+
+
+## V45 ammo Punch and Breach damage reduction
+
+Ammo-side Breach is now installed as an ARMOR reduction modifier during LivingIncomingDamageEvent. The target's real armor mitigation is scaled by max(0,1-0.15*level), capped at 100% at VII. If the launcher also has Breach, the callback uses the ratio between the stronger ammo-side fraction and the launcher-side fraction, preventing same-effect multiplication or level addition.
+
+Ammo-side Punch is applied only after a positive, successful LivingDamageEvent.Post. The arrow's real horizontal flight direction and target knockback resistance determine an additional impulse only when arrow-side Punch exceeds launcher Punch. Its level shape is I=1, II=2, III=2.5, V=3.5, X=6. Vanilla launchers continue their own knockback resolution without replacing it.
+
+Both effects are reevaluated for each successfully pierced target; in-game comparison with enhanced launchers remains necessary.

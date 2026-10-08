@@ -6,6 +6,9 @@ import net.minecraft.tags.EntityTypeTags;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.neoforged.neoforge.common.damagesource.DamageContainer;
+import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.minecraft.world.entity.LightningBolt;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -36,6 +39,8 @@ public final class EnchantedArrowImpactEvents {
     private static final String IMPALING = "minecraft:impaling";
     private static final String FLAME = "minecraft:flame";
     private static final String PIERCING = "minecraft:piercing";
+    private static final String PUNCH = "minecraft:punch";
+    private static final String BREACH = "minecraft:breach";
 
     @SubscribeEvent
     public void onArrowJoined(EntityJoinLevelEvent event) {
@@ -83,6 +88,28 @@ public final class EnchantedArrowImpactEvents {
         int impaling = level(ammo, IMPALING);
         if (impaling > 0 && event.getEntity().getType().is(EntityTypeTags.SENSITIVE_TO_IMPALING)) {
             extra += 2.5D * impaling;
+        }
+
+
+        /*
+         * Ammo Breach reduces the vanilla armor mitigation, not the damage
+         * after mitigation. Bow/Crossbow Breach must not stack with an ammo
+         * Breach of the same strength, so compensate only the stronger level.
+         */
+        int ammoBreach = Math.min(10, level(ammo, BREACH));
+        if (ammoBreach > 0) {
+            ItemStack launcher = event.getSource().getWeaponItem();
+            int launcherBreach = launcher == null ? 0 : Math.min(10, level(launcher, BREACH));
+            if (ammoBreach > launcherBreach) {
+                float arrowEfficiency = Math.max(0.0F, 1.0F - ammoBreach * 0.15F);
+                float weaponEfficiency = Math.max(0.0F, 1.0F - launcherBreach * 0.15F);
+                float factor = weaponEfficiency <= 0.0F
+                        ? 1.0F : arrowEfficiency / weaponEfficiency;
+                event.addReductionModifier(
+                        DamageContainer.Reduction.ARMOR,
+                        (container, reduction) -> reduction * Math.max(0.0F, Math.min(1.0F, factor))
+                );
+            }
         }
 
         // Arrow-side Flame is intentionally limited to level I.
@@ -181,6 +208,50 @@ public final class EnchantedArrowImpactEvents {
                 server.addFreshEntity(bolt);
             }
         }
+    }
+
+
+    /**
+     * Only successful, health-damaging projectile hits apply ammo Punch.
+     * The launcher's existing Punch knockback will still be applied by the
+     * vanilla arrow, so add only the missing difference (max, not sum).
+     */
+    @SubscribeEvent
+    public void onArrowPunch(LivingDamageEvent.Post event) {
+        if (!AsobibaTweaksConfig.EXTENDED_ENCHANTING_TARGETS_ENABLED.getAsBoolean()
+                || event.getNewDamage() <= 0.0F
+                || !(event.getSource().getDirectEntity() instanceof AbstractArrow arrow)
+                || arrow.level().isClientSide()) return;
+
+        ItemStack ammo = arrow.getPickupItemStackOrigin();
+        int ammoPunch = Math.min(10, level(ammo, PUNCH));
+        if (ammoPunch <= 0) return;
+
+        ItemStack launcher = event.getSource().getWeaponItem();
+        int launcherPunch = launcher == null ? 0 : Math.min(10, level(launcher, PUNCH));
+
+        double difference = punchPower(ammoPunch) - punchPower(launcherPunch);
+        if (difference <= 0.0D) return;
+
+        Vec3 horizontal = arrow.getDeltaMovement().multiply(1.0D, 0.0D, 1.0D);
+        if (horizontal.lengthSqr() < 1.0E-8D) return;
+        Vec3 direction = horizontal.normalize();
+
+        double resistance = Math.min(1.0D, Math.max(0.0D,
+                event.getEntity().getAttributeValue(Attributes.KNOCKBACK_RESISTANCE)));
+        double impulse = difference * 0.6D * (1.0D - resistance);
+        if (impulse <= 0.0D) return;
+
+        event.getEntity().push(direction.x * impulse,
+                Math.min(0.10D, impulse * 0.1D),
+                direction.z * impulse);
+        event.getEntity().hurtMarked = true;
+    }
+
+    private static double punchPower(int level) {
+        if (level <= 0) return 0.0D;
+        if (level <= 2) return level;
+        return 2.0D + 0.5D * (level - 2);
     }
 
     public static int level(ItemStack arrow, String id) {
