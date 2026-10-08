@@ -48,6 +48,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Enchantment-Pool Bookshelves | Arcane Bookshelf + `EnchantmentMenuExtensionsMixin` | Implemented |
 | Extended Enchanting Targets | `ExtendedEnchantableItemMixin`, `EnchantmentExtensionMixin`, `EnchantedWorkBlockSavedData` | Implemented; effects intentionally deferred |
 | Raised Enchantment Level Caps | `EnchantmentExtensionMixin` | Implemented; configurable cap; explicit higher-level Mending enabled in V40 |
+| High-level Mending and Over-Repair | `MendingExtendedEvents`, `ExperienceOrbMendingMixin` | **V41 implemented initial transaction**: IV-IX equipped distribution, X inventory routing, per-level efficiency loss, 5%-20% mastery durability reserve and UI tooltip; in-game tests required |
 | Frost Walker runtime toggle | `FrostWalkerToggle`, `FrostWalkerLocationMixin`, client gesture + network payload | **V39 implemented**: sneak+jump toggles the boots' stored ON/OFF state; disabled mode suppresses new ice creation, preserving enchantment and damage protection |
 | Shared Bow / Crossbow Enchantment Pool | additive `minecraft:enchantable/bow` and `minecraft:enchantable/crossbow` tags, `LauncherEnchantmentCompatibilityMixin` | **V37-V38 implemented core**: shared launcher eligibility and Infinity + Mending compatibility, plus Bow Quick Charge's diminishing draw-time reduction up to X. Other cross-launcher projectile effects still require in-game validation |
 | Atlas / Map Binder | `AtlasItem`, `AtlasItemInHandRendererMixin` | Implemented |
@@ -448,3 +449,14 @@ Important remaining Mending work: Mending IV-IX active-equipped linked
 XP distribution; Mending X full-inventory linked targets; 40%-80%
 transfer-efficiency/recipient-multiplier curves; mastery 50-100
 over-repair buffer and its priority-before-durability behavior.
+
+
+## V41 Mending linked XP routing and over-repair
+
+An equipped/held Mending IV-X item acts as the router. The highest-level router wins, with durability wear breaking level ties. IV-IX only route to equipment and hands. X additionally routes to Mending items inside the player inventory. Carrying an X item without equipping it never activates routing.
+
+Recipients need Mending themselves. Damaged items are prioritized over buffer filling, then by damaged percentage and Mending level. Cross-item XP reaches recipients at 40%-80% source efficiency times the accepted 50%-100% recipient-level multiplier, while the router's own repair is direct. Fractional durability credits are kept in the recipient ItemStack.
+
+From mastery 50, Mending over-repair increases 5%-20% of normal durability. The buffer persists in CUSTOM_DATA and is consumed first during the normal hurtAndBreak durability path, after base Unbreaking and mastery rolls. XP not used on any eligible damage or buffer is returned to the player through the normal experience-orb flow.
+
+Gameplay validation remains for mixed levels, transfer math, inventory X, orb sizes, durability loss, save/reload, and interactions with other mods.

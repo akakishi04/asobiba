@@ -3,6 +3,7 @@ package io.github.akakishi04.asobibatweaks.mixin;
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import io.github.akakishi04.asobibatweaks.feature.UnbreakingMasteryEvents;
 import io.github.akakishi04.asobibatweaks.feature.InfinityMasteryEvents;
+import io.github.akakishi04.asobibatweaks.feature.MendingExtendedEvents;
 import java.util.function.Consumer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.LivingEntity;
@@ -31,6 +32,7 @@ public abstract class UnbreakingDurabilityMixin {
         ItemStack stack = (ItemStack)(Object)this;
         int afterUnbreaking = UnbreakingMasteryEvents.adjustDurability(
                 stack, level, wearer, postVanilla);
-        return InfinityMasteryEvents.adjustDurability(stack, level, wearer, afterUnbreaking);
+        int afterInfinity = InfinityMasteryEvents.adjustDurability(stack, level, wearer, afterUnbreaking);
+        return MendingExtendedEvents.absorb(stack, afterInfinity);
     }
 }

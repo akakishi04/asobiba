@@ -25,7 +25,8 @@
     "LauncherEnchantmentCompatibilityMixin",
     "BowQuickChargeMixin",
     "FrostWalkerLocationMixin",
-    "MendingXpRateMixin"
+    "MendingXpRateMixin",
+    "ExperienceOrbMendingMixin"
   ],
   "injectors": {
     "defaultRequire": 1
