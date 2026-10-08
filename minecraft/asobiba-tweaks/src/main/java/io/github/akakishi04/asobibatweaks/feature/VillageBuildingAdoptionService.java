@@ -385,6 +385,7 @@ public final class VillageBuildingAdoptionService {
         return state.is(AsobibaRegistries.CARPENTER_WORKBENCH.get())
                 || state.is(Blocks.BLAST_FURNACE)
                 || state.is(Blocks.SMOKER)
+                || state.is(Blocks.CAULDRON)
                 || state.is(Blocks.CARTOGRAPHY_TABLE)
                 || state.is(Blocks.BREWING_STAND)
                 || state.is(Blocks.COMPOSTER)
