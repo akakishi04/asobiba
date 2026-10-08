@@ -25,6 +25,7 @@ public final class VillageCarpenterCraftingService {
 
     public static boolean isCraftedFixture(Item fixture, Block chosenPlank) {
         return fixture == Items.BARREL || fixture == Items.COMPOSTER
+                || fixture == Items.SMITHING_TABLE || fixture == Items.STONECUTTER
                 || fixture == AsobibaRegistries.CARPENTER_WORKBENCH.get().asItem()
                 || fixture == VillageSimulationEvents.stairsForPlank(chosenPlank).asItem();
     }
@@ -57,6 +58,27 @@ public final class VillageCarpenterCraftingService {
             if (!ensureSlabs(carpenter, level, plank, slab, 7, capacity)) return false;
             return assemble(carpenter, level, capacity, new ItemStack(Items.COMPOSTER),
                     new Ingredient(slab, 7));
+        }
+
+        if (fixture == Items.SMITHING_TABLE) {
+            // Vanilla recipe: 2 iron ingots + 4 matching wooden planks.
+            if (!VillageSimulationEvents.ensureCargoItem(
+                    carpenter, level, Items.IRON_INGOT, 2, capacity)
+                    || !VillageSimulationEvents.ensureCargoItem(
+                            carpenter, level, plank, 4, capacity)) return false;
+            return assemble(carpenter, level, capacity, new ItemStack(Items.SMITHING_TABLE),
+                    new Ingredient(Items.IRON_INGOT, 2), new Ingredient(plank, 4));
+        }
+
+        if (fixture == Items.STONECUTTER) {
+            // Vanilla recipe: 1 iron ingot + 3 ordinary stone blocks.
+            if (!VillageSimulationEvents.ensureCargoItem(
+                    carpenter, level, Items.IRON_INGOT, 1, capacity)
+                    || !VillageSimulationEvents.ensureCargoItem(
+                            carpenter, level, Items.STONE, 3, capacity)) return false;
+            return assemble(carpenter, level, capacity, new ItemStack(Items.STONECUTTER),
+                    new Ingredient(Items.IRON_INGOT, 1),
+                    new Ingredient(Items.STONE, 3));
         }
 
         if (fixture == stair) {
