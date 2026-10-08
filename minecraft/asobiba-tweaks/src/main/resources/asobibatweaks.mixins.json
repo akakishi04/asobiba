@@ -24,7 +24,8 @@
     "ProjectileWeaponQuiverMixin",
     "LauncherEnchantmentCompatibilityMixin",
     "BowQuickChargeMixin",
-    "FrostWalkerLocationMixin"
+    "FrostWalkerLocationMixin",
+    "MendingXpRateMixin"
   ],
   "injectors": {
     "defaultRequire": 1

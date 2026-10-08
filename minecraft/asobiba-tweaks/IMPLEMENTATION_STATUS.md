@@ -47,7 +47,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Direct Enchanting-Table Reroll | `EnchantmentMenuExtensionsMixin`, `EnchantingScreenEvents` | Implemented; XP cost |
 | Enchantment-Pool Bookshelves | Arcane Bookshelf + `EnchantmentMenuExtensionsMixin` | Implemented |
 | Extended Enchanting Targets | `ExtendedEnchantableItemMixin`, `EnchantmentExtensionMixin`, `EnchantedWorkBlockSavedData` | Implemented; effects intentionally deferred |
-| Raised Enchantment Level Caps | `EnchantmentExtensionMixin` | Implemented; configurable cap |
+| Raised Enchantment Level Caps | `EnchantmentExtensionMixin` | Implemented; configurable cap; explicit higher-level Mending enabled in V40 |
 | Frost Walker runtime toggle | `FrostWalkerToggle`, `FrostWalkerLocationMixin`, client gesture + network payload | **V39 implemented**: sneak+jump toggles the boots' stored ON/OFF state; disabled mode suppresses new ice creation, preserving enchantment and damage protection |
 | Shared Bow / Crossbow Enchantment Pool | additive `minecraft:enchantable/bow` and `minecraft:enchantable/crossbow` tags, `LauncherEnchantmentCompatibilityMixin` | **V37-V38 implemented core**: shared launcher eligibility and Infinity + Mending compatibility, plus Bow Quick Charge's diminishing draw-time reduction up to X. Other cross-launcher projectile effects still require in-game validation |
 | Atlas / Map Binder | `AtlasItem`, `AtlasItemInHandRendererMixin` | Implemented |
@@ -430,3 +430,21 @@ Absence of the tag on legacy boots means ON.
 The state follows the boots across normal equip/unequip, save/reload, and
 ItemStack transfer. Frozen ice placed before turning OFF melts normally.
 Dedicated-server startup and real multiplayer client input need testing.
+
+
+## V40 Mending II-X level-cap and direct repair note
+
+Mending is now the explicitly approved exception to the single-level cap.
+Mending's canonical translatable-description key is checked to avoid
+extending unrelated one-level enchantments; the configured general raised
+enchantment cap controls its maximum acquisition level.
+
+Normal Mending I remains vanilla 2 durability per XP. Mending II adds one
+more point per XP; III through X add two more, with a fixed 4 durability
+per XP ceiling. The repair-rate hook composes after the base enchantment
+calculation rather than replacing all other repair sources.
+
+Important remaining Mending work: Mending IV-IX active-equipped linked
+XP distribution; Mending X full-inventory linked targets; 40%-80%
+transfer-efficiency/recipient-multiplier curves; mastery 50-100
+over-repair buffer and its priority-before-durability behavior.
