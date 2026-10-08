@@ -2,11 +2,13 @@ package io.github.akakishi04.asobibatweaks;
 
 import io.github.akakishi04.asobibatweaks.client.EnchantingScreenEvents;
 import io.github.akakishi04.asobibatweaks.client.FrostWalkerToggleClientEvents;
+import io.github.akakishi04.asobibatweaks.client.FletchingCopyScreen;
 import io.github.akakishi04.asobibatweaks.client.NetherFishRenderer;
 import io.github.akakishi04.asobibatweaks.client.QuiverClientEvents;
 import io.github.akakishi04.asobibatweaks.client.VillageStatusScreen;
 import io.github.akakishi04.asobibatweaks.feature.VillageStatusNetworking;
 import io.github.akakishi04.asobibatweaks.feature.QuiverNetworking;
+import io.github.akakishi04.asobibatweaks.feature.FletchingCopyNetworking;
 import io.github.akakishi04.asobibatweaks.feature.QuiverData;
 import net.minecraft.client.Minecraft;
 import net.neoforged.api.distmarker.Dist;
@@ -23,6 +25,7 @@ public final class AsobibaTweaksClient {
     public AsobibaTweaksClient(IEventBus modBus, ModContainer container) {
         container.registerExtensionPoint(IConfigScreenFactory.class, ConfigurationScreen::new);
         VillageStatusNetworking.installClientHandler(VillageStatusScreen::open);
+        FletchingCopyNetworking.installClientHandler(FletchingCopyScreen::open);
         QuiverNetworking.installClientHandler(payload -> {
             if (Minecraft.getInstance().player != null) {
                 QuiverData.installSnapshot(Minecraft.getInstance().player, payload.snapshot());

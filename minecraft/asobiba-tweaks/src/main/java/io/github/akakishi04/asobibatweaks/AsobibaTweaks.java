@@ -15,6 +15,7 @@ import io.github.akakishi04.asobibatweaks.feature.FishingMasteryEvents;
 import io.github.akakishi04.asobibatweaks.feature.LuckOfSeaMasteryEvents;
 import io.github.akakishi04.asobibatweaks.feature.FolkloreAndMoonEvents;
 import io.github.akakishi04.asobibatweaks.feature.FrostWalkerToggleNetworking;
+import io.github.akakishi04.asobibatweaks.feature.FletchingCopyNetworking;
 import io.github.akakishi04.asobibatweaks.feature.FrostWalkerMasteryEvents;
 import io.github.akakishi04.asobibatweaks.feature.MaceMasteryEvents;
 import io.github.akakishi04.asobibatweaks.feature.SweepingMasteryEvents;
@@ -66,6 +67,7 @@ public final class AsobibaTweaks {
         AsobibaRegistries.register(modBus);
         modBus.addListener(VillageStatusNetworking::registerPayloads);
         modBus.addListener(QuiverNetworking::registerPayloads);
+        modBus.addListener(FletchingCopyNetworking::registerPayloads);
         modBus.addListener(FrostWalkerToggleNetworking::registerPayloads);
         container.registerConfig(ModConfig.Type.COMMON, AsobibaTweaksConfig.SPEC);
         NeoForge.EVENT_BUS.register(new GrowingItemsEvents());

@@ -151,7 +151,7 @@ public final class AlchemyExplosivesCraftingEvents {
         ItemStack main = player.getMainHandItem();
         ItemStack off = player.getOffhandItem();
 
-        if (EnchantedArrowCopyService.tryCopy(player, main, off)) {
+        if (FletchingCopyNetworking.open(player, event.getPos())) {
             succeed(event);
             return true;
         }

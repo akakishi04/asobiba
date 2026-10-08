@@ -9,35 +9,35 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 /**
- * Copy a single enchanted arrow template into a user-selected batch using
- * ordinary same-kind offhand arrows. The offhand stack count is the selected
- * batch size (players can split the stack before using the Fletching Table).
+ * One authoritative server transaction for enchanted-arrow copying.
+ *
+ * The quote and the completed transaction use the same pricing formula.
+ * A client-provided batch size is never trusted: material identity,
+ * source enchantments, exact potion components, stock, spendable XP, and
+ * resulting output are rechecked on the server at the moment of purchase.
  */
 public final class EnchantedArrowCopyService {
     private EnchantedArrowCopyService() {}
 
-    /** Returns true if this interaction is owned by the copying subsystem. */
-    public static boolean tryCopy(ServerPlayer player, ItemStack template, ItemStack material) {
-        if (!ExtendedEnchantingTargets.isExtendedArrowTarget(template)
-                || EnchantmentMasteryData.enchantments(template).isEmpty()
-                || material.isEmpty() || material.getItem() != template.getItem()) {
-            return false;
-        }
-        if (!EnchantmentMasteryData.enchantments(material).isEmpty()) {
-            message(player, "Use unenchanted arrows as the copying material.", false);
-            return true;
-        }
-        if (template.is(Items.TIPPED_ARROW) &&
-                !Objects.equals(template.get(DataComponents.POTION_CONTENTS),
-                        material.get(DataComponents.POTION_CONTENTS))) {
-            message(player, "Tipped-arrow potion contents must match the template.", false);
-            return true;
-        }
+    public record Quote(int materialCount, long perCopyXp,
+                        long availableXp, String error) {
+        public boolean valid() { return error.isEmpty(); }
 
-        int count = material.getCount();
-        if (count <= 0 || count > 64) {
-            message(player, "Select 1-64 arrows in the offhand.", false);
-            return true;
+        public long total(int requested) {
+            return requested <= 0 || requested > materialCount
+                    ? -1L : perCopyXp * requested;
+        }
+    }
+
+    public static boolean hasTemplate(ItemStack template) {
+        return ExtendedEnchantingTargets.isExtendedArrowTarget(template)
+                && !EnchantmentMasteryData.enchantments(template).isEmpty();
+    }
+
+    public static Quote quote(ServerPlayer player, ItemStack template, ItemStack material) {
+        long xp = currentXp(player);
+        if (!hasTemplate(template)) {
+            return new Quote(0, 0L, xp, "Hold an enchanted arrow in your main hand.");
         }
 
         long perCopy = 0L;
@@ -45,70 +45,103 @@ public final class EnchantedArrowCopyService {
             int level = entry.getIntValue();
             int anvilCost = entry.getKey().value().getAnvilCost();
             if (level <= 0 || anvilCost < 0) {
-                message(player, "Invalid enchantment level or anvil cost.", false);
-                return true;
+                return new Quote(0, 0L, xp, "Invalid enchantment level or cost.");
             }
             perCopy += (long)level * anvilCost;
             if (perCopy > Integer.MAX_VALUE) {
-                message(player, "The copying XP cost exceeds the supported transaction limit.", false);
-                return true;
+                return new Quote(0, perCopy, xp, "Per-arrow XP cost is too large.");
             }
         }
-        long amount = perCopy * count;
-        if (amount > Integer.MAX_VALUE || amount < 0L) {
-            message(player, "The copying XP cost exceeds the supported transaction limit.", false);
-            return true;
+
+        if (material.isEmpty() || material.getItem() != template.getItem()) {
+            return new Quote(0, perCopy, xp,
+                    "Place compatible ordinary arrows in your offhand.");
+        }
+        if (!EnchantmentMasteryData.enchantments(material).isEmpty()) {
+            return new Quote(0, perCopy, xp, "Copy material must be unenchanted.");
+        }
+        if (template.is(Items.TIPPED_ARROW)
+                && !Objects.equals(template.get(DataComponents.POTION_CONTENTS),
+                        material.get(DataComponents.POTION_CONTENTS))) {
+            return new Quote(0, perCopy, xp, "Tipped-arrow potion contents must match.");
         }
 
-        int price = (int)amount;
-        if (currentXp(player) < amount) {
-            message(player, "Need " + amount + " XP points to copy " + count + " arrows.", false);
-            return true;
+        int available = Math.min(64, material.getCount());
+        if (available <= 0) {
+            return new Quote(0, perCopy, xp, "No copy material available.");
+        }
+        return new Quote(available, perCopy, xp, "");
+    }
+
+    /** Legacy direct-copy API retained for other integrations. */
+    public static boolean tryCopy(ServerPlayer player, ItemStack template, ItemStack material) {
+        if (!hasTemplate(template)) return false;
+        return copy(player, template, material, material.getCount());
+    }
+
+    public static boolean copy(
+            ServerPlayer player, ItemStack template,
+            ItemStack material, int requested) {
+        Quote quote = quote(player, template, material);
+        if (!quote.valid()) {
+            message(player, quote.error(), false);
+            return false;
+        }
+        if (requested < 1 || requested > quote.materialCount()) {
+            message(player, "Choose between 1 and " + quote.materialCount() + " arrows.", false);
+            return false;
         }
 
-        // Both debits happen before any new arrows are materialized.
-        if (price > 0) {
+        long amount = quote.total(requested);
+        if (amount < 0L || amount > Integer.MAX_VALUE) {
+            message(player, "Batch XP cost exceeds the supported transaction limit.", false);
+            return false;
+        }
+        if (quote.availableXp() < amount) {
+            message(player, "Need " + amount + " XP to copy " + requested + " arrows.", false);
+            return false;
+        }
+
+        // Debit XP first. A canceled or partially applied debit never spends
+        // physical arrow material or emits a single extra arrow.
+        if (amount > 0L) {
             long before = currentXp(player);
-            player.giveExperiencePoints(-price);
+            player.giveExperiencePoints(-(int)amount);
             long charged = before - currentXp(player);
-            if (charged != price) {
-                // Another mod may cancel/alter XP deduction. Fail closed:
-                // no arrow material is consumed and no output is minted.
+            if (charged != amount) {
                 if (charged > 0L && charged <= Integer.MAX_VALUE) {
                     player.giveExperiencePoints((int)charged);
                 }
-                message(player, "Arrow copying canceled: XP charge was not completed.", false);
-                return true;
+                message(player, "Copy canceled: XP payment did not complete.", false);
+                return false;
             }
         }
-        material.shrink(count);
+
+        material.shrink(requested);
 
         ItemStack exemplar = template.copyWithCount(1);
-        int left = count;
-        while (left > 0) {
-            int batch = Math.min(left, Math.max(1, exemplar.getMaxStackSize()));
-            ItemStack cloned = exemplar.copyWithCount(batch);
-            // Inventory.add may insert only part of the batch while still
-            // returning success. Always drop the actual uninserted remainder.
-            player.getInventory().add(cloned);
-            if (!cloned.isEmpty()) {
-                player.drop(cloned, false);
-            }
-            left -= batch;
+        int remainingCount = requested;
+        while (remainingCount > 0) {
+            int batch = Math.min(remainingCount, Math.max(1, exemplar.getMaxStackSize()));
+            ItemStack output = exemplar.copyWithCount(batch);
+            player.getInventory().add(output);
+            if (!output.isEmpty()) player.drop(output, false);
+            remainingCount -= batch;
         }
-        message(player, "Copied " + count + " enchanted arrows for " + amount + " XP.", true);
+
+        message(player, "Copied " + requested + " enchanted arrows for " + amount + " XP.", true);
         return true;
     }
 
-    /** Compute current spendable points: totalExperience is lifetime-oriented. */
+    /** Spendable XP points; player's totalExperience is lifetime-oriented. */
     private static long currentXp(ServerPlayer player) {
-        long l = Math.max(0, player.experienceLevel);
-        long earnedLevels = l <= 16 ? l * l + 6 * l
-                : l <= 31 ? (5 * l * l - 81 * l + 720) / 2
-                : (9 * l * l - 325 * l + 4440) / 2;
-        long progress = (long)Math.floor(Math.max(0.0F, player.experienceProgress)
-                * player.getXpNeededForNextLevel());
-        return earnedLevels + progress;
+        long level = Math.max(0, player.experienceLevel);
+        long earned = level <= 16 ? level * level + 6L * level
+                : level <= 31 ? (5L * level * level - 81L * level + 720L) / 2L
+                : (9L * level * level - 325L * level + 4440L) / 2L;
+        long progress = (long)Math.floor(
+                Math.max(0.0F, player.experienceProgress) * player.getXpNeededForNextLevel());
+        return Math.max(0L, earned + progress);
     }
 
     private static void message(ServerPlayer player, String text, boolean success) {
