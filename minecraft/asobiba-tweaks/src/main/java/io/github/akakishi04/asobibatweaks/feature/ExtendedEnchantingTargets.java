@@ -8,12 +8,29 @@ import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.Items;
 
 public final class ExtendedEnchantingTargets {
+    private static final Set<String> WORK_BLOCK_EFFECTS =
+            Set.of("efficiency", "fortune");
+
     private static final Set<String> ARROW_EFFECTS = Set.of(
             "power", "punch", "flame", "piercing", "sharpness",
             "smite", "bane_of_arthropods", "impaling", "looting",
             "breach", "wind_burst", "channeling", "loyalty");
 
     private ExtendedEnchantingTargets() {}
+
+    public static boolean allowsWorkBlockEnchantment(Holder<Enchantment> enchantment) {
+        return enchantment.unwrapKey().map(key ->
+                "minecraft".equals(key.location().getNamespace())
+                        && WORK_BLOCK_EFFECTS.contains(key.location().getPath())).orElse(false);
+    }
+
+    public static boolean allowsWorkBlockEnchantment(Enchantment enchantment) {
+        if (!(enchantment.description().getContents()
+                instanceof TranslatableContents translated)) return false;
+        String name = translated.getKey();
+        return name.equals("enchantment.minecraft.efficiency")
+                || name.equals("enchantment.minecraft.fortune");
+    }
 
     public static boolean allowsArrowEnchantment(Holder<Enchantment> enchantment) {
         return enchantment.unwrapKey().map(key ->

@@ -34,7 +34,8 @@ public abstract class EnchantmentExtensionMixin {
             cir.setReturnValue(ExtendedEnchantingTargets.allowsArrowEnchantment(
                     (Enchantment)(Object)this));
         } else if (ExtendedEnchantingTargets.isExtendedBlockTarget(stack)) {
-            cir.setReturnValue(true);
+            cir.setReturnValue(ExtendedEnchantingTargets.allowsWorkBlockEnchantment(
+                    (Enchantment)(Object)this));
         }
     }
 
@@ -47,7 +48,8 @@ public abstract class EnchantmentExtensionMixin {
             cir.setReturnValue(ExtendedEnchantingTargets.allowsArrowEnchantment(
                     (Enchantment)(Object)this));
         } else if (ExtendedEnchantingTargets.isExtendedBlockTarget(stack)) {
-            cir.setReturnValue(true);
+            cir.setReturnValue(ExtendedEnchantingTargets.allowsWorkBlockEnchantment(
+                    (Enchantment)(Object)this));
         }
     }
 
@@ -60,7 +62,8 @@ public abstract class EnchantmentExtensionMixin {
             cir.setReturnValue(ExtendedEnchantingTargets.allowsArrowEnchantment(
                     (Enchantment)(Object)this));
         } else if (ExtendedEnchantingTargets.isExtendedBlockTarget(stack)) {
-            cir.setReturnValue(true);
+            cir.setReturnValue(ExtendedEnchantingTargets.allowsWorkBlockEnchantment(
+                    (Enchantment)(Object)this));
         }
     }
 }

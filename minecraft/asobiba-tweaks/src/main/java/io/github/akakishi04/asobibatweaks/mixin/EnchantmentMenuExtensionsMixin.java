@@ -6,7 +6,9 @@ import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
 import io.github.akakishi04.asobibatweaks.feature.EnchantmentRerollProtocol;
 import io.github.akakishi04.asobibatweaks.feature.EnchantedWorkBlockSavedData;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.stream.Stream;
+import io.github.akakishi04.asobibatweaks.feature.ExtendedEnchantingTargets;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderSet;
@@ -186,6 +188,93 @@ public abstract class EnchantmentMenuExtensionsMixin {
 
             menu.broadcastChanges();
         });
+    }
+
+
+    /**
+     * Fortune on the actual placed Enchanting Table changes only the
+     * continuation decay between extra enchantment rolls. Vanilla candidate
+     * eligibility, mutually incompatible enchantment sets and weighted
+     * enchantment choices remain authoritative.
+     */
+    @Inject(method = "getEnchantmentList", at = @At("RETURN"), cancellable = true)
+    private void asobibatweaks$tableFortuneContinuation(
+            RegistryAccess registries, ItemStack target, int offerSlot,
+            int enchantmentCost, CallbackInfoReturnable<List<EnchantmentInstance>> cir) {
+        if (!AsobibaTweaksConfig.EXTENDED_ENCHANTING_TARGETS_ENABLED.getAsBoolean()
+                || cir.getReturnValue().isEmpty()) return;
+
+        ItemStack table = this.access.evaluate((level, pos) -> {
+            if (!(level instanceof net.minecraft.server.level.ServerLevel server)) {
+                return ItemStack.EMPTY;
+            }
+            return EnchantedWorkBlockSavedData.get(server).peek(pos.asLong());
+        }).orElse(ItemStack.EMPTY);
+        if (table.isEmpty()) return;
+
+        Holder<Enchantment> fortune = registries.lookupOrThrow(Registries.ENCHANTMENT)
+                .getOrThrow(Enchantments.FORTUNE);
+        int level = Math.max(0, Math.min(10,
+                EnchantmentHelper.getItemEnchantmentLevel(fortune, table)));
+        if (level <= 0) return;
+
+        var registry = registries.lookupOrThrow(Registries.ENCHANTMENT);
+        var vanilla = registry.get(EnchantmentTags.IN_ENCHANTING_TABLE);
+        if (vanilla.isEmpty()) return;
+        Stream<Holder<Enchantment>> pool = vanilla.get().stream();
+        if (AsobibaTweaksConfig.ENCHANTMENT_POOL_BOOKSHELF_ENABLED.getAsBoolean()
+                && hasArcaneBookshelf()) {
+            var arcane = registry.get(AsobibaTags.ARCANE_BOOKSHELF_POOL);
+            if (arcane.isPresent()) {
+                pool = Stream.concat(pool, arcane.get().stream()).distinct();
+            }
+        }
+
+        List<EnchantmentInstance> possibles =
+                new ArrayList<>(EnchantmentHelper.getAvailableEnchantmentResults(
+                        enchantmentCost, target, pool));
+        List<EnchantmentInstance> chosen = new ArrayList<>(cir.getReturnValue());
+        for (EnchantmentInstance selected : chosen) {
+            possibles.removeIf(candidate ->
+                    candidate.enchantment.equals(selected.enchantment)
+                            || !(Enchantment.areCompatible(
+                                    selected.enchantment, candidate.enchantment)
+                                    || ExtendedEnchantingTargets.allowsArrowPair(
+                                            target, selected.enchantment, candidate.enchantment)));
+        }
+
+        double nextLevel = enchantmentCost;
+        double decay = 0.50D + 0.035D * level;
+        for (int roll = 0; roll < 64 && !possibles.isEmpty(); roll++) {
+            if (this.random.nextInt(50) > nextLevel) break;
+
+            long total = 0L;
+            for (EnchantmentInstance candidate : possibles) {
+                total += Math.max(1, candidate.enchantment.value().getWeight());
+            }
+            if (total <= 0) break;
+            long pick = this.random.nextInt((int)Math.min(Integer.MAX_VALUE, total));
+            EnchantmentInstance selected = possibles.get(0);
+            for (EnchantmentInstance candidate : possibles) {
+                pick -= Math.max(1, candidate.enchantment.value().getWeight());
+                if (pick < 0L) {
+                    selected = candidate;
+                    break;
+                }
+            }
+
+            chosen.add(selected);
+            Holder<Enchantment> held = selected.enchantment;
+            possibles.removeIf(candidate ->
+                    candidate.enchantment.equals(held)
+                            || !(Enchantment.areCompatible(held, candidate.enchantment)
+                                    || ExtendedEnchantingTargets.allowsArrowPair(
+                                            target, held, candidate.enchantment)));
+            nextLevel *= decay;
+        }
+        if (chosen.size() > cir.getReturnValue().size()) {
+            cir.setReturnValue(chosen);
+        }
     }
 
     @Invoker("getEnchantmentList")
