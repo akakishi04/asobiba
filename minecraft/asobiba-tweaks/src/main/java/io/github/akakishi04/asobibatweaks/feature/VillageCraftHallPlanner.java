@@ -2,6 +2,7 @@ package io.github.akakishi04.asobibatweaks.feature;
 
 import java.util.UUID;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.entity.npc.VillagerProfession;
 import net.minecraft.world.item.Items;
@@ -27,16 +28,17 @@ public final class VillageCraftHallPlanner {
         // Avoid world-wide resident searches or decisions based on unobserved
         // villagers. This is a modest local public-works need, not a demand
         // inferred from unloaded or forgotten population.
-        int tradespeople = level.getEntitiesOfClass(Villager.class,
+        int workersMissingSites = level.getEntitiesOfClass(Villager.class,
                 new AABB(village.center()).inflate(48.0D, 32.0D, 48.0D),
                 v -> v.isAlive() && !v.isBaby()
                         && VillagerSimData.villageId(v).filter(villageId::equals).isPresent()
+                        && !v.getBrain().hasMemoryValue(MemoryModuleType.JOB_SITE)
                         && (v.getVillagerData().getProfession() == VillagerProfession.TOOLSMITH
                             || v.getVillagerData().getProfession() == VillagerProfession.MASON)
         ).size();
-        if (tradespeople == 0) return false;
+        if (workersMissingSites == 0) return false;
 
-        int target = Math.min(3, (tradespeople + 1) / 2);
+        int target = Math.min(3, (workersMissingSites + 1) / 2);
         long built = village.buildingIds().stream()
                 .map(data::building)
                 .filter(java.util.Optional::isPresent)
