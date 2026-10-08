@@ -99,7 +99,7 @@ public final class VillageRiverNavigationService {
         data.touch();
     }
 
-    private static BlockPos dockWater(ServerLevel level, VillageSavedData data,
+    static BlockPos dockWater(ServerLevel level, VillageSavedData data,
                                       VillageSavedData.WorkSiteRecord dock) {
         String text = dock.purpose();
         if (!text.startsWith("dock:")) return null;
@@ -243,7 +243,7 @@ public final class VillageRiverNavigationService {
         return points.size() >= 2;
     }
 
-    private static boolean navigable(ServerLevel level, BlockPos pos) {
+    static boolean navigable(ServerLevel level, BlockPos pos) {
         if (!VillageSimulationScheduler.isChunkLoaded(level, pos)
                 || !level.getFluidState(pos).is(FluidTags.WATER)
                 || !level.getFluidState(pos).isSource()
