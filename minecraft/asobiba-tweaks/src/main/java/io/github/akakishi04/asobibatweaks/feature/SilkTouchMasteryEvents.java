@@ -71,7 +71,7 @@ public final class SilkTouchMasteryEvents {
                     if (broken >= maxExtra || seen.size() >= 96) break;
                     BlockPos pos = center.relative(dir);
                     if (!seen.add(pos.asLong()) || !world.hasChunkAt(pos)
-                            || pos.equals(source) || !world.getBlockState(pos).is(original)
+                            || pos.equals(source) || !world.getBlockState(pos).equals(original)
                             || !safeBatch(original)) continue;
                     ItemStack tool = player.getMainHandItem();
                     if (tool.isEmpty() || branch(tool) == null) break;
