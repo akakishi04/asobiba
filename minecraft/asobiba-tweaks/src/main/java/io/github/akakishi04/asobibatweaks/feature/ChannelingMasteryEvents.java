@@ -12,6 +12,8 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LightningBolt;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.projectile.ThrownTrident;
+import net.minecraft.world.item.enchantment.EnchantedItemInUse;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.level.block.Block;
@@ -26,9 +28,10 @@ import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
 /**
  * Channeling mastery effects for thrown tridents.
  *
- * <p>Normal vanilla thunderstorm lightning is not replaced. Extra strikes are bounded,
- * non-recursive and never load a chunk. A future enchanted-ammo pass can reuse the
- * branch semantics without assuming that a bow's weapon stack is its arrow stack.</p>
+ * <p>Chain Lightning and Rain Channeling have bounded secondary effects.
+ * Conductor redirects the one vanilla lightning spawn from Channeling, without
+ * duplicating the strike, by adjusting the SummonEntityEffect's spawn position.
+ * All searches are loaded-chunk-only and bounded.</p>
  */
 public final class ChannelingMasteryEvents {
     private static final String CHANNELING = "minecraft:channeling";
@@ -78,9 +81,9 @@ public final class ChannelingMasteryEvents {
                     }
                 }
             }
-        } else if (selected.branch == 2 && thunder) {
-            conductorStrike(level, player, hit, position, mastery);
         }
+        // Branch 2 is implemented by SummonEntityEffectConductorMixin at the
+        // actual vanilla LightningBolt spawn. It MUST NOT create another bolt.
     }
 
     private static Branch selectedBranch(ItemStack weapon) {
@@ -121,53 +124,70 @@ public final class ChannelingMasteryEvents {
         }
     }
 
-    private static void conductorStrike(ServerLevel level, ServerPlayer player, HitResult hit,
-                                        BlockPos origin, double mastery) {
-        int radius = (int)Math.round(4.0D + 4.0D * mastery);
-        BlockPos min = origin.offset(-radius, -2, -radius);
-        BlockPos max = origin.offset(radius, 2, radius);
-        if (!VillageSimulationScheduler.isAreaLoaded(level, min, max)) return;
+    /**
+     * Compute the alternate spawn location for vanilla Channeling lightning.
+     * Called ONLY by SummonEntityEffectConductorMixin when vanilla is already
+     * about to summon exactly one LightningBolt.
+     *
+     * There is no second event, new LightningBolt, or extra damage callback.
+     * The same vanilla entity is placed at the best eligible conductor.
+     */
+    public static Vec3 redirectConductorLightning(
+            ServerLevel level, EnchantedItemInUse context, Entity victim,
+            Vec3 original) {
+        if (!AsobibaTweaksConfig.GROWING_ENCHANTMENTS_ENABLED.getAsBoolean()
+                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || !(context.owner() instanceof ServerPlayer)
+                || !context.itemStack().is(Items.TRIDENT)
+                || !level.isThundering()) {
+            return original;
+        }
+
+        Branch branch = selectedBranch(context.itemStack());
+        if (branch == null || branch.branch() != 2) return original;
+
+        BlockPos impact = BlockPos.containing(original);
+        if (!level.hasChunkAt(impact) || !level.canSeeSky(impact.above())) {
+            return original;
+        }
+
+        double progress = Math.max(0.0D, Math.min(1.0D,
+                (branch.mastery() - 50) / 50.0D));
+        int radius = (int)Math.round(4.0D + 4.0D * progress);
+
+        // No force-loads or partial-area searches. Defer to vanilla if even
+        // one chunk within the small approved conductor search is unloaded.
+        BlockPos min = impact.offset(-radius, -2, -radius);
+        BlockPos max = impact.offset(radius, 2, radius);
+        if (!VillageSimulationScheduler.isAreaLoaded(level, min, max)) {
+            return original;
+        }
 
         BlockPos best = null;
         int bestRank = Integer.MAX_VALUE;
         double bestDistance = Double.POSITIVE_INFINITY;
-
-        // Only executed for a player-owned, mastery-enabled trident impact in a thunderstorm.
-        // At level 100 this scans at most 17x17x5 blocks once per thrown trident.
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dz = -radius; dz <= radius; dz++) {
                 if (dx * dx + dz * dz > radius * radius) continue;
                 for (int dy = -2; dy <= 2; dy++) {
-                    BlockPos candidate = origin.offset(dx, dy, dz);
-                    Block block = level.getBlockState(candidate).getBlock();
-                    int rank = block == Blocks.LIGHTNING_ROD ? 0 : isCopperConductor(block) ? 1 : -1;
-                    if (rank < 0 || !level.canSeeSky(candidate.above())) continue;
+                    BlockPos pos = impact.offset(dx, dy, dz);
+                    Block block = level.getBlockState(pos).getBlock();
+                    int rank = block == Blocks.LIGHTNING_ROD ? 0
+                            : isCopperConductor(block) ? 1 : -1;
+                    if (rank < 0 || !level.canSeeSky(pos.above())) continue;
 
-                    double dist = candidate.distSqr(origin);
-                    if (rank < bestRank || (rank == bestRank && dist < bestDistance)) {
+                    double distance = pos.distSqr(impact);
+                    if (rank < bestRank || (rank == bestRank && distance < bestDistance)) {
+                        best = pos.immutable();
                         bestRank = rank;
-                        bestDistance = dist;
-                        best = candidate.immutable();
+                        bestDistance = distance;
                     }
                 }
             }
         }
 
-        if (best == null || best.equals(origin)) return;
-
-        if (bestRank == 0) {
-            // A real, zero-damage strike can activate a lightning rod without adding a
-            // second combat-damage pulse to the ordinary vanilla Channeling impact.
-            LightningBolt bolt = new LightningBolt(EntityType.LIGHTNING_BOLT, level);
-            bolt.moveTo(Vec3.atBottomCenterOf(best.above()));
-            bolt.setDamage(0.0F);
-            bolt.setCause(player);
-            level.addFreshEntity(bolt);
-        } else {
-            // Copper makes an audible/visible secondary path; avoid producing free fire,
-            // item drops or an extra full lightning-damage event.
-            spawnCosmeticLightning(level, player, Vec3.atCenterOf(best));
-        }
+        if (best == null) return original;
+        return Vec3.atBottomCenterOf(best.above());
     }
 
     private static boolean isCopperConductor(Block block) {
