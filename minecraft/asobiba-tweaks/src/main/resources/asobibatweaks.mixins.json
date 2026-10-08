@@ -12,6 +12,7 @@
     "ArmorStandElytraMixin",
     "GiantCreeperMixin",
     "ExtendedEnchantableItemMixin",
+    "ArrowEnchantmentEligibilityMixin",
     "EnchantmentExtensionMixin",
     "EnchantmentMenuExtensionsMixin",
     "EnchantedWorkBlockPlacementMixin",

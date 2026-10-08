@@ -27,24 +27,39 @@ public abstract class EnchantmentExtensionMixin {
 
     @Inject(method = "isSupportedItem", at = @At("HEAD"), cancellable = true)
     private void asobibatweaks$supportExtendedItems(ItemStack stack, CallbackInfoReturnable<Boolean> cir) {
-        if (AsobibaTweaksConfig.EXTENDED_ENCHANTING_TARGETS_ENABLED.getAsBoolean()
-                && ExtendedEnchantingTargets.isExtendedTarget(stack)) {
+        if (!AsobibaTweaksConfig.EXTENDED_ENCHANTING_TARGETS_ENABLED.getAsBoolean()) {
+            return;
+        }
+        if (ExtendedEnchantingTargets.isExtendedArrowTarget(stack)) {
+            cir.setReturnValue(ExtendedEnchantingTargets.allowsArrowEnchantment(
+                    (Enchantment)(Object)this));
+        } else if (ExtendedEnchantingTargets.isExtendedBlockTarget(stack)) {
             cir.setReturnValue(true);
         }
     }
 
     @Inject(method = "isPrimaryItem", at = @At("HEAD"), cancellable = true)
     private void asobibatweaks$primaryExtendedItems(ItemStack stack, CallbackInfoReturnable<Boolean> cir) {
-        if (AsobibaTweaksConfig.EXTENDED_ENCHANTING_TARGETS_ENABLED.getAsBoolean()
-                && ExtendedEnchantingTargets.isExtendedTarget(stack)) {
+        if (!AsobibaTweaksConfig.EXTENDED_ENCHANTING_TARGETS_ENABLED.getAsBoolean()) {
+            return;
+        }
+        if (ExtendedEnchantingTargets.isExtendedArrowTarget(stack)) {
+            cir.setReturnValue(ExtendedEnchantingTargets.allowsArrowEnchantment(
+                    (Enchantment)(Object)this));
+        } else if (ExtendedEnchantingTargets.isExtendedBlockTarget(stack)) {
             cir.setReturnValue(true);
         }
     }
 
     @Inject(method = "canEnchant", at = @At("HEAD"), cancellable = true)
     private void asobibatweaks$canEnchantExtendedItems(ItemStack stack, CallbackInfoReturnable<Boolean> cir) {
-        if (AsobibaTweaksConfig.EXTENDED_ENCHANTING_TARGETS_ENABLED.getAsBoolean()
-                && ExtendedEnchantingTargets.isExtendedTarget(stack)) {
+        if (!AsobibaTweaksConfig.EXTENDED_ENCHANTING_TARGETS_ENABLED.getAsBoolean()) {
+            return;
+        }
+        if (ExtendedEnchantingTargets.isExtendedArrowTarget(stack)) {
+            cir.setReturnValue(ExtendedEnchantingTargets.allowsArrowEnchantment(
+                    (Enchantment)(Object)this));
+        } else if (ExtendedEnchantingTargets.isExtendedBlockTarget(stack)) {
             cir.setReturnValue(true);
         }
     }

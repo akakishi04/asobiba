@@ -1,10 +1,36 @@
 package io.github.akakishi04.asobibatweaks.feature;
 
+import java.util.Set;
+import net.minecraft.core.Holder;
+import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.Items;
 
 public final class ExtendedEnchantingTargets {
+    private static final Set<String> ARROW_EFFECTS = Set.of(
+            "power", "punch", "flame", "piercing", "sharpness",
+            "smite", "bane_of_arthropods", "impaling", "looting",
+            "breach", "wind_burst", "channeling", "loyalty");
+
     private ExtendedEnchantingTargets() {}
+
+    public static boolean allowsArrowEnchantment(Holder<Enchantment> enchantment) {
+        return enchantment.unwrapKey().map(key ->
+                "minecraft".equals(key.location().getNamespace())
+                        && ARROW_EFFECTS.contains(key.location().getPath())
+        ).orElse(false);
+    }
+
+    public static boolean allowsArrowEnchantment(Enchantment enchantment) {
+        if (!(enchantment.description().getContents()
+                instanceof TranslatableContents translated)) return false;
+        String prefix = "enchantment.minecraft.";
+        String name = translated.getKey();
+        return name.startsWith(prefix)
+                && ARROW_EFFECTS.contains(name.substring(prefix.length()));
+    }
+
 
     public static boolean isExtendedTarget(ItemStack stack) {
         return isExtendedBlockTarget(stack) || isExtendedArrowTarget(stack);
