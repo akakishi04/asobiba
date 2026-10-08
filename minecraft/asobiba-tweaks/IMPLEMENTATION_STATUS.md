@@ -54,7 +54,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Atlas / Map Binder | `AtlasItem`, `AtlasItemInHandRendererMixin` | Implemented |
 | Potion Mixing | `AlchemyExplosivesCraftingEvents` | Implemented |
 | TNT Design | `AlchemyExplosivesCraftingEvents`, `TntDesignSavedData`, `PrimedTntMixin` | Implemented |
-| Fletching Table Expansion | `AlchemyExplosivesCraftingEvents` | Base recipes implemented; enchanted-arrow template copying and per-batch XP transaction pending |
+| Fletching Table Expansion | `AlchemyExplosivesCraftingEvents`, `EnchantedArrowCopyService` | **V42 added**: enchanted-arrow source-template copying with precise enchantment anvil-weighted XP points, quantity selected by offhand stack size, preserved source and compatible same-type material |
 | Giant Crops | `GiantOrganismEvents` | Implemented |
 | Giant Mobs | `GiantOrganismEvents`, `GiantCreeperMixin` | Implemented |
 | Continental Oceans / Islands / Archipelagos | `ContinentalWorldgenEvents` | Implemented; default OFF |
@@ -460,3 +460,28 @@ Recipients need Mending themselves. Damaged items are prioritized over buffer fi
 From mastery 50, Mending over-repair increases 5%-20% of normal durability. The buffer persists in CUSTOM_DATA and is consumed first during the normal hurtAndBreak durability path, after base Unbreaking and mastery rolls. XP not used on any eligible damage or buffer is returned to the player through the normal experience-orb flow.
 
 Gameplay validation remains for mixed levels, transfer math, inventory X, orb sizes, durability loss, save/reload, and interactions with other mods.
+
+
+## V42 enchanted-arrow copying at the Fletching Table
+
+Holding an enchanted Arrow, Spectral Arrow or Tipped Arrow in the main hand
+and ordinary same-kind arrow materials in the offhand activates copying
+when right-clicking a Fletching Table. The offhand stack count (1-64) is
+the chosen batch size; split the offhand stack in the inventory to set
+an exact quantity. Tipped Arrows must carry identical potion contents.
+
+Per-arrow XP = sum of each enchantment level times that enchantment's
+runtime anvil cost. Total XP = per-arrow XP times batch size, without
+bulk discounts or surcharges. Player experience is checked as actual
+spendable XP points, not the misleading lifetime totalExperience counter.
+The material stack and XP are debited before emitting copied ItemStacks.
+The original enchanted source is unchanged and can be reused. Output
+inherits the exact source ItemStack components and is split according to
+the resulting stack's maximum size. Full inventory drops overflow locally.
+
+This reuses the existing Fletching Table interaction path, without
+opening an extra GUI or changing the vanilla block entity structure.
+Remaining UX work: dedicated batch-quantity picker/preview GUI and
+live XP preview. In-game tests still needed for creative, custom
+potion arrows, overlapping inventories, XP event handlers and full
+inventory overflow.

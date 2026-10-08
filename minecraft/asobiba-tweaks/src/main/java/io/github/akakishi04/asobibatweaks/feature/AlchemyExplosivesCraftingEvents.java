@@ -151,6 +151,11 @@ public final class AlchemyExplosivesCraftingEvents {
         ItemStack main = player.getMainHandItem();
         ItemStack off = player.getOffhandItem();
 
+        if (EnchantedArrowCopyService.tryCopy(player, main, off)) {
+            succeed(event);
+            return true;
+        }
+
         if (main.is(Items.ARROW) && off.is(Items.FEATHER)) {
             setArrowProfile(main, 1);
             if (!player.getAbilities().instabuild) off.shrink(1);
