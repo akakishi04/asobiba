@@ -403,8 +403,14 @@ public final class VillageSimulationEvents {
 
         List<BuildStep> plan = projectPlan(project);
         int stepIndex = project.workCursor();
-        if (project.reservations().isEmpty() && stepIndex < plan.size()) {
+        // Rebuild material reservations once for pre-v74 ongoing projects:
+        // the furniture/stair steps now consume actual crafted items
+        // (possibly made from real cargo), not one arbitrary plank.
+        if (stepIndex < plan.size()
+                && (project.reservations().isEmpty()
+                || !"real_fixtures_v1".equals(project.parameter("fixture_materials")))) {
             initializeProjectReservations(project, plan, stepIndex);
+            project.setParameter("fixture_materials", "real_fixtures_v1");
             VillageSavedData.get(level).touch();
         }
         if (stepIndex >= plan.size()) {
@@ -431,8 +437,14 @@ public final class VillageSimulationEvents {
                 return;
             }
         } else if (step.cost != null
-                && !ensureCargoItem(villager, level, step.cost, 1, CARPENTER_CARGO_SLOTS)) {
-            project.setPausedReason("missing " + step.cost.getDescription().getString());
+                && !(VillageCarpenterCraftingService.isCraftedFixture(
+                        step.cost, plankFromName(project.parameter("plank")))
+                    ? VillageCarpenterCraftingService.ensureFixture(
+                            villager, level, step.cost,
+                            plankFromName(project.parameter("plank")), CARPENTER_CARGO_SLOTS)
+                    : ensureCargoItem(villager, level, step.cost,
+                            1, CARPENTER_CARGO_SLOTS))) {
+            project.setPausedReason("missing materials for " + step.cost.getDescription().getString());
             requestMaterials(villager, step.cost.getDescription().getString().toLowerCase(Locale.ROOT));
             VillageSavedData.get(level).touch();
             return;
@@ -1007,8 +1019,8 @@ public final class VillageSimulationEvents {
             steps.add(new BuildStep(base.offset(x, 4, z), plank, plankItem));
         }
 
-        steps.add(new BuildStep(base.offset(1, 1, 2), Blocks.BARREL.defaultBlockState(), plankItem));
-        steps.add(new BuildStep(base.offset(3, 1, 2), Blocks.BARREL.defaultBlockState(), plankItem));
+        steps.add(new BuildStep(base.offset(1, 1, 2), Blocks.BARREL.defaultBlockState(), Items.BARREL));
+        steps.add(new BuildStep(base.offset(3, 1, 2), Blocks.BARREL.defaultBlockState(), Items.BARREL));
         return steps;
     }
 
@@ -1085,11 +1097,12 @@ public final class VillageSimulationEvents {
             BlockState secondBedHead = secondBedFoot.setValue(BedBlock.PART, BedPart.HEAD);
             steps.add(new BuildStep(base.offset(1, 1, 2), secondBedFoot, null));
             steps.add(new BuildStep(base.offset(1, 1, 3), secondBedHead, null));
-            steps.add(new BuildStep(base.offset(3, 1, 2), Blocks.BARREL.defaultBlockState(), plankItem));
-            steps.add(new BuildStep(base.offset(3, 1, 3), Blocks.COMPOSTER.defaultBlockState(), plankItem));
+            steps.add(new BuildStep(base.offset(3, 1, 2), Blocks.BARREL.defaultBlockState(), Items.BARREL));
+            steps.add(new BuildStep(base.offset(3, 1, 3), Blocks.COMPOSTER.defaultBlockState(), Items.COMPOSTER));
             if (Boolean.parseBoolean(project.parameter("colony"))) {
                 steps.add(new BuildStep(base.offset(1, 1, 1),
-                        AsobibaRegistries.CARPENTER_WORKBENCH.get().defaultBlockState(), plankItem));
+                        AsobibaRegistries.CARPENTER_WORKBENCH.get().defaultBlockState(),
+                        AsobibaRegistries.CARPENTER_WORKBENCH.get().asItem()));
             }
         }
 
@@ -1115,9 +1128,9 @@ public final class VillageSimulationEvents {
             // Simple internal stair spine; material cost remains real plank-equivalent.
             Block stair = stairsForPlank(plankBlock);
             BlockState stairState = stair.defaultBlockState();
-            steps.add(new BuildStep(base.offset(1, 1, 1), stairState, plankItem));
-            steps.add(new BuildStep(base.offset(2, 2, 1), stairState, plankItem));
-            steps.add(new BuildStep(base.offset(3, 3, 1), stairState, plankItem));
+            steps.add(new BuildStep(base.offset(1, 1, 1), stairState, stair.asItem()));
+            steps.add(new BuildStep(base.offset(2, 2, 1), stairState, stair.asItem()));
+            steps.add(new BuildStep(base.offset(3, 3, 1), stairState, stair.asItem()));
 
             BlockState upperBedFoot = Blocks.WHITE_BED.defaultBlockState()
                     .setValue(BedBlock.PART, BedPart.FOOT)
@@ -1153,9 +1166,9 @@ public final class VillageSimulationEvents {
                     steps.add(new BuildStep(base.offset(x, 12, z), plank, plankItem));
                 }
 
-                steps.add(new BuildStep(base.offset(1, 5, 1), stairState, plankItem));
-                steps.add(new BuildStep(base.offset(2, 6, 1), stairState, plankItem));
-                steps.add(new BuildStep(base.offset(3, 7, 1), stairState, plankItem));
+                steps.add(new BuildStep(base.offset(1, 5, 1), stairState, stair.asItem()));
+                steps.add(new BuildStep(base.offset(2, 6, 1), stairState, stair.asItem()));
+                steps.add(new BuildStep(base.offset(3, 7, 1), stairState, stair.asItem()));
 
                 BlockState thirdBedFoot = Blocks.WHITE_BED.defaultBlockState()
                         .setValue(BedBlock.PART, BedPart.FOOT)
@@ -1207,7 +1220,7 @@ public final class VillageSimulationEvents {
         };
     }
 
-    private static Block stairsForPlank(Block plank) {
+    static Block stairsForPlank(Block plank) {
         if (plank == Blocks.SPRUCE_PLANKS) return Blocks.SPRUCE_STAIRS;
         if (plank == Blocks.BIRCH_PLANKS) return Blocks.BIRCH_STAIRS;
         if (plank == Blocks.JUNGLE_PLANKS) return Blocks.JUNGLE_STAIRS;
@@ -2118,7 +2131,7 @@ public final class VillageSimulationEvents {
         return !VillagerSimData.hasWorkCargo(villager, level.registryAccess(), capacity);
     }
 
-    private static boolean ensureCargoItem(Villager villager, ServerLevel level, Item item, int count, int capacity) {
+    static boolean ensureCargoItem(Villager villager, ServerLevel level, Item item, int count, int capacity) {
         int current = VillagerSimData.workCargoCount(villager, level.registryAccess(), capacity, item);
         if (current >= count) return true;
 
@@ -2147,7 +2160,7 @@ public final class VillageSimulationEvents {
         return VillagerSimData.workCargoCount(villager, level.registryAccess(), capacity, item) >= count;
     }
 
-    private static boolean ensureCargoMatching(Villager villager, ServerLevel level,
+    static boolean ensureCargoMatching(Villager villager, ServerLevel level,
                                                java.util.function.Predicate<ItemStack> predicate,
                                                int count, int capacity) {
         int current = VillagerSimData.workCargoCountMatching(
