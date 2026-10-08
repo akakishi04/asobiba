@@ -188,16 +188,24 @@ public final class VillageBuildingService {
             if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) return false;
 
             BlockState state = level.getBlockState(pos);
-            if (state.getBlock() instanceof BedBlock
+            boolean usableAnchor = building.villageBuilt()
+                    || VillageBuildingAdoptionService.hasAdjacentStandingSpace(
+                            level, pos, min, max);
+
+            if (usableAnchor && state.getBlock() instanceof BedBlock
                     && state.hasProperty(BedBlock.PART)
                     && state.getValue(BedBlock.PART) == BedPart.FOOT) {
                 beds++;
             }
             if (state.is(BlockTags.DOORS)) doors++;
-            if (level.getBlockEntity(pos) instanceof Container) containers++;
-            if (VillageBuildingAdoptionService.isWorkstation(state)) {
+            if (usableAnchor && level.getBlockEntity(pos) instanceof Container) {
+                containers++;
+            }
+            if (usableAnchor && VillageBuildingAdoptionService.isWorkstation(state)) {
                 workstations++;
-                if (!state.is(net.minecraft.world.level.block.Blocks.BARREL)) nonStorageWorkstations++;
+                if (!state.is(net.minecraft.world.level.block.Blocks.BARREL)) {
+                    nonStorageWorkstations++;
+                }
             }
 
             if (state.isAir()
@@ -249,7 +257,9 @@ public final class VillageBuildingService {
             VillageSavedData data = VillageSavedData.get(level);
             for (BlockPos pos : BlockPos.betweenClosed(building.min(), building.max())) {
                 if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) break;
-                if (!(level.getBlockEntity(pos) instanceof Container)) continue;
+                if (!(level.getBlockEntity(pos) instanceof Container)
+                        || !VillageBuildingAdoptionService.hasAdjacentStandingSpace(
+                                level, pos, building.min(), building.max())) continue;
                 if (data.storageAt(building.villageId(), pos).isPresent()) continue;
 
                 VillageSavedData.StorageRecord storage =

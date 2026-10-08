@@ -2,6 +2,8 @@ package io.github.akakishi04.asobibatweaks.feature;
 
 import io.github.akakishi04.asobibatweaks.AsobibaRegistries;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -44,8 +46,11 @@ public final class VillageBuildingAdoptionService {
         Candidate candidate = floodCoveredInterior(level, start);
         if (candidate == null || candidate.cells < 4 || candidate.accessPoints <= 0) return;
 
-        Semantic semantic = inspectSemantics(level, candidate.min, candidate.max);
-        if (!semantic.meaningful()) return;
+        // Evaluate semantic contents only when actually adjacent to a safe,
+        // connected indoor standing cell. A bed beyond a solid wall or a
+        // private chest in the next room no longer adds fake capacity.
+        Semantic semantic = inspectSemantics(level, candidate);
+        if (semantic == null || !semantic.meaningful()) return;
 
         String classification = classify(semantic);
         int capacity = switch (classification) {
@@ -68,12 +73,10 @@ public final class VillageBuildingAdoptionService {
         // A clearly storage-dominant player building is considered intentionally integrated.
         // Personal containers in ordinary houses/mixed-use buildings are not auto-enrolled.
         if ("storage".equals(classification)) {
-            for (BlockPos pos : BlockPos.betweenClosed(candidate.min, candidate.max)) {
-                if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) break;
-                if (!(level.getBlockEntity(pos) instanceof Container)) continue;
+            for (BlockPos pos : semantic.accessibleStorage()) {
                 if (data.storageAt(villageId, pos).isPresent()) continue;
-
-                VillageSavedData.StorageRecord storage = data.createStorage(villageId, pos, "general");
+                VillageSavedData.StorageRecord storage = data.createStorage(
+                        villageId, pos, "general");
                 storage.setValidationState("valid");
                 storage.setLastValidatedGameTime(level.getGameTime());
             }
@@ -140,6 +143,7 @@ public final class VillageBuildingAdoptionService {
     private static Candidate floodCoveredInterior(ServerLevel level, BlockPos start) {
         ArrayDeque<BlockPos> queue = new ArrayDeque<>();
         Set<Long> visited = new HashSet<>();
+        Set<Long> reachable = new HashSet<>();
         queue.add(start.immutable());
 
         int minX = start.getX();
@@ -161,6 +165,7 @@ public final class VillageBuildingAdoptionService {
             }
             if (!isUsableCoveredCell(level, pos)) continue;
 
+            reachable.add(pos.asLong());
             cells++;
             minX = Math.min(minX, pos.getX());
             minY = Math.min(minY, pos.getY());
@@ -172,7 +177,11 @@ public final class VillageBuildingAdoptionService {
             for (Direction direction : Direction.Plane.HORIZONTAL) {
                 BlockPos next = pos.relative(direction);
                 if (isDoor(level.getBlockState(next))) {
-                    accessPoints++;
+                    BlockPos exterior = next.relative(direction);
+                    if (VillageSimulationScheduler.isChunkLoaded(level, exterior)
+                            && isWalkableOpenCell(level, exterior)) {
+                        accessPoints++;
+                    }
                     continue;
                 }
                 if (isUsableCoveredCell(level, next)) {
@@ -198,7 +207,7 @@ public final class VillageBuildingAdoptionService {
 
         // Keep adopted bounds compact; semantic scan does not need arbitrary roof volume.
         max = new BlockPos(maxX + 1, Math.min(max.getY(), maxY + 3), maxZ + 1);
-        return new Candidate(min, max, cells, accessPoints);
+        return new Candidate(min, max, cells, accessPoints, Set.copyOf(reachable));
     }
 
     private static boolean isUsableCoveredCell(ServerLevel level, BlockPos pos) {
@@ -225,30 +234,73 @@ public final class VillageBuildingAdoptionService {
         return false;
     }
 
-    private static Semantic inspectSemantics(ServerLevel level, BlockPos min, BlockPos max) {
+    /**
+     * Counts only functional blocks that have a usable, internally
+     * reachable place to stand beside them. Unlike the previous cuboid scan,
+     * a remote storage room or an unreachable upper-floor bed is not counted
+     * solely because it falls within a rectangular bounding box.
+     *
+     * Every probe is budgeted and deduplicated; incomplete scans do not
+     * create falsely valid building records or enroll arbitrary containers.
+     */
+    private static Semantic inspectSemantics(ServerLevel level, Candidate candidate) {
         int beds = 0;
         int containers = 0;
         int workstations = 0;
         int nonStorageWorkstations = 0;
         int bells = 0;
+        Set<Long> inspected = new HashSet<>();
+        List<BlockPos> accessibleStorage = new ArrayList<>();
 
-        for (BlockPos pos : BlockPos.betweenClosed(min, max)) {
-            if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) break;
-            BlockState state = level.getBlockState(pos);
+        for (Long packed : candidate.reachableCells()) {
+            BlockPos standing = BlockPos.of(packed);
+            for (Direction direction : Direction.Plane.HORIZONTAL) {
+                BlockPos target = standing.relative(direction);
+                if (!inside(target, candidate.min(), candidate.max())
+                        || !inspected.add(target.asLong())) continue;
+                if (!VillageSimulationScheduler.isChunkLoaded(level, target)
+                        || !VillageSimulationScheduler.tryConsumeBlockProbe(level)) {
+                    return null;
+                }
 
-            if (state.getBlock() instanceof BedBlock
-                    && state.hasProperty(BedBlock.PART)
-                    && state.getValue(BedBlock.PART) == BedPart.FOOT) {
-                beds++;
+                BlockState state = level.getBlockState(target);
+                if (state.getBlock() instanceof BedBlock
+                        && state.hasProperty(BedBlock.PART)
+                        && state.getValue(BedBlock.PART) == BedPart.FOOT) {
+                    beds++;
+                }
+                if (level.getBlockEntity(target) instanceof Container) {
+                    containers++;
+                    accessibleStorage.add(target.immutable());
+                }
+                if (isWorkstation(state)) {
+                    workstations++;
+                    if (!state.is(Blocks.BARREL)) nonStorageWorkstations++;
+                }
+                if (state.is(Blocks.BELL)) bells++;
             }
-            if (level.getBlockEntity(pos) instanceof Container) containers++;
-            if (isWorkstation(state)) {
-                workstations++;
-                if (!state.is(Blocks.BARREL)) nonStorageWorkstations++;
-            }
-            if (state.is(Blocks.BELL)) bells++;
         }
-        return new Semantic(beds, containers, workstations, nonStorageWorkstations, bells);
+        return new Semantic(beds, containers, workstations,
+                nonStorageWorkstations, bells, List.copyOf(accessibleStorage));
+    }
+
+    /**
+     * Cheap conservative revalidation rule for a previously adopted block.
+     * There must still be a safe, sheltered standing cell beside a reachable
+     * bed/workstation/storage anchor. Village-built template anchors follow
+     * their separate, authoritative planned capacity and are unchanged.
+     */
+    static boolean hasAdjacentStandingSpace(
+            ServerLevel level, BlockPos anchor, BlockPos min, BlockPos max) {
+        for (Direction direction : Direction.Plane.HORIZONTAL) {
+            BlockPos standing = anchor.relative(direction);
+            if (!inside(standing, min, max)
+                    || !VillageSimulationScheduler.isChunkLoaded(level, standing)) continue;
+            if (isWalkableOpenCell(level, standing) && !level.canSeeSky(standing)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void recordAdoptedCulture(
@@ -331,7 +383,8 @@ public final class VillageBuildingAdoptionService {
                 && pos.getZ() >= min.getZ() && pos.getZ() <= max.getZ();
     }
 
-    private record Candidate(BlockPos min, BlockPos max, int cells, int accessPoints) {
+    private record Candidate(BlockPos min, BlockPos max, int cells,
+                             int accessPoints, Set<Long> reachableCells) {
     }
 
     private record Semantic(
@@ -339,7 +392,8 @@ public final class VillageBuildingAdoptionService {
             int containers,
             int workstations,
             int nonStorageWorkstations,
-            int bells) {
+            int bells,
+            List<BlockPos> accessibleStorage) {
         private boolean meaningful() {
             return beds > 0 || containers > 0 || workstations > 0 || bells > 0;
         }
