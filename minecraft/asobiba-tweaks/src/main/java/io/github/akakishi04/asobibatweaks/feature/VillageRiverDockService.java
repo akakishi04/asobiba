@@ -262,6 +262,9 @@ public final class VillageRiverDockService {
         VillageStorageService.reconcileVillage(project.villageId(), level);
         VillageSimulationEvents.scheduleDockRoad(level, project.villageId(),
                 project.site(), project.anchor(), carpenter);
+        // After a second dock is physically completed, attempt a real water
+        // route on the separate bounded search queue, never inside the build step.
+        VillageRiverNavigationService.schedule(level, project.villageId());
     }
 
     private static Candidate findBank(ServerLevel level, BlockPos village,
