@@ -42,7 +42,7 @@ public final class VillageRiverNavigationGameTests {
     }
 
     @GameTest(template = "empty3x3x3")
-    public static void solidBarrierRejectsWaterway(GameTestHelper helper) {
+    public static void solidBarrierRequiresRealWaterDetour(GameTestHelper helper) {
         for (int x = 0; x < 3; x++) {
             for (int z = 0; z < 3; z++) {
                 helper.setBlock(new BlockPos(x, 1, z), Blocks.WATER);
@@ -51,12 +51,31 @@ public final class VillageRiverNavigationGameTests {
         for (int z = 0; z < 3; z++) {
             helper.setBlock(new BlockPos(1, 1, z), Blocks.STONE);
         }
+        // The real GameTest world can contain other loaded water outside this
+        // 3x3 structure (including neighboring tests). Such a real detour is
+        // legal; the required invariant is that no reported segment crosses
+        // an obstructed/unloaded/non-water cell.
+        var level = helper.getLevel();
         var route = VillageRiverNavigationService.findLoadedPath(
-                helper.getLevel(), helper.absolutePos(START), helper.absolutePos(END));
-        if (!route.isEmpty()) {
-            helper.fail("Solid central barrier was incorrectly treated as continuous source water",
-                    START);
-            return;
+                level, helper.absolutePos(START), helper.absolutePos(END));
+        for (int i = 1; i < route.size(); i++) {
+            BlockPos from = route.get(i - 1);
+            BlockPos to = route.get(i);
+            int dx = Integer.signum(to.getX() - from.getX());
+            int dz = Integer.signum(to.getZ() - from.getZ());
+            if (from.getY() != to.getY() || (dx != 0 && dz != 0)) {
+                helper.fail("Waterway crossed diagonally or changed elevation", START);
+                return;
+            }
+            int length = Math.abs(to.getX() - from.getX())
+                    + Math.abs(to.getZ() - from.getZ());
+            for (int step = 0; step <= length; step++) {
+                BlockPos pos = from.offset(dx * step, 0, dz * step);
+                if (!VillageRiverNavigationService.navigable(level, pos)) {
+                    helper.fail("Waterway jumped through a solid or unnavigable block", START);
+                    return;
+                }
+            }
         }
         helper.succeed();
     }
