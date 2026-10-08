@@ -75,6 +75,7 @@ public final class EnchantmentTweaksEvents {
     private static final String LOOTING = "minecraft:looting";
     private static final String SOUL_SPEED = "minecraft:soul_speed";
     private static final String SWIFT_SNEAK = "minecraft:swift_sneak";
+    private static final String RIPTIDE = "minecraft:riptide";
     private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
     private static final String PROTECTION_LAST_DAMAGE = "asobibatweaks_protection_last_damage";
     private static final String PROJECTILE_LAST_DAMAGE = "asobibatweaks_projectile_last_damage";
@@ -120,6 +121,7 @@ public final class EnchantmentTweaksEvents {
     private static final String SOUL_SPEED_PREV_DAMAGE = "asobibatweaks_soul_speed_prev_damage";
     private static final String SOUL_SPEED_ACTIVE_SPEED = "asobibatweaks_soul_speed_active_speed";
     private static final String SOUL_SPEED_LINGER_UNTIL = "asobibatweaks_soul_speed_linger_until";
+    private static final String RIPTIDE_SPIN_ACTIVE = "asobibatweaks_riptide_spin_active";
 
     @SubscribeEvent
     public void onSwiftSneakVibration(VanillaGameEvent event) {
@@ -189,6 +191,26 @@ public final class EnchantmentTweaksEvents {
             applyFortuneBranch(event, tool, player);
             markAquaSuccessfulWork(player, 30L, 5L);
         }
+    }
+
+    @SubscribeEvent
+    public void onRiptideRamDamage(LivingIncomingDamageEvent event) {
+        if (!(event.getSource().getEntity() instanceof ServerPlayer player)
+                || event.getSource().getDirectEntity() != player
+                || player.level().isClientSide()
+                || !player.isAutoSpinAttack()
+                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || event.getAmount() <= 0.0F) {
+            return;
+        }
+
+        BranchRef riptide = heldBranch(player, RIPTIDE);
+        if (riptide == null || riptide.branch() != 2) return;
+
+        double strength = branchScale(riptide.mastery(), 0.0D, 1.0D);
+        double fraction = 0.10D + 0.20D * strength;
+        double bonus = Math.min(6.0D, event.getAmount() * fraction);
+        event.setAmount((float)(event.getAmount() + bonus));
     }
 
     @SubscribeEvent
@@ -1094,6 +1116,50 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
+    public void onRiptideTick(PlayerTickEvent.Post event) {
+        if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || !(event.getEntity() instanceof ServerPlayer player)
+                || player.level().isClientSide()) {
+            return;
+        }
+
+        var persistent = player.getPersistentData();
+        if (!player.isAutoSpinAttack()) {
+            persistent.remove(RIPTIDE_SPIN_ACTIVE);
+            return;
+        }
+
+        BranchRef riptide = heldBranch(player, RIPTIDE);
+        if (riptide == null) return;
+
+        double strength = branchScale(riptide.mastery(), 0.0D, 1.0D);
+        var motion = player.getDeltaMovement();
+        double speed = motion.length();
+        if (speed <= 1.0E-4D) return;
+
+        if (riptide.branch() == 0) {
+            if (!persistent.getBoolean(RIPTIDE_SPIN_ACTIVE)) {
+                double multiplier = 1.10D + 0.15D * strength;
+                double targetSpeed = Math.min(4.5D, speed * multiplier);
+                player.setDeltaMovement(motion.scale(targetSpeed / speed));
+            }
+        } else if (riptide.branch() == 1) {
+            var look = player.getLookAngle();
+            if (look.lengthSqr() > 1.0E-6D) {
+                double steering = 0.25D + 0.50D * strength;
+                var desired = look.normalize().scale(speed);
+                var blended = motion.scale(1.0D - steering).add(desired.scale(steering));
+                double blendedSpeed = blended.length();
+                if (blendedSpeed > 1.0E-4D) {
+                    player.setDeltaMovement(blended.scale(Math.min(4.5D, speed) / blendedSpeed));
+                }
+            }
+        }
+
+        persistent.putBoolean(RIPTIDE_SPIN_ACTIVE, true);
+    }
+
+    @SubscribeEvent
     public void onSwiftSneakTick(PlayerTickEvent.Post event) {
         if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
                 || !(event.getEntity() instanceof ServerPlayer player)
@@ -1973,6 +2039,14 @@ public final class EnchantmentTweaksEvents {
         return 0;
     }
 
+    private static BranchRef heldBranch(ServerPlayer player, String enchantmentId) {
+        BranchRef main = branch(player.getMainHandItem(), enchantmentId);
+        BranchRef off = branch(player.getOffhandItem(), enchantmentId);
+        if (main == null) return off;
+        if (off == null) return main;
+        return main.mastery() >= off.mastery() ? main : off;
+    }
+
     private static BranchRef armorBranch(ServerPlayer player, String enchantmentId) {
         BranchRef best = null;
         for (ItemStack armor : player.getArmorSlots()) {
@@ -2113,7 +2187,8 @@ public final class EnchantmentTweaksEvents {
                 || AQUA_AFFINITY.equals(enchantmentId)
                 || LOOTING.equals(enchantmentId)
                 || SOUL_SPEED.equals(enchantmentId)
-                || SWIFT_SNEAK.equals(enchantmentId);
+                || SWIFT_SNEAK.equals(enchantmentId)
+                || RIPTIDE.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -2297,6 +2372,14 @@ public final class EnchantmentTweaksEvents {
                 case 0 -> "Silent Sneak";
                 case 1 -> "Combat Stance";
                 case 2 -> "Builder's Sneak";
+                default -> "Unselected";
+            };
+        }
+        if (RIPTIDE.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Long Riptide";
+                case 1 -> "Steering Riptide";
+                case 2 -> "Ramming Riptide";
                 default -> "Unselected";
             };
         }
