@@ -2,6 +2,7 @@ package io.github.akakishi04.asobibatweaks.feature;
 
 import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
 import io.github.akakishi04.asobibatweaks.mixin.AbstractArrowPierceAccessor;
+import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
@@ -105,8 +106,18 @@ public final class LoyaltyArrowEvents {
                 || !isLoyaltyArrow(arrow)) return;
 
         CompoundTag data = arrow.getPersistentData();
+        // Vanilla consumes a Piercing slot for each accepted entity impact,
+        // not just living targets that emitted positive health damage.
+        // Consult the actual ignored-ID set to cover armor stands and other
+        // nonliving entities; the stored successful-hit count remains a
+        // conservative save/reload fallback for prior living impacts.
+        IntOpenHashSet hitIds =
+                ((AbstractArrowPierceAccessor)arrow).asobibatweaks$getPiercingIgnoreEntityIds();
+        int vanillaConsumed = hitIds == null ? 0 : hitIds.size();
+        int consumed = Math.max(vanillaConsumed,
+                data.getInt(SUCCESSFUL_PIERCE_HITS));
         if (data.getBoolean(RETURN_ACTIVE)
-                || data.getInt(SUCCESSFUL_PIERCE_HITS) < arrow.getPierceLevel() + 1) {
+                || consumed < arrow.getPierceLevel() + 1) {
             return;
         }
 

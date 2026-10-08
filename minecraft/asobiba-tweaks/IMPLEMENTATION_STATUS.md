@@ -657,3 +657,8 @@ The Fletching Table now opens an in-game quantity selection screen when a player
 ## V69 initial automated NeoForge GameTest suite
 
 Introduced a dedicated `runGameTestServer` Gradle configuration, a real 3×3×3 test structure under the mod namespace, and five required GameTests exercising arrow enchant eligibility, stack-local mastery branch persistence, placed work-block SavedData roundtrip, Frost Walker state isolation, and real ticking Furnace Efficiency X recipe completion. The CI workflow now runs `gradle runGameTestServer` after the dedicated server smoke gate and treats its nonzero exit as a CI failure; GameTest logs are uploaded even on failure. The initial suite does not yet verify item-conservation scenarios G01-G20, real players, client UI, projectile collisions, multiplayer, or long-duration village activity.
+
+
+## V70 Piercing+Loyalty authoritative nonliving-hit exhaustion
+
+The terminal-entity-collision handler now checks vanilla `AbstractArrow.piercingIgnoreEntityIds` via a narrow read-only Mixin accessor. Those IDs account for accepted collisions against armor stands and other nonliving entities as well as ordinary LivingEntity hits, whereas `LivingDamageEvent.Post` tracks only successful health damage. The consumed slot count uses max(vanilla ID-set size, persistent successful Living damage count). As before, it begins Loyalty return only at the *next* terminal collision and transitions the original projectile in place, with no second recoverable arrow spawned. Cross-chunk save/reload of vanilla's ignored entity-ID set and armor-stand collision behavior still require real projectile-level GameTests.
