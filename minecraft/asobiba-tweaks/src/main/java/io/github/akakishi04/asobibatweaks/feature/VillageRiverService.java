@@ -107,6 +107,16 @@ public final class VillageRiverService {
         existing.setState("active");
         existing.setLastUsedGameTime(level.getGameTime());
         data.touch();
+
+        // The corridor is only geographic evidence. A dock becomes physical
+        // infrastructure through a separate saved Carpenter project, on a
+        // fresh route-search tick with its own finite probe budget.
+        if (AsobibaTweaksConfig.VILLAGE_RIVER_DOCKS_ENABLED.getAsBoolean()) {
+            BlockPos riverSample = start.immutable();
+            VillageSimulationScheduler.enqueueRouteSearch(
+                    level, "river_dock_plan:" + villageId,
+                    () -> VillageRiverDockService.plan(level, villageId, riverSample));
+        }
     }
 
     private static boolean overlaps(VillageSavedData.WorkSiteRecord site,
