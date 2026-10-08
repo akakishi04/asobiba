@@ -298,8 +298,12 @@ public final class VillageSimulationEvents {
                 && AsobibaTweaksConfig.VILLAGE_OUTPOSTS_ENABLED.getAsBoolean()
                 && !housingNeed && !storageNeed && population >= 6
                 && skill >= 25 && Math.floorMod((int)(now / 24000L) + villager.getId(), 4) == 3;
+        boolean craftHallNeed = !housingNeed && !storageNeed
+                && !colony && !outpost && skill >= 25
+                && VillageCraftHallPlanner.needsHall(
+                        villager, level, data, villageId.get());
 
-        if (!housingNeed && !storageNeed && !outpost && !colony) {
+        if (!housingNeed && !storageNeed && !outpost && !colony && !craftHallNeed) {
             villager.getPersistentData().putLong(NEXT_BUILD, now + 12000L);
             return;
         }
@@ -318,6 +322,7 @@ public final class VillageSimulationEvents {
         if (buildKind == 1) templateId = "storage_5x5";
         else if (colony) templateId = "house_2story_5x5";
         else if (outpost) templateId = "house_5x5";
+        else if (craftHallNeed) templateId = VillageCraftHallPlanner.TEMPLATE;
         else if (skill >= 75 && population >= 16) templateId = "house_3story_5x5";
         else if (skill >= 50 && population >= 8) templateId = "house_2story_5x5";
         else if (skill >= 25 && population >= 6) templateId = "house_gabled_5x5";
@@ -339,7 +344,8 @@ public final class VillageSimulationEvents {
         }
 
         VillageSavedData.ProjectRecord project = data.createProject(
-                villageId.get(), "building", housingNeed ? 80 : storageNeed ? 70 : 40, site);
+                villageId.get(), "building",
+                housingNeed ? 80 : storageNeed ? 70 : craftHallNeed ? 65 : 40, site);
         project.setTemplateId(templateId);
         project.setVariantSeed(villager.getUUID().getLeastSignificantBits() ^ site.asLong());
         project.setLeadCarpenterId(villager.getUUID());
@@ -987,7 +993,8 @@ public final class VillageSimulationEvents {
             if (progress < 0.78D) return "roof";
             return "interior";
         }
-        if ("house_gabled_5x5".equals(template)) {
+        if ("house_gabled_5x5".equals(template)
+                || VillageCraftHallPlanner.TEMPLATE.equals(template)) {
             if (progress < 0.58D) return "walls";
             if (progress < 0.88D) return "gabled_roof";
             return "interior";
@@ -999,7 +1006,7 @@ public final class VillageSimulationEvents {
 
     private static int templateMaxY(String templateId) {
         return switch (templateId) {
-            case "house_gabled_5x5" -> 6;
+            case "house_gabled_5x5", VillageCraftHallPlanner.TEMPLATE -> 6;
             case "house_2story_5x5" -> 8;
             case "house_3story_5x5" -> 12;
             default -> 4;
@@ -1008,7 +1015,41 @@ public final class VillageSimulationEvents {
 
     private static List<BuildStep> projectPlan(VillageSavedData.ProjectRecord project) {
         if ("storage_5x5".equals(project.templateId())) return storagePlan(project);
+        if (VillageCraftHallPlanner.TEMPLATE.equals(project.templateId()))
+            return craftHallPlan(project);
         return hutPlan(project);
+    }
+
+    /**
+     * A function-first, non-residential workshop. The simple storage shell
+     * provides a real floor/walls/entry; its barrel fixtures are replaced by
+     * toolsmith and mason workstations with a shared supply barrel.
+     * Roof shape and every block/material are deterministic across reloads.
+     */
+    private static List<BuildStep> craftHallPlan(VillageSavedData.ProjectRecord project) {
+        BlockPos base = project.site();
+        List<BuildStep> steps = storagePlan(project);
+        steps.removeIf(step -> step.state.is(Blocks.BARREL)
+                || step.pos.getY() == base.getY() + 4);
+
+        Block plank = plankFromName(project.parameter("plank"));
+        BlockState roof = plank.defaultBlockState();
+        Item material = plank.asItem();
+        for (int z = 0; z < 5; z++) {
+            steps.add(new BuildStep(base.offset(0, 4, z), roof, material));
+            steps.add(new BuildStep(base.offset(4, 4, z), roof, material));
+            steps.add(new BuildStep(base.offset(1, 5, z), roof, material));
+            steps.add(new BuildStep(base.offset(3, 5, z), roof, material));
+            steps.add(new BuildStep(base.offset(2, 6, z), roof, material));
+        }
+
+        steps.add(new BuildStep(base.offset(1, 1, 2),
+                Blocks.SMITHING_TABLE.defaultBlockState(), Items.SMITHING_TABLE));
+        steps.add(new BuildStep(base.offset(3, 1, 2),
+                Blocks.STONECUTTER.defaultBlockState(), Items.STONECUTTER));
+        steps.add(new BuildStep(base.offset(2, 1, 3),
+                Blocks.BARREL.defaultBlockState(), Items.BARREL));
+        return steps;
     }
 
     private static List<BuildStep> storagePlan(VillageSavedData.ProjectRecord project) {
@@ -2231,6 +2272,7 @@ public final class VillageSimulationEvents {
         VillageSavedData data = VillageSavedData.get(level);
         BlockPos base = project.site();
         boolean storage = "storage_5x5".equals(project.templateId());
+        boolean craftHall = VillageCraftHallPlanner.TEMPLATE.equals(project.templateId());
         boolean gabled = "house_gabled_5x5".equals(project.templateId());
         boolean twoStory = "house_2story_5x5".equals(project.templateId());
         boolean threeStory = "house_3story_5x5".equals(project.templateId());
@@ -2259,8 +2301,9 @@ public final class VillageSimulationEvents {
         VillageSavedData.BuildingRecord building = data.createBuilding(
                 ownerVillageId, base, base.offset(4, maxY, 4), true);
         building.setTemplateId(project.templateId());
-        building.setClassification(storage ? "storage" : "residential");
+        building.setClassification(storage ? "storage" : craftHall ? "workshop" : "residential");
         building.setValidatedCapacity(storage ? 0
+                : craftHall ? 2
                 : threeStory ? 6
                 : twoStory ? 4
                 : gabled ? 2
@@ -2299,8 +2342,11 @@ public final class VillageSimulationEvents {
             });
         }
 
-        if (storage) {
-            for (BlockPos storagePos : List.of(base.offset(1, 1, 2), base.offset(3, 1, 2))) {
+        if (storage || craftHall) {
+            List<BlockPos> storagePositions = storage
+                    ? List.of(base.offset(1, 1, 2), base.offset(3, 1, 2))
+                    : List.of(base.offset(2, 1, 3));
+            for (BlockPos storagePos : storagePositions) {
                 if (level.getBlockEntity(storagePos) instanceof Container
                         && data.storageAt(ownerVillageId, storagePos).isEmpty()) {
                     VillageSavedData.StorageRecord storageRecord =
