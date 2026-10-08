@@ -7,6 +7,7 @@ import io.github.akakishi04.asobibatweaks.feature.DailyFavorEvents;
 import io.github.akakishi04.asobibatweaks.feature.EnchantedWorkBlockEvents;
 import io.github.akakishi04.asobibatweaks.feature.EnchantmentTweaksEvents;
 import io.github.akakishi04.asobibatweaks.feature.EnchantedArrowImpactEvents;
+import io.github.akakishi04.asobibatweaks.feature.EmbeddedArrowRecoveryEvents;
 import io.github.akakishi04.asobibatweaks.feature.FolkloreAndMoonEvents;
 import io.github.akakishi04.asobibatweaks.feature.FrostWalkerToggleNetworking;
 import io.github.akakishi04.asobibatweaks.feature.ForestRegenerationEvents;
@@ -61,6 +62,7 @@ public final class AsobibaTweaks {
         NeoForge.EVENT_BUS.register(new FolkloreAndMoonEvents());
         NeoForge.EVENT_BUS.register(new EnchantmentTweaksEvents());
         NeoForge.EVENT_BUS.register(new EnchantedArrowImpactEvents());
+        NeoForge.EVENT_BUS.register(new EmbeddedArrowRecoveryEvents());
         NeoForge.EVENT_BUS.register(new ChannelingMasteryEvents());
         NeoForge.EVENT_BUS.register(new UnbreakingMasteryEvents());
         NeoForge.EVENT_BUS.register(new QuiverAmmoEvents());

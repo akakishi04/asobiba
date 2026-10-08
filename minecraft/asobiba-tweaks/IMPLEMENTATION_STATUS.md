@@ -508,3 +508,24 @@ Ammo-side Breach is now installed as an ARMOR reduction modifier during LivingIn
 Ammo-side Punch is applied only after a positive, successful LivingDamageEvent.Post. The arrow's real horizontal flight direction and target knockback resistance determine an additional impulse only when arrow-side Punch exceeds launcher Punch. Its level shape is I=1, II=2, III=2.5, V=3.5, X=6. Vanilla launchers continue their own knockback resolution without replacing it.
 
 Both effects are reevaluated for each successfully pierced target; in-game comparison with enhanced launchers remains necessary.
+
+
+## V46 embedded-arrow death recovery
+
+Non-piercing, normally pickup-allowed Arrow/Spectral Arrow/Tipped Arrow
+projectiles are recorded only after a positive successful living-target
+damage event. Each arrow can be recorded at most once and each victim
+holds a bounded maximum of 48 physical embedded-arrow records. The exact
+source ItemStack, including enchantments and potion components, persists
+on the victim through save/reload and drops when that target dies.
+
+Secondary Multishot projectiles and Infinity/creative nonrecoverable
+projectiles are excluded through vanilla pickup authorization. Piercing
+arrows are excluded while continuing in flight, preventing multi-target
+duplication. Loyalty's future return mechanic must take precedence and
+suppress storage/consumption of any arrow scheduled to return.
+
+Drop records are removed once after emitting the actual ItemEntity
+instances, preventing repeated death-drop callback duplication. Manual
+game tests should cover non-lethal hit then death, lethal hit, unloaded
+targets, modded pickups and multiple simultaneous arrows.
