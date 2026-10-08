@@ -119,6 +119,7 @@ The village family is resource-backed rather than free structure spawning.
 - Shepherds can generate real wool supply for construction
 - Villagers use stored wool + planks to make beds during construction
 - Roads and simple water-crossing bridges
+- Physical river landings built by Carpenters after a navigable-river survey: three plank deck sections and a recognized storage Barrel, with actual material withdrawals and no water block replacement
 - Satellite outposts and physical settler movement
 - Fire emergencies and reconstruction pressure
 - Refugee / migration behavior after severe failure
