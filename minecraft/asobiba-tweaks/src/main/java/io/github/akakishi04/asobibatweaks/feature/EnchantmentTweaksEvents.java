@@ -53,6 +53,7 @@ import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 
 public final class EnchantmentTweaksEvents {
     private static final int BRANCH_THRESHOLD = 50;
+    private static final String UNBREAKING = "minecraft:unbreaking";
     private static final String FORTUNE = "minecraft:fortune";
     private static final String SILK_TOUCH = "minecraft:silk_touch";
     private static final String RESPIRATION = "minecraft:respiration";
@@ -2166,7 +2167,8 @@ public final class EnchantmentTweaksEvents {
     }
 
     private static boolean supportsBranches(String enchantmentId) {
-        return "minecraft:efficiency".equals(enchantmentId)
+        return UNBREAKING.equals(enchantmentId)
+                || "minecraft:efficiency".equals(enchantmentId)
                 || "minecraft:feather_falling".equals(enchantmentId)
                 || FORTUNE.equals(enchantmentId)
                 || RESPIRATION.equals(enchantmentId)
@@ -2194,6 +2196,14 @@ public final class EnchantmentTweaksEvents {
     }
 
     private static String branchName(String enchantmentId, int branch) {
+        if (UNBREAKING.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Rested Reserve";
+                case 1 -> "Continuous Operation";
+                case 2 -> "Protective Mode";
+                default -> "Unselected";
+            };
+        }
         if ("minecraft:efficiency".equals(enchantmentId)) {
             return switch (branch) {
                 case 0 -> "Hard-Material Breaker";

@@ -19,6 +19,7 @@ import io.github.akakishi04.asobibatweaks.feature.PlayTimeLimitEvents;
 import io.github.akakishi04.asobibatweaks.feature.QuiverNetworking;
 import io.github.akakishi04.asobibatweaks.feature.PhysicsTransportEvents;
 import io.github.akakishi04.asobibatweaks.feature.TransportTweaksEvents;
+import io.github.akakishi04.asobibatweaks.feature.UnbreakingMasteryEvents;
 import io.github.akakishi04.asobibatweaks.feature.UniversalBondEvents;
 import io.github.akakishi04.asobibatweaks.feature.VillageDirtyEvents;
 import io.github.akakishi04.asobibatweaks.feature.VillageEconomyService;
@@ -54,6 +55,7 @@ public final class AsobibaTweaks {
         NeoForge.EVENT_BUS.register(new FolkloreAndMoonEvents());
         NeoForge.EVENT_BUS.register(new EnchantmentTweaksEvents());
         NeoForge.EVENT_BUS.register(new ChannelingMasteryEvents());
+        NeoForge.EVENT_BUS.register(new UnbreakingMasteryEvents());
         NeoForge.EVENT_BUS.register(new EnchantedWorkBlockEvents());
         NeoForge.EVENT_BUS.register(new PlayTimeLimitEvents());
         NeoForge.EVENT_BUS.register(new DailyFavorEvents());

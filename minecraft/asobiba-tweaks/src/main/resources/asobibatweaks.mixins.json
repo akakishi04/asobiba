@@ -18,7 +18,8 @@
     "FurnaceEfficiencyMixin",
     "VillagerWelfareMixin",
     "AbstractContainerMenuAccessor",
-    "InventoryMenuQuiverMixin"
+    "InventoryMenuQuiverMixin",
+    "UnbreakingDurabilityMixin"
   ],
   "injectors": {
     "defaultRequire": 1

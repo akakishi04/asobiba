@@ -39,7 +39,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Blast / Slipstream Wind Pressure | `PhysicsTransportEvents` | Implemented |
 | Wind Pressure Resistance | datapack enchantment + `PhysicsTransportEvents` | Implemented |
 | Growing Enchantments | `EnchantmentTweaksEvents`, `EnchantmentMasteryData` | Implemented |
-| Enchantment Branches | `EnchantmentTweaksEvents`, `ChannelingMasteryEvents` | **V16-V33 expanded**: explicit mastery branch selection and concrete effects for Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane / Fire Protection / Blast Protection / Fire Aspect / Thorns / Breach / Knockback / Punch / Impaling / Flame / Depth Strider / Aqua Affinity / Looting / Soul Speed / Swift Sneak / Riptide / Channeling. Mending intentionally has no selectable branch. Other accepted enchantment families and enchanted-ammo integration remain pending |
+| Enchantment Branches | `EnchantmentTweaksEvents`, `ChannelingMasteryEvents` | **V16-V34 expanded**: explicit mastery branch selection and concrete effects for Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane / Fire Protection / Blast Protection / Fire Aspect / Thorns / Breach / Knockback / Punch / Impaling / Flame / Depth Strider / Aqua Affinity / Looting / Soul Speed / Swift Sneak / Riptide / Channeling / Unbreaking. Mending intentionally has no selectable branch. Other accepted enchantment families and enchanted-ammo integration remain pending |
 | Curse Growth | `EnchantmentTweaksEvents` | Implemented |
 | Fortune / Silk Touch Switching | `EnchantmentTweaksEvents` | Implemented |
 | Mastery Inheritance | `EnchantmentTweaksEvents` | Implemented |
@@ -290,3 +290,31 @@ Depth Strider now implements all three accepted movement branches with bounded p
 - **Conductor** (branch 2): normal thunderstorm impacts search a bounded 4->8-block area and prefer valid open-sky Lightning Rod blocks ahead of supported Copper block families. A selected rod receives a separate zero-damage physical bolt for redstone interaction; selected Copper receives only a cosmetic secondary arc. This initial supplemental-conductor path does **not** suppress or relocate vanilla's ordinary impact strike, and therefore is not yet a true single-strike redirect.
 - Once a thrown Trident processes a qualifying mastery impact, it records a projectile-local deduplication marker. Channeling's extra bolts do not recursively activate this handler. Candidate checks require already-loaded chunks.
 - **Validation:** GitHub Actions Minecraft Mods CI run `37732270864`: Gradle Build PASS, Dedicated Server smoke PASS for code commit `92a6b412994c102da46895c1fbc70fedd23f8b81`. In-game verification remains needed for thunderstorm/open-sky block hits, secondary-hit damage, ordinary-rain probability, redstone/lightning-rod behavior, cancellation/inter-mod event ordering, and client rendering/audio.
+
+
+## V34 Unbreaking mastery-branch note
+
+Unbreaking's three accepted durability specializations are implemented with a
+post-vanilla ItemStack durability hook. The hook receives the result of ordinary
+Unbreaking processing and only subtracts additional durability loss; it never
+refunds damage after an item has already broken or creates a new item.
+
+- **Rested Reserve** (branch 0) stores 1-3 charges on the exact ItemStack.
+  Consecutive idle intervals of 20s at mastery 50 down to 10s at mastery 100
+  recharge that reserve. Each charge saves one actual post-vanilla durability
+  point. First use starts the idle clock, without an instant free reserve.
+- **Continuous Operation** (branch 1) builds over ten qualifying uses, giving
+  an additional 5%-15% durability-loss negation at full streak. A 3s inactivity
+  gap resets the streak. Main-hand and offhand swaps also reset it on the
+  server, preventing indefinite streak preservation when the item is put away.
+- **Protective Mode** (branch 2) activates under 15%-25% remaining durability,
+  then negates an additional 30%-60% of post-vanilla loss. The trade-off is
+  roughly 10% reduced mining speed and attack/projectile damage for active
+  held items, or 10% increased post-mitigation damage taken when any actively
+  protective armor piece is worn. The armor penalty applies at most once.
+- Branch runtime information persists on the ItemStack alongside mastery
+  data. Vanilla armor/item durability resolution is preserved, and all
+  three branches require an explicit enchanting-table choice at mastery 50.
+- Gameplay tests still needed: combat, armor damage, unusual durability costs,
+  swap/reset, item break at one remaining durability, save/reload and inter-mod
+  durability hook ordering.
