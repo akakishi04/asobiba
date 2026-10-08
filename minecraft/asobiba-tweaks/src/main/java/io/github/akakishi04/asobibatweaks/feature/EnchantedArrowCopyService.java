@@ -67,7 +67,20 @@ public final class EnchantedArrowCopyService {
         }
 
         // Both debits happen before any new arrows are materialized.
-        if (price > 0) player.giveExperiencePoints(-price);
+        if (price > 0) {
+            long before = currentXp(player);
+            player.giveExperiencePoints(-price);
+            long charged = before - currentXp(player);
+            if (charged != price) {
+                // Another mod may cancel/alter XP deduction. Fail closed:
+                // no arrow material is consumed and no output is minted.
+                if (charged > 0L && charged <= Integer.MAX_VALUE) {
+                    player.giveExperiencePoints((int)charged);
+                }
+                message(player, "Arrow copying canceled: XP charge was not completed.", false);
+                return true;
+            }
+        }
         material.shrink(count);
 
         ItemStack exemplar = template.copyWithCount(1);
@@ -75,7 +88,10 @@ public final class EnchantedArrowCopyService {
         while (left > 0) {
             int batch = Math.min(left, Math.max(1, exemplar.getMaxStackSize()));
             ItemStack cloned = exemplar.copyWithCount(batch);
-            if (!player.getInventory().add(cloned) && !cloned.isEmpty()) {
+            // Inventory.add may insert only part of the batch while still
+            // returning success. Always drop the actual uninserted remainder.
+            player.getInventory().add(cloned);
+            if (!cloned.isEmpty()) {
                 player.drop(cloned, false);
             }
             left -= batch;
