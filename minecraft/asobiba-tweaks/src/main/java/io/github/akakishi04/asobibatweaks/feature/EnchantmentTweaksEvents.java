@@ -33,9 +33,9 @@ import net.neoforged.neoforge.event.AnvilUpdateEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.living.LivingHealEvent;
-import net.neoforged.neoforge.event.entity.living.LivingHurtEvent;
+import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingKnockBackEvent;
-import net.neoforged.neoforge.event.entity.living.ShieldBlockEvent;
+import net.neoforged.neoforge.event.entity.living.LivingShieldBlockEvent;
 import net.neoforged.neoforge.event.entity.living.LivingFallEvent;
 import net.neoforged.neoforge.event.entity.player.AnvilRepairEvent;
 import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
@@ -115,7 +115,7 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
-    public void onFlameProjectileHurt(LivingHurtEvent event) {
+    public void onFlameProjectileHurt(LivingIncomingDamageEvent event) {
         if (!(event.getSource().getEntity() instanceof ServerPlayer player)
                 || event.getSource().getDirectEntity() == player
                 || player.level().isClientSide()
@@ -149,7 +149,7 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
-    public void onImpalingHurt(LivingHurtEvent event) {
+    public void onImpalingHurt(LivingIncomingDamageEvent event) {
         if (!(event.getSource().getEntity() instanceof ServerPlayer player)
                 || player.level().isClientSide()
                 || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
@@ -195,7 +195,7 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
-    public void onPunchProjectileHurt(LivingHurtEvent event) {
+    public void onPunchProjectileHurt(LivingIncomingDamageEvent event) {
         if (!(event.getSource().getEntity() instanceof ServerPlayer player)
                 || event.getSource().getDirectEntity() == player
                 || player.level().isClientSide()
@@ -218,7 +218,7 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
-    public void onKnockbackWeaponHurt(LivingHurtEvent event) {
+    public void onKnockbackWeaponHurt(LivingIncomingDamageEvent event) {
         if (!(event.getSource().getEntity() instanceof ServerPlayer player)
                 || event.getSource().getDirectEntity() != player
                 || event.getSource().is(DamageTypes.THORNS)
@@ -242,7 +242,7 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
-    public void onStoredRetaliationHurt(LivingHurtEvent event) {
+    public void onStoredRetaliationHurt(LivingIncomingDamageEvent event) {
         if (!(event.getSource().getEntity() instanceof ServerPlayer player)
                 || event.getSource().getDirectEntity() != player
                 || event.getSource().is(DamageTypes.THORNS)
@@ -270,7 +270,7 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
-    public void onSharpnessHurt(LivingHurtEvent event) {
+    public void onSharpnessHurt(LivingIncomingDamageEvent event) {
         if (!(event.getSource().getEntity() instanceof ServerPlayer player)
                 || event.getSource().getDirectEntity() != player
                 || event.getSource().is(DamageTypes.THORNS)
@@ -323,7 +323,7 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
-    public void onFireAspectHurt(LivingHurtEvent event) {
+    public void onFireAspectHurt(LivingIncomingDamageEvent event) {
         if (!(event.getSource().getEntity() instanceof ServerPlayer player)
                 || event.getSource().getDirectEntity() != player
                 || event.getSource().is(DamageTypes.THORNS)
@@ -372,7 +372,7 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
-    public void onBaneHurt(LivingHurtEvent event) {
+    public void onBaneHurt(LivingIncomingDamageEvent event) {
         if (!(event.getSource().getEntity() instanceof ServerPlayer player)
                 || event.getSource().getDirectEntity() != player
                 || player.level().isClientSide()
@@ -425,7 +425,7 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
-    public void onSmiteHurt(LivingHurtEvent event) {
+    public void onSmiteHurt(LivingIncomingDamageEvent event) {
         if (!(event.getSource().getEntity() instanceof ServerPlayer player)
                 || event.getSource().getDirectEntity() != player
                 || event.getSource().is(DamageTypes.THORNS)
@@ -460,7 +460,7 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
-    public void onHolyStrikeOutgoingDamage(LivingHurtEvent event) {
+    public void onHolyStrikeOutgoingDamage(LivingIncomingDamageEvent event) {
         if (!(event.getSource().getEntity() instanceof LivingEntity attacker)
                 || event.getAmount() <= 0.0F) {
             return;
@@ -539,8 +539,8 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
-    public void onFlashBurnDamage(LivingDamageEvent event) {
-        if (event.getAmount() <= 0.0F || !event.getSource().is(DamageTypes.ON_FIRE)) return;
+    public void onFlashBurnDamage(LivingDamageEvent.Pre event) {
+        if (event.getNewDamage() <= 0.0F || !event.getSource().is(DamageTypes.ON_FIRE)) return;
 
         var data = event.getEntity().getPersistentData();
         long now = event.getEntity().level().getGameTime();
@@ -553,14 +553,14 @@ public final class EnchantmentTweaksEvents {
                 1.60D,
                 Math.max(1.0D, data.getInt(FIRE_ASPECT_FLASH_MULTIPLIER) / 1000.0D)
         );
-        event.setAmount((float)(event.getAmount() * multiplier));
+        event.setNewDamage((float)(event.getNewDamage() * multiplier));
     }
 
     @SubscribeEvent
-    public void onAntivenomDamage(LivingDamageEvent event) {
+    public void onAntivenomDamage(LivingDamageEvent.Pre event) {
         if (!(event.getEntity() instanceof ServerPlayer player)
                 || player.level().isClientSide()
-                || event.getAmount() <= 0.0F
+                || event.getNewDamage() <= 0.0F
                 || !event.getSource().is(Tags.DamageTypes.IS_POISON)) {
             return;
         }
@@ -577,12 +577,12 @@ public final class EnchantmentTweaksEvents {
                 Math.max(0.0D, persistent.getInt(BANE_ANTIVENOM_REDUCTION) / 1000.0D)
         );
         if (reduction > 0.0D) {
-            event.setAmount((float)(event.getAmount() * (1.0D - reduction)));
+            event.setNewDamage((float)(event.getNewDamage() * (1.0D - reduction)));
         }
     }
 
     @SubscribeEvent
-    public void onBreachDamage(LivingDamageEvent event) {
+    public void onBreachDamage(LivingDamageEvent.Pre event) {
         if (!(event.getSource().getEntity() instanceof ServerPlayer player)
                 || event.getSource().getDirectEntity() != player
                 || event.getSource().is(DamageTypes.THORNS)
@@ -590,7 +590,7 @@ public final class EnchantmentTweaksEvents {
                 || player.getPersistentData().getBoolean(THORNS_RELEASE_ACTIVE)
                 || player.level().isClientSide()
                 || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
-                || event.getAmount() <= 0.0F) {
+                || event.getNewDamage() <= 0.0F) {
             return;
         }
 
@@ -602,7 +602,7 @@ public final class EnchantmentTweaksEvents {
         if (breach.branch() == 0) {
             if (event.getEntity().getArmorValue() >= 10) {
                 double extraRemainingDamage = 0.05D + 0.10D * strength;
-                event.setAmount((float)(event.getAmount() * (1.0D + extraRemainingDamage)));
+                event.setNewDamage((float)(event.getNewDamage() * (1.0D + extraRemainingDamage)));
             }
             return;
         }
@@ -619,7 +619,7 @@ public final class EnchantmentTweaksEvents {
                         0.15D,
                         Math.max(0.0D, targetData.getInt(BREACH_FRACTURE_BONUS) / 1000.0D)
                 );
-                event.setAmount((float)(event.getAmount() * (1.0D + bonus)));
+                event.setNewDamage((float)(event.getNewDamage() * (1.0D + bonus)));
             }
 
             long duration = Math.round(40.0D + 40.0D * strength);
@@ -631,9 +631,9 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
-    public void onThornsDamage(LivingDamageEvent event) {
+    public void onThornsDamage(LivingDamageEvent.Pre event) {
         if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
-                || event.getAmount() <= 0.0F) {
+                || event.getNewDamage() <= 0.0F) {
             return;
         }
 
@@ -645,9 +645,9 @@ public final class EnchantmentTweaksEvents {
 
             double strength = branchScale(thorns.mastery(), 0.0D, 1.0D);
             if (thorns.branch() == 0) {
-                event.setAmount((float)(event.getAmount() * (1.15D + 0.25D * strength)));
+                event.setNewDamage((float)(event.getNewDamage() * (1.15D + 0.25D * strength)));
             } else if (thorns.branch() == 1) {
-                event.setAmount(event.getAmount() * 0.70F);
+                event.setNewDamage(event.getNewDamage() * 0.70F);
 
                 int duration = (int)Math.round(20.0D + 30.0D * strength);
                 int amplifier = strength >= 0.67D ? 1 : 0;
@@ -678,7 +678,7 @@ public final class EnchantmentTweaksEvents {
             double fraction = 0.15D + 0.20D * strength;
             double cap = 3.0D + 5.0D * strength;
             double stored = wearer.getPersistentData().getInt(THORNS_STORED_DAMAGE) / 1000.0D;
-            stored = Math.min(cap, stored + event.getAmount() * fraction);
+            stored = Math.min(cap, stored + event.getNewDamage() * fraction);
             wearer.getPersistentData().putInt(
                     THORNS_STORED_DAMAGE,
                     (int)Math.round(stored * 1000.0D)
@@ -687,11 +687,11 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
-    public void onBlastProtectionDamage(LivingDamageEvent event) {
+    public void onBlastProtectionDamage(LivingDamageEvent.Pre event) {
         if (!(event.getEntity() instanceof ServerPlayer player)
                 || player.level().isClientSide()
                 || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
-                || event.getAmount() <= 0.0F
+                || event.getNewDamage() <= 0.0F
                 || !event.getSource().is(DamageTypeTags.IS_EXPLOSION)
                 || event.getSource().is(DamageTypeTags.BYPASSES_ENCHANTMENTS)) {
             return;
@@ -740,16 +740,16 @@ public final class EnchantmentTweaksEvents {
         }
 
         if (reduction > 0.0D) {
-            event.setAmount((float)(event.getAmount() * Math.max(0.0D, 1.0D - reduction)));
+            event.setNewDamage((float)(event.getNewDamage() * Math.max(0.0D, 1.0D - reduction)));
         }
     }
 
     @SubscribeEvent
-    public void onFireProtectionDamage(LivingDamageEvent event) {
+    public void onFireProtectionDamage(LivingDamageEvent.Pre event) {
         if (!(event.getEntity() instanceof ServerPlayer player)
                 || player.level().isClientSide()
                 || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
-                || event.getAmount() <= 0.0F
+                || event.getNewDamage() <= 0.0F
                 || !event.getSource().is(DamageTypeTags.IS_FIRE)
                 || event.getSource().is(DamageTypeTags.BYPASSES_ENCHANTMENTS)) {
             return;
@@ -771,16 +771,16 @@ public final class EnchantmentTweaksEvents {
         double maxReduction = 0.05D + 0.10D * strength;
         double reduction = maxReduction * exposureRamp;
         if (reduction > 0.0D) {
-            event.setAmount((float)(event.getAmount() * (1.0D - reduction)));
+            event.setNewDamage((float)(event.getNewDamage() * (1.0D - reduction)));
         }
     }
 
     @SubscribeEvent
-    public void onLivingDamage(LivingDamageEvent event) {
+    public void onLivingDamage(LivingDamageEvent.Pre event) {
         if (!(event.getEntity() instanceof ServerPlayer player)
                 || player.level().isClientSide()
                 || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
-                || event.getAmount() <= 0.0F
+                || event.getNewDamage() <= 0.0F
                 || event.getSource().is(DamageTypeTags.BYPASSES_ENCHANTMENTS)) {
             return;
         }
@@ -811,16 +811,16 @@ public final class EnchantmentTweaksEvents {
         }
 
         if (reduction > 0.0D) {
-            event.setAmount((float)(event.getAmount() * Math.max(0.0D, 1.0D - reduction)));
+            event.setNewDamage((float)(event.getNewDamage() * Math.max(0.0D, 1.0D - reduction)));
         }
     }
 
     @SubscribeEvent
-    public void onProjectileProtectionDamage(LivingDamageEvent event) {
+    public void onProjectileProtectionDamage(LivingDamageEvent.Pre event) {
         if (!(event.getEntity() instanceof ServerPlayer player)
                 || player.level().isClientSide()
                 || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
-                || event.getAmount() <= 0.0F
+                || event.getNewDamage() <= 0.0F
                 || !event.getSource().is(DamageTypeTags.IS_PROJECTILE)
                 || event.getSource().is(DamageTypeTags.BYPASSES_ENCHANTMENTS)) {
             return;
@@ -872,7 +872,7 @@ public final class EnchantmentTweaksEvents {
         }
 
         if (reduction > 0.0D) {
-            event.setAmount((float)(event.getAmount() * Math.max(0.0D, 1.0D - reduction)));
+            event.setNewDamage((float)(event.getNewDamage() * Math.max(0.0D, 1.0D - reduction)));
         }
     }
 
@@ -1325,12 +1325,13 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
-    public void onBreachShieldBlock(ShieldBlockEvent event) {
+    public void onBreachShieldBlock(LivingShieldBlockEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer blocker)
                 || !(event.getDamageSource().getEntity() instanceof ServerPlayer attacker)
                 || event.getDamageSource().getDirectEntity() != attacker
                 || attacker.level().isClientSide()
                 || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || !event.getBlocked()
                 || event.getBlockedDamage() <= 0.0F) {
             return;
         }
