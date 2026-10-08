@@ -39,6 +39,10 @@ public final class ObservationBuilder {
         root.add("main_hand", stack(player.getMainHandItem()));
         root.add("off_hand", stack(player.getOffhandItem()));
 
+        if (LoggerConfig.CAPTURE_SPATIAL_CONTEXT.getAsBoolean()) {
+            SpatialObservationBuilder.attach(root, player);
+        }
+
         if (LoggerConfig.CAPTURE_INVENTORY.getAsBoolean()) {
             JsonArray inventory = new JsonArray();
             for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
