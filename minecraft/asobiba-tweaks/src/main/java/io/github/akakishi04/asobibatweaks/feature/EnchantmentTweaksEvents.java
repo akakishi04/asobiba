@@ -63,6 +63,8 @@ public final class EnchantmentTweaksEvents {
     private static final String LURE = "minecraft:lure";
     private static final String LUCK_OF_THE_SEA = "minecraft:luck_of_the_sea";
     private static final String FROST_WALKER = "minecraft:frost_walker";
+    private static final String DENSITY = "minecraft:density";
+    private static final String WIND_BURST = "minecraft:wind_burst";
     private static final String FORTUNE = "minecraft:fortune";
     private static final String SILK_TOUCH = "minecraft:silk_touch";
     private static final String RESPIRATION = "minecraft:respiration";
@@ -2186,6 +2188,8 @@ public final class EnchantmentTweaksEvents {
                 || LURE.equals(enchantmentId)
                 || LUCK_OF_THE_SEA.equals(enchantmentId)
                 || FROST_WALKER.equals(enchantmentId)
+                || DENSITY.equals(enchantmentId)
+                || WIND_BURST.equals(enchantmentId)
                 || "minecraft:efficiency".equals(enchantmentId)
                 || "minecraft:feather_falling".equals(enchantmentId)
                 || FORTUNE.equals(enchantmentId)
@@ -2214,6 +2218,22 @@ public final class EnchantmentTweaksEvents {
     }
 
     private static String branchName(String enchantmentId, int branch) {
+        if (DENSITY.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Terminal Fall";
+                case 1 -> "Low-Altitude Impact";
+                case 2 -> "Shock Impact";
+                default -> "Unselected";
+            };
+        }
+        if (WIND_BURST.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Updraft";
+                case 1 -> "Blast";
+                case 2 -> "Aerial Control";
+                default -> "Unselected";
+            };
+        }
         if (FROST_WALKER.equals(enchantmentId)) {
             return switch (branch) {
                 case 0 -> "Narrow Path";

@@ -16,6 +16,7 @@ import io.github.akakishi04.asobibatweaks.feature.LuckOfSeaMasteryEvents;
 import io.github.akakishi04.asobibatweaks.feature.FolkloreAndMoonEvents;
 import io.github.akakishi04.asobibatweaks.feature.FrostWalkerToggleNetworking;
 import io.github.akakishi04.asobibatweaks.feature.FrostWalkerMasteryEvents;
+import io.github.akakishi04.asobibatweaks.feature.MaceMasteryEvents;
 import io.github.akakishi04.asobibatweaks.feature.ForestRegenerationEvents;
 import io.github.akakishi04.asobibatweaks.feature.GiantOrganismEvents;
 import io.github.akakishi04.asobibatweaks.feature.GrowingItemsEvents;
@@ -81,6 +82,7 @@ public final class AsobibaTweaks {
         NeoForge.EVENT_BUS.register(new FishingMasteryEvents());
         NeoForge.EVENT_BUS.register(new LuckOfSeaMasteryEvents());
         NeoForge.EVENT_BUS.register(new FrostWalkerMasteryEvents());
+        NeoForge.EVENT_BUS.register(new MaceMasteryEvents());
         NeoForge.EVENT_BUS.register(new MendingExtendedEvents());
         NeoForge.EVENT_BUS.register(new EnchantedWorkBlockEvents());
         NeoForge.EVENT_BUS.register(new PlayTimeLimitEvents());
