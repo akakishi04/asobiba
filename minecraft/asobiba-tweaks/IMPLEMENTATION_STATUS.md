@@ -522,8 +522,7 @@ on the victim through save/reload and drops when that target dies.
 Secondary Multishot projectiles and Infinity/creative nonrecoverable
 projectiles are excluded through vanilla pickup authorization. Piercing
 arrows are excluded while continuing in flight, preventing multi-target
-duplication. Loyalty's future return mechanic must take precedence and
-suppress storage/consumption of any arrow scheduled to return.
+duplication. V48 Loyalty projectiles are explicitly excluded from victim death-drop storage to prevent double recovery.
 
 Drop records are removed once after emitting the actual ItemEntity
 instances, preventing repeated death-drop callback duplication. Manual
@@ -536,3 +535,12 @@ targets, modded pickups and multiple simultaneous arrows.
 Power now exposes three explicit level-50 mastery specializations. Sniping uses the projectile's recorded launch origin and gives a distance-scaled +5%-20% damage bonus ramping across 16..48 blocks. Heavy Draw provides +5%-15% damage on genuine full-charge Bow shots or fully loaded Crossbow shots. Quick Shot offsets 15%-45% of a Bow's partial-draw damage penalty without allowing tap-fire to equal a full-charge arrow. Each arrow records its launch velocity exactly once on EntityJoinLevelEvent. Damage is evaluated per target, so piercing targets get appropriate effects individually. Launcher Power mastery is distinct from arrow-side Power drag preservation.
 
 Gameplay tests still required for custom-arrow launch velocity and client/other-mod event composition.
+
+
+## V48 enchanted-arrow Loyalty return (initial integration)
+
+Arrow-side Loyalty on a normally recoverable primary projectile now returns one exact arrow ItemStack toward the original player. For a non-piercing, successful living hit, vanilla removes the projectile, so a single non-colliding return projectile replaces it after damage. For Piercing arrows, ordinary multi-hit flight continues until the projectile embeds or genuinely becomes stationary. Any Loyalty arrow is excluded from V46 embedded death-drop recovery.
+
+After normal flight termination, return delay is max(1,11-level) ticks and homing movement scales 1.0x at I to 2.35x at X. Return storage prioritizes an original Quiver slot when confirmed, then another compatible Quiver slot, normal inventory and an item drop at the player if full. The confirmed source-slot token persists with a fired Bow/Crossbow arrow (including charged Crossbows), and is stripped from the ItemStack when delivered. Returning clones are never pickable and are delivered only once. Owner logout, dimension separation, or unloaded path chunks suspend homing without force-loading any world chunks.
+
+Remaining edge tests: Piercing projectiles removed by exhausted penetration count without block impact; long-distance suspended return on unloaded chunks; full-inventory and crossbow reload transactions; projectile event ordering with other mods.

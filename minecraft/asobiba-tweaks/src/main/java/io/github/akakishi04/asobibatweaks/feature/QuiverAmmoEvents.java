@@ -48,7 +48,7 @@ public final class QuiverAmmoEvents {
      * Called after vanilla useAmmo has actually split the source or made it
      * intangible. Secondary Multishot copies have no pending-source identity.
      */
-    public static void commitAmmoUse(ItemStack inputAfterVanilla) {
+    public static void commitAmmoUse(ItemStack inputAfterVanilla, ItemStack resultProjectile) {
         PendingAmmo pending = PENDING.remove(inputAfterVanilla);
         if (pending == null || !AsobibaTweaksConfig.QUIVER_ENABLED.getAsBoolean()) return;
 
@@ -64,6 +64,19 @@ public final class QuiverAmmoEvents {
         ItemStack remainder = currentlyStored.copy();
         remainder.shrink(consumed);
         QuiverData.setAmmo(pending.owner, pending.slot, remainder);
+
+        // Only a consumed primary Loyalty arrow records its original Quiver
+        // slot. The projectile's own ItemStack keeps this across Crossbow
+        // loading and save/reload; it is removed before returning as an item.
+        if (resultProjectile != null && !resultProjectile.isEmpty()
+                && EnchantedArrowImpactEvents.level(
+                        pending.original, "minecraft:loyalty") > 0) {
+            net.minecraft.world.item.component.CustomData.update(
+                    net.minecraft.core.component.DataComponents.CUSTOM_DATA,
+                    resultProjectile,
+                    tag -> tag.putInt(LoyaltyArrowEvents.QUIVER_SLOT_TAG, pending.slot)
+            );
+        }
     }
 
     /** Vanilla Infinity matches all Items.ARROW, including enchanted copies. */

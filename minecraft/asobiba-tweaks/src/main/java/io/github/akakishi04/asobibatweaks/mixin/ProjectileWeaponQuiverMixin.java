@@ -29,6 +29,6 @@ public abstract class ProjectileWeaponQuiverMixin {
     private static void asobibatweaks$commitQuiverConsumption(
             ItemStack weapon, ItemStack ammo, LivingEntity shooter,
             boolean secondary, CallbackInfoReturnable<ItemStack> cir) {
-        if (shooter.level() instanceof ServerLevel) QuiverAmmoEvents.commitAmmoUse(ammo);
+        if (shooter.level() instanceof ServerLevel) QuiverAmmoEvents.commitAmmoUse(ammo, cir.getReturnValue());
     }
 }

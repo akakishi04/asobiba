@@ -31,7 +31,8 @@ public final class EmbeddedArrowRecoveryEvents {
                 || !(event.getSource().getDirectEntity() instanceof AbstractArrow arrow)
                 || !(arrow.level() instanceof ServerLevel level)
                 || arrow.pickup != AbstractArrow.Pickup.ALLOWED
-                || arrow.getPierceLevel() > 0) {
+                || arrow.getPierceLevel() > 0
+                || LoyaltyArrowEvents.isLoyaltyArrow(arrow)) {
             return;
         }
 
