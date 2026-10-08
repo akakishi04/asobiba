@@ -39,7 +39,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Blast / Slipstream Wind Pressure | `PhysicsTransportEvents` | Implemented |
 | Wind Pressure Resistance | datapack enchantment + `PhysicsTransportEvents` | Implemented |
 | Growing Enchantments | `EnchantmentTweaksEvents`, `EnchantmentMasteryData` | Implemented |
-| Enchantment Branches | `EnchantmentTweaksEvents`, `ChannelingMasteryEvents`, `InfinityMasteryEvents`, `PowerMasteryEvents` | **V16-V60 expanded**: explicit mastery branch selection and concrete effects for Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane / Fire Protection / Blast Protection / Fire Aspect / Thorns / Breach / Knockback / Punch / Impaling / Flame / Depth Strider / Aqua Affinity / Looting / Soul Speed / Swift Sneak / Riptide / Channeling / Unbreaking / Infinity / Quick Charge. Mending intentionally has no selectable branch. Other accepted enchantment families and enchanted-ammo integration remain pending |
+| Enchantment Branches | `EnchantmentTweaksEvents`, `ChannelingMasteryEvents`, `InfinityMasteryEvents`, `PowerMasteryEvents` | **V16-V61 expanded**: explicit mastery branch selection and concrete effects for Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane / Fire Protection / Blast Protection / Fire Aspect / Thorns / Breach / Knockback / Punch / Impaling / Flame / Depth Strider / Aqua Affinity / Looting / Soul Speed / Swift Sneak / Riptide / Channeling / Unbreaking / Infinity / Quick Charge. Mending intentionally has no selectable branch. Other accepted enchantment families and enchanted-ammo integration remain pending |
 | Curse Growth | `EnchantmentTweaksEvents` | Implemented |
 | Fortune / Silk Touch Switching | `EnchantmentTweaksEvents` | Implemented |
 | Mastery Inheritance | `EnchantmentTweaksEvents` | Implemented |
@@ -613,3 +613,8 @@ At mastery 50, Frost Walker can specialize into Narrow Path, Lasting Ice or Fros
 ## V60 Mace Density and Wind Burst mastery
 
 Density adds Terminal Fall (+10%-25% to the portion of vanilla Density fall bonus beyond 8 blocks), Low-Altitude Impact (+15%-50% of the first 8 blocks' Density contribution), or Shock Impact (15%-35% of Density bonus echoed to other nearby valid targets, max 6 damage). Direct melee Mace smash is required; the secondary damage uses a short-lived recursion guard and no player targets or allies. Wind Burst branches are Updraft (+0.10..0.40 vertical velocity after success), Blast (+0.5..2 block radial impulse coverage and +10%-25% side impulse), and Aerial Control (temporary 25%-70% extra directional steering while airborne after a successful smash). All effects work post-vanilla and are bounded by mastery 50-100. Gameplay tuning and wind burst ordering are not yet tested in a real world.
+
+
+## V61 Sweeping Edge three sidegrades
+
+Wide Arc expands the real Player.attack sweep AABB by 0.10..0.30 horizontal blocks; Focused Sweep narrows its AABB by 0.25 blocks but boosts successful secondary-target sweep damage by 10%-30%. Battle Rhythm tracks the server's genuine SweepAttackEvent and successful secondary LivingDamage events; only sweeps that damaged at least two secondary targets grant a single 5%-15% bonus to the following melee attack within 40 ticks. These state markers are bounded per player and reset after each sweep, and the vanilla hit-target loop, valid alliance checks and swing damage calculations remain authoritative.

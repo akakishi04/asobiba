@@ -65,6 +65,7 @@ public final class EnchantmentTweaksEvents {
     private static final String FROST_WALKER = "minecraft:frost_walker";
     private static final String DENSITY = "minecraft:density";
     private static final String WIND_BURST = "minecraft:wind_burst";
+    private static final String SWEEPING_EDGE = "minecraft:sweeping_edge";
     private static final String FORTUNE = "minecraft:fortune";
     private static final String SILK_TOUCH = "minecraft:silk_touch";
     private static final String RESPIRATION = "minecraft:respiration";
@@ -2190,6 +2191,7 @@ public final class EnchantmentTweaksEvents {
                 || FROST_WALKER.equals(enchantmentId)
                 || DENSITY.equals(enchantmentId)
                 || WIND_BURST.equals(enchantmentId)
+                || SWEEPING_EDGE.equals(enchantmentId)
                 || "minecraft:efficiency".equals(enchantmentId)
                 || "minecraft:feather_falling".equals(enchantmentId)
                 || FORTUNE.equals(enchantmentId)
@@ -2218,6 +2220,14 @@ public final class EnchantmentTweaksEvents {
     }
 
     private static String branchName(String enchantmentId, int branch) {
+        if (SWEEPING_EDGE.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Wide Arc";
+                case 1 -> "Focused Sweep";
+                case 2 -> "Battle Rhythm";
+                default -> "Unselected";
+            };
+        }
         if (DENSITY.equals(enchantmentId)) {
             return switch (branch) {
                 case 0 -> "Terminal Fall";

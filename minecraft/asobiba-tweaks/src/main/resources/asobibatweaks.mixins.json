@@ -32,6 +32,7 @@
     "FishingHookTimingAccessor",
     "FrostWalkerLocationMixin",
     "FrostedIceLifetimeMixin",
+    "PlayerSweepingRangeMixin",
     "AbstractArrowPierceAccessor",
     "MendingXpRateMixin",
     "ExperienceOrbMendingMixin",
