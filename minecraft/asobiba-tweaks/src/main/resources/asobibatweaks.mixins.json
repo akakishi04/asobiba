@@ -25,6 +25,7 @@
     "LauncherEnchantmentCompatibilityMixin",
     "BowQuickChargeMixin",
     "FrostWalkerLocationMixin",
+    "AbstractArrowPierceAccessor",
     "MendingXpRateMixin",
     "ExperienceOrbMendingMixin"
   ],
