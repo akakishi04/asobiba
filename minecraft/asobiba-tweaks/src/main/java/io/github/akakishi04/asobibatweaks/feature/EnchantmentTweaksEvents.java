@@ -55,6 +55,7 @@ public final class EnchantmentTweaksEvents {
     private static final int BRANCH_THRESHOLD = 50;
     private static final String UNBREAKING = "minecraft:unbreaking";
     private static final String INFINITY = "minecraft:infinity";
+    private static final String POWER = "minecraft:power";
     private static final String FORTUNE = "minecraft:fortune";
     private static final String SILK_TOUCH = "minecraft:silk_touch";
     private static final String RESPIRATION = "minecraft:respiration";
@@ -2170,6 +2171,7 @@ public final class EnchantmentTweaksEvents {
     private static boolean supportsBranches(String enchantmentId) {
         return UNBREAKING.equals(enchantmentId)
                 || INFINITY.equals(enchantmentId)
+                || POWER.equals(enchantmentId)
                 || "minecraft:efficiency".equals(enchantmentId)
                 || "minecraft:feather_falling".equals(enchantmentId)
                 || FORTUNE.equals(enchantmentId)
@@ -2197,7 +2199,15 @@ public final class EnchantmentTweaksEvents {
                 || CHANNELING.equals(enchantmentId);
     }
 
-    private static String branchName(String enchantmentId, int branch) {
+    private static String branchName(String enchantmentId, int branch) { 
+        if (POWER.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Sniping";
+                case 1 -> "Heavy Draw";
+                case 2 -> "Quick Shot";
+                default -> "Unselected";
+            };
+        }
         if (INFINITY.equals(enchantmentId)) {
             return switch (branch) {
                 case 0 -> "Pure Infinity";

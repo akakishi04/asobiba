@@ -39,7 +39,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Blast / Slipstream Wind Pressure | `PhysicsTransportEvents` | Implemented |
 | Wind Pressure Resistance | datapack enchantment + `PhysicsTransportEvents` | Implemented |
 | Growing Enchantments | `EnchantmentTweaksEvents`, `EnchantmentMasteryData` | Implemented |
-| Enchantment Branches | `EnchantmentTweaksEvents`, `ChannelingMasteryEvents`, `InfinityMasteryEvents` | **V16-V35 expanded**: explicit mastery branch selection and concrete effects for Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane / Fire Protection / Blast Protection / Fire Aspect / Thorns / Breach / Knockback / Punch / Impaling / Flame / Depth Strider / Aqua Affinity / Looting / Soul Speed / Swift Sneak / Riptide / Channeling / Unbreaking / Infinity. Mending intentionally has no selectable branch. Other accepted enchantment families and enchanted-ammo integration remain pending |
+| Enchantment Branches | `EnchantmentTweaksEvents`, `ChannelingMasteryEvents`, `InfinityMasteryEvents`, `PowerMasteryEvents` | **V16-V47 expanded**: explicit mastery branch selection and concrete effects for Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane / Fire Protection / Blast Protection / Fire Aspect / Thorns / Breach / Knockback / Punch / Impaling / Flame / Depth Strider / Aqua Affinity / Looting / Soul Speed / Swift Sneak / Riptide / Channeling / Unbreaking / Infinity. Mending intentionally has no selectable branch. Other accepted enchantment families and enchanted-ammo integration remain pending |
 | Curse Growth | `EnchantmentTweaksEvents` | Implemented |
 | Fortune / Silk Touch Switching | `EnchantmentTweaksEvents` | Implemented |
 | Mastery Inheritance | `EnchantmentTweaksEvents` | Implemented |
@@ -529,3 +529,10 @@ Drop records are removed once after emitting the actual ItemEntity
 instances, preventing repeated death-drop callback duplication. Manual
 game tests should cover non-lethal hit then death, lethal hit, unloaded
 targets, modded pickups and multiple simultaneous arrows.
+
+
+## V47 Power mastery branches
+
+Power now exposes three explicit level-50 mastery specializations. Sniping uses the projectile's recorded launch origin and gives a distance-scaled +5%-20% damage bonus ramping across 16..48 blocks. Heavy Draw provides +5%-15% damage on genuine full-charge Bow shots or fully loaded Crossbow shots. Quick Shot offsets 15%-45% of a Bow's partial-draw damage penalty without allowing tap-fire to equal a full-charge arrow. Each arrow records its launch velocity exactly once on EntityJoinLevelEvent. Damage is evaluated per target, so piercing targets get appropriate effects individually. Launcher Power mastery is distinct from arrow-side Power drag preservation.
+
+Gameplay tests still required for custom-arrow launch velocity and client/other-mod event composition.
