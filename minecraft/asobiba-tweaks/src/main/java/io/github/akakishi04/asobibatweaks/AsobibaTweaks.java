@@ -18,6 +18,7 @@ import io.github.akakishi04.asobibatweaks.feature.NetherFishingEvents;
 import io.github.akakishi04.asobibatweaks.feature.OceanAndDisplayEvents;
 import io.github.akakishi04.asobibatweaks.feature.PlayTimeLimitEvents;
 import io.github.akakishi04.asobibatweaks.feature.QuiverNetworking;
+import io.github.akakishi04.asobibatweaks.feature.QuiverAmmoEvents;
 import io.github.akakishi04.asobibatweaks.feature.PhysicsTransportEvents;
 import io.github.akakishi04.asobibatweaks.feature.TransportTweaksEvents;
 import io.github.akakishi04.asobibatweaks.feature.UnbreakingMasteryEvents;
@@ -57,6 +58,7 @@ public final class AsobibaTweaks {
         NeoForge.EVENT_BUS.register(new EnchantmentTweaksEvents());
         NeoForge.EVENT_BUS.register(new ChannelingMasteryEvents());
         NeoForge.EVENT_BUS.register(new UnbreakingMasteryEvents());
+        NeoForge.EVENT_BUS.register(new QuiverAmmoEvents());
         NeoForge.EVENT_BUS.register(new InfinityMasteryEvents());
         NeoForge.EVENT_BUS.register(new EnchantedWorkBlockEvents());
         NeoForge.EVENT_BUS.register(new PlayTimeLimitEvents());

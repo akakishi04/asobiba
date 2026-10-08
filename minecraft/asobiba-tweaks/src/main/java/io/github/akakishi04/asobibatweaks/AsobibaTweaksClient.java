@@ -5,6 +5,9 @@ import io.github.akakishi04.asobibatweaks.client.NetherFishRenderer;
 import io.github.akakishi04.asobibatweaks.client.QuiverClientEvents;
 import io.github.akakishi04.asobibatweaks.client.VillageStatusScreen;
 import io.github.akakishi04.asobibatweaks.feature.VillageStatusNetworking;
+import io.github.akakishi04.asobibatweaks.feature.QuiverNetworking;
+import io.github.akakishi04.asobibatweaks.feature.QuiverData;
+import net.minecraft.client.Minecraft;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
@@ -19,6 +22,11 @@ public final class AsobibaTweaksClient {
     public AsobibaTweaksClient(IEventBus modBus, ModContainer container) {
         container.registerExtensionPoint(IConfigScreenFactory.class, ConfigurationScreen::new);
         VillageStatusNetworking.installClientHandler(VillageStatusScreen::open);
+        QuiverNetworking.installClientHandler(payload -> {
+            if (Minecraft.getInstance().player != null) {
+                QuiverData.installSnapshot(Minecraft.getInstance().player, payload.snapshot());
+            }
+        });
         modBus.addListener(this::registerRenderers);
         NeoForge.EVENT_BUS.register(new EnchantingScreenEvents());
         NeoForge.EVENT_BUS.register(new QuiverClientEvents());

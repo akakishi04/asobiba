@@ -70,9 +70,7 @@ public final class InfinityMasteryEvents {
         double growth = Math.max(0.0D, Math.min(1.0D, (selected.mastery() - 50) / 50.0D));
 
         if (selected.index() == 1) {
-            boolean ordinary = projectiles.stream().anyMatch(
-                    ammo -> ammo.is(Items.ARROW)
-                            && EnchantmentMasteryData.enchantments(ammo).isEmpty());
+            boolean ordinary = projectiles.stream().anyMatch(QuiverAmmoEvents::isOrdinaryArrow);
             if (!ordinary) {
                 RECENT_SHOTS.remove(weapon);
                 return;

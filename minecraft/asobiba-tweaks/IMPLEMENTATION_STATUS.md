@@ -39,7 +39,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Blast / Slipstream Wind Pressure | `PhysicsTransportEvents` | Implemented |
 | Wind Pressure Resistance | datapack enchantment + `PhysicsTransportEvents` | Implemented |
 | Growing Enchantments | `EnchantmentTweaksEvents`, `EnchantmentMasteryData` | Implemented |
-| Enchantment Branches | `EnchantmentTweaksEvents`, `ChannelingMasteryEvents` | **V16-V35 expanded**: explicit mastery branch selection and concrete effects for Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane / Fire Protection / Blast Protection / Fire Aspect / Thorns / Breach / Knockback / Punch / Impaling / Flame / Depth Strider / Aqua Affinity / Looting / Soul Speed / Swift Sneak / Riptide / Channeling / Unbreaking / Infinity. Mending intentionally has no selectable branch. Other accepted enchantment families and enchanted-ammo integration remain pending |
+| Enchantment Branches | `EnchantmentTweaksEvents`, `ChannelingMasteryEvents`, `InfinityMasteryEvents` | **V16-V35 expanded**: explicit mastery branch selection and concrete effects for Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane / Fire Protection / Blast Protection / Fire Aspect / Thorns / Breach / Knockback / Punch / Impaling / Flame / Depth Strider / Aqua Affinity / Looting / Soul Speed / Swift Sneak / Riptide / Channeling / Unbreaking / Infinity. Mending intentionally has no selectable branch. Other accepted enchantment families and enchanted-ammo integration remain pending |
 | Curse Growth | `EnchantmentTweaksEvents` | Implemented |
 | Fortune / Silk Touch Switching | `EnchantmentTweaksEvents` | Implemented |
 | Mastery Inheritance | `EnchantmentTweaksEvents` | Implemented |
@@ -344,3 +344,28 @@ than new permanent NBT, so cooldowns reset naturally on world reload.
 Remaining: actual Quiver ammo selection/consumption integration, common
 launcher enchantment acquisition/compatibility, enchanted arrow effects,
 in-game shot pickup/Multishot/creative verification.
+
+
+## V36 Quiver physical ammunition integration
+
+Selected Quiver ammunition now takes priority at Bow/Crossbow ammo resolution;
+an incompatible or empty selected slot falls back to vanilla offhand/inventory.
+The projectile receives a transient copy of the exact ammunition, tracked on
+the server by an identity-based pending source reference. At completion of
+vanilla ProjectileWeaponItem.useAmmo, only the actual consumed count is
+committed to the original Quiver slot, and only if that slot still holds the
+same ItemStack components. Multishot secondary projectile copies have no
+Quiver source token; Crossbows commit consumption when charged, not again
+on firing. Unspent ordinary Infinity ammunition is retained.
+
+Vanilla Infinity's Items.ARROW predicate includes custom enchanted ordinary
+Arrow stacks. The ammo-use result is now forced back to one consumed item
+for enchanted/customized Arrow ammo (excluding creative/Multishot secondary).
+Only the untouched ordinary Arrow remains free under base Infinity.
+
+New server-to-client snapshot payload syncs Quiver contents/selection after
+all server changes and during login/respawn/dimension transitions. The HUD
+can now display server-authoritative ammunition while the inventory is closed.
+
+In-game item-conservation, reload, Multishot, server/client and inter-mod
+compatibility playtests remain required.

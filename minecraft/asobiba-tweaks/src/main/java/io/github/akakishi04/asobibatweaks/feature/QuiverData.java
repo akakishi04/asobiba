@@ -7,6 +7,7 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ArrowItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -43,11 +44,13 @@ public final class QuiverData {
         if (stack == null || stack.isEmpty()) {
             root.remove(EQUIPPED);
             root.putInt(SELECTED, 0);
+            sync(player);
             return;
         }
         if (!isQuiver(stack)) return;
 
         root.put(EQUIPPED, stack.copyWithCount(1).saveOptional(player.level().registryAccess()));
+        sync(player);
     }
 
     public static int selectedSlot(Player player) {
@@ -69,7 +72,10 @@ public final class QuiverData {
         root(player, true).putInt(SELECTED, selected);
 
         ItemStack quiver = equipped(player);
-        if (quiver.isEmpty()) return;
+        if (quiver.isEmpty()) {
+            sync(player);
+            return;
+        }
 
         CustomData.update(
                 DataComponents.CUSTOM_DATA,
@@ -80,6 +86,7 @@ public final class QuiverData {
                 EQUIPPED,
                 quiver.saveOptional(player.level().registryAccess())
         );
+        sync(player);
     }
 
     public static ItemStack ammo(Player player, int slot) {
@@ -159,6 +166,24 @@ public final class QuiverData {
 
     private static int clampSlot(int slot) {
         return Math.max(0, Math.min(AMMO_SLOTS - 1, slot));
+    }
+
+    public static CompoundTag snapshot(Player player) {
+        return root(player, false).copy();
+    }
+
+    public static void installSnapshot(Player player, CompoundTag snapshot) {
+        if (snapshot == null || snapshot.isEmpty()) {
+            player.getPersistentData().remove(ROOT);
+        } else {
+            player.getPersistentData().put(ROOT, snapshot.copy());
+        }
+    }
+
+    private static void sync(Player player) {
+        if (player instanceof ServerPlayer serverPlayer) {
+            QuiverNetworking.sendSnapshot(serverPlayer);
+        }
     }
 
     private static CompoundTag root(Player player, boolean create) {

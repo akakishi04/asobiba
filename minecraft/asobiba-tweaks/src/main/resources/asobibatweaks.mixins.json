@@ -20,7 +20,8 @@
     "AbstractContainerMenuAccessor",
     "InventoryMenuQuiverMixin",
     "UnbreakingDurabilityMixin",
-    "ProjectileWeaponInfinityMixin"
+    "ProjectileWeaponInfinityMixin",
+    "ProjectileWeaponQuiverMixin"
   ],
   "injectors": {
     "defaultRequire": 1
