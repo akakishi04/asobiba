@@ -2302,13 +2302,20 @@ public final class VillageSimulationEvents {
                 ownerVillageId, base, base.offset(4, maxY, 4), true);
         building.setTemplateId(project.templateId());
         building.setClassification(storage ? "storage" : craftHall ? "workshop" : "residential");
+        int craftCapacity = craftHall
+                ? (level.getBlockState(base.offset(1, 1, 2)).is(Blocks.SMITHING_TABLE) ? 1 : 0)
+                        + (level.getBlockState(base.offset(3, 1, 2)).is(Blocks.STONECUTTER) ? 1 : 0)
+                : 0;
         building.setValidatedCapacity(storage ? 0
-                : craftHall ? 2
+                : craftHall ? craftCapacity
                 : threeStory ? 6
                 : twoStory ? 4
                 : gabled ? 2
                 : outpost ? 2 : 1);
-        building.setValidationState("valid");
+        // Do not advertise an apparently complete craft hall as a valid
+        // two-job workstation if a placement hook or outside block change
+        // removed either of its physical stations.
+        building.setValidationState(craftHall && craftCapacity < 2 ? "invalid" : "valid");
         building.setLastValidatedGameTime(level.getGameTime());
 
         String plank = project.parameter("plank");
