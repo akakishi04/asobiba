@@ -233,8 +233,11 @@ public final class VillageBuildingService {
             valid = containers > 0 && usableInteriorCells >= 1;
             building.setValidatedCapacity(0);
         } else if ("workshop".equals(classification)) {
-            valid = usableInteriorCells >= 2;
-            building.setValidatedCapacity(valid ? Math.max(1, building.validatedCapacity()) : 0);
+            // A workspace loses its functional capacity when its actual
+            // professional stations are removed. Never perpetuate an old
+            // positive capacity merely because floor/headroom still exist.
+            valid = nonStorageWorkstations > 0 && usableInteriorCells >= 2;
+            building.setValidatedCapacity(valid ? nonStorageWorkstations : 0);
         } else {
             valid = usableInteriorCells >= 1;
             building.setValidatedCapacity(0);
