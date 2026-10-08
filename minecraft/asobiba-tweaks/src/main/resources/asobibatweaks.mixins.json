@@ -31,6 +31,7 @@
     "ProjectileVolleyMasteryMixin",
     "FishingHookTimingAccessor",
     "FrostWalkerLocationMixin",
+    "FrostedIceLifetimeMixin",
     "AbstractArrowPierceAccessor",
     "MendingXpRateMixin",
     "ExperienceOrbMendingMixin",

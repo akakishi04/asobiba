@@ -62,6 +62,7 @@ public final class EnchantmentTweaksEvents {
     private static final String PIERCING = "minecraft:piercing";
     private static final String LURE = "minecraft:lure";
     private static final String LUCK_OF_THE_SEA = "minecraft:luck_of_the_sea";
+    private static final String FROST_WALKER = "minecraft:frost_walker";
     private static final String FORTUNE = "minecraft:fortune";
     private static final String SILK_TOUCH = "minecraft:silk_touch";
     private static final String RESPIRATION = "minecraft:respiration";
@@ -2184,6 +2185,7 @@ public final class EnchantmentTweaksEvents {
                 || PIERCING.equals(enchantmentId)
                 || LURE.equals(enchantmentId)
                 || LUCK_OF_THE_SEA.equals(enchantmentId)
+                || FROST_WALKER.equals(enchantmentId)
                 || "minecraft:efficiency".equals(enchantmentId)
                 || "minecraft:feather_falling".equals(enchantmentId)
                 || FORTUNE.equals(enchantmentId)
@@ -2212,6 +2214,14 @@ public final class EnchantmentTweaksEvents {
     }
 
     private static String branchName(String enchantmentId, int branch) {
+        if (FROST_WALKER.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Narrow Path";
+                case 1 -> "Lasting Ice";
+                case 2 -> "Frost";
+                default -> "Unselected";
+            };
+        }
         if (LUCK_OF_THE_SEA.equals(enchantmentId)) {
             return switch (branch) {
                 case 0 -> "Treasure Hunter";

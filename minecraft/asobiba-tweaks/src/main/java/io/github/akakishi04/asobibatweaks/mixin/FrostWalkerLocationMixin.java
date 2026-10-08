@@ -1,6 +1,7 @@
 package io.github.akakishi04.asobibatweaks.mixin;
 
 import io.github.akakishi04.asobibatweaks.feature.FrostWalkerToggle;
+import io.github.akakishi04.asobibatweaks.feature.FrostWalkerMasteryEvents;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -20,6 +21,31 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(Enchantment.class)
 public abstract class FrostWalkerLocationMixin {
+    @Inject(method = "runLocationChangedEffects", at = @At("HEAD"))
+    private void asobibatweaks$captureBeforeFreezing(
+            ServerLevel world, int level, EnchantedItemInUse context,
+            LivingEntity wearer, CallbackInfo ci) {
+        if (!(wearer instanceof ServerPlayer player)) return;
+        Enchantment walker = world.registryAccess()
+                .lookupOrThrow(Registries.ENCHANTMENT)
+                .getOrThrow(Enchantments.FROST_WALKER).value();
+        if ((Object)this == walker
+                && FrostWalkerToggle.enabled(player.getItemBySlot(EquipmentSlot.FEET))) {
+            FrostWalkerMasteryEvents.before(world, player, level);
+        }
+    }
+
+    @Inject(method = "runLocationChangedEffects", at = @At("TAIL"))
+    private void asobibatweaks$specializeNewIce(
+            ServerLevel world, int level, EnchantedItemInUse context,
+            LivingEntity wearer, CallbackInfo ci) {
+        if (!(wearer instanceof ServerPlayer player)) return;
+        Enchantment walker = world.registryAccess()
+                .lookupOrThrow(Registries.ENCHANTMENT)
+                .getOrThrow(Enchantments.FROST_WALKER).value();
+        if ((Object)this == walker) FrostWalkerMasteryEvents.after(world, player);
+    }
+
     @Inject(method = "runLocationChangedEffects", at = @At("HEAD"), cancellable = true)
     private void asobibatweaks$skipDisabledFrostWalker(
             ServerLevel world, int level, EnchantedItemInUse context,
