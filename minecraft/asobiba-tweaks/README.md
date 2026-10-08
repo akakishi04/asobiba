@@ -109,6 +109,7 @@ The village family is resource-backed rather than free structure spawning.
 
 - **Carpenter profession** and Carpenter Workbench
 - Carpenter builds structures progressively
+- Functional `craft_hall_5x5` workshop for local Toolsmith/Mason job-site shortages, with a smithing table, stonecutter and shared barrel; finished fixtures or their actual recipe ingredients are consumed
 - Construction consumes real village storage
 - Biome/local supplied materials influence architecture
 - Low-experience carpenters can make harmless cosmetic substitutions
