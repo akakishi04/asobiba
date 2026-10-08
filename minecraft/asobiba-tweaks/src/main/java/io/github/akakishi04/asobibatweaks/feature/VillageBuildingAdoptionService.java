@@ -14,6 +14,7 @@ import net.minecraft.tags.BlockTags;
 import net.minecraft.world.Container;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.BedBlock;
+import net.minecraft.world.level.block.StairBlock;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BedPart;
@@ -160,7 +161,7 @@ public final class VillageBuildingAdoptionService {
             if (!visited.add(pos.asLong())) continue;
             if (Math.abs(pos.getX() - start.getX()) > SEARCH_RADIUS
                     || Math.abs(pos.getZ() - start.getZ()) > SEARCH_RADIUS
-                    || Math.abs(pos.getY() - start.getY()) > 5) {
+                    || Math.abs(pos.getY() - start.getY()) > 10) {
                 continue;
             }
             if (!isUsableCoveredCell(level, pos)) continue;
@@ -176,6 +177,9 @@ public final class VillageBuildingAdoptionService {
 
             for (Direction direction : Direction.Plane.HORIZONTAL) {
                 BlockPos next = pos.relative(direction);
+                // Never query the state of an unloaded neighbor merely to
+                // discover a door, stair or sheltered landing.
+                if (!VillageSimulationScheduler.isChunkLoaded(level, next)) continue;
                 if (isDoor(level.getBlockState(next))) {
                     BlockPos exterior = next.relative(direction);
                     if (VillageSimulationScheduler.isChunkLoaded(level, exterior)
@@ -188,6 +192,24 @@ public final class VillageBuildingAdoptionService {
                     queue.addLast(next.immutable());
                 } else if (isWalkableOpenCell(level, next) && level.canSeeSky(next)) {
                     accessPoints++;
+                }
+
+                // Upper floors count only when a physical stair block gives
+                // a climbable step into the higher standing cell; no direct
+                // vertical teleport through empty air or closed ceilings.
+                BlockPos oneHigher = next.above();
+                if ((level.getBlockState(next).getBlock() instanceof StairBlock
+                        || level.getBlockState(pos.below()).getBlock() instanceof StairBlock)
+                        && isUsableCoveredCell(level, oneHigher)) {
+                    queue.addLast(oneHigher.immutable());
+                }
+
+                // Descend onto an actual stair tread below a higher floor.
+                BlockPos oneLower = next.below();
+                if (VillageSimulationScheduler.isChunkLoaded(level, oneLower)
+                        && level.getBlockState(oneLower.below()).getBlock() instanceof StairBlock
+                        && isUsableCoveredCell(level, oneLower)) {
+                    queue.addLast(oneLower.immutable());
                 }
             }
 
@@ -218,9 +240,11 @@ public final class VillageBuildingAdoptionService {
     }
 
     private static boolean isWalkableOpenCell(ServerLevel level, BlockPos pos) {
+        BlockState floor = level.getBlockState(pos.below());
         return level.getBlockState(pos).isAir()
                 && level.getBlockState(pos.above()).isAir()
-                && level.getBlockState(pos.below()).isFaceSturdy(level, pos.below(), Direction.UP)
+                && (floor.isFaceSturdy(level, pos.below(), Direction.UP)
+                    || floor.getBlock() instanceof StairBlock)
                 && !level.getFluidState(pos).is(net.minecraft.tags.FluidTags.LAVA);
     }
 
