@@ -20,7 +20,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(Enchantment.class)
 public abstract class FrostWalkerLocationMixin {
-    @Inject(method = "applyLocationBasedEffects", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "runLocationChangedEffects", at = @At("HEAD"), cancellable = true)
     private void asobibatweaks$skipDisabledFrostWalker(
             ServerLevel world, int level, EnchantedItemInUse context,
             LivingEntity wearer, CallbackInfo ci) {
