@@ -556,10 +556,22 @@ public final class VillageSimulationEvents {
         }
 
         int targetWidth = roadTargetWidth(project, route);
-        int workUnits = centerCount * targetWidth;
+        int deckUnits = centerCount * targetWidth;
+        boolean addBridgeParapet =
+                "parapet_v1".equals(project.parameter("bridge_details"));
+        int workUnits = deckUnits + (addBridgeParapet ? centerCount * 4 : 0);
         int cursor = project.workCursor();
         if (cursor >= workUnits) {
             completeRoadProject(level, project);
+            return;
+        }
+
+        // Finish all deck/paving units before the separate support/parapet
+        // phases. Legacy road projects without bridge_details keep their
+        // old deterministic cursors and completion semantics unchanged.
+        if (cursor >= deckUnits) {
+            buildOneBridgeParapetStep(villager, level, project, roadNodes,
+                    targetWidth, deckUnits, workUnits);
             return;
         }
 
@@ -650,6 +662,117 @@ public final class VillageSimulationEvents {
         project.setWorkCursor(cursor + 1);
         data.touch();
 
+        if (project.workCursor() >= workUnits) completeRoadProject(level, project);
+    }
+
+    /**
+     * A new-build-only bridge detail pass. Place outboard support shelves
+     * and then simple parapet blocks along the actual wet part of a road.
+     * It never narrows the usable deck or replaces a player's solid block.
+     *
+     * Four deterministic work units per centerline point:
+     * left support, left parapet, right support, right parapet.
+     * Non-water portions are skipped without allocating items.
+     */
+    private static void buildOneBridgeParapetStep(
+            Villager carpenter,
+            ServerLevel level,
+            VillageSavedData.ProjectRecord project,
+            List<BlockPos> nodes,
+            int width,
+            int deckUnits,
+            int workUnits) {
+        VillageSavedData data = VillageSavedData.get(level);
+        int cursor = project.workCursor();
+        int extra = cursor - deckUnits;
+        int pointIndex = extra / 4;
+        int side = (extra % 4) / 2;
+        boolean railing = (extra & 1) != 0;
+
+        RoadPoint point = roadPointAt(nodes, pointIndex);
+        int centerX = point.pos().getX();
+        int centerZ = point.pos().getZ();
+        BlockPos column = new BlockPos(centerX, level.getMinBuildHeight(), centerZ);
+        if (!VillageSimulationScheduler.isChunkLoaded(level, column)) {
+            project.setPausedReason("bridge center chunk unloaded");
+            project.setPhase("paused");
+            data.touch();
+            return;
+        }
+        if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) return;
+
+        int surfaceY = level.getHeight(
+                Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, centerX, centerZ) - 1;
+        BlockPos center = new BlockPos(centerX, surfaceY, centerZ);
+        BlockState deck = level.getBlockState(center);
+        boolean builtBridge = (deck.is(BlockTags.PLANKS)
+                || deck.is(Blocks.COBBLESTONE) || deck.is(Blocks.STONE)
+                || deck.is(Blocks.STONE_BRICKS))
+                && level.getFluidState(center.below()).is(FluidTags.WATER);
+
+        if (!builtBridge) {
+            // Nothing physically in the water at this centerline point:
+            // no rail, and no phantom construction resources.
+            project.setWorkCursor(cursor + 1);
+            project.setPausedReason("");
+            data.touch();
+            if (project.workCursor() >= workUnits) completeRoadProject(level, project);
+            return;
+        }
+
+        int leftEdge = width == 3 ? -2 : -1;
+        int rightEdge = width == 2 ? 2 : width == 3 ? 2 : 1;
+        int offset = side == 0 ? leftEdge : rightEdge;
+        int sideX = centerX;
+        int sideZ = centerZ;
+        if (Math.abs(point.dx()) >= Math.abs(point.dz())) sideZ += offset;
+        else sideX += offset;
+
+        BlockPos support = new BlockPos(sideX, surfaceY, sideZ);
+        BlockPos placed = railing ? support.above() : support;
+        if (!VillageSimulationScheduler.isChunkLoaded(level, placed)) {
+            project.setPausedReason("bridge side chunk unloaded");
+            project.setPhase("paused");
+            data.touch();
+            return;
+        }
+
+        String quality = roadTargetQuality(project,
+                routeForProject(data, project));
+        Block block = "stone".equals(quality)
+                ? Blocks.COBBLESTONE : plankFromName(project.parameter("plank"));
+        Item material = block.asItem();
+        BlockState target = level.getBlockState(placed);
+
+        if (railing && !level.getBlockState(support).is(block)) {
+            // A different mod/player edited the outboard support. Do not
+            // levitate or overwrite their structure with an automatic rail.
+            project.setPhase("bridge_parapet");
+        } else if (target.is(block)) {
+            project.setPhase(railing ? "bridge_parapet" : "bridge_support");
+        } else if (!target.canBeReplaced()) {
+            // Preserve solid player-built blocks and bridge attachments.
+            project.setPhase("bridge_obstructed");
+        } else {
+            if (carpenter.distanceToSqr(center.getCenter()) > 7.0D * 7.0D) {
+                project.setPausedReason("worker travelling to bridge");
+                project.setPhase(railing ? "bridge_parapet" : "bridge_support");
+                carpenter.getNavigation().moveTo(center.getX() + 0.5D,
+                        center.getY() + 1.0D, center.getZ() + 0.5D, 0.75D);
+                data.touch();
+                return;
+            }
+
+            // The item physically travels through standard Carpenter cargo.
+            // A support shelf and a parapet block each cost one real item.
+            if (!placeRoadMaterial(carpenter, level, project, placed,
+                    material, block, "missing bridge parapet materials")) return;
+            project.setPhase(railing ? "bridge_parapet" : "bridge_support");
+        }
+
+        project.setPausedReason("");
+        project.setWorkCursor(cursor + 1);
+        data.touch();
         if (project.workCursor() >= workUnits) completeRoadProject(level, project);
     }
 
@@ -2211,6 +2334,7 @@ public final class VillageSimulationEvents {
         road.setParameter("plank", plankName(chooseBuildingPlanks(level, from, carpenter)));
         road.setParameter("road_quality", route.quality());
         road.setParameter("road_width", Integer.toString(route.width()));
+        road.setParameter("bridge_details", "parapet_v1");
         road.setPhase("route_planning");
         road.setPausedReason("planning terrain route");
         road.setWorkCursor(0);

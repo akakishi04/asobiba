@@ -798,6 +798,7 @@ public final class VillageOutpostLifecycleService {
         project.setParameter("route_id", route.id().toString());
         project.setParameter("road_quality", desiredQuality);
         project.setParameter("road_width", Integer.toString(desiredWidth));
+        project.setParameter("bridge_details", "parapet_v1");
         project.setParameter("plank", dominantPlankName(village));
         project.setPhase("planned");
         project.setWorkCursor(0);
