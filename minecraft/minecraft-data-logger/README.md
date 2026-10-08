@@ -41,11 +41,19 @@ Writes go through a bounded background JSONL writer so normal server ticks do no
 
 The logger observes gameplay and does not alter gameplay. Dataset transformations (SFT pairs, action prediction windows, reward labels, etc.) should be downstream tooling, not baked into the capture format.
 
+## Optional server-side spatial context
+
+Enable `logger.captureSpatialContext` to add to each observation:
+
+- `crosshair_target`: nearest non-occluded entity or solid-block hit within 6 blocks, or `miss` / `unloaded`; includes identity, position and distance for valid hits
+- `nearby_entities`: closest 16 living entities within 12 blocks, with entity type, UUID, world position, health and distance
+- `nearby_entity_count` and `nearby_entities_truncated` identify omitted neighbors
+
+The ray refuses to access unloaded chunks. Spatial capture is **OFF by default** because repeated world queries can add overhead in dense areas. This is server-authoritative observation data, not the local client's rendered pixel frame.
+
 ## Planned
 
 - explicit `observation_before -> action -> result -> observation_after` linkage
 - client frame capture (OFF / interval / action-boundary)
-- server-side ray/crosshair target snapshot
-- nearby entity summary
 - schema migration/version validation
 - session manifest with mod list and hashes
