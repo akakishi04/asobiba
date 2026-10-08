@@ -1,5 +1,6 @@
 package io.github.akakishi04.asobibatweaks.mixin;
 
+import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.entity.LivingEntity;
@@ -12,42 +13,39 @@ import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.Level;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.ModifyArg;
 
-/**
- * Applies the accepted Bow-side Quick Charge effect at the exact vanilla
- * power calculation point. This does not alter projectile base damage and
- * does not affect Crossbow charging (which has its own native behavior).
- */
+/** Bow Quick Charge: scale the actual bow power curve without changing base damage. */
 @Mixin(BowItem.class)
 public abstract class BowQuickChargeMixin {
-    @ModifyArg(
+    @ModifyExpressionValue(
             method = "releaseUsing",
             at = @At(
                     value = "INVOKE",
                     target = "Lnet/minecraft/world/item/BowItem;getPowerForTime(I)F"
-            ),
-            index = 0
+            )
     )
-    private int asobibatweaks$adjustBowDrawForQuickCharge(
-            int vanillaTicks, ItemStack bow, Level level, LivingEntity shooter, int timeLeft) {
-        if (!bow.is(Items.BOW) || vanillaTicks <= 0) return vanillaTicks;
+    private float asobibatweaks$quickChargeBowPower(
+            float originalPower, ItemStack bow, Level level,
+            LivingEntity shooter, int timeLeft) {
+        if (!bow.is(Items.BOW) || originalPower >= 1.0F || originalPower <= 0.0F) {
+            return originalPower;
+        }
 
         Holder<Enchantment> quickCharge = level.registryAccess()
                 .lookupOrThrow(Registries.ENCHANTMENT)
                 .getOrThrow(Enchantments.QUICK_CHARGE);
         int enchantLevel = Math.min(10,
                 Math.max(0, EnchantmentHelper.getItemEnchantmentLevel(quickCharge, bow)));
-        if (enchantLevel == 0) return vanillaTicks;
+        if (enchantLevel == 0) return originalPower;
 
-        // I-V: -8% each; VI-X: -4% each. Level X: 40% of vanilla.
-        double remainingFraction = Math.max(
-                0.40D,
+        // Vanilla bow power: (x*x + 2*x) / 3, x=drawTicks/20.
+        // The inverse preserves the draw value after NeoForge's ArrowLoose hook
+        // without requiring a local-variable capture from that patched method.
+        double normalizedDraw = Math.sqrt(1.0D + 3.0D * originalPower) - 1.0D;
+        double remainingFraction = Math.max(0.40D,
                 1.0D - 0.08D * Math.min(enchantLevel, 5)
-                        - 0.04D * Math.max(0, enchantLevel - 5)
-        );
-        // getPowerForTime reaches a full charge at a virtual 20 ticks.
-        // Bound the input to prevent overflow at extreme out-of-band levels.
-        return Math.min(20, (int)Math.round(vanillaTicks / remainingFraction));
+                        - 0.04D * Math.max(0, enchantLevel - 5));
+        double accelerated = normalizedDraw / remainingFraction;
+        return (float)Math.min(1.0D, (accelerated * accelerated + 2.0D * accelerated) / 3.0D);
     }
 }
