@@ -47,6 +47,7 @@ import io.github.akakishi04.asobibatweaks.feature.VillageOutpostLifecycleService
 import io.github.akakishi04.asobibatweaks.feature.VillagePopulationMigrationService;
 import io.github.akakishi04.asobibatweaks.feature.VillagePublicWorksService;
 import io.github.akakishi04.asobibatweaks.feature.VillageRiverService;
+import io.github.akakishi04.asobibatweaks.feature.VillageRiverCargoService;
 import io.github.akakishi04.asobibatweaks.feature.VillageSimulationEvents;
 import io.github.akakishi04.asobibatweaks.feature.VillageSimulationScheduler;
 import io.github.akakishi04.asobibatweaks.feature.VillageStatusEvents;
@@ -113,6 +114,7 @@ public final class AsobibaTweaks {
         NeoForge.EVENT_BUS.register(new VillageOutpostLifecycleService());
         NeoForge.EVENT_BUS.register(new VillagePublicWorksService());
         NeoForge.EVENT_BUS.register(new VillageRiverService());
+        NeoForge.EVENT_BUS.register(new VillageRiverCargoService());
         NeoForge.EVENT_BUS.register(new VillageSimulationScheduler());
         NeoForge.EVENT_BUS.register(new VillageDirtyEvents());
         NeoForge.EVENT_BUS.register(new VillageStatusEvents());
