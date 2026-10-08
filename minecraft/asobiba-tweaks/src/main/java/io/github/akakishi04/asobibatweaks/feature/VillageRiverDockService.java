@@ -50,6 +50,7 @@ public final class VillageRiverDockService {
         if (village == null || !"active".equals(village.lifecycle())) return;
 
         int existingDocks = 0;
+        java.util.List<VillageSavedData.WorkSiteRecord> activeDocks = new java.util.ArrayList<>();
         for (VillageSavedData.WorkSiteRecord site : data.workSitesForVillage(villageId)) {
             if (!"river_dock".equals(site.type())) continue;
             existingDocks++;
@@ -57,19 +58,49 @@ public final class VillageRiverDockService {
             Boolean physicallyValid = verifyPhysicalDock(level, data, site);
             // Unknown (unloaded) is NOT damage. Do not force-load or rebuild
             // the same facility merely because its chunk is absent.
-            if (physicallyValid == null || physicallyValid) return;
-            site.setState("inactive");
-            data.touch();
+            if (physicallyValid == null || physicallyValid) {
+                activeDocks.add(site);
+            } else {
+                site.setState("inactive");
+                data.touch();
+            }
         }
-        // Do not fill the world with failed docks if local river geometry later changes.
-        if (existingDocks >= 2) return;
+        // Limit historical dock records, not just today's active docks.
+        if (existingDocks >= 2 || activeDocks.size() >= 2) return;
         if (data.activeProjectsForVillage(villageId).stream()
                 .anyMatch(p -> TEMPLATE.equals(p.templateId()))) return;
 
+        BlockPos survey = riverSample;
+        BlockPos requestedBankCenter = village.center();
+        boolean remoteDockChosen = false;
+        if (activeDocks.size() == 1) {
+            // The second landing is justified only by a real established
+            // remote work site, not by a second random pier beside the first.
+            VillageSavedData.WorkSiteRecord parentDock = activeDocks.getFirst();
+            BlockPos firstDockCenter = center(parentDock);
+            for (VillageSavedData.WorkSiteRecord outpost : data.workSitesForVillage(villageId)) {
+                if (!"outpost".equals(outpost.type())
+                        || !("active".equals(outpost.state())
+                                || "establishing".equals(outpost.state()))) continue;
+                BlockPos outpostCenter = center(outpost);
+                if (outpostCenter.distManhattan(firstDockCenter) < 48
+                        || outpostCenter.distManhattan(firstDockCenter) > 192) continue;
+                BlockPos waterNearOutpost = findWaterNear(level, outpostCenter, 24);
+                if (waterNearOutpost == null) continue;
+                survey = waterNearOutpost;
+                requestedBankCenter = outpostCenter;
+                remoteDockChosen = true;
+                break;
+            }
+            if (!remoteDockChosen) return;
+        }
+
         Block chosenPlank = availablePlank(village);
         if (chosenPlank == null) return;
-        Candidate bank = findBank(level, village.center(), riverSample);
+        Candidate bank = findBank(level, requestedBankCenter, survey);
         if (bank == null) return;
+        if (!activeDocks.isEmpty()
+                && bank.ground().distManhattan(center(activeDocks.getFirst())) < 40) return;
 
         VillageSavedData.ProjectRecord project = data.createProject(
                 villageId, "building", 55, bank.ground());
@@ -265,6 +296,37 @@ public final class VillageRiverDockService {
         // After a second dock is physically completed, attempt a real water
         // route on the separate bounded search queue, never inside the build step.
         VillageRiverNavigationService.schedule(level, project.villageId());
+    }
+
+    private static BlockPos center(VillageSavedData.WorkSiteRecord site) {
+        return new BlockPos((site.min().getX() + site.max().getX()) / 2,
+                (site.min().getY() + site.max().getY()) / 2,
+                (site.min().getZ() + site.max().getZ()) / 2);
+    }
+
+    /**
+     * Sample an Outpost's already-loaded neighborhood for existing source water.
+     * Sampling is modest and bounded; this never generates a distant shoreline.
+     */
+    private static BlockPos findWaterNear(ServerLevel level, BlockPos center, int maxRadius) {
+        for (int radius = 0; radius <= maxRadius; radius += 4) {
+            for (int dx = -radius; dx <= radius; dx += 4) {
+                for (int dz = -radius; dz <= radius; dz += 4) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) continue;
+                    int x = center.getX() + dx;
+                    int z = center.getZ() + dz;
+                    BlockPos column = new BlockPos(x, level.getMinBuildHeight(), z);
+                    if (!VillageSimulationScheduler.isChunkLoaded(level, column)) continue;
+                    if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) return null;
+                    int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
+                    BlockPos water = new BlockPos(x, y, z);
+                    if (waterAt(level, water) && level.getBlockState(water.above()).isAir()) {
+                        return water;
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     private static Candidate findBank(ServerLevel level, BlockPos village,
