@@ -267,8 +267,11 @@ public final class VillageRiverDockService {
                     int x = waterSample.getX() + dx;
                     int z = waterSample.getZ() + dz;
                     BlockPos column = new BlockPos(x, level.getMinBuildHeight(), z);
-                    if (!VillageSimulationScheduler.isChunkLoaded(level, column)
-                            || !VillageSimulationScheduler.tryConsumeBlockProbe(level)) return null;
+                    if (!VillageSimulationScheduler.isChunkLoaded(level, column)) {
+                        // Another shore may still be visible without any chunk load.
+                        continue;
+                    }
+                    if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) return null;
                     int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
                     BlockPos land = new BlockPos(x, y, z);
                     if (land.distManhattan(village) > 96 || !stableNaturalGround(level, land)) continue;
