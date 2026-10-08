@@ -2395,6 +2395,28 @@ public final class VillageSimulationEvents {
         data.touch();
     }
 
+    /**
+     * Public-works link from an actual completed river dock's LAND access cell
+     * toward its parent settlement. Never connect across missing loaded chunks
+     * or manufacture a road merely because geography was surveyed.
+     */
+    static void scheduleDockRoad(ServerLevel level, java.util.UUID villageId,
+                                 BlockPos land, BlockPos villageCenter, Villager carpenter) {
+        if (!AsobibaTweaksConfig.VILLAGE_ROADS_ENABLED.getAsBoolean()
+                || villageCenter == null
+                || land.distManhattan(villageCenter) > 96
+                || !VillageSimulationScheduler.isAreaLoaded(
+                        level,
+                        new BlockPos(Math.min(land.getX(), villageCenter.getX()) - 24,
+                                level.getMinBuildHeight(),
+                                Math.min(land.getZ(), villageCenter.getZ()) - 24),
+                        new BlockPos(Math.max(land.getX(), villageCenter.getX()) + 24,
+                                level.getMinBuildHeight(),
+                                Math.max(land.getZ(), villageCenter.getZ()) + 24))) return;
+
+        createRoadDemandProject(level, villageId, land, villageCenter, carpenter);
+    }
+
     private static void createRoadDemandProject(ServerLevel level, java.util.UUID villageId,
                                                 BlockPos from, BlockPos to, Villager carpenter) {
         if (from.distManhattan(to) < 6) return;
