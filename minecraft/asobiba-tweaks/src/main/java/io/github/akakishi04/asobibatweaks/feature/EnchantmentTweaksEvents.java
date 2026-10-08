@@ -134,7 +134,7 @@ public final class EnchantmentTweaksEvents {
         if (looting.branch() == 0) {
             applyHerdHunter(event, player, strength);
         } else if (looting.branch() == 1) {
-            applyStripping(event, player, strength);
+            applyStripping(event, player, strength, enchantmentLevel(weapon, LOOTING));
         } else if (looting.branch() == 2) {
             applyBigGameHunter(event, player, strength);
         }
@@ -1567,22 +1567,21 @@ public final class EnchantmentTweaksEvents {
         }
     }
 
-    private static void applyStripping(LivingDropsEvent event, ServerPlayer player, double strength) {
-        if (!(event.getEntity() instanceof Mob mob)
-                || !(player.level() instanceof net.minecraft.server.level.ServerLevel level)) {
-            return;
-        }
+    private static void applyStripping(LivingDropsEvent event, ServerPlayer player,
+                                       double strength, int lootingLevel) {
+        if (!(event.getEntity() instanceof Mob mob)) return;
 
         double multiplier = 1.25D + 0.50D * strength;
-        float vanillaAdjustedChance = EnchantmentHelper.getEquipmentDropChance(
-                level,
-                player,
-                event.getSource(),
-                Mob.DEFAULT_EQUIPMENT_DROP_CHANCE
+        // Vanilla's ordinary mob-equipment drop chance starts at 8.5%; Looting historically
+        // contributes about one percentage point per level. Use that post-Looting baseline
+        // only to calculate the branch's incremental second-chance roll.
+        double vanillaAdjustedChance = Math.min(
+                1.0D,
+                Mob.DEFAULT_EQUIPMENT_DROP_CHANCE + Math.max(0, lootingLevel) * 0.01D
         );
 
         double targetChance = Math.min(1.0D, vanillaAdjustedChance * multiplier);
-        double incrementalChance = vanillaAdjustedChance >= 1.0F
+        double incrementalChance = vanillaAdjustedChance >= 1.0D
                 ? 0.0D
                 : Math.max(0.0D, (targetChance - vanillaAdjustedChance) / (1.0D - vanillaAdjustedChance));
 
