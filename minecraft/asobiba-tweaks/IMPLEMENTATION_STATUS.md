@@ -47,6 +47,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Direct Enchanting-Table Reroll | `EnchantmentMenuExtensionsMixin`, `EnchantingScreenEvents` | Implemented; XP cost |
 | Enchantment-Pool Bookshelves | Arcane Bookshelf + `EnchantmentMenuExtensionsMixin` | Implemented |
 | Extended Enchanting Targets | `ExtendedEnchantableItemMixin`, `EnchantmentExtensionMixin`, `EnchantedWorkBlockSavedData` | Implemented; effects intentionally deferred |
+| Arrow-side Looting | `ArrowLootingSupport`, vanilla Looting count/chance mixins | **V51 added**: real loot-table count/rare-roll Looting checks use max(launcher/equipped, arrow), never additive or post-death item duplication; gameplay verification pending |
 | Raised Enchantment Level Caps | `EnchantmentExtensionMixin` | Implemented; configurable cap; explicit higher-level Mending enabled in V40 |
 | High-level Mending and Over-Repair | `MendingExtendedEvents`, `ExperienceOrbMendingMixin` | **V41 implemented initial transaction**: IV-IX equipped distribution, X inventory routing, per-level efficiency loss, 5%-20% mastery durability reserve and UI tooltip; in-game tests required |
 | Frost Walker runtime toggle | `FrostWalkerToggle`, `FrostWalkerLocationMixin`, client gesture + network payload | **V39 implemented**: sneak+jump toggles the boots' stored ON/OFF state; disabled mode suppresses new ice creation, preserving enchantment and damage protection |
@@ -558,3 +559,10 @@ Real-world multiplayer and large-distance return testing remains required, espec
 The arrow now persists a bounded count of successful living-target Piercing damage events. Reaching the entity penetration budget does not itself begin Loyalty homing. On the next entity collision, where vanilla would otherwise discard the exhausted Piercing projectile without another valid hit, the pre-impact handler cancels only that terminal collision and transitions the SAME projectile into a non-pickup Loyalty return. This avoids creating a second item or returning prematurely. Collision handling runs at high event priority so invalid extra hits do not trigger impact-only enchant effects.
 
 Remaining corner case: armor stands and nonliving entities can consume vanilla piercing-hit slots without producing LivingDamageEvent.Post; exact nonliving hit accounting needs an additional authoritative pierce-set hook before it can be considered fully covered. Target-block terminal flight and multi-hit living targets are handled by the current paths.
+
+
+## V51 real loot-table Arrow Looting
+
+Two precise loot-table interceptors augment the attacker-equipment Looting level when the death DamageSource's direct entity is an AbstractArrow and the attacking entity is that physical arrow's owner. Both the enchanted count-increase function and the random-chance-with-enchanted-bonus condition use the higher of the vanilla equipped/launcher level and the source ammo level. Non-Looting enchantments in those same generic loot functions are unchanged. The vanilla roll, cap, rarity, loot conditions and mob drop table remain authoritative. The subsystem creates zero independent drop Items, so it cannot accidentally double-roll drops after a death event. Disabling extended enchanting targets restores vanilla behavior.
+
+Remaining: in-game loot-table execution tests (including Bow/Crossbow, large Looting levels, spectral/tipped ammo, mob equipment drops and modded loot tables). No runtime claim is made until real shots are tested.

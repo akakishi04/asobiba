@@ -27,7 +27,10 @@
     "FrostWalkerLocationMixin",
     "AbstractArrowPierceAccessor",
     "MendingXpRateMixin",
-    "ExperienceOrbMendingMixin"
+    "ExperienceOrbMendingMixin",
+    "LootingCountEnchantmentAccessor",
+    "EnchantedCountIncreaseArrowLootingMixin",
+    "RandomChanceArrowLootingMixin"
   ],
   "injectors": {
     "defaultRequire": 1
