@@ -116,6 +116,9 @@ public final class VillageRiverService {
             VillageSimulationScheduler.enqueueRouteSearch(
                     level, "river_dock_plan:" + villageId,
                     () -> VillageRiverDockService.plan(level, villageId, riverSample));
+            // Check existing dock-to-dock waterway routes again after natural
+            // river surveying; changed water or unloaded spans suspend traffic.
+            VillageRiverNavigationService.schedule(level, villageId);
         }
     }
 
