@@ -54,6 +54,7 @@ import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 public final class EnchantmentTweaksEvents {
     private static final int BRANCH_THRESHOLD = 50;
     private static final String UNBREAKING = "minecraft:unbreaking";
+    private static final String INFINITY = "minecraft:infinity";
     private static final String FORTUNE = "minecraft:fortune";
     private static final String SILK_TOUCH = "minecraft:silk_touch";
     private static final String RESPIRATION = "minecraft:respiration";
@@ -2168,6 +2169,7 @@ public final class EnchantmentTweaksEvents {
 
     private static boolean supportsBranches(String enchantmentId) {
         return UNBREAKING.equals(enchantmentId)
+                || INFINITY.equals(enchantmentId)
                 || "minecraft:efficiency".equals(enchantmentId)
                 || "minecraft:feather_falling".equals(enchantmentId)
                 || FORTUNE.equals(enchantmentId)
@@ -2196,6 +2198,14 @@ public final class EnchantmentTweaksEvents {
     }
 
     private static String branchName(String enchantmentId, int branch) {
+        if (INFINITY.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Pure Infinity";
+                case 1 -> "Rapid Infinity";
+                case 2 -> "Precision Infinity";
+                default -> "Unselected";
+            };
+        }
         if (UNBREAKING.equals(enchantmentId)) {
             return switch (branch) {
                 case 0 -> "Rested Reserve";

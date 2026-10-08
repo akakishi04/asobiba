@@ -11,6 +11,7 @@ import io.github.akakishi04.asobibatweaks.feature.ForestRegenerationEvents;
 import io.github.akakishi04.asobibatweaks.feature.GiantOrganismEvents;
 import io.github.akakishi04.asobibatweaks.feature.GrowingItemsEvents;
 import io.github.akakishi04.asobibatweaks.feature.InteractionTweaksEvents;
+import io.github.akakishi04.asobibatweaks.feature.InfinityMasteryEvents;
 import io.github.akakishi04.asobibatweaks.feature.MobBuildingUseEvents;
 import io.github.akakishi04.asobibatweaks.feature.MovementTweaksEvents;
 import io.github.akakishi04.asobibatweaks.feature.NetherFishingEvents;
@@ -56,6 +57,7 @@ public final class AsobibaTweaks {
         NeoForge.EVENT_BUS.register(new EnchantmentTweaksEvents());
         NeoForge.EVENT_BUS.register(new ChannelingMasteryEvents());
         NeoForge.EVENT_BUS.register(new UnbreakingMasteryEvents());
+        NeoForge.EVENT_BUS.register(new InfinityMasteryEvents());
         NeoForge.EVENT_BUS.register(new EnchantedWorkBlockEvents());
         NeoForge.EVENT_BUS.register(new PlayTimeLimitEvents());
         NeoForge.EVENT_BUS.register(new DailyFavorEvents());

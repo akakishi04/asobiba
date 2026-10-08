@@ -19,7 +19,8 @@
     "VillagerWelfareMixin",
     "AbstractContainerMenuAccessor",
     "InventoryMenuQuiverMixin",
-    "UnbreakingDurabilityMixin"
+    "UnbreakingDurabilityMixin",
+    "ProjectileWeaponInfinityMixin"
   ],
   "injectors": {
     "defaultRequire": 1

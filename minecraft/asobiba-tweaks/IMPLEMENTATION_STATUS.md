@@ -39,7 +39,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Blast / Slipstream Wind Pressure | `PhysicsTransportEvents` | Implemented |
 | Wind Pressure Resistance | datapack enchantment + `PhysicsTransportEvents` | Implemented |
 | Growing Enchantments | `EnchantmentTweaksEvents`, `EnchantmentMasteryData` | Implemented |
-| Enchantment Branches | `EnchantmentTweaksEvents`, `ChannelingMasteryEvents` | **V16-V34 expanded**: explicit mastery branch selection and concrete effects for Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane / Fire Protection / Blast Protection / Fire Aspect / Thorns / Breach / Knockback / Punch / Impaling / Flame / Depth Strider / Aqua Affinity / Looting / Soul Speed / Swift Sneak / Riptide / Channeling / Unbreaking. Mending intentionally has no selectable branch. Other accepted enchantment families and enchanted-ammo integration remain pending |
+| Enchantment Branches | `EnchantmentTweaksEvents`, `ChannelingMasteryEvents` | **V16-V35 expanded**: explicit mastery branch selection and concrete effects for Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane / Fire Protection / Blast Protection / Fire Aspect / Thorns / Breach / Knockback / Punch / Impaling / Flame / Depth Strider / Aqua Affinity / Looting / Soul Speed / Swift Sneak / Riptide / Channeling / Unbreaking / Infinity. Mending intentionally has no selectable branch. Other accepted enchantment families and enchanted-ammo integration remain pending |
 | Curse Growth | `EnchantmentTweaksEvents` | Implemented |
 | Fortune / Silk Touch Switching | `EnchantmentTweaksEvents` | Implemented |
 | Mastery Inheritance | `EnchantmentTweaksEvents` | Implemented |
@@ -318,3 +318,29 @@ refunds damage after an item has already broken or creates a new item.
 - Gameplay tests still needed: combat, armor damage, unusual durability costs,
   swap/reset, item break at one remaining durability, save/reload and inter-mod
   durability hook ordering.
+
+
+## V35 Infinity mastery-branch note
+
+Infinity now supports the accepted three explicit level-50 mastery choices.
+Pure Infinity provides a normal, unenchanted, non-recoverable seed Arrow only
+when no projectile source exists. Vanilla ammo-use and creative/intangible
+rules still determine whether that ordinary arrow is consumed.
+
+Rapid Infinity tracks actual shot groups (not Multishot projectile instances)
+on the server. A streak of three ordinary-arrow shots within four seconds
+gives a mastery-scaled 10%-35% chance to avoid that group's durability cost.
+Other ammunition does not increase this streak.
+
+Precision Infinity applies a mastery-scaled 15%-50% durability-avoidance
+chance to a fully drawn Bow shot (velocity >= 2.85) or an ordinary fully
+charged Crossbow shot. The same per-group roll applies to the durability
+points spent in that group. Ordinary low-charge bow shots receive no bonus.
+
+The durability effect composes after vanilla Unbreaking and the V34 mastery
+hook. Runtime streak/shot markers are weak, server-only references rather
+than new permanent NBT, so cooldowns reset naturally on world reload.
+
+Remaining: actual Quiver ammo selection/consumption integration, common
+launcher enchantment acquisition/compatibility, enchanted arrow effects,
+in-game shot pickup/Multishot/creative verification.
