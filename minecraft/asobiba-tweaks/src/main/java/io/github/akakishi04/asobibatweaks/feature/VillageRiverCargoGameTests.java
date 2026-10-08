@@ -126,7 +126,7 @@ public final class VillageRiverCargoGameTests {
         // Positioning at a destination is done ONLY in this focused unloading
         // test. The other required test must traverse every water block.
         boat.setPos(test.end().getX() + 0.5D,
-                test.end().getY() + 0.3D, test.end().getZ() + 0.5D);
+                test.end().getY() + 1.0D, test.end().getZ() + 0.5D);
         boat.getPersistentData().putString("asobibatweaks_river_cargo_phase", "unload");
         VillageRiverCargoService.tickCarrier(boat, test.level());
         if (count(boat, Items.COBBLESTONE) != 16
