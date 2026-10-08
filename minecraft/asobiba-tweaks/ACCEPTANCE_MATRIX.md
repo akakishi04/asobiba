@@ -50,7 +50,7 @@ These can silently lose or duplicate real items, XP, villagers or world blocks.
 actual in-game samples.
 
 **Gameplay harness needed**: controlled GameTests and a repeatable long-run
-dedicated-server simulation. Eight required NeoForge GameTests now run in CI, but the rest of the player,
+dedicated-server simulation. Ten required NeoForge GameTests are now registered to run in CI, but the rest of the player,
 projectile, village, save/reload and multiplayer scenarios still require
 real in-game testing. CI must not be used to label the project feature-complete.
 
@@ -80,5 +80,7 @@ The required tests registered in `AsobibaGameplayTests` and `AsobibaFletchingTra
 | GT06 | paidCopyConservesArrowCountComponentsAndXp | Server transaction preserves exact inventory arrows, enchant/mastery components, source count and charged XP |
 | GT07 | invalidMaterialsNeverSpendXpOrEmitArrows | Wrong arrow type and already-enchanted source materials reject without mutation |
 | GT08 | invalidQuantityAndInsufficientXpAreAtomic | Insufficient XP and out-of-range batch requests never consume or generate resources |
+| GT09 | connectedSourceWaterIsNavigable | Three-block loaded source-water corridor produces a direct two-endpoint route |
+| GT10 | solidBarrierRejectsWaterway | Solid blocks across a two-wide water corridor cannot be navigated through |
 
 These are **not** substitutes for the remaining G01-G20 full player/projectile/village/save-reload scenarios. All of those remain pending until implemented as equally meaningful GameTests.
