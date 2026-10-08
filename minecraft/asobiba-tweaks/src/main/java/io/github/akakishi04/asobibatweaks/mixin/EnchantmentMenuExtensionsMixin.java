@@ -9,6 +9,11 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.stream.Stream;
 import io.github.akakishi04.asobibatweaks.feature.ExtendedEnchantingTargets;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.stats.Stats;
+import net.minecraft.advancements.CriteriaTriggers;
+import net.minecraft.world.item.Items;
+import net.neoforged.neoforge.common.CommonHooks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderSet;
@@ -79,6 +84,80 @@ public abstract class EnchantmentMenuExtensionsMixin {
         this.access.execute((level, pos) ->
                 level.playSound(null, pos, SoundEvents.ENCHANTMENT_TABLE_USE,
                         SoundSource.BLOCKS, 0.75F, 1.15F + level.random.nextFloat() * 0.1F));
+        cir.setReturnValue(true);
+    }
+
+    /**
+     * A normal enchanting slot accepts a maximum of one item; shift-click
+     * already splits the player's arrow stack. If another inventory/menu
+     * integration introduces multiple arrows into that input anyway,
+     * isolate ONE physical arrow for the complete vanilla-priced operation.
+     *
+     * The unenchanted remainder is returned to the player inventory, with
+     * overflow dropped in the world rather than lost or multiplied.
+     */
+    @Inject(method = "clickMenuButton", at = @At("HEAD"), cancellable = true)
+    private void asobibatweaks$enchantExactlyOneArrow(
+            Player actor, int buttonId, CallbackInfoReturnable<Boolean> cir) {
+        if (!(actor instanceof ServerPlayer player)
+                || !AsobibaTweaksConfig.EXTENDED_ENCHANTING_TARGETS_ENABLED.getAsBoolean()
+                || buttonId < 0 || buttonId > 2) {
+            return;
+        }
+
+        ItemStack original = this.enchantSlots.getItem(0);
+        if (!ExtendedEnchantingTargets.isExtendedArrowTarget(original)
+                || original.getCount() <= 1) {
+            return;
+        }
+
+        int lapisCost = buttonId + 1;
+        int offerCost = ((EnchantmentMenu)(Object)this).costs[buttonId];
+        ItemStack lapis = this.enchantSlots.getItem(1);
+        boolean creative = player.hasInfiniteMaterials();
+        if (!original.isEnchantable() || offerCost <= 0
+                || (!creative && (lapis.getCount() < lapisCost
+                        || player.experienceLevel < lapisCost
+                        || player.experienceLevel < offerCost))) {
+            cir.setReturnValue(false);
+            return;
+        }
+
+        this.access.execute((level, pos) -> {
+            List<EnchantmentInstance> selections =
+                    this.asobibatweaks$invokeGetEnchantmentList(
+                            level.registryAccess(), original, buttonId, offerCost);
+            if (selections.isEmpty()) return;
+
+            // Copy the exact source components before consuming either cost.
+            // Original is never enchanted, so all other arrows remain ordinary.
+            ItemStack single = original.copyWithCount(1);
+            ItemStack remaining = original.copyWithCount(original.getCount() - 1);
+
+            player.onEnchantmentPerformed(single, lapisCost);
+            single = single.getItem().applyEnchantments(single, selections);
+            if (single.isEmpty() || single.getCount() != 1) {
+                // Fail closed for nonstandard Item implementations.
+                return;
+            }
+            this.enchantSlots.setItem(0, single);
+            CommonHooks.onPlayerEnchantItem(player, single, selections);
+            lapis.consume(lapisCost, player);
+            if (lapis.isEmpty()) this.enchantSlots.setItem(1, ItemStack.EMPTY);
+
+            // If inventory fills partway, its mutated remainder is authoritative.
+            player.getInventory().add(remaining);
+            if (!remaining.isEmpty()) player.drop(remaining, false);
+
+            player.awardStat(Stats.ENCHANT_ITEM);
+            CriteriaTriggers.ENCHANTED_ITEM.trigger(player, single, lapisCost);
+            this.enchantSlots.setChanged();
+            this.enchantmentSeed.set(player.getEnchantmentSeed());
+            ((EnchantmentMenu)(Object)this).slotsChanged(this.enchantSlots);
+            level.playSound(null, pos, SoundEvents.ENCHANTMENT_TABLE_USE,
+                    SoundSource.BLOCKS, 1.0F,
+                    level.random.nextFloat() * 0.1F + 0.9F);
+        });
         cir.setReturnValue(true);
     }
 
