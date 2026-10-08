@@ -20,7 +20,9 @@ import net.minecraft.tags.EntityTypeTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageTypes;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -33,6 +35,7 @@ import net.neoforged.neoforge.common.Tags;
 import net.neoforged.neoforge.event.AnvilUpdateEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
+import net.neoforged.neoforge.event.entity.living.LivingDropsEvent;
 import net.neoforged.neoforge.event.entity.living.LivingHealEvent;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingKnockBackEvent;
@@ -66,6 +69,7 @@ public final class EnchantmentTweaksEvents {
     private static final String FLAME = "minecraft:flame";
     private static final String DEPTH_STRIDER = "minecraft:depth_strider";
     private static final String AQUA_AFFINITY = "minecraft:aqua_affinity";
+    private static final String LOOTING = "minecraft:looting";
     private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
     private static final String PROTECTION_LAST_DAMAGE = "asobibatweaks_protection_last_damage";
     private static final String PROJECTILE_LAST_DAMAGE = "asobibatweaks_projectile_last_damage";
@@ -105,6 +109,36 @@ public final class EnchantmentTweaksEvents {
     private static final String IMPALING_HARPOON_UNTIL = "asobibatweaks_impaling_harpoon_until";
     private static final String AQUA_CONSTRUCTION_UNTIL = "asobibatweaks_aqua_construction_until";
     private static final String AQUA_CURRENT_UNTIL = "asobibatweaks_aqua_current_until";
+    private static final String LOOTING_HERD_TYPE = "asobibatweaks_looting_herd_type";
+    private static final String LOOTING_HERD_TIME = "asobibatweaks_looting_herd_time";
+    private static final String LOOTING_HERD_STREAK = "asobibatweaks_looting_herd_streak";
+
+    @SubscribeEvent
+    public void onLootingDrops(LivingDropsEvent event) {
+        if (!(event.getSource().getEntity() instanceof ServerPlayer player)
+                || player.level().isClientSide()
+                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()) {
+            return;
+        }
+
+        ItemStack weapon = event.getSource().getWeaponItem();
+        if (weapon == null || weapon.isEmpty()) {
+            if (event.getSource().getDirectEntity() != player) return;
+            weapon = player.getMainHandItem();
+        }
+
+        BranchRef looting = branch(weapon, LOOTING);
+        if (looting == null) return;
+
+        double strength = branchScale(looting.mastery(), 0.0D, 1.0D);
+        if (looting.branch() == 0) {
+            applyHerdHunter(event, player, strength);
+        } else if (looting.branch() == 1) {
+            applyStripping(event, player, strength);
+        } else if (looting.branch() == 2) {
+            applyBigGameHunter(event, player, strength);
+        }
+    }
 
     @SubscribeEvent
     public void onBlockDrops(BlockDropsEvent event) {
@@ -1508,6 +1542,150 @@ public final class EnchantmentTweaksEvents {
         }
     }
 
+    private static void applyHerdHunter(LivingDropsEvent event, ServerPlayer player, double strength) {
+        var data = player.getPersistentData();
+        long now = player.level().getGameTime();
+        String type = BuiltInRegistries.ENTITY_TYPE.getKey(event.getEntity().getType()).toString();
+
+        long last = data.getLong(LOOTING_HERD_TIME);
+        String previousType = data.getString(LOOTING_HERD_TYPE);
+        int streak = type.equals(previousType) && now - last <= 400L
+                ? Math.min(5, data.getInt(LOOTING_HERD_STREAK) + 1)
+                : 1;
+
+        data.putString(LOOTING_HERD_TYPE, type);
+        data.putLong(LOOTING_HERD_TIME, now);
+        data.putInt(LOOTING_HERD_STREAK, streak);
+
+        ItemEntity target = largestOrdinaryDrop(event);
+        if (target == null) return;
+
+        double streakScale = streak / 5.0D;
+        double chance = (0.15D + 0.15D * strength) * streakScale;
+        if (player.getRandom().nextDouble() < chance) {
+            addOneDrop(event.getDrops(), event.getEntity(), target);
+        }
+    }
+
+    private static void applyStripping(LivingDropsEvent event, ServerPlayer player, double strength) {
+        if (!(event.getEntity() instanceof Mob mob)
+                || !(player.level() instanceof net.minecraft.server.level.ServerLevel level)) {
+            return;
+        }
+
+        double multiplier = 1.25D + 0.50D * strength;
+        float vanillaAdjustedChance = EnchantmentHelper.getEquipmentDropChance(
+                level,
+                player,
+                event.getSource(),
+                Mob.DEFAULT_EQUIPMENT_DROP_CHANCE
+        );
+
+        double targetChance = Math.min(1.0D, vanillaAdjustedChance * multiplier);
+        double incrementalChance = vanillaAdjustedChance >= 1.0F
+                ? 0.0D
+                : Math.max(0.0D, (targetChance - vanillaAdjustedChance) / (1.0D - vanillaAdjustedChance));
+
+        if (incrementalChance <= 0.0D) return;
+
+        for (EquipmentSlot slot : EquipmentSlot.values()) {
+            ItemStack equipped = mob.getItemBySlot(slot);
+            if (equipped.isEmpty()
+                    || enchantmentLevel(equipped, "minecraft:vanishing_curse") > 0
+                    || alreadyDropped(event, equipped)) {
+                continue;
+            }
+
+            if (player.getRandom().nextDouble() < incrementalChance) {
+                event.getDrops().add(new ItemEntity(
+                        event.getEntity().level(),
+                        event.getEntity().getX(),
+                        event.getEntity().getY(),
+                        event.getEntity().getZ(),
+                        equipped.copy()
+                ));
+            }
+        }
+    }
+
+    private static void applyBigGameHunter(LivingDropsEvent event, ServerPlayer player, double strength) {
+        List<ItemEntity> rare = event.getDrops().stream()
+                .filter(drop -> isRareLoot(drop.getItem()))
+                .toList();
+
+        double rareBoost = 0.10D + 0.20D * strength;
+        if (!rare.isEmpty() && player.getRandom().nextDouble() < rareBoost) {
+            ItemEntity target = rare.get(player.getRandom().nextInt(rare.size()));
+            addOneDrop(event.getDrops(), event.getEntity(), target);
+        }
+
+        // We cannot safely reconstruct the victim's loot table here. Approximate the accepted
+        // 25% reduction of Looting's common-drop improvement by trimming at most one extra unit,
+        // and never reduce a stack below one.
+        ItemEntity ordinary = largestOrdinaryDrop(event);
+        if (ordinary != null && ordinary.getItem().getCount() >= 2
+                && player.getRandom().nextDouble() < 0.25D) {
+            ordinary.getItem().shrink(1);
+        }
+    }
+
+    private static ItemEntity largestOrdinaryDrop(LivingDropsEvent event) {
+        ItemEntity best = null;
+        int bestCount = -1;
+        for (ItemEntity drop : event.getDrops()) {
+            ItemStack stack = drop.getItem();
+            if (stack.isEmpty() || isRareLoot(stack) || isEquipmentLike(stack)
+                    || stack.getCount() <= bestCount) {
+                continue;
+            }
+            best = drop;
+            bestCount = stack.getCount();
+        }
+        return best;
+    }
+
+    private static boolean alreadyDropped(LivingDropsEvent event, ItemStack candidate) {
+        for (ItemEntity drop : event.getDrops()) {
+            if (ItemStack.isSameItemSameComponents(drop.getItem(), candidate)) return true;
+        }
+        return false;
+    }
+
+    private static boolean isEquipmentLike(ItemStack stack) {
+        return stack.getMaxStackSize() == 1 && stack.isDamageableItem();
+    }
+
+    private static boolean isRareLoot(ItemStack stack) {
+        return stack.is(Items.WITHER_SKELETON_SKULL)
+                || stack.is(Items.RABBIT_FOOT)
+                || stack.is(Items.TRIDENT)
+                || stack.is(Items.NAUTILUS_SHELL)
+                || stack.is(Items.TOTEM_OF_UNDYING)
+                || stack.is(Items.GOAT_HORN)
+                || stack.is(Items.MUSIC_DISC_5)
+                || stack.is(Items.NETHER_STAR);
+    }
+
+    private static void addOneDrop(java.util.Collection<ItemEntity> drops,
+                                   LivingEntity victim,
+                                   ItemEntity target) {
+        ItemStack stack = target.getItem();
+        if (stack.isEmpty()) return;
+
+        if (stack.getCount() < stack.getMaxStackSize()) {
+            stack.grow(1);
+            return;
+        }
+
+        drops.add(new ItemEntity(
+                victim.level(),
+                victim.getX(),
+                victim.getY(),
+                victim.getZ(),
+                stack.copyWithCount(1)
+        ));
+    }
+
     private static void markAquaSuccessfulWork(ServerPlayer player,
                                                long constructionTicks,
                                                long currentTicks) {
@@ -1735,7 +1913,8 @@ public final class EnchantmentTweaksEvents {
                 || IMPALING.equals(enchantmentId)
                 || FLAME.equals(enchantmentId)
                 || DEPTH_STRIDER.equals(enchantmentId)
-                || AQUA_AFFINITY.equals(enchantmentId);
+                || AQUA_AFFINITY.equals(enchantmentId)
+                || LOOTING.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -1895,6 +2074,14 @@ public final class EnchantmentTweaksEvents {
                 case 0 -> "Submerged Mining";
                 case 1 -> "Underwater Construction";
                 case 2 -> "Current Adaptation";
+                default -> "Unselected";
+            };
+        }
+        if (LOOTING.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Herd Hunter";
+                case 1 -> "Stripping";
+                case 2 -> "Big-Game Hunter";
                 default -> "Unselected";
             };
         }
