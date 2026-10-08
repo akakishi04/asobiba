@@ -350,7 +350,7 @@ public final class VillageRiverDockService {
         ResourceLocation id = ResourceLocation.tryParse(key);
         if (id == null) return null;
         Block block = BuiltInRegistries.BLOCK.get(id);
-        return block.is(BlockTags.PLANKS) ? block : null;
+        return block.defaultBlockState().is(BlockTags.PLANKS) ? block : null;
     }
 
     private static Direction direction(String raw) {
