@@ -224,8 +224,12 @@ public final class VillageRiverCargoService {
         BlockPos departure = forward ? route.from() : route.to();
         ChestBoat boat = EntityType.CHEST_BOAT.create(level);
         if (boat == null) return null;
+        // Boat position is its bottom, not the center of the water block.
+        // Spawning at waterY + 0.3 submerges the hull, causing it to sink
+        // and stall on the river bed under real vanilla boat physics.
+        // Place the hull at the actual source-water surface instead.
         boat.setPos(departure.getX() + 0.5D,
-                departure.getY() + 0.3D, departure.getZ() + 0.5D);
+                departure.getY() + 1.0D, departure.getZ() + 0.5D);
         CompoundTag state = boat.getPersistentData();
         state.putUUID(ROUTE, route.id());
         state.putBoolean(FORWARD, forward);
