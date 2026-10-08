@@ -2,19 +2,15 @@ package io.github.akakishi04.asobibatweaks.feature;
 
 import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
 import io.github.akakishi04.asobibatweaks.mixin.AbstractArrowPierceAccessor;
-import java.util.ArrayList;
-import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.item.ArrowItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
-import net.minecraft.world.item.component.ItemContainerContents;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
@@ -129,6 +125,7 @@ public final class LoyaltyArrowEvents {
             ItemStack restored = withoutLaunchMarker(original.copyWithCount(1));
             if (!restored.isEmpty() && !data.getBoolean("asobibatweaks_loyalty_delivered")) {
                 data.putBoolean("asobibatweaks_loyalty_delivered", true);
+                growLoyaltyMastery(owner, restored);
                 deliver(owner, restored, preferredSlot(original));
             }
             arrow.discard();
@@ -136,10 +133,41 @@ public final class LoyaltyArrowEvents {
             return;
         }
 
+        ItemStack arrowItem = arrow.getPickupItemStackOrigin();
         int level = Math.min(10, EnchantedArrowImpactEvents.level(
-                arrow.getPickupItemStackOrigin(), "minecraft:loyalty"));
+                arrowItem, "minecraft:loyalty"));
         double speed = 0.50D * (1.0D + 0.15D * Math.max(0, level - 1));
-        Vec3 travel = delta.normalize().scale(speed);
+        double steering = 0.38D;
+        Vec3 direction = delta.normalize();
+
+        MasteryBranch mastery = masteryBranch(arrowItem);
+        if (mastery != null) {
+            double growth = (Math.min(100, mastery.mastery()) - 50) / 50.0D;
+            if (mastery.index() == 0) {
+                // Fast Return: +15% at 50 to +50% at 100.
+                speed *= 1.15D + 0.35D * growth;
+            } else if (mastery.index() == 1) {
+                // Safe Return: stronger path correction and a conservative,
+                // already-loaded 4-12-block local detour search.
+                steering *= 1.25D + 0.50D * growth;
+                direction = safeReturnDirection(arrow, server, direction,
+                        4 + (int)Math.round(8.0D * growth));
+            } else if (mastery.index() == 2
+                    && owner.getDeltaMovement().dot(direction) > 0.10D) {
+                // Pursuing Return: the owner is moving away from this arrow.
+                // Acceleration grows 20-60%; speed cap grows only 10-30%.
+                steering *= 1.20D + 0.40D * growth;
+                speed *= 1.10D + 0.20D * growth;
+            }
+        }
+
+        steering = Math.min(0.95D, steering);
+        Vec3 desired = direction.scale(speed);
+        Vec3 travel = arrow.getDeltaMovement().scale(1.0D - steering)
+                .add(desired.scale(steering));
+        if (travel.lengthSqr() > speed * speed) {
+            travel = travel.normalize().scale(speed);
+        }
         if (!server.hasChunkAt(BlockPos.containing(arrow.position().add(travel)))) {
             arrow.setDeltaMovement(Vec3.ZERO);
             return;
@@ -148,6 +176,84 @@ public final class LoyaltyArrowEvents {
         arrow.setDeltaMovement(travel);
         arrow.hurtMarked = true;
     }
+
+
+    /**
+     * Inspect a short, loaded-only segment toward the owner. If it intersects
+     * solid terrain, bias the next steering target around that obstacle.
+     * No chunk tickets are requested, and no distant terrain is sampled.
+     */
+    private static Vec3 safeReturnDirection(AbstractArrow arrow, ServerLevel server,
+                                            Vec3 direction, int range) {
+        Vec3 start = arrow.position();
+        for (int dist = 1; dist <= Math.min(12, range); dist++) {
+            BlockPos obstacle = BlockPos.containing(start.add(direction.scale(dist)));
+            if (!server.hasChunkAt(obstacle)) break;
+            if (server.getBlockState(obstacle).getCollisionShape(server, obstacle).isEmpty()) {
+                continue;
+            }
+
+            Vec3 sideways = new Vec3(-direction.z, 0.0D, direction.x);
+            if (sideways.lengthSqr() < 0.0001D) sideways = new Vec3(1.0D, 0.0D, 0.0D);
+            sideways = sideways.normalize();
+            CompoundTag state = arrow.getPersistentData();
+            int preferred = state.getInt("asobibatweaks_loyalty_detour_side");
+            if (preferred == 0) preferred = 1;
+
+            for (int side : new int[]{preferred, -preferred}) {
+                Vec3 waypoint = start
+                        .add(direction.scale(Math.max(1.0D, dist - 0.5D)))
+                        .add(sideways.scale(side * 1.75D));
+                BlockPos sample = BlockPos.containing(waypoint);
+                if (!server.hasChunkAt(sample)
+                        || !server.getBlockState(sample).getCollisionShape(server, sample).isEmpty()) {
+                    continue;
+                }
+                state.putInt("asobibatweaks_loyalty_detour_side", side);
+                return waypoint.subtract(start).normalize();
+            }
+            break;
+        }
+        return direction;
+    }
+
+    private static MasteryBranch masteryBranch(ItemStack stack) {
+        if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()) {
+            return null;
+        }
+        for (var enchantment : EnchantmentMasteryData.enchantments(stack).keySet()) {
+            if (!"minecraft:loyalty".equals(EnchantmentMasteryData.id(enchantment))) {
+                continue;
+            }
+            int mastery = EnchantmentMasteryData.getMastery(stack, enchantment);
+            int selected = EnchantmentMasteryData.getBranch(stack, enchantment);
+            return mastery >= 50 && selected >= 0 && selected <= 2
+                    ? new MasteryBranch(mastery, selected) : null;
+        }
+        return null;
+    }
+
+    private static void growLoyaltyMastery(ServerPlayer owner, ItemStack recovered) {
+        if (!AsobibaTweaksConfig.GROWING_ENCHANTMENTS_ENABLED.getAsBoolean()) {
+            return;
+        }
+        for (var enchantment : EnchantmentMasteryData.enchantments(recovered).keySet()) {
+            if (!"minecraft:loyalty".equals(EnchantmentMasteryData.id(enchantment))) {
+                continue;
+            }
+            int previous = EnchantmentMasteryData.getMastery(recovered, enchantment);
+            EnchantmentMasteryData.addMastery(recovered, enchantment, 1);
+            if (previous < 50 && EnchantmentMasteryData.getMastery(recovered, enchantment) >= 50) {
+                owner.displayClientMessage(
+                        net.minecraft.network.chat.Component.literal(
+                                "Loyalty mastery 50: specialization available at the Enchanting Table."),
+                        true);
+            }
+            break;
+        }
+    }
+
+    private record MasteryBranch(int mastery, int index) {}
 
     private static void startReturn(AbstractArrow arrow, CompoundTag data, ServerLevel server) {
         int level = Math.min(10, Math.max(1, EnchantedArrowImpactEvents.level(

@@ -39,7 +39,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Blast / Slipstream Wind Pressure | `PhysicsTransportEvents` | Implemented |
 | Wind Pressure Resistance | datapack enchantment + `PhysicsTransportEvents` | Implemented |
 | Growing Enchantments | `EnchantmentTweaksEvents`, `EnchantmentMasteryData` | Implemented |
-| Enchantment Branches | `EnchantmentTweaksEvents`, `ChannelingMasteryEvents`, `InfinityMasteryEvents`, `PowerMasteryEvents` | **V16-V47 expanded**: explicit mastery branch selection and concrete effects for Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane / Fire Protection / Blast Protection / Fire Aspect / Thorns / Breach / Knockback / Punch / Impaling / Flame / Depth Strider / Aqua Affinity / Looting / Soul Speed / Swift Sneak / Riptide / Channeling / Unbreaking / Infinity. Mending intentionally has no selectable branch. Other accepted enchantment families and enchanted-ammo integration remain pending |
+| Enchantment Branches | `EnchantmentTweaksEvents`, `ChannelingMasteryEvents`, `InfinityMasteryEvents`, `PowerMasteryEvents` | **V16-V49 expanded**: explicit mastery branch selection and concrete effects for Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane / Fire Protection / Blast Protection / Fire Aspect / Thorns / Breach / Knockback / Punch / Impaling / Flame / Depth Strider / Aqua Affinity / Looting / Soul Speed / Swift Sneak / Riptide / Channeling / Unbreaking / Infinity. Mending intentionally has no selectable branch. Other accepted enchantment families and enchanted-ammo integration remain pending |
 | Curse Growth | `EnchantmentTweaksEvents` | Implemented |
 | Fortune / Silk Touch Switching | `EnchantmentTweaksEvents` | Implemented |
 | Mastery Inheritance | `EnchantmentTweaksEvents` | Implemented |
@@ -544,3 +544,10 @@ Arrow-side Loyalty on a normally recoverable primary projectile now returns one 
 After normal flight termination, return delay is max(1,11-level) ticks and homing movement scales 1.0x at I to 2.35x at X. Return storage prioritizes an original Quiver slot when confirmed, then another compatible Quiver slot, normal inventory and an item drop at the player if full. The confirmed source-slot token persists with a fired Bow/Crossbow arrow (including charged Crossbows), and is stripped from the ItemStack when delivered. Returning clones are never pickable and are delivered only once. Owner logout, dimension separation, or unloaded path chunks suspend homing without force-loading any world chunks.
 
 Remaining edge tests: Piercing projectiles removed by exhausted penetration count without block impact; long-distance suspended return on unloaded chunks; full-inventory and crossbow reload transactions; projectile event ordering with other mods.
+
+
+## V49 Loyalty mastery return specializations
+
+Returned Loyalty ammunition now receives one item-local mastery point per completed return, permitting specialization at mastery 50. Explicit enchanting-table branch selection enables: Fast Return (+15%-50% homing speed), Safe Return (25%-75% stronger steering and a loaded-only 4..12 block terrain-detour probe), and Pursuing Return (when the owner moves away, +20%-60% steering acceleration and capped +10%-30% return speed). Normal returns now use bounded momentum correction, making these sidegrades distinct from a purely instantaneous direction change. Already-loaded collision-shape checks are bounded by a maximum of 12 sample blocks, with at most two local offset probes; no force-loads or chunk tickets are issued. Absence of a selected branch retains ordinary Loyalty behavior.
+
+Real-world multiplayer and large-distance return testing remains required, especially where a chunk on the return path is unloaded.

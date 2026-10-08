@@ -56,6 +56,7 @@ public final class EnchantmentTweaksEvents {
     private static final String UNBREAKING = "minecraft:unbreaking";
     private static final String INFINITY = "minecraft:infinity";
     private static final String POWER = "minecraft:power";
+    private static final String LOYALTY = "minecraft:loyalty";
     private static final String FORTUNE = "minecraft:fortune";
     private static final String SILK_TOUCH = "minecraft:silk_touch";
     private static final String RESPIRATION = "minecraft:respiration";
@@ -2172,6 +2173,7 @@ public final class EnchantmentTweaksEvents {
         return UNBREAKING.equals(enchantmentId)
                 || INFINITY.equals(enchantmentId)
                 || POWER.equals(enchantmentId)
+                || LOYALTY.equals(enchantmentId)
                 || "minecraft:efficiency".equals(enchantmentId)
                 || "minecraft:feather_falling".equals(enchantmentId)
                 || FORTUNE.equals(enchantmentId)
@@ -2199,7 +2201,15 @@ public final class EnchantmentTweaksEvents {
                 || CHANNELING.equals(enchantmentId);
     }
 
-    private static String branchName(String enchantmentId, int branch) { 
+    private static String branchName(String enchantmentId, int branch) {
+        if (LOYALTY.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Fast Return";
+                case 1 -> "Safe Return";
+                case 2 -> "Pursuing Return";
+                default -> "Unselected";
+            };
+        } 
         if (POWER.equals(enchantmentId)) {
             return switch (branch) {
                 case 0 -> "Sniping";
