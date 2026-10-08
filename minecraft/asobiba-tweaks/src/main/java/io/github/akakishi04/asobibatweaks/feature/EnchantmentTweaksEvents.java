@@ -4,6 +4,7 @@ import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.ChatFormatting;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.resources.ResourceKey;
