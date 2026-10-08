@@ -4,6 +4,7 @@ import io.github.akakishi04.asobibatweaks.AsobibaTweaks;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -65,6 +66,7 @@ public final class VillageRiverCargoGameTests {
         }
 
         AtomicBoolean physicallyMoved = new AtomicBoolean(false);
+        AtomicInteger previousVanillaTick = new AtomicInteger(boat.tickCount);
         for (int tick = 1; tick <= 330; tick++) {
             final int elapsed = tick;
             helper.runAtTickTime(tick, () -> {
@@ -72,6 +74,13 @@ public final class VillageRiverCargoGameTests {
                     helper.fail("Carrier was destroyed during live navigation", TEST_MARKER);
                     return;
                 }
+                // GameTestServer often stops entity-ticking boat chunks after
+                // their initial few ticks, even with a mock player. Advance
+                // the ACTUAL vanilla ChestBoat.tick() only if the server did
+                // not update it during this GameTest tick; do not teleport
+                // or bypass collisions, buoyancy or vanilla inventory logic.
+                if (boat.tickCount <= previousVanillaTick.get()) boat.tick();
+                previousVanillaTick.set(boat.tickCount);
                 VillageRiverCargoService.tickCarrier(boat, test.level());
                 if (horizontalDistance(boat, test.start()) > 3.0D) physicallyMoved.set(true);
                 int source = count(test.source(), Items.COBBLESTONE);
