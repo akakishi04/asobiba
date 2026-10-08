@@ -280,6 +280,14 @@ public final class VillageSimulationEvents {
 
         boolean housingNeed = beds <= population + 1;
         boolean storageNeed = stores < Math.max(2, (population + 3) / 4);
+
+        // Reuse a safe, publicly usable player-adopted structure before
+        // spending a full new-building budget. Only completed workstation
+        // items in real recognized storage can initiate such a project.
+        if (VillageWorkstationRetrofitService.tryPlan(villager, level, villageId.get())) {
+            villager.getPersistentData().putLong(NEXT_BUILD, now + 2400L);
+            return;
+        }
         VillageSavedData.VillageRecord village = data.village(villageId.get()).orElse(null);
         VillageSavedData.WorkSiteRecord fissionOutpost = findFissionOutpost(
                 level, data, village, now, population, skill);
@@ -400,6 +408,15 @@ public final class VillageSimulationEvents {
     private static void buildOneProjectStep(Villager villager, ServerLevel level,
                                             VillageSavedData.ProjectRecord project) {
         if (!isWorkTime(level)) return;
+
+        // A retrofit is a single safe, physical placement into a recognized
+        // existing building. Never generate a 5x5 shell or register a new
+        // BuildingRecord for the already-adopted structure.
+        if (VillageWorkstationRetrofitService.TEMPLATE.equals(project.templateId())) {
+            VillageWorkstationRetrofitService.advance(
+                    villager, level, project, CARPENTER_CARGO_SLOTS);
+            return;
+        }
 
         List<BuildStep> plan = projectPlan(project);
         int stepIndex = project.workCursor();
