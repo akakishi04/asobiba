@@ -39,7 +39,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Blast / Slipstream Wind Pressure | `PhysicsTransportEvents` | Implemented |
 | Wind Pressure Resistance | datapack enchantment + `PhysicsTransportEvents` | Implemented |
 | Growing Enchantments | `EnchantmentTweaksEvents`, `EnchantmentMasteryData` | Implemented |
-| Enchantment Branches | `EnchantmentTweaksEvents` | **V16+V17 expanded**: explicit branch-selection state plus concrete Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane of Arthropods / Fire Protection / Blast Protection / Fire Aspect / Thorns / Breach / Knockback / Punch / Impaling / Flame / Depth Strider branch effects; Mending is excluded from branch selection as designed. Remaining accepted branch families are still pending |
+| Enchantment Branches | `EnchantmentTweaksEvents`, `ChannelingMasteryEvents` | **V16-V33 expanded**: explicit mastery branch selection and concrete effects for Efficiency / Feather Falling / Fortune / Respiration / Protection / Projectile Protection / Sharpness / Smite / Bane / Fire Protection / Blast Protection / Fire Aspect / Thorns / Breach / Knockback / Punch / Impaling / Flame / Depth Strider / Aqua Affinity / Looting / Soul Speed / Swift Sneak / Riptide / Channeling. Mending intentionally has no selectable branch. Other accepted enchantment families and enchanted-ammo integration remain pending |
 | Curse Growth | `EnchantmentTweaksEvents` | Implemented |
 | Fortune / Silk Touch Switching | `EnchantmentTweaksEvents` | Implemented |
 | Mastery Inheritance | `EnchantmentTweaksEvents` | Implemented |
@@ -279,3 +279,14 @@ Flame now implements both accepted specialization branches; the intentionally-op
 ## V32 depth-strider note
 
 Depth Strider now implements all three accepted movement branches with bounded post-tick velocity adjustments. Current Rider reads the real local FluidState flow vector and increases only the portion of horizontal motion already aligned with that current by 10%-30%, with a 0.40 horizontal-speed safety cap. Seabed Runner applies a 10%-25% grounded-underwater horizontal boost capped at 0.35. Diver increases existing vertical underwater movement authority by 10%-35% while clamping vertical speed to +/-0.35; it does not create vertical motion from rest. These caps prevent multiplicative per-tick runaway while preserving the intended specialization.
+
+
+## V33 channeling-branch note
+
+`ChannelingMasteryEvents` implements the three accepted Channeling mastery specializations for **player-thrown Tridents**, while preserving vanilla Channeling's one-level maximum and full thunderstorm strike. It does not infer arrow-ammo enchantments from a Bow/Crossbow weapon stack; enchanted-arrow Channeling belongs to the later arrow-projectile integration.
+
+- **Chain Lightning** (branch 0): normal qualifying thunderstorm/open-sky trident impact adds 1/2/3 non-recursive secondary target strikes at mastery 50/75/100 within a 4->6 block range. Each secondary hit uses 35%->50% of the standard 5-damage lightning reference, with cosmetic bolt visuals and separate bounded damage.
+- **Rain Channeling** (branch 1): in ordinary rain (not a thunderstorm), with open sky, one impact has a mastery-scaled 15%->50% chance to make a cosmetic lightning strike plus 50% of reference lightning damage on an entity hit; other weather conditions retain vanilla behavior.
+- **Conductor** (branch 2): normal thunderstorm impacts search a bounded 4->8-block area and prefer valid open-sky Lightning Rod blocks ahead of supported Copper block families. A selected rod receives a separate zero-damage physical bolt for redstone interaction; selected Copper receives only a cosmetic secondary arc. This initial supplemental-conductor path does **not** suppress or relocate vanilla's ordinary impact strike, and therefore is not yet a true single-strike redirect.
+- Once a thrown Trident processes a qualifying mastery impact, it records a projectile-local deduplication marker. Channeling's extra bolts do not recursively activate this handler. Candidate checks require already-loaded chunks.
+- **Validation:** GitHub Actions Minecraft Mods CI run `37732270864`: Gradle Build PASS, Dedicated Server smoke PASS for code commit `92a6b412994c102da46895c1fbc70fedd23f8b81`. In-game verification remains needed for thunderstorm/open-sky block hits, secondary-hit damage, ordinary-rain probability, redstone/lightning-rod behavior, cancellation/inter-mod event ordering, and client rendering/audio.
