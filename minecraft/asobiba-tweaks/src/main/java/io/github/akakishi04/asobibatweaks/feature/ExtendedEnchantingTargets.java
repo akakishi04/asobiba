@@ -22,6 +22,20 @@ public final class ExtendedEnchantingTargets {
         ).orElse(false);
     }
 
+    /**
+     * Only arrows may combine normally conflicting members of the accepted
+     * projectile-effect set. Other item types continue using vanilla rules.
+     */
+    public static boolean allowsArrowPair(
+            ItemStack stack, Holder<Enchantment> first, Holder<Enchantment> second) {
+        return io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig
+                        .EXTENDED_ENCHANTING_TARGETS_ENABLED.getAsBoolean()
+                && isExtendedArrowTarget(stack)
+                && !first.equals(second)
+                && allowsArrowEnchantment(first)
+                && allowsArrowEnchantment(second);
+    }
+
     public static boolean allowsArrowEnchantment(Enchantment enchantment) {
         if (!(enchantment.description().getContents()
                 instanceof TranslatableContents translated)) return false;

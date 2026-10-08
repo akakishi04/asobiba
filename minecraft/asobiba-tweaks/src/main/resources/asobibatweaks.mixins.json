@@ -13,6 +13,8 @@
     "GiantCreeperMixin",
     "ExtendedEnchantableItemMixin",
     "ArrowEnchantmentEligibilityMixin",
+    "ArrowTableCompatibilityMixin",
+    "ArrowAnvilCompatibilityMixin",
     "EnchantmentExtensionMixin",
     "EnchantmentMenuExtensionsMixin",
     "EnchantedWorkBlockPlacementMixin",

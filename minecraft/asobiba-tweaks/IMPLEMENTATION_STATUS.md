@@ -46,7 +46,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Uncapped Anvil XP Cost | `AnvilMenuMixin` | Implemented |
 | Direct Enchanting-Table Reroll | `EnchantmentMenuExtensionsMixin`, `EnchantingScreenEvents` | Implemented; XP cost |
 | Enchantment-Pool Bookshelves | Arcane Bookshelf + `EnchantmentMenuExtensionsMixin` | Implemented |
-| Extended Enchanting Targets | `ExtendedEnchantableItemMixin`, `ArrowEnchantmentEligibilityMixin`, `EnchantmentExtensionMixin`, `EnchantedWorkBlockSavedData` | **V52**: only the 13 accepted vanilla effects are eligible on arrows through NeoForge item primary/supported hooks; extended block enchanting unchanged; runtime tests pending |
+| Extended Enchanting Targets | `ExtendedEnchantableItemMixin`, `ArrowEnchantmentEligibilityMixin`, `ArrowTableCompatibilityMixin`, `ArrowAnvilCompatibilityMixin`, `EnchantmentExtensionMixin`, `EnchantedWorkBlockSavedData` | **V52-V53**: only the 13 accepted vanilla effects are eligible on arrows through NeoForge item primary/supported hooks; extended block enchanting unchanged; runtime tests pending |
 | Arrow-side Looting | `ArrowLootingSupport`, vanilla Looting count/chance mixins | **V51 added**: real loot-table count/rare-roll Looting checks use max(launcher/equipped, arrow), never additive or post-death item duplication; gameplay verification pending |
 | Raised Enchantment Level Caps | `EnchantmentExtensionMixin` | Implemented; configurable cap; explicit higher-level Mending enabled in V40 |
 | High-level Mending and Over-Repair | `MendingExtendedEvents`, `ExperienceOrbMendingMixin` | **V41 implemented initial transaction**: IV-IX equipped distribution, X inventory routing, per-level efficiency loss, 5%-20% mastery durability reserve and UI tooltip; in-game tests required |
@@ -571,3 +571,10 @@ Remaining: in-game loot-table execution tests (including Bow/Crossbow, large Loo
 ## V52 exact Arrow-enchantment candidate pool
 
 Normal/Spectral/Tipped Arrow enchanting now accepts only the 13 specific vanilla effects in MOD_IDEAS.md. NeoForge's ArrowItem primary/supported methods are overridden to allow those candidates through both the Enchanting Table and the Anvil, rather than relying solely on the deprecated Enchantment.isPrimaryItem hook. The older direct Enchantment compatibility checks enforce the same 13-name whitelist, not a blanket yes on every arrow. Extended work-block enchantments are unchanged. Disabling EXTENDED_ENCHANTING_TARGETS restores the vanilla supported-item rules. Arrow-local mutual-exclusion overrides are still a separate implementation and do not become global rules for swords or launchers.
+
+
+## V53 arrow-local mutually compatible enchantments
+
+The two stack-aware vanilla acquisition paths now allow any two DIFFERENT approved arrow enchantments to coexist on one Arrow/Spectral Arrow/Tipped Arrow item. During EnchantmentHelper.selectEnchantment, only conflicting candidate filtering is bypassed for supported pairs on an arrow; normal weighted selection and chance remain untouched. When an AnvilMenu combines an arrow and an enchanted book, only the compatibility check is bypassed for approved arrow pairs; the required XP and material handling remain vanilla plus the existing anvil cost extension. Non-arrow items retain all normal enchantment exclusivity. Identical enchantment candidates are not duplicated within the same table roll.
+
+Remaining gameplay tests: high-count co-enchantment rolls, recipe/anvil level persistence, projectile behavior with combined enchantments, and interactions with third-party enchantment-mod compatibility rules.
