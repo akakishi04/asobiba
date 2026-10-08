@@ -100,6 +100,7 @@ public final class AsobibaTweaksConfig {
     public static final ModConfigSpec.BooleanValue VILLAGE_FISSION_ENABLED = bool("village.fission", true, "Allow mature villages to found rare small daughter settlements.");
     public static final ModConfigSpec.BooleanValue VILLAGE_ROADS_ENABLED = bool("village.roadsAndBridges", true, "Allow village construction to add paths and small bridges.");
     public static final ModConfigSpec.BooleanValue VILLAGE_RIVER_DOCKS_ENABLED = bool("village.riverDocks", true, "Allow Carpenters to build small material-backed docks on surveyed navigable rivers; never automatically move items by water.");
+    public static final ModConfigSpec.BooleanValue VILLAGE_RIVER_CARGO_ENABLED = bool("village.experimentalRiverCargo", false, "EXPERIMENTAL: allow one persistent physical chest boat per validated river route to shuttle eligible real items between recognized dock Barrels. OFF until multiplayer safety is validated.");
     public static final ModConfigSpec.BooleanValue VILLAGE_REFUGEES_ENABLED = bool("village.refugeesAndMigration", true, "Allow distressed villagers to migrate and new outposts to receive settlers.");
     public static final ModConfigSpec.BooleanValue VILLAGE_BREEDING_ENABLED = bool("village.breedingOverhaul", true, "Use settlement food, beds and population pressure for villager reproduction.");
     public static final ModConfigSpec.BooleanValue VILLAGE_BUILDING_CULTURE_ENABLED = bool("village.buildingCulture", true, "Let local/supplied materials influence new village architecture.");
