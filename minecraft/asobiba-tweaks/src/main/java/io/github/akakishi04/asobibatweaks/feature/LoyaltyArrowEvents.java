@@ -13,6 +13,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.bus.api.EventPriority;
+import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
+import net.minecraft.world.phys.HitResult;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.tick.EntityTickEvent;
 
@@ -30,6 +33,8 @@ public final class LoyaltyArrowEvents {
     private static final String RETURN_QUEUED = "asobibatweaks_loyalty_return_queued";
     private static final String SPAWNED_RETURN = "asobibatweaks_loyalty_return_spawned";
     private static final String RETURN_READY = "asobibatweaks_loyalty_return_ready";
+    private static final String SUCCESSFUL_PIERCE_HITS =
+            "asobibatweaks_loyalty_successful_pierce_hits";
 
     public static boolean isLoyaltyArrow(AbstractArrow arrow) {
         return EnchantedArrowImpactEvents.level(
@@ -44,8 +49,17 @@ public final class LoyaltyArrowEvents {
                 || !(original.level() instanceof ServerLevel server)
                 || !(original.getOwner() instanceof ServerPlayer shooter)
                 || original.pickup != AbstractArrow.Pickup.ALLOWED
-                || original.getPierceLevel() > 0
                 || !isLoyaltyArrow(original)) return;
+
+        // A Piercing+Loyalty projectile retains its identity and continues
+        // normal flight. Record successful targets only; reaching the limit
+        // does not begin return while the projectile is still traveling.
+        if (original.getPierceLevel() > 0) {
+            CompoundTag pierced = original.getPersistentData();
+            pierced.putInt(SUCCESSFUL_PIERCE_HITS, Math.min(128,
+                    pierced.getInt(SUCCESSFUL_PIERCE_HITS) + 1));
+            return;
+        }
 
         CompoundTag originalData = original.getPersistentData();
         if (originalData.getBoolean(SPAWNED_RETURN)) return;
@@ -69,6 +83,40 @@ public final class LoyaltyArrowEvents {
             originalData.putBoolean(SPAWNED_RETURN, true);
             original.pickup = AbstractArrow.Pickup.DISALLOWED;
         }
+    }
+
+
+    /**
+     * After Piercing has dealt damage to its final allowed living target,
+     * vanilla may still let the arrow travel, then discard it upon the NEXT
+     * entity collision. Cancel only that otherwise-terminal collision.
+     * Do not start the return on the final successful hit itself.
+     */
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public void onExhaustedPiercingCollision(ProjectileImpactEvent event) {
+        if (!AsobibaTweaksConfig.EXTENDED_ENCHANTING_TARGETS_ENABLED.getAsBoolean()
+                || event.isCanceled()
+                || event.getRayTraceResult().getType() != HitResult.Type.ENTITY
+                || !(event.getProjectile() instanceof AbstractArrow arrow)
+                || !(arrow.level() instanceof ServerLevel server)
+                || !(arrow.getOwner() instanceof ServerPlayer)
+                || arrow.pickup != AbstractArrow.Pickup.ALLOWED
+                || arrow.getPierceLevel() <= 0
+                || !isLoyaltyArrow(arrow)) return;
+
+        CompoundTag data = arrow.getPersistentData();
+        if (data.getBoolean(RETURN_ACTIVE)
+                || data.getInt(SUCCESSFUL_PIERCE_HITS) < arrow.getPierceLevel() + 1) {
+            return;
+        }
+
+        // This is the first collision at which vanilla would terminate the
+        // arrow instead of resolving further damage. Keep the one physical
+        // projectile and convert it to the returning state in-place.
+        event.setCanceled(true);
+        data.putBoolean(RETURN_QUEUED, true);
+        arrow.setDeltaMovement(Vec3.ZERO);
+        startReturn(arrow, data, server);
     }
 
     @SubscribeEvent

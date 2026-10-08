@@ -551,3 +551,10 @@ Remaining edge tests: Piercing projectiles removed by exhausted penetration coun
 Returned Loyalty ammunition now receives one item-local mastery point per completed return, permitting specialization at mastery 50. Explicit enchanting-table branch selection enables: Fast Return (+15%-50% homing speed), Safe Return (25%-75% stronger steering and a loaded-only 4..12 block terrain-detour probe), and Pursuing Return (when the owner moves away, +20%-60% steering acceleration and capped +10%-30% return speed). Normal returns now use bounded momentum correction, making these sidegrades distinct from a purely instantaneous direction change. Already-loaded collision-shape checks are bounded by a maximum of 12 sample blocks, with at most two local offset probes; no force-loads or chunk tickets are issued. Absence of a selected branch retains ordinary Loyalty behavior.
 
 Real-world multiplayer and large-distance return testing remains required, especially where a chunk on the return path is unloaded.
+
+
+## V50 Piercing exhaustion and Loyalty terminal recovery
+
+The arrow now persists a bounded count of successful living-target Piercing damage events. Reaching the entity penetration budget does not itself begin Loyalty homing. On the next entity collision, where vanilla would otherwise discard the exhausted Piercing projectile without another valid hit, the pre-impact handler cancels only that terminal collision and transitions the SAME projectile into a non-pickup Loyalty return. This avoids creating a second item or returning prematurely. Collision handling runs at high event priority so invalid extra hits do not trigger impact-only enchant effects.
+
+Remaining corner case: armor stands and nonliving entities can consume vanilla piercing-hit slots without producing LivingDamageEvent.Post; exact nonliving hit accounting needs an additional authoritative pierce-set hook before it can be considered fully covered. Target-block terminal flight and multi-hit living targets are handled by the current paths.
