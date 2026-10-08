@@ -238,6 +238,14 @@ public final class VillageRiverCargoGameTests {
         for (int x = 0; x < 16; x++) {
             for (int z = 0; z < 9; z++) {
                 helper.setBlock(new BlockPos(x, 0, z), Blocks.STONE);
+                // NBT structure dimensions do not guarantee an empty build
+                // volume when the game-test world already has terrain. Clear
+                // the complete boat headroom explicitly before each run:
+                // otherwise valid source water can have stone above it, and
+                // the safety guard correctly refuses to sail into the block.
+                for (int y = 2; y <= 5; y++) {
+                    helper.setBlock(new BlockPos(x, y, z), Blocks.AIR);
+                }
                 boolean channel = x >= 1 && x <= 14 && z >= 2 && z <= 6;
                 if (!channel) helper.setBlock(new BlockPos(x, 1, z), Blocks.STONE);
             }
@@ -276,7 +284,7 @@ public final class VillageRiverCargoGameTests {
 
         List<BlockPos> routePoints = VillageRiverNavigationService.findLoadedPath(
                 level, from, to);
-        if (routePoints.size() < 2 || !routePoints.getFirst().equals(from)
+        if (routePoints.size() != 2 || !routePoints.getFirst().equals(from)
                 || !routePoints.getLast().equals(to)) {
             helper.fail("Two real dock berths are not connected by navigable water", TEST_MARKER);
         }
