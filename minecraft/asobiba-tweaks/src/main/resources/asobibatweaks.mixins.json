@@ -23,7 +23,8 @@
     "ProjectileWeaponInfinityMixin",
     "ProjectileWeaponQuiverMixin",
     "LauncherEnchantmentCompatibilityMixin",
-    "BowQuickChargeMixin"
+    "BowQuickChargeMixin",
+    "FrostWalkerLocationMixin"
   ],
   "injectors": {
     "defaultRequire": 1

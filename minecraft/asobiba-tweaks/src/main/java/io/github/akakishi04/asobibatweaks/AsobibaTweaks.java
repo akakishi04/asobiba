@@ -7,6 +7,7 @@ import io.github.akakishi04.asobibatweaks.feature.DailyFavorEvents;
 import io.github.akakishi04.asobibatweaks.feature.EnchantedWorkBlockEvents;
 import io.github.akakishi04.asobibatweaks.feature.EnchantmentTweaksEvents;
 import io.github.akakishi04.asobibatweaks.feature.FolkloreAndMoonEvents;
+import io.github.akakishi04.asobibatweaks.feature.FrostWalkerToggleNetworking;
 import io.github.akakishi04.asobibatweaks.feature.ForestRegenerationEvents;
 import io.github.akakishi04.asobibatweaks.feature.GiantOrganismEvents;
 import io.github.akakishi04.asobibatweaks.feature.GrowingItemsEvents;
@@ -51,6 +52,7 @@ public final class AsobibaTweaks {
         AsobibaRegistries.register(modBus);
         modBus.addListener(VillageStatusNetworking::registerPayloads);
         modBus.addListener(QuiverNetworking::registerPayloads);
+        modBus.addListener(FrostWalkerToggleNetworking::registerPayloads);
         container.registerConfig(ModConfig.Type.COMMON, AsobibaTweaksConfig.SPEC);
         NeoForge.EVENT_BUS.register(new GrowingItemsEvents());
         NeoForge.EVENT_BUS.register(new GiantOrganismEvents());

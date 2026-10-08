@@ -1,6 +1,7 @@
 package io.github.akakishi04.asobibatweaks;
 
 import io.github.akakishi04.asobibatweaks.client.EnchantingScreenEvents;
+import io.github.akakishi04.asobibatweaks.client.FrostWalkerToggleClientEvents;
 import io.github.akakishi04.asobibatweaks.client.NetherFishRenderer;
 import io.github.akakishi04.asobibatweaks.client.QuiverClientEvents;
 import io.github.akakishi04.asobibatweaks.client.VillageStatusScreen;
@@ -30,6 +31,7 @@ public final class AsobibaTweaksClient {
         modBus.addListener(this::registerRenderers);
         NeoForge.EVENT_BUS.register(new EnchantingScreenEvents());
         NeoForge.EVENT_BUS.register(new QuiverClientEvents());
+        NeoForge.EVENT_BUS.register(new FrostWalkerToggleClientEvents());
     }
 
     private void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {

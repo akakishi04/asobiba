@@ -48,6 +48,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Enchantment-Pool Bookshelves | Arcane Bookshelf + `EnchantmentMenuExtensionsMixin` | Implemented |
 | Extended Enchanting Targets | `ExtendedEnchantableItemMixin`, `EnchantmentExtensionMixin`, `EnchantedWorkBlockSavedData` | Implemented; effects intentionally deferred |
 | Raised Enchantment Level Caps | `EnchantmentExtensionMixin` | Implemented; configurable cap |
+| Frost Walker runtime toggle | `FrostWalkerToggle`, `FrostWalkerLocationMixin`, client gesture + network payload | **V39 implemented**: sneak+jump toggles the boots' stored ON/OFF state; disabled mode suppresses new ice creation, preserving enchantment and damage protection |
 | Shared Bow / Crossbow Enchantment Pool | additive `minecraft:enchantable/bow` and `minecraft:enchantable/crossbow` tags, `LauncherEnchantmentCompatibilityMixin` | **V37-V38 implemented core**: shared launcher eligibility and Infinity + Mending compatibility, plus Bow Quick Charge's diminishing draw-time reduction up to X. Other cross-launcher projectile effects still require in-game validation |
 | Atlas / Map Binder | `AtlasItem`, `AtlasItemInHandRendererMixin` | Implemented |
 | Potion Mixing | `AlchemyExplosivesCraftingEvents` | Implemented |
@@ -410,3 +411,22 @@ The native arrow-loose hook retains its ability to deny an attack.
 Gameplay follow-up: confirm client hand/draw animation agrees with
 actual charge/crit timing; integrate the faster charge into its display
 if needed. Verify full-power thresholds and other mods' ArrowLoose hooks.
+
+
+## V39 Frost Walker persistent runtime toggle
+
+Holding sneak and pressing jump sends a one-shot client-to-server toggle
+request. The server checks for Frost Walker on the equipped boots, updates
+those boots' CUSTOM_DATA and displays an ON/OFF action-bar message. Held
+jump does not retrigger; closing an inventory with jump held does not
+produce a new rising edge.
+
+The world-side Enchantment.applyLocationBasedEffects hook suppresses the
+Frost Walker location-change pass only when the boots' item-local state
+is OFF. It does not remove/rewrite the enchantment or suppress unrelated
+enchantment effects such as Frost Walker's magma damage protection.
+Absence of the tag on legacy boots means ON.
+
+The state follows the boots across normal equip/unequip, save/reload, and
+ItemStack transfer. Frozen ice placed before turning OFF melts normally.
+Dedicated-server startup and real multiplayer client input need testing.
