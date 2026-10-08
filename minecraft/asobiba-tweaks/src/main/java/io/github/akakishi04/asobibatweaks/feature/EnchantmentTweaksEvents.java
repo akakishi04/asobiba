@@ -76,6 +76,7 @@ public final class EnchantmentTweaksEvents {
     private static final String SOUL_SPEED = "minecraft:soul_speed";
     private static final String SWIFT_SNEAK = "minecraft:swift_sneak";
     private static final String RIPTIDE = "minecraft:riptide";
+    private static final String CHANNELING = "minecraft:channeling";
     private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
     private static final String PROTECTION_LAST_DAMAGE = "asobibatweaks_protection_last_damage";
     private static final String PROJECTILE_LAST_DAMAGE = "asobibatweaks_projectile_last_damage";
@@ -2188,7 +2189,8 @@ public final class EnchantmentTweaksEvents {
                 || LOOTING.equals(enchantmentId)
                 || SOUL_SPEED.equals(enchantmentId)
                 || SWIFT_SNEAK.equals(enchantmentId)
-                || RIPTIDE.equals(enchantmentId);
+                || RIPTIDE.equals(enchantmentId)
+                || CHANNELING.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -2380,6 +2382,14 @@ public final class EnchantmentTweaksEvents {
                 case 0 -> "Long Riptide";
                 case 1 -> "Steering Riptide";
                 case 2 -> "Ramming Riptide";
+                default -> "Unselected";
+            };
+        }
+        if (CHANNELING.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Chain Lightning";
+                case 1 -> "Rain Channeling";
+                case 2 -> "Conductor";
                 default -> "Unselected";
             };
         }
