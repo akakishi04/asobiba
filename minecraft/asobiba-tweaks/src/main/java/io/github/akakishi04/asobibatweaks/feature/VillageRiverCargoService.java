@@ -69,9 +69,17 @@ public final class VillageRiverCargoService {
     public void onBoatTick(EntityTickEvent.Post event) {
         if (!(event.getEntity() instanceof ChestBoat boat)
                 || !(boat.level() instanceof ServerLevel level)) return;
+        // Normal dispatch remains gated by the experimental config; the
+        // shared physical boat state machine is exercised directly by
+        // server GameTests without enabling the feature for other worlds.
+        if (!enabled()) return;
+        tickCarrier(boat, level);
+    }
+
+    static void tickCarrier(ChestBoat boat, ServerLevel level) {
         CompoundTag state = boat.getPersistentData();
         if (!state.hasUUID(ROUTE)) return;
-        if (!enabled() || !boat.isAlive() || boat.isVehicle()) {
+        if (!boat.isAlive() || boat.isVehicle()) {
             stop(boat);
             return;
         }
@@ -189,17 +197,17 @@ public final class VillageRiverCargoService {
                 towardZ * MOVE_SPEED));
     }
 
-    private static void tryLaunch(ServerLevel level, VillageSavedData data,
-                                  VillageSavedData.RouteRecord route) {
+    static ChestBoat tryLaunch(ServerLevel level, VillageSavedData data,
+                               VillageSavedData.RouteRecord route) {
         List<BlockPos> path = route.waypoints();
         if (path.isEmpty() || !path.getFirst().equals(route.from())
-                || !path.getLast().equals(route.to())) return;
+                || !path.getLast().equals(route.to())) return null;
         if (!VillageRiverNavigationService.navigable(level, route.from())
-                || !VillageRiverNavigationService.navigable(level, route.to())) return;
+                || !VillageRiverNavigationService.navigable(level, route.to())) return null;
 
         Container first = dockBarrel(level, data, route.villageId(), route.from());
         Container second = dockBarrel(level, data, route.villageId(), route.to());
-        if (first == null || second == null) return;
+        if (first == null || second == null) return null;
 
         boolean forward = true;
         CargoChoice shipment = chooseCargo(first, second);
@@ -209,13 +217,13 @@ public final class VillageRiverCargoService {
             source = second;
             forward = false;
         }
-        if (shipment == null) return;
+        if (shipment == null) return null;
 
         int boatItemSlot = findBoatItem(source);
-        if (boatItemSlot < 0) return; // no free boats or synthetic recipes
+        if (boatItemSlot < 0) return null; // no free boats or synthetic recipes
         BlockPos departure = forward ? route.from() : route.to();
         ChestBoat boat = EntityType.CHEST_BOAT.create(level);
-        if (boat == null) return;
+        if (boat == null) return null;
         boat.setPos(departure.getX() + 0.5D,
                 departure.getY() + 0.3D, departure.getZ() + 0.5D);
         CompoundTag state = boat.getPersistentData();
@@ -225,14 +233,14 @@ public final class VillageRiverCargoService {
         state.putInt(CURSOR, forward ? 1 : path.size() - 2);
         state.putInt(COURSE_HASH, path.hashCode());
 
-        if (!level.addFreshEntity(boat)) return;
+        if (!level.addFreshEntity(boat)) return null;
         // Consume exactly one actual ChestBoat item only after the physical
         // entity has successfully entered the loaded world.
         ItemStack paid = source.removeItem(boatItemSlot, 1);
         if (!paid.is(Items.OAK_CHEST_BOAT) || paid.getCount() != 1) {
             if (!paid.isEmpty()) insert(source, paid);
             boat.discard();
-            return;
+            return null;
         }
         ItemStack shipped = source.removeItem(shipment.slot(), shipment.count());
         if (shipped.isEmpty()) {
@@ -248,6 +256,7 @@ public final class VillageRiverCargoService {
         route.setCarrierEntityId(boat.getUUID());
         data.touch();
         VillageStorageService.reconcileVillage(route.villageId(), level);
+        return boat;
     }
 
     private static Container dockBarrel(ServerLevel level, VillageSavedData data,
