@@ -120,6 +120,8 @@ The village family is resource-backed rather than free structure spawning.
 - Villagers use stored wool + planks to make beds during construction
 - Roads and simple water-crossing bridges
 - Physical river landings built by Carpenters after a navigable-river survey: three plank deck sections and a recognized storage Barrel, with actual material withdrawals and no water block replacement
+- Dock-to-dock route discovery along verified already-loaded source water, without teleporting cargo
+- Experimental autonomous real ChestBoat cargo trips between finished dock Barrels, gated OFF by default by `village.experimentalRiverCargo`. A real Oak Chest Boat item must be present in the source dock's recognized storage; no synthetic boat or hidden cargo inventory is created
 - Satellite outposts and physical settler movement
 - Fire emergencies and reconstruction pressure
 - Refugee / migration behavior after severe failure
