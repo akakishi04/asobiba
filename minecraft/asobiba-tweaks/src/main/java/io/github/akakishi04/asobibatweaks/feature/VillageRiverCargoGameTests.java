@@ -92,6 +92,14 @@ public final class VillageRiverCargoGameTests {
                                 .getString("asobibatweaks_river_cargo_phase"))) {
                     helper.succeed();
                 } else if (elapsed == 330) {
+                    BlockPos target = test.route().waypoints().getLast();
+                    double dx = target.getX() + 0.5D - boat.getX();
+                    double dz = target.getZ() + 0.5D - boat.getZ();
+                    double norm = Math.max(1.0E-6D, Math.hypot(dx, dz));
+                    BlockPos ahead = new BlockPos(
+                            (int)Math.floor(boat.getX() + dx / norm * 1.5D),
+                            test.route().from().getY(),
+                            (int)Math.floor(boat.getZ() + dz / norm * 1.5D));
                     helper.fail("Live boat did not finish outbound unloading and return within 330 ticks"
                             + "; received=" + received + ", aboard=" + aboard
                             + ", x=" + boat.getX() + ", z=" + boat.getZ()
@@ -99,7 +107,21 @@ public final class VillageRiverCargoGameTests {
                                     .getString("asobibatweaks_river_cargo_phase")
                             + ", boatTickCount=" + boat.tickCount
                             + ", velocity=" + boat.getDeltaMovement()
-                            + ", y=" + boat.getY(),
+                            + ", y=" + boat.getY()
+                            + ", vehicle=" + boat.isVehicle()
+                            + ", courseMatch=" + (test.route().waypoints().hashCode()
+                                    == boat.getPersistentData().getInt(
+                                            "asobibatweaks_river_course"))
+                            + ", carrierMatch=" + boat.getUUID().equals(
+                                    test.route().carrierEntityId())
+                            + ", routeState=" + test.route().state()
+                            + ", waypointIndex=" + boat.getPersistentData()
+                                    .getInt("asobibatweaks_river_cargo_cursor")
+                            + ", ahead=" + ahead
+                            + ", aheadWater=" + test.level().getFluidState(ahead).isSource()
+                            + ", aheadAir=" + test.level().getBlockState(ahead.above()).isAir()
+                            + ", aheadNavigable=" + VillageRiverNavigationService.navigable(
+                                    test.level(), ahead),
                             TEST_MARKER);
                 }
             });
