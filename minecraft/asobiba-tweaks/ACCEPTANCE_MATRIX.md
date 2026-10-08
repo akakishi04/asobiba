@@ -49,9 +49,9 @@ These can silently lose or duplicate real items, XP, villagers or world blocks.
 actual in-game samples.
 
 **Gameplay harness needed**: controlled GameTests and a repeatable long-run
-dedicated-server simulation. There are currently no dedicated Minecraft
-GameTest/automated gameplay tests in this repository, so the CI gate must
-not be used to label this project feature-complete.
+dedicated-server simulation. Eight required NeoForge GameTests now run in CI, but the rest of the player,
+projectile, village, save/reload and multiplayer scenarios still require
+real in-game testing. CI must not be used to label the project feature-complete.
 
 ## Downloadable CI deliverables
 
@@ -67,7 +67,7 @@ from the Artifacts section. Do not install a `-sources.jar`.
 
 ## Automated GameTests (first tranche)
 
-The required tests registered in `AsobibaGameplayTests` execute on a real NeoForge GameTestServer, using the `asobibatweaks:empty3x3x3` structure:
+The required tests registered in `AsobibaGameplayTests` and `AsobibaFletchingTransactionTests` execute on a real NeoForge GameTestServer, using the `asobibatweaks:empty3x3x3` structure:
 
 | ID | Test | Property |
 |---|---|---|
@@ -76,5 +76,8 @@ The required tests registered in `AsobibaGameplayTests` execute on a real NeoFor
 | GT03 | workBlockSavedDataRoundTrip | Full enchant/component persistence in encoded SavedData |
 | GT04 | frostWalkerToggleIsItemLocal | Stack-local ON/OFF survives ItemStack copy |
 | GT05 | furnaceEfficiencyAffectsRealSmelting | Actual furnace recipe completes in less than 125 ticks at Efficiency X |
+| GT06 | paidCopyConservesArrowCountComponentsAndXp | Server transaction preserves exact inventory arrows, enchant/mastery components, source count and charged XP |
+| GT07 | invalidMaterialsNeverSpendXpOrEmitArrows | Wrong arrow type and already-enchanted source materials reject without mutation |
+| GT08 | invalidQuantityAndInsufficientXpAreAtomic | Insufficient XP and out-of-range batch requests never consume or generate resources |
 
 These are **not** substitutes for the remaining G01-G20 full player/projectile/village/save-reload scenarios. All of those remain pending until implemented as equally meaningful GameTests.
