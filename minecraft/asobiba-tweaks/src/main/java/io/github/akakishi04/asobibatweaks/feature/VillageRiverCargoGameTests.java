@@ -9,6 +9,7 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.vehicle.ChestBoat;
@@ -42,6 +43,12 @@ public final class VillageRiverCargoGameTests {
     @GameTest(template = "empty16x6x9", timeoutTicks = 340)
     public static void realChestBoatDeliversAndReturnsWithExactInventory(GameTestHelper helper) {
         Fixture test = setup(helper);
+        // GameTestServer runs without a human player: add a real server-side
+        // observer to activate entity-ticking chunks as in survival gameplay.
+        ServerPlayer observer = helper.makeMockServerPlayerInLevel();
+        observer.setPos(test.start().getX() - 2.5D,
+                test.start().getY() + 1.0D, test.start().getZ() - 3.5D);
+
         test.source().setItem(0, new ItemStack(Items.OAK_CHEST_BOAT));
         test.source().setItem(1, new ItemStack(Items.COBBLESTONE, 40));
         ChestBoat boat = VillageRiverCargoService.tryLaunch(
@@ -89,7 +96,10 @@ public final class VillageRiverCargoGameTests {
                             + "; received=" + received + ", aboard=" + aboard
                             + ", x=" + boat.getX() + ", z=" + boat.getZ()
                             + ", phase=" + boat.getPersistentData()
-                                    .getString("asobibatweaks_river_cargo_phase"),
+                                    .getString("asobibatweaks_river_cargo_phase")
+                            + ", boatTickCount=" + boat.tickCount
+                            + ", velocity=" + boat.getDeltaMovement()
+                            + ", y=" + boat.getY(),
                             TEST_MARKER);
                 }
             });
