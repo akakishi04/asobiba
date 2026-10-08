@@ -49,6 +49,16 @@ jobs:
 
           echo "Dedicated server never reached ready state (exit status: $status)." >&2
           exit 1
+      - name: Upload Asobiba Tweaks JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: asobiba-tweaks-minecraft-1.21.1
+          path: |
+            minecraft/asobiba-tweaks/build/libs/*.jar
+            !minecraft/asobiba-tweaks/build/libs/*-sources.jar
+            !minecraft/asobiba-tweaks/build/libs/*-javadoc.jar
+          if-no-files-found: error
+          retention-days: 30
 
   minecraft-data-logger:
     runs-on: ubuntu-latest
@@ -64,3 +74,13 @@ jobs:
       - name: Build Minecraft Data Logger
         working-directory: minecraft/minecraft-data-logger
         run: gradle build --stacktrace
+      - name: Upload Minecraft Data Logger JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: minecraft-data-logger-minecraft-1.21.1
+          path: |
+            minecraft/minecraft-data-logger/build/libs/*.jar
+            !minecraft/minecraft-data-logger/build/libs/*-sources.jar
+            !minecraft/minecraft-data-logger/build/libs/*-javadoc.jar
+          if-no-files-found: error
+          retention-days: 30
