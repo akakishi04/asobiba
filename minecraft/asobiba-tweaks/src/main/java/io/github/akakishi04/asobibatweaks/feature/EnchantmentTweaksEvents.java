@@ -60,6 +60,7 @@ public final class EnchantmentTweaksEvents {
     private static final String QUICK_CHARGE = "minecraft:quick_charge";
     private static final String MULTISHOT = "minecraft:multishot";
     private static final String PIERCING = "minecraft:piercing";
+    private static final String LURE = "minecraft:lure";
     private static final String FORTUNE = "minecraft:fortune";
     private static final String SILK_TOUCH = "minecraft:silk_touch";
     private static final String RESPIRATION = "minecraft:respiration";
@@ -2180,6 +2181,7 @@ public final class EnchantmentTweaksEvents {
                 || QUICK_CHARGE.equals(enchantmentId)
                 || MULTISHOT.equals(enchantmentId)
                 || PIERCING.equals(enchantmentId)
+                || LURE.equals(enchantmentId)
                 || "minecraft:efficiency".equals(enchantmentId)
                 || "minecraft:feather_falling".equals(enchantmentId)
                 || FORTUNE.equals(enchantmentId)
@@ -2208,6 +2210,14 @@ public final class EnchantmentTweaksEvents {
     }
 
     private static String branchName(String enchantmentId, int branch) {
+        if (LURE.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Fast Bite";
+                case 1 -> "Secure Hook";
+                case 2 -> "Fishing Rhythm";
+                default -> "Unselected";
+            };
+        }
         if (MULTISHOT.equals(enchantmentId)) {
             return switch (branch) {
                 case 0 -> "Converging Volley";

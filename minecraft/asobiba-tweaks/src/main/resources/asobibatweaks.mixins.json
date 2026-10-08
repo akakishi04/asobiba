@@ -29,6 +29,7 @@
     "BowQuickChargeMixin",
     "CrossbowQuickChargeMasteryMixin",
     "ProjectileVolleyMasteryMixin",
+    "FishingHookTimingAccessor",
     "FrostWalkerLocationMixin",
     "AbstractArrowPierceAccessor",
     "MendingXpRateMixin",

@@ -11,6 +11,7 @@ import io.github.akakishi04.asobibatweaks.feature.EmbeddedArrowRecoveryEvents;
 import io.github.akakishi04.asobibatweaks.feature.LoyaltyArrowEvents;
 import io.github.akakishi04.asobibatweaks.feature.LauncherReloadMasteryEvents;
 import io.github.akakishi04.asobibatweaks.feature.VolleyMasteryEvents;
+import io.github.akakishi04.asobibatweaks.feature.FishingMasteryEvents;
 import io.github.akakishi04.asobibatweaks.feature.FolkloreAndMoonEvents;
 import io.github.akakishi04.asobibatweaks.feature.FrostWalkerToggleNetworking;
 import io.github.akakishi04.asobibatweaks.feature.ForestRegenerationEvents;
@@ -75,6 +76,7 @@ public final class AsobibaTweaks {
         NeoForge.EVENT_BUS.register(new PowerMasteryEvents());
         NeoForge.EVENT_BUS.register(new LauncherReloadMasteryEvents());
         NeoForge.EVENT_BUS.register(new VolleyMasteryEvents());
+        NeoForge.EVENT_BUS.register(new FishingMasteryEvents());
         NeoForge.EVENT_BUS.register(new MendingExtendedEvents());
         NeoForge.EVENT_BUS.register(new EnchantedWorkBlockEvents());
         NeoForge.EVENT_BUS.register(new PlayTimeLimitEvents());
