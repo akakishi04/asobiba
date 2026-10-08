@@ -58,6 +58,8 @@ public final class EnchantmentTweaksEvents {
     private static final String POWER = "minecraft:power";
     private static final String LOYALTY = "minecraft:loyalty";
     private static final String QUICK_CHARGE = "minecraft:quick_charge";
+    private static final String MULTISHOT = "minecraft:multishot";
+    private static final String PIERCING = "minecraft:piercing";
     private static final String FORTUNE = "minecraft:fortune";
     private static final String SILK_TOUCH = "minecraft:silk_touch";
     private static final String RESPIRATION = "minecraft:respiration";
@@ -2176,6 +2178,8 @@ public final class EnchantmentTweaksEvents {
                 || POWER.equals(enchantmentId)
                 || LOYALTY.equals(enchantmentId)
                 || QUICK_CHARGE.equals(enchantmentId)
+                || MULTISHOT.equals(enchantmentId)
+                || PIERCING.equals(enchantmentId)
                 || "minecraft:efficiency".equals(enchantmentId)
                 || "minecraft:feather_falling".equals(enchantmentId)
                 || FORTUNE.equals(enchantmentId)
@@ -2204,6 +2208,22 @@ public final class EnchantmentTweaksEvents {
     }
 
     private static String branchName(String enchantmentId, int branch) {
+        if (MULTISHOT.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Converging Volley";
+                case 1 -> "Wide Volley";
+                case 2 -> "Vertical Volley";
+                default -> "Unselected";
+            };
+        }
+        if (PIERCING.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Penetration";
+                case 1 -> "Skewer";
+                case 2 -> "Line Hunter";
+                default -> "Unselected";
+            };
+        }
         if (QUICK_CHARGE.equals(enchantmentId)) {
             return switch (branch) {
                 case 0 -> "First Load";
