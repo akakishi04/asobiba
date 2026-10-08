@@ -140,7 +140,9 @@ public final class VillageWorkstationRetrofitService {
             return;
         }
 
-        if (!safeSlot(level, building, site) || alreadyHasWorkstation(level, building, fixture)) {
+        if (!safeSlot(level, building, site)
+                || !fixture.defaultBlockState().canSurvive(level, site)
+                || alreadyHasWorkstation(level, building, fixture)) {
             cancel(data, project, "interior layout changed");
             return;
         }
@@ -214,7 +216,8 @@ public final class VillageWorkstationRetrofitService {
                 for (int z = min.getZ() + 1; z < max.getZ(); z++) {
                     BlockPos pos = new BlockPos(x, y, z);
                     if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) return null;
-                    if (safeSlot(level, building, pos)) return pos;
+                    if (safeSlot(level, building, pos)
+                            && fixture.defaultBlockState().canSurvive(level, pos)) return pos;
                 }
             }
         }
@@ -273,6 +276,9 @@ public final class VillageWorkstationRetrofitService {
             building.setClassification("mixed_use");
         } else if ("public".equals(building.classification())) {
             building.setClassification("workshop");
+        }
+        if ("workshop".equals(building.classification())) {
+            building.setValidatedCapacity(Math.max(1, building.validatedCapacity()));
         }
         building.setLastValidatedGameTime(level.getGameTime());
         project.setReservation(VillageStorageService.itemKey(
