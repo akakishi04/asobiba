@@ -22,7 +22,8 @@
     "UnbreakingDurabilityMixin",
     "ProjectileWeaponInfinityMixin",
     "ProjectileWeaponQuiverMixin",
-    "LauncherEnchantmentCompatibilityMixin"
+    "LauncherEnchantmentCompatibilityMixin",
+    "BowQuickChargeMixin"
   ],
   "injectors": {
     "defaultRequire": 1

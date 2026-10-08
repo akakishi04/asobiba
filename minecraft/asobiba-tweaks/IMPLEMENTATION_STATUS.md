@@ -48,7 +48,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Enchantment-Pool Bookshelves | Arcane Bookshelf + `EnchantmentMenuExtensionsMixin` | Implemented |
 | Extended Enchanting Targets | `ExtendedEnchantableItemMixin`, `EnchantmentExtensionMixin`, `EnchantedWorkBlockSavedData` | Implemented; effects intentionally deferred |
 | Raised Enchantment Level Caps | `EnchantmentExtensionMixin` | Implemented; configurable cap |
-| Shared Bow / Crossbow Enchantment Pool | additive `minecraft:enchantable/bow` and `minecraft:enchantable/crossbow` tags, `LauncherEnchantmentCompatibilityMixin` | **V37 eligibility implemented**: both launcher families can receive each other's vanilla enchantment candidates; Infinity + Mending compatibility enabled; Bow Quick Charge timing and full functional cross-launcher effects require follow-up |
+| Shared Bow / Crossbow Enchantment Pool | additive `minecraft:enchantable/bow` and `minecraft:enchantable/crossbow` tags, `LauncherEnchantmentCompatibilityMixin` | **V37-V38 implemented core**: shared launcher eligibility and Infinity + Mending compatibility, plus Bow Quick Charge's diminishing draw-time reduction up to X. Other cross-launcher projectile effects still require in-game validation |
 | Atlas / Map Binder | `AtlasItem`, `AtlasItemInHandRendererMixin` | Implemented |
 | Potion Mixing | `AlchemyExplosivesCraftingEvents` | Implemented |
 | TNT Design | `AlchemyExplosivesCraftingEvents`, `TntDesignSavedData`, `PrimedTntMixin` | Implemented |
@@ -392,3 +392,21 @@ launcher-specific behavior. Bow Quick Charge reduction still needs a Bow
 draw-duration implementation. Crossbow Power/Punch/Flame and Bow Multishot/
 Piercing need in-game confirmation that their projectile effects are applied
 as intended. Bow and Crossbow firework handling remains launcher-specific.
+
+
+## V38 Bow Quick Charge draw-speed note
+
+Quick Charge on an enchanted Bow now modifies the vanilla power-for-time
+calculation when releasing a shot, rather than changing base arrow damage.
+Levels I-V reduce the virtual full-draw time by 8% each, VI-X by 4% each.
+The draw-speed reduction is capped at 60% (full power after 40% of the
+ordinary 20-tick draw at Quick Charge X).
+
+The effect is applied on both logical sides by the same BowItem mixin.
+A normal or unenchanted Bow retains vanilla power/charge timing, and
+Crossbow timing stays on its separate vanilla Quick Charge path.
+The native arrow-loose hook retains its ability to deny an attack.
+
+Gameplay follow-up: confirm client hand/draw animation agrees with
+actual charge/crit timing; integrate the faster charge into its display
+if needed. Verify full-power thresholds and other mods' ArrowLoose hooks.
