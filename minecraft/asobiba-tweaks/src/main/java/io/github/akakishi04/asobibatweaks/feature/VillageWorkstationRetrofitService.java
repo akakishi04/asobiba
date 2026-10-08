@@ -51,6 +51,15 @@ public final class VillageWorkstationRetrofitService {
         residents.sort(Comparator.comparing(v -> v.getUUID().toString()));
 
         for (Villager resident : residents) {
+            // Without this durable deduplication, an unclaimed station could
+            // make the same resident request fresh blocks in every building
+            // on successive planning days.
+            boolean alreadyProvided = data.projectsView().values().stream()
+                    .anyMatch(p -> TEMPLATE.equals(p.templateId())
+                            && !"cancelled".equals(p.phase())
+                            && resident.getUUID().toString().equals(
+                                    p.parameter(TARGET_VILLAGER)));
+            if (alreadyProvided) continue;
             Block fixture = workstationFor(resident.getVillagerData().getProfession());
             if (fixture == null) continue;
             Item fixtureItem = fixture.asItem();
@@ -96,17 +105,20 @@ public final class VillageWorkstationRetrofitService {
         Block fixture = blockFor(project.parameter(WORKSTATION));
         VillageSavedData.BuildingRecord building = buildingId == null
                 ? null : data.building(buildingId).orElse(null);
-        if (building == null || fixture == null || targetId == null
-                || !eligible(building, project.villageId(), level, null)) {
-            cancel(data, project, "building or workstation no longer eligible");
+        if (building == null || fixture == null || targetId == null) {
+            cancel(data, project, "building or workstation missing");
             return;
         }
-
-        BlockPos site = project.site();
         if (!VillageSimulationScheduler.isAreaLoaded(level, building.min(), building.max())) {
             pause(data, project, "waiting for loaded building");
             return;
         }
+        if (!eligible(building, project.villageId(), level, null)) {
+            cancel(data, project, "building no longer eligible");
+            return;
+        }
+
+        BlockPos site = project.site();
 
         // If a player installed the requested block while the worker was
         // traveling, accept it without spending another item.
