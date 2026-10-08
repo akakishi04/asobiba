@@ -9,4 +9,7 @@ import org.spongepowered.asm.mixin.gen.Invoker;
 public interface AbstractArrowPierceAccessor {
     @Invoker("setPierceLevel")
     void asobibatweaks$setPierceLevel(byte pierce);
+
+    @Invoker("isInGround")
+    boolean asobibatweaks$isInGround();
 }

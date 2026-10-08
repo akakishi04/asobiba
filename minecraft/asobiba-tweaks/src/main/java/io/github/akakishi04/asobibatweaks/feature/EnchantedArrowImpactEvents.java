@@ -3,6 +3,16 @@ package io.github.akakishi04.asobibatweaks.feature;
 import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
 import io.github.akakishi04.asobibatweaks.mixin.AbstractArrowPierceAccessor;
 import net.minecraft.tags.EntityTypeTags;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LightningBolt;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.phys.HitResult;
+import net.neoforged.neoforge.event.tick.EntityTickEvent;
+import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.projectile.AbstractArrow;
@@ -18,6 +28,8 @@ import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
  */
 public final class EnchantedArrowImpactEvents {
     private static final String POWER = "minecraft:power";
+    private static final String WIND_BURST = "minecraft:wind_burst";
+    private static final String CHANNELING = "minecraft:channeling";
     private static final String SHARPNESS = "minecraft:sharpness";
     private static final String SMITE = "minecraft:smite";
     private static final String BANE = "minecraft:bane_of_arthropods";
@@ -82,6 +94,92 @@ public final class EnchantedArrowImpactEvents {
         if (extra > 0.0D) {
             event.setAmount((float)Math.min(Float.MAX_VALUE,
                     (double)event.getAmount() + extra));
+        }
+    }
+
+
+    /**
+     * Restore only the part of vanilla air drag removed by arrow-side Power.
+     * Vanilla arrow drag is 0.99 in air, not in water. Gravity remains 0.05
+     * per tick and is compensated separately from the velocity drag term.
+     */
+    @SubscribeEvent
+    public void onArrowTick(EntityTickEvent.Post event) {
+        if (!AsobibaTweaksConfig.EXTENDED_ENCHANTING_TARGETS_ENABLED.getAsBoolean()
+                || !(event.getEntity() instanceof AbstractArrow arrow)
+                || arrow.level().isClientSide() || arrow.isInWater() || arrow.isInLava()
+                || arrow.isNoPhysics()
+                || ((AbstractArrowPierceAccessor)arrow).asobibatweaks$isInGround()) return;
+
+        int power = level(arrow.getPickupItemStackOrigin(), POWER);
+        if (power <= 0) return;
+
+        Vec3 motion = arrow.getDeltaMovement();
+        if (motion.lengthSqr() < 1.0E-10D) return;
+
+        double reduction = 0.08D * Math.min(10, power);
+        double originalDrag = 0.99D;
+        double desiredDrag = originalDrag + (1.0D - originalDrag) * reduction;
+        double correction = desiredDrag / originalDrag;
+        double gravity = arrow.isNoGravity() ? 0.0D : 0.05D;
+
+        arrow.setDeltaMovement(
+                motion.x * correction,
+                (motion.y + gravity) * correction - gravity,
+                motion.z * correction
+        );
+        arrow.hurtMarked = true;
+    }
+
+    /**
+     * Impact-triggered area and weather effects run on entity and block
+     * impacts. Piercing hits may trigger again, as explicitly accepted.
+     */
+    @SubscribeEvent
+    public void onProjectileImpact(ProjectileImpactEvent event) {
+        if (!AsobibaTweaksConfig.EXTENDED_ENCHANTING_TARGETS_ENABLED.getAsBoolean()
+                || event.isCanceled()
+                || !(event.getProjectile() instanceof AbstractArrow arrow)
+                || !(arrow.level() instanceof ServerLevel server)) return;
+
+        ItemStack ammo = arrow.getPickupItemStackOrigin();
+        if (ammo.isEmpty()) return;
+        HitResult hitResult = event.getRayTraceResult();
+        if (hitResult == null || hitResult.getType() == HitResult.Type.MISS) return;
+        Vec3 point = hitResult.getLocation();
+
+        int wind = Math.min(10, level(ammo, WIND_BURST));
+        if (wind > 0) {
+            double radius = 2.5D + 0.25D * (wind - 1);
+            double force = 1.0D + 0.10D * (wind - 1);
+            AABB volume = new AABB(point, point).inflate(radius);
+            for (Entity entity : server.getEntitiesOfClass(
+                    Entity.class, volume,
+                    candidate -> candidate != arrow && candidate.isAlive())) {
+                Vec3 away = entity.position().subtract(point);
+                double distance = away.length();
+                if (distance > radius) continue;
+
+                Vec3 unit = distance > 0.01D
+                        ? away.scale(1.0D / distance)
+                        : new Vec3(0.0D, 1.0D, 0.0D);
+                double falloff = Math.max(0.15D, 1.0D - distance / radius);
+                double impulse = force * falloff * 0.55D;
+                entity.push(unit.x * impulse,
+                        Math.max(0.10D, unit.y * impulse + 0.20D * falloff),
+                        unit.z * impulse);
+                entity.hurtMarked = true;
+            }
+        }
+
+        if (level(ammo, CHANNELING) > 0
+                && server.isThundering()
+                && server.canSeeSky(BlockPos.containing(point).above())) {
+            LightningBolt bolt = EntityType.LIGHTNING_BOLT.create(server);
+            if (bolt != null) {
+                bolt.setPos(point.x, point.y, point.z);
+                server.addFreshEntity(bolt);
+            }
         }
     }
 
