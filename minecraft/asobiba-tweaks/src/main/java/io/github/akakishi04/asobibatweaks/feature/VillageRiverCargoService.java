@@ -1,0 +1,379 @@
+package io.github.akakishi04.asobibatweaks.feature;
+
+import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
+import java.util.List;
+import java.util.UUID;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.world.Container;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.vehicle.ChestBoat;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.phys.Vec3;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.event.tick.EntityTickEvent;
+import net.neoforged.neoforge.event.tick.LevelTickEvent;
+
+/**
+ * Experimental REAL-boat cargo courier between two finished River Docks.
+ *
+ * One paid, vanilla ChestBoat entity is the sole cargo holder during travel.
+ * Its identity is saved on the route and its route/waypoint state is saved on
+ * the physical entity. Unknown/unloaded carrier state never authorizes a
+ * replacement boat: fail closed instead of minting a second inventory.
+ *
+ * Loading/unloading happens only at the corresponding *physical*, registered
+ * dock Barrel; no item is moved from source to destination instantaneously.
+ * In particular this is NOT yet a general inter-village merchant system.
+ */
+public final class VillageRiverCargoService {
+    private static final String ROUTE = "asobibatweaks_river_cargo_route";
+    private static final String FORWARD = "asobibatweaks_river_cargo_forward";
+    private static final String PHASE = "asobibatweaks_river_cargo_phase";
+    private static final String CURSOR = "asobibatweaks_river_cargo_cursor";
+    private static final String COURSE_HASH = "asobibatweaks_river_course";
+    private static final int MAX_SHIPMENT = 16;
+    private static final double MOVE_SPEED = 0.16D;
+    private static final double MOOR_RADIUS_SQUARED = 1.3D * 1.3D;
+
+    public VillageRiverCargoService() {}
+
+    @SubscribeEvent
+    public void onLevelTick(LevelTickEvent.Post event) {
+        if (!enabled() || !(event.getLevel() instanceof ServerLevel level)
+                || level.getGameTime() % 200 != 0L) return;
+
+        VillageSavedData data = VillageSavedData.get(level);
+        int examined = 0;
+        for (VillageSavedData.VillageRecord village : data.villagesView().values()) {
+            if (!"active".equals(village.lifecycle())) continue;
+            for (UUID routeId : village.routeIds()) {
+                if (++examined > 8) return; // bounded across all loaded villages
+                VillageSavedData.RouteRecord route = data.route(routeId).orElse(null);
+                if (route == null || !"river".equals(route.type())
+                        || !"active".equals(route.state())
+                        || route.carrierEntityId() != null
+                        || route.waypoints().size() < 2) continue;
+                tryLaunch(level, data, route);
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public void onBoatTick(EntityTickEvent.Post event) {
+        if (!(event.getEntity() instanceof ChestBoat boat)
+                || !(boat.level() instanceof ServerLevel level)) return;
+        CompoundTag state = boat.getPersistentData();
+        if (!state.hasUUID(ROUTE)) return;
+        if (!enabled() || !boat.isAlive() || boat.isVehicle()) {
+            stop(boat);
+            return;
+        }
+
+        VillageSavedData data = VillageSavedData.get(level);
+        VillageSavedData.RouteRecord route =
+                data.route(state.getUUID(ROUTE)).orElse(null);
+        if (route == null || !boat.getUUID().equals(route.carrierEntityId())
+                || !"active".equals(route.state())) {
+            stop(boat);
+            return;
+        }
+        List<BlockPos> points = route.waypoints();
+        if (points.size() < 2 || points.hashCode() != state.getInt(COURSE_HASH)) {
+            // A changed route must not suddenly steer loaded cargo onto an
+            // unrelated path. Keep the boat and contents where they are.
+            stop(boat);
+            return;
+        }
+
+        boolean forward = state.getBoolean(FORWARD);
+        String phase = state.getString(PHASE);
+        if ("idle".equals(phase)) {
+            stop(boat);
+            if (boat.tickCount % 40 != 0 || !emptyCargo(boat)) return;
+            BlockPos sourcePoint = forward ? route.from() : route.to();
+            if (horizontalDistanceSqr(boat, sourcePoint) > MOOR_RADIUS_SQUARED) return;
+            Container source = dockBarrel(level, data, route.villageId(), sourcePoint);
+            Container target = dockBarrel(level, data, route.villageId(),
+                    forward ? route.to() : route.from());
+            CargoChoice cargo = chooseCargo(source, target);
+            if (cargo == null) return;
+            // The boat physically receives the same stack removed from the
+            // source Barrel. Nothing is copied or regenerated on departure.
+            ItemStack loaded = source.removeItem(cargo.slot(), cargo.count());
+            if (loaded.isEmpty()) return;
+            boat.setItem(0, loaded);
+            source.setChanged();
+            state.putString(PHASE, "outbound");
+            state.putInt(CURSOR, forward ? 1 : points.size() - 2);
+            return;
+        }
+
+        if ("unload".equals(phase)) {
+            stop(boat);
+            Container destination = dockBarrel(level, data, route.villageId(),
+                    forward ? route.to() : route.from());
+            if (destination == null || horizontalDistanceSqr(boat,
+                    forward ? route.to() : route.from()) > MOOR_RADIUS_SQUARED) return;
+            if (!unload(boat, destination)) return;
+            VillageStorageService.reconcileVillage(route.villageId(), level);
+            state.putString(PHASE, "return");
+            state.putInt(CURSOR, forward ? points.size() - 2 : 1);
+            return;
+        }
+
+        if (!"outbound".equals(phase) && !"return".equals(phase)) {
+            stop(boat);
+            return;
+        }
+
+        boolean travelForward = "outbound".equals(phase) == forward;
+        int targetIndex = state.getInt(CURSOR);
+        if (targetIndex < 0 || targetIndex >= points.size()) {
+            stop(boat);
+            return;
+        }
+        BlockPos destination = points.get(targetIndex);
+        double dx = destination.getX() + 0.5D - boat.getX();
+        double dz = destination.getZ() + 0.5D - boat.getZ();
+        double distance2 = dx * dx + dz * dz;
+
+        if (distance2 <= MOOR_RADIUS_SQUARED) {
+            int next = targetIndex + (travelForward ? 1 : -1);
+            if (next < 0 || next >= points.size()) {
+                stop(boat);
+                if ("outbound".equals(phase)) {
+                    state.putString(PHASE, "unload");
+                } else {
+                    state.putString(PHASE, "idle");
+                }
+                return;
+            }
+            targetIndex = next;
+            state.putInt(CURSOR, targetIndex);
+            destination = points.get(targetIndex);
+            dx = destination.getX() + 0.5D - boat.getX();
+            dz = destination.getZ() + 0.5D - boat.getZ();
+            distance2 = dx * dx + dz * dz;
+        }
+        if (distance2 < 1.0E-4D) {
+            stop(boat);
+            return;
+        }
+        double distance = Math.sqrt(distance2);
+        double towardX = dx / distance;
+        double towardZ = dz / distance;
+        BlockPos ahead = new BlockPos(
+                (int)Math.floor(boat.getX() + towardX * 1.5D),
+                route.from().getY(),
+                (int)Math.floor(boat.getZ() + towardZ * 1.5D));
+        if (!VillageSimulationScheduler.isChunkLoaded(level, ahead)
+                || !VillageRiverNavigationService.navigable(level, ahead)) {
+            stop(boat);
+            return;
+        }
+        // Velocity is applied to the REAL vanilla boat, not its position.
+        // It remains subject to collisions, buoyancy, world saving and chunk
+        // unload. A passenger can take over by mounting it.
+        boat.setDeltaMovement(new Vec3(
+                towardX * MOVE_SPEED,
+                boat.getDeltaMovement().y,
+                towardZ * MOVE_SPEED));
+    }
+
+    private static void tryLaunch(ServerLevel level, VillageSavedData data,
+                                  VillageSavedData.RouteRecord route) {
+        List<BlockPos> path = route.waypoints();
+        if (path.isEmpty() || !path.getFirst().equals(route.from())
+                || !path.getLast().equals(route.to())) return;
+        if (!VillageRiverNavigationService.navigable(level, route.from())
+                || !VillageRiverNavigationService.navigable(level, route.to())) return;
+
+        Container first = dockBarrel(level, data, route.villageId(), route.from());
+        Container second = dockBarrel(level, data, route.villageId(), route.to());
+        if (first == null || second == null) return;
+
+        boolean forward = true;
+        CargoChoice shipment = chooseCargo(first, second);
+        Container source = first;
+        if (shipment == null) {
+            shipment = chooseCargo(second, first);
+            source = second;
+            forward = false;
+        }
+        if (shipment == null) return;
+
+        int boatItemSlot = findBoatItem(source);
+        if (boatItemSlot < 0) return; // no free boats or synthetic recipes
+        BlockPos departure = forward ? route.from() : route.to();
+        ChestBoat boat = EntityType.CHEST_BOAT.create(level);
+        if (boat == null) return;
+        boat.setPos(departure.getX() + 0.5D,
+                departure.getY() + 0.3D, departure.getZ() + 0.5D);
+        CompoundTag state = boat.getPersistentData();
+        state.putUUID(ROUTE, route.id());
+        state.putBoolean(FORWARD, forward);
+        state.putString(PHASE, "outbound");
+        state.putInt(CURSOR, forward ? 1 : path.size() - 2);
+        state.putInt(COURSE_HASH, path.hashCode());
+
+        if (!level.addFreshEntity(boat)) return;
+        // Consume exactly one actual ChestBoat item only after the physical
+        // entity has successfully entered the loaded world.
+        ItemStack paid = source.removeItem(boatItemSlot, 1);
+        if (!paid.is(Items.OAK_CHEST_BOAT) || paid.getCount() != 1) {
+            if (!paid.isEmpty()) insert(source, paid);
+            boat.discard();
+            return;
+        }
+        ItemStack shipped = source.removeItem(shipment.slot(), shipment.count());
+        if (shipped.isEmpty()) {
+            // No shipment: keep the paid physical boat moored for subsequent
+            // dispatches rather than discarding a legitimate item.
+            state.putString(PHASE, "idle");
+        } else {
+            boat.setItem(0, shipped);
+        }
+        source.setChanged();
+        route.setCarrierEntityId(boat.getUUID());
+        data.touch();
+        VillageStorageService.reconcileVillage(route.villageId(), level);
+    }
+
+    private static Container dockBarrel(ServerLevel level, VillageSavedData data,
+                                        UUID villageId, BlockPos waterEnd) {
+        for (VillageSavedData.WorkSiteRecord site : data.workSitesForVillage(villageId)) {
+            if (!"river_dock".equals(site.type()) || !"active".equals(site.state())
+                    || !waterEnd.equals(VillageRiverNavigationService.dockWater(
+                            level, data, site))) continue;
+            String purpose = site.purpose();
+            UUID projectId;
+            try {
+                projectId = UUID.fromString(purpose.substring("dock:".length()));
+            } catch (IllegalArgumentException ignored) {
+                continue;
+            }
+            VillageSavedData.ProjectRecord project = data.project(projectId).orElse(null);
+            if (project == null) continue;
+            Direction direction = switch (project.parameter("dock_direction")) {
+                case "north" -> Direction.NORTH;
+                case "south" -> Direction.SOUTH;
+                case "east" -> Direction.EAST;
+                case "west" -> Direction.WEST;
+                default -> null;
+            };
+            if (direction == null) continue;
+            BlockPos storagePos = project.site().relative(direction.getClockWise()).above();
+            if (!VillageSimulationScheduler.isChunkLoaded(level, storagePos)
+                    || !level.getBlockState(storagePos).is(net.minecraft.world.level.block.Blocks.BARREL)
+                    || data.storageAt(villageId, storagePos).isEmpty()) continue;
+            if (level.getBlockEntity(storagePos) instanceof Container barrel) return barrel;
+        }
+        return null;
+    }
+
+    /** Conservative small-stacks-only freight, never private equipment. */
+    private static CargoChoice chooseCargo(Container source, Container destination) {
+        if (source == null || destination == null) return null;
+        for (int slot = 0; slot < source.getContainerSize(); slot++) {
+            ItemStack stack = source.getItem(slot);
+            if (stack.isEmpty() || stack.getCount() < 32 || !approved(stack)) continue;
+            int destinationCount = countMatching(destination, stack);
+            if (destinationCount >= 16) continue;
+            return new CargoChoice(slot, Math.min(
+                    MAX_SHIPMENT, Math.min(stack.getCount() - 16, 16 - destinationCount)));
+        }
+        return null;
+    }
+
+    private static int countMatching(Container container, ItemStack exemplar) {
+        int total = 0;
+        for (int slot = 0; slot < container.getContainerSize(); slot++) {
+            ItemStack stack = container.getItem(slot);
+            if (ItemStack.isSameItemSameComponents(stack, exemplar)) total += stack.getCount();
+        }
+        return total;
+    }
+
+    private static boolean approved(ItemStack stack) {
+        return stack.is(ItemTags.LOGS) || stack.is(ItemTags.PLANKS)
+                || stack.is(ItemTags.WOOL) || stack.is(Items.COBBLESTONE)
+                || stack.is(Items.STONE) || stack.is(Items.IRON_INGOT)
+                || stack.is(Items.BREAD) || stack.is(Items.WHEAT)
+                || stack.is(Items.CARROT) || stack.is(Items.POTATO)
+                || stack.is(Items.COD) || stack.is(Items.SALMON);
+    }
+
+    private static int findBoatItem(Container source) {
+        for (int i = 0; i < source.getContainerSize(); i++) {
+            if (source.getItem(i).is(Items.OAK_CHEST_BOAT)) return i;
+        }
+        return -1;
+    }
+
+    private static boolean unload(ChestBoat boat, Container destination) {
+        for (int i = 0; i < boat.getContainerSize(); i++) {
+            ItemStack stack = boat.getItem(i);
+            if (stack.isEmpty()) continue;
+            ItemStack remainder = insert(destination, stack);
+            int moved = stack.getCount() - remainder.getCount();
+            if (moved > 0) {
+                boat.setItem(i, remainder);
+                boat.setChanged();
+            }
+        }
+        return emptyCargo(boat);
+    }
+
+    private static ItemStack insert(Container destination, ItemStack source) {
+        ItemStack remainder = source.copy();
+        for (int i = 0; i < destination.getContainerSize() && !remainder.isEmpty(); i++) {
+            ItemStack current = destination.getItem(i);
+            if (current.isEmpty()
+                    || !ItemStack.isSameItemSameComponents(current, remainder)) continue;
+            int amount = Math.min(remainder.getCount(),
+                    current.getMaxStackSize() - current.getCount());
+            if (amount <= 0) continue;
+            current.grow(amount);
+            remainder.shrink(amount);
+            destination.setChanged();
+        }
+        for (int i = 0; i < destination.getContainerSize() && !remainder.isEmpty(); i++) {
+            if (!destination.getItem(i).isEmpty()) continue;
+            int amount = Math.min(remainder.getCount(), remainder.getMaxStackSize());
+            destination.setItem(i, remainder.copyWithCount(amount));
+            remainder.shrink(amount);
+        }
+        return remainder;
+    }
+
+    private static boolean emptyCargo(ChestBoat boat) {
+        for (int i = 0; i < boat.getContainerSize(); i++) {
+            if (!boat.getItem(i).isEmpty()) return false;
+        }
+        return true;
+    }
+
+    private static void stop(ChestBoat boat) {
+        boat.setDeltaMovement(new Vec3(0.0D, boat.getDeltaMovement().y, 0.0D));
+    }
+
+    private static double horizontalDistanceSqr(ChestBoat boat, BlockPos point) {
+        double x = boat.getX() - point.getX() - 0.5D;
+        double z = boat.getZ() - point.getZ() - 0.5D;
+        return x * x + z * z;
+    }
+
+    private static boolean enabled() {
+        return AsobibaTweaksConfig.VILLAGE_SIMULATION_ENABLED.getAsBoolean()
+                && AsobibaTweaksConfig.VILLAGE_RIVER_DOCKS_ENABLED.getAsBoolean()
+                && AsobibaTweaksConfig.VILLAGE_LOGISTICS_ENABLED.getAsBoolean()
+                && AsobibaTweaksConfig.VILLAGE_RIVER_CARGO_ENABLED.getAsBoolean();
+    }
+
+    private record CargoChoice(int slot, int count) {}
+}
