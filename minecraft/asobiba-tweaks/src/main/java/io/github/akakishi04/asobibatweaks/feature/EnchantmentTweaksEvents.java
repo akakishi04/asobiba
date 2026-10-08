@@ -70,6 +70,7 @@ public final class EnchantmentTweaksEvents {
     private static final String DEPTH_STRIDER = "minecraft:depth_strider";
     private static final String AQUA_AFFINITY = "minecraft:aqua_affinity";
     private static final String LOOTING = "minecraft:looting";
+    private static final String SOUL_SPEED = "minecraft:soul_speed";
     private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
     private static final String PROTECTION_LAST_DAMAGE = "asobibatweaks_protection_last_damage";
     private static final String PROJECTILE_LAST_DAMAGE = "asobibatweaks_projectile_last_damage";
@@ -112,6 +113,9 @@ public final class EnchantmentTweaksEvents {
     private static final String LOOTING_HERD_TYPE = "asobibatweaks_looting_herd_type";
     private static final String LOOTING_HERD_TIME = "asobibatweaks_looting_herd_time";
     private static final String LOOTING_HERD_STREAK = "asobibatweaks_looting_herd_streak";
+    private static final String SOUL_SPEED_PREV_DAMAGE = "asobibatweaks_soul_speed_prev_damage";
+    private static final String SOUL_SPEED_ACTIVE_SPEED = "asobibatweaks_soul_speed_active_speed";
+    private static final String SOUL_SPEED_LINGER_UNTIL = "asobibatweaks_soul_speed_linger_until";
 
     @SubscribeEvent
     public void onLootingDrops(LivingDropsEvent event) {
@@ -1057,6 +1061,89 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
+    public void onSoulSpeedTick(PlayerTickEvent.Post event) {
+        if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || !(event.getEntity() instanceof ServerPlayer player)
+                || player.level().isClientSide()) {
+            return;
+        }
+
+        ItemStack boots = player.getItemBySlot(EquipmentSlot.FEET);
+        var persistent = player.getPersistentData();
+        BranchRef soulSpeed = branch(boots, SOUL_SPEED);
+        if (soulSpeed == null) {
+            persistent.remove(SOUL_SPEED_PREV_DAMAGE);
+            persistent.remove(SOUL_SPEED_ACTIVE_SPEED);
+            persistent.remove(SOUL_SPEED_LINGER_UNTIL);
+            return;
+        }
+
+        long now = player.level().getGameTime();
+        double strength = branchScale(soulSpeed.mastery(), 0.0D, 1.0D);
+        boolean validFooting = player.onGround()
+                && player.level().getBlockState(player.blockPosition().below()).is(BlockTags.SOUL_SPEED_BLOCKS);
+        var motion = player.getDeltaMovement();
+        double horizontalSpeed = Math.sqrt(motion.x * motion.x + motion.z * motion.z);
+
+        int currentDamage = boots.isDamageableItem() ? boots.getDamageValue() : 0;
+        if (soulSpeed.branch() == 0) {
+            if (persistent.contains(SOUL_SPEED_PREV_DAMAGE)) {
+                int previousDamage = persistent.getInt(SOUL_SPEED_PREV_DAMAGE);
+                int gained = Math.max(0, currentDamage - previousDamage);
+                if (validFooting && horizontalSpeed > 0.01D && player.hurtTime == 0 && gained > 0) {
+                    double preventionChance = 0.25D + 0.50D * strength;
+                    int prevented = 0;
+                    for (int i = 0; i < gained; i++) {
+                        if (player.getRandom().nextDouble() < preventionChance) prevented++;
+                    }
+                    if (prevented > 0) {
+                        boots.setDamageValue(Math.max(0, currentDamage - prevented));
+                        currentDamage = boots.getDamageValue();
+                    }
+                }
+            }
+            persistent.putInt(SOUL_SPEED_PREV_DAMAGE, currentDamage);
+            return;
+        }
+
+        persistent.putInt(SOUL_SPEED_PREV_DAMAGE, currentDamage);
+
+        if (soulSpeed.branch() != 1) {
+            persistent.remove(SOUL_SPEED_ACTIVE_SPEED);
+            persistent.remove(SOUL_SPEED_LINGER_UNTIL);
+            return;
+        }
+
+        int level = Math.max(1, enchantmentLevel(boots, SOUL_SPEED));
+        double vanillaBonus = 0.03D * (1.0D + level * 0.35D);
+        double retention = 0.50D + 0.25D * strength;
+        long duration = Math.round(20.0D + 40.0D * strength);
+
+        if (validFooting && horizontalSpeed > 0.01D) {
+            persistent.putInt(SOUL_SPEED_ACTIVE_SPEED, (int)Math.round(horizontalSpeed * 10000.0D));
+            persistent.putLong(SOUL_SPEED_LINGER_UNTIL, now + duration);
+            return;
+        }
+
+        if (!persistent.contains(SOUL_SPEED_LINGER_UNTIL)
+                || now > persistent.getLong(SOUL_SPEED_LINGER_UNTIL)
+                || !persistent.contains(SOUL_SPEED_ACTIVE_SPEED)
+                || horizontalSpeed <= 0.005D) {
+            return;
+        }
+
+        double activeSpeed = persistent.getInt(SOUL_SPEED_ACTIVE_SPEED) / 10000.0D;
+        double baseline = activeSpeed / Math.max(1.0D, 1.0D + vanillaBonus);
+        double target = baseline + (activeSpeed - baseline) * retention;
+        target = Math.min(0.45D, Math.max(0.0D, target));
+
+        if (horizontalSpeed < target) {
+            double scale = target / horizontalSpeed;
+            player.setDeltaMovement(motion.x * scale, motion.y, motion.z * scale);
+        }
+    }
+
+    @SubscribeEvent
     public void onAquaAffinityTick(PlayerTickEvent.Post event) {
         if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
                 || !(event.getEntity() instanceof ServerPlayer player)
@@ -1399,6 +1486,26 @@ public final class EnchantmentTweaksEvents {
                     amplifier
             ));
         }
+    }
+
+    @SubscribeEvent
+    public void onSoulFootingKnockback(LivingKnockBackEvent event) {
+        if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || !(event.getEntity() instanceof ServerPlayer player)
+                || player.level().isClientSide()) {
+            return;
+        }
+
+        ItemStack boots = player.getItemBySlot(EquipmentSlot.FEET);
+        BranchRef soulSpeed = branch(boots, SOUL_SPEED);
+        if (soulSpeed == null || soulSpeed.branch() != 2) return;
+
+        BlockPos footing = player.blockPosition().below();
+        if (!player.level().getBlockState(footing).is(BlockTags.SOUL_SPEED_BLOCKS)) return;
+
+        double strength = branchScale(soulSpeed.mastery(), 0.0D, 1.0D);
+        double reduction = 0.10D + 0.25D * strength;
+        event.setStrength((float)(event.getStrength() * (1.0D - reduction)));
     }
 
     @SubscribeEvent
@@ -1913,7 +2020,8 @@ public final class EnchantmentTweaksEvents {
                 || FLAME.equals(enchantmentId)
                 || DEPTH_STRIDER.equals(enchantmentId)
                 || AQUA_AFFINITY.equals(enchantmentId)
-                || LOOTING.equals(enchantmentId);
+                || LOOTING.equals(enchantmentId)
+                || SOUL_SPEED.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -2081,6 +2189,14 @@ public final class EnchantmentTweaksEvents {
                 case 0 -> "Herd Hunter";
                 case 1 -> "Stripping";
                 case 2 -> "Big-Game Hunter";
+                default -> "Unselected";
+            };
+        }
+        if (SOUL_SPEED.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Soul-Sole Conservation";
+                case 1 -> "Lingering Momentum";
+                case 2 -> "Soul Footing";
                 default -> "Unselected";
             };
         }
