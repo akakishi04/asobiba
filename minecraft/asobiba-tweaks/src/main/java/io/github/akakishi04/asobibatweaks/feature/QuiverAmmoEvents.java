@@ -39,8 +39,8 @@ public final class QuiverAmmoEvents {
 
         ItemStack temporary = selected.copy();
         event.setProjectileItemStack(temporary);
-        if (player instanceof ServerPlayer) {
-            PENDING.put(temporary, new PendingAmmo(player, slot, selected.copy()));
+        if (player instanceof ServerPlayer serverPlayer) {
+            PENDING.put(temporary, new PendingAmmo(serverPlayer, slot, selected.copy()));
         }
     }
 
@@ -78,6 +78,18 @@ public final class QuiverAmmoEvents {
     public static boolean isOrdinaryArrow(ItemStack stack) {
         return stack.is(Items.ARROW)
                 && ItemStack.isSameItemSameComponents(stack, new ItemStack(Items.ARROW));
+    }
+
+    /**
+     * A fired vanilla Infinity arrow has INTANGIBLE_PROJECTILE temporarily
+     * attached. This must not disqualify otherwise ordinary ammunition from
+     * the Rapid Infinity streak, but other custom components still do.
+     */
+    public static boolean isOrdinaryShotProjectile(ItemStack projectile) {
+        if (!projectile.is(Items.ARROW)) return false;
+        ItemStack normalized = projectile.copy();
+        normalized.remove(net.minecraft.core.component.DataComponents.INTANGIBLE_PROJECTILE);
+        return isOrdinaryArrow(normalized);
     }
 
     private static boolean hasInfinity(ItemStack stack) {
