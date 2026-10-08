@@ -951,7 +951,11 @@ public final class VillageOutpostLifecycleService {
         BlockPos outpost = center(site);
         for (UUID routeId : village.routeIds()) {
             VillageSavedData.RouteRecord route = data.route(routeId).orElse(null);
-            if (route == null || !"active".equals(route.state())) continue;
+            // A river route is NOT a walkable land path for ordinary Porters.
+            // Do not activate old outpost road logistics merely because a
+            // separate waterway connects two nearby docks.
+            if (route == null || !"active".equals(route.state())
+                    || "river".equals(route.type())) continue;
 
             boolean touchesOutpost = route.from().distManhattan(outpost) <= 24
                     || route.to().distManhattan(outpost) <= 24;
