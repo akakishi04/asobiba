@@ -57,6 +57,7 @@ public final class EnchantmentTweaksEvents {
     private static final String INFINITY = "minecraft:infinity";
     private static final String POWER = "minecraft:power";
     private static final String LOYALTY = "minecraft:loyalty";
+    private static final String QUICK_CHARGE = "minecraft:quick_charge";
     private static final String FORTUNE = "minecraft:fortune";
     private static final String SILK_TOUCH = "minecraft:silk_touch";
     private static final String RESPIRATION = "minecraft:respiration";
@@ -2174,6 +2175,7 @@ public final class EnchantmentTweaksEvents {
                 || INFINITY.equals(enchantmentId)
                 || POWER.equals(enchantmentId)
                 || LOYALTY.equals(enchantmentId)
+                || QUICK_CHARGE.equals(enchantmentId)
                 || "minecraft:efficiency".equals(enchantmentId)
                 || "minecraft:feather_falling".equals(enchantmentId)
                 || FORTUNE.equals(enchantmentId)
@@ -2202,6 +2204,14 @@ public final class EnchantmentTweaksEvents {
     }
 
     private static String branchName(String enchantmentId, int branch) {
+        if (QUICK_CHARGE.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "First Load";
+                case 1 -> "Reload Rhythm";
+                case 2 -> "Mobile Reload";
+                default -> "Unselected";
+            };
+        }
         if (LOYALTY.equals(enchantmentId)) {
             return switch (branch) {
                 case 0 -> "Fast Return";

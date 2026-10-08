@@ -1,6 +1,7 @@
 package io.github.akakishi04.asobibatweaks.mixin;
 
 import io.github.akakishi04.asobibatweaks.feature.InfinityMasteryEvents;
+import io.github.akakishi04.asobibatweaks.feature.LauncherReloadMasteryEvents;
 import java.util.List;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
@@ -22,5 +23,6 @@ public abstract class ProjectileWeaponInfinityMixin {
             float velocity, float inaccuracy, boolean isCritical,
             @Nullable LivingEntity target, CallbackInfo ci) {
         InfinityMasteryEvents.recordShot(level, shooter, weapon, projectiles, velocity);
+        LauncherReloadMasteryEvents.onFired(level, shooter, weapon);
     }
 }

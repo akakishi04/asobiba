@@ -27,6 +27,7 @@
     "ProjectileWeaponQuiverMixin",
     "LauncherEnchantmentCompatibilityMixin",
     "BowQuickChargeMixin",
+    "CrossbowQuickChargeMasteryMixin",
     "FrostWalkerLocationMixin",
     "AbstractArrowPierceAccessor",
     "MendingXpRateMixin",
