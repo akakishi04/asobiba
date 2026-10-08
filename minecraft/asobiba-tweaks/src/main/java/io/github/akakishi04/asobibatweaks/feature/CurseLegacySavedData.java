@@ -43,11 +43,12 @@ public final class CurseLegacySavedData extends SavedData {
                 .getDataStorage().computeIfAbsent(FACTORY, NAME);
     }
 
-    public void addReturn(UUID owner, ItemStack item, String slot, long due) {
-        if (item.isEmpty() || claims.size() >= MAX_RECORDS) return;
+    public boolean addReturn(UUID owner, ItemStack item, String slot, long due) {
+        if (item.isEmpty() || claims.size() >= MAX_RECORDS) return false;
         claims.add(new Claim(owner, "return", item.copy(), slot,
                 due, "", "", 0L, new CompoundTag()));
         setDirty();
+        return true;
     }
 
     public void addEcho(UUID owner, String dimension, BlockPos position, long expiry) {

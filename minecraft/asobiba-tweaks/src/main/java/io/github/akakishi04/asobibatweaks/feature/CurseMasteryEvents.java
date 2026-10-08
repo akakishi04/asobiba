@@ -104,10 +104,41 @@ public final class CurseMasteryEvents {
                 || event.getTo().isEmpty()) return;
 
         CurseLegacySavedData.get(player.serverLevel()).applyLegacy(player, event.getTo());
-        // Vanilla Binding already prevents normal voluntary removal.
-        // Forced Attachment should not clone a forcibly moved item:
-        // when another mod moves it outside the player's inventory,
-        // safe recovery requires that external mod's earlier API.
+
+        // NeoForge's equipment change event is not cancellable. Only reclaim
+        // an item we can physically locate in this player's own inventory.
+        // Never recreate from the getFrom() snapshot, which would duplicate
+        // any stack moved into an unknown external inventory.
+        if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()) return;
+        boolean armor = false;
+        for (EquipmentSlot slot : ARMOR) if (slot == event.getSlot()) armor = true;
+        if (!armor || event.getFrom().isEmpty()
+                || ItemStack.isSameItemSameComponents(event.getFrom(), event.getTo())) return;
+        var forced = branch(event.getFrom(), "minecraft:binding_curse");
+        if (forced == null || forced.choice() != 2
+                || player.getRandom().nextDouble() >= 0.50D + 0.50D * forced.progress()) {
+            return;
+        }
+
+        int index = -1;
+        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+            ItemStack candidate = player.getInventory().getItem(i);
+            if (candidate.isEmpty()
+                    || !ItemStack.isSameItemSameComponents(candidate, event.getFrom())
+                    || candidate.getCount() != event.getFrom().getCount()) continue;
+            index = i;
+            break;
+        }
+        if (index < 0) return;
+
+        ItemStack reclaimed = player.getInventory().getItem(index).copy();
+        player.getInventory().setItem(index, ItemStack.EMPTY);
+        ItemStack replaced = player.getItemBySlot(event.getSlot());
+        player.setItemSlot(event.getSlot(), reclaimed);
+        if (!replaced.isEmpty()) {
+            player.getInventory().add(replaced);
+            if (!replaced.isEmpty()) player.drop(replaced, false);
+        }
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
@@ -129,9 +160,12 @@ public final class CurseMasteryEvents {
 
             // Take possession of the ONE real ItemStack before vanilla
             // drops run. This is not a duplicate inventory copy.
+            // Reserve an escrow entry BEFORE removing the real equipped
+            // item; a full or inaccessible store must fail without loss.
             ItemStack removed = item.copy();
-            player.setItemSlot(slot, ItemStack.EMPTY);
-            records.addReturn(player.getUUID(), removed, slot.getName(), now);
+            if (records.addReturn(player.getUUID(), removed, slot.getName(), now)) {
+                player.setItemSlot(slot, ItemStack.EMPTY);
+            }
         }
 
         for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
@@ -143,9 +177,10 @@ public final class CurseMasteryEvents {
             if (vanishing.choice() == 0
                     && player.getRandom().nextDouble() < 0.10D + 0.20D * strength) {
                 ItemStack removed = item.copy();
-                player.getInventory().setItem(i, ItemStack.EMPTY);
                 long delay = Math.round(20.0D * 60.0D * (20.0D - 15.0D * strength));
-                records.addReturn(player.getUUID(), removed, "", now + delay);
+                if (records.addReturn(player.getUUID(), removed, "", now + delay)) {
+                    player.getInventory().setItem(i, ItemStack.EMPTY);
+                }
             } else if (vanishing.choice() == 1) {
                 long duration = Math.round(20.0D * (60.0D + 240.0D * strength));
                 records.addEcho(player.getUUID(),
