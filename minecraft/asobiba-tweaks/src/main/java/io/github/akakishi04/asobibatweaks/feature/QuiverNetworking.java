@@ -4,6 +4,7 @@ import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.registration.NetworkRegistry;
 import java.util.function.Consumer;
 
 public final class QuiverNetworking {
@@ -44,6 +45,14 @@ public final class QuiverNetworking {
     }
 
     public static void sendSnapshot(ServerPlayer player) {
+        // The GameTest mock player (and any connection that has not negotiated
+        // our optional payload) cannot receive a quiver snapshot. Query the
+        // actual listener's negotiated channels rather than assuming every
+        // ServerPlayer connection supports the client payload.
+        if (player.connection == null
+                || !NetworkRegistry.hasChannel(player.connection, QuiverSyncPayload.TYPE.id())) {
+            return;
+        }
         PacketDistributor.sendToPlayer(player, new QuiverSyncPayload(QuiverData.snapshot(player)));
     }
 }
