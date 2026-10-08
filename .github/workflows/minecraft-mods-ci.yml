@@ -26,6 +26,23 @@ jobs:
       - name: Build Asobiba Tweaks
         working-directory: minecraft/asobiba-tweaks
         run: gradle build --stacktrace
+      - name: Execute required NeoForge GameTests
+        working-directory: minecraft/asobiba-tweaks
+        shell: bash
+        timeout-minutes: 6
+        run: |
+          set +e
+          timeout --signal=TERM 300s gradle runGameTestServer --stacktrace > gametest-server.log 2>&1
+          result=$?
+          set -e
+
+          cat gametest-server.log
+          if [ "$result" -ne 0 ]; then
+            echo "NeoForge required GameTests failed or the server timed out (status: $result)." >&2
+            exit "$result"
+          fi
+
+          echo "NeoForge required GameTests completed successfully."
       - name: Smoke-start dedicated server
         working-directory: minecraft/asobiba-tweaks
         shell: bash
@@ -49,23 +66,6 @@ jobs:
 
           echo "Dedicated server never reached ready state (exit status: $status)." >&2
           exit 1
-      - name: Execute required NeoForge GameTests
-        working-directory: minecraft/asobiba-tweaks
-        shell: bash
-        timeout-minutes: 6
-        run: |
-          set +e
-          timeout --signal=TERM 300s gradle runGameTestServer --stacktrace > gametest-server.log 2>&1
-          result=$?
-          set -e
-
-          cat gametest-server.log
-          if [ "$result" -ne 0 ]; then
-            echo "NeoForge required GameTests failed or the server timed out (status: $result)." >&2
-            exit "$result"
-          fi
-
-          echo "NeoForge required GameTests completed successfully."
       - name: Upload GameTest server log
         if: always()
         uses: actions/upload-artifact@v4
