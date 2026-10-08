@@ -22,6 +22,10 @@ public record FletchingCopyRequestPayload(
         this(new FriendlyByteBuf(raw));
     }
 
+    private FletchingCopyRequestPayload(FriendlyByteBuf buf) {
+        this(buf.readBlockPos(), buf.readVarInt());
+    }
+
     private void write(ByteBuf raw) {
         FriendlyByteBuf buf = new FriendlyByteBuf(raw);
         buf.writeBlockPos(tablePos);
