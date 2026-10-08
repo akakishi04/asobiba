@@ -39,7 +39,7 @@ Branch: `feat/minecraft-mods-bootstrap`; PR #3.
 | G18 | Refugee/outpost/merger lifecycle | Stable Village IDs, correct destination caps, return and abandonment hysteresis | Needs gameplay test |
 | G19 | Continental worldgen and rivers | Determinism for seed, visually sane lakes/rivers/deltas, no accidental chunk loads | Needs gameplay test |
 | G20 | Multiplayer + world save/reload | No per-tick unbounded work, duplication, dropped inventories, corrupted SaveData | Needs gameplay test |
-| G21 | River dock and ChestBoat freight | Real material purchase, no water-source deletion, physically validated water route, real boat inventory conservation, pause/resume after unload and save/reload, passenger takeover, blocked route, full destination and no duplicate carriers | Needs gameplay test (cargo OFF by default) |
+| G21 | River dock and ChestBoat freight | Real material purchase, no water-source deletion, physically validated water route, real boat inventory conservation, pause/resume after unload and save/reload, passenger takeover, blocked route, full destination and no duplicate carriers | Partial: GT09-GT14 automated; full restart/client/multiplayer still pending (cargo OFF by default) |
 
 ## Focused priorities
 
@@ -50,7 +50,7 @@ These can silently lose or duplicate real items, XP, villagers or world blocks.
 actual in-game samples.
 
 **Gameplay harness needed**: controlled GameTests and a repeatable long-run
-dedicated-server simulation. Ten required NeoForge GameTests are now registered to run in CI, but the rest of the player,
+dedicated-server simulation. Fourteen required NeoForge GameTests now run in CI, but the rest of the player,
 projectile, village, save/reload and multiplayer scenarios still require
 real in-game testing. CI must not be used to label the project feature-complete.
 
@@ -66,9 +66,9 @@ In GitHub Actions, open the successful run and download the named artifact
 from the Artifacts section. Do not install a `-sources.jar`.
 
 
-## Automated GameTests (first tranche)
+## Automated GameTests (required server suite)
 
-The required tests registered in `AsobibaGameplayTests` and `AsobibaFletchingTransactionTests` execute on a real NeoForge GameTestServer, using the `asobibatweaks:empty3x3x3` structure:
+The required tests run on a real NeoForge GameTestServer. Existing small-world cases use `asobibatweaks:empty3x3x3`; GT11-GT14 build a real 16x6x9 source-water river fixture with actual Barrel block entities, real ChestBoat entities and durable VillageSavedData:
 
 | ID | Test | Property |
 |---|---|---|
@@ -81,6 +81,10 @@ The required tests registered in `AsobibaGameplayTests` and `AsobibaFletchingTra
 | GT07 | invalidMaterialsNeverSpendXpOrEmitArrows | Wrong arrow type and already-enchanted source materials reject without mutation |
 | GT08 | invalidQuantityAndInsufficientXpAreAtomic | Insufficient XP and out-of-range batch requests never consume or generate resources |
 | GT09 | connectedSourceWaterIsNavigable | Three-block loaded source-water corridor produces a direct two-endpoint route |
-| GT10 | solidBarrierRejectsWaterway | Solid blocks across a two-wide water corridor cannot be navigated through |
+| GT10 | solidBarrierRequiresRealWaterDetour | Stone barriers cannot be crossed directly; a route is permitted only through actual navigable water even if other test waterways create a legitimate detour |
+| GT11 | realChestBoatDeliversAndReturnsWithExactInventory | Real boat spawned for one actual boat item; traverses real water, delivers exactly 16 items to a Barrel and returns with inventory conservation checked during every game tick |
+| GT12 | fullBarrelAndPlayerCargoNeverDeleteFreight | Full destination retains freight onboard; unrelated player cargo blocks automated unloading; transfer resumes with exact counts after storage space is freed |
+| GT13 | noBoatItemNeverSpawnsBoatOrTransfersCargo | Real items cannot teleport to another dock or synthesize an unpaid boat |
+| GT14 | actualBoatAndCarrierSavedDataRoundTrip | Exact boat cargo and unique carrier/route/phase survive NBT encode/decode, without claiming a complete server-process restart |
 
-These are **not** substitutes for the remaining G01-G20 full player/projectile/village/save-reload scenarios. All of those remain pending until implemented as equally meaningful GameTests.
+These tests are **not** a full acceptance of G01-G21: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.
