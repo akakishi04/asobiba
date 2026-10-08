@@ -423,6 +423,10 @@ public final class VillageSimulationEvents {
                     villager, level, project, CARPENTER_CARGO_SLOTS);
             return;
         }
+        if (VillageRiverDockService.TEMPLATE.equals(project.templateId())) {
+            VillageRiverDockService.advance(villager, level, project);
+            return;
+        }
 
         List<BuildStep> plan = projectPlan(project);
         int stepIndex = project.workCursor();
