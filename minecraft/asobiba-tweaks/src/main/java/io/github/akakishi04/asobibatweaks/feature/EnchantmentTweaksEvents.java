@@ -68,6 +68,8 @@ public final class EnchantmentTweaksEvents {
     private static final String SWEEPING_EDGE = "minecraft:sweeping_edge";
     private static final String FORTUNE = "minecraft:fortune";
     private static final String SILK_TOUCH = "minecraft:silk_touch";
+    private static final String BINDING_CURSE = "minecraft:binding_curse";
+    private static final String VANISHING_CURSE = "minecraft:vanishing_curse";
     private static final String RESPIRATION = "minecraft:respiration";
     private static final String PROTECTION = "minecraft:protection";
     private static final String PROJECTILE_PROTECTION = "minecraft:projectile_protection";
@@ -2193,6 +2195,8 @@ public final class EnchantmentTweaksEvents {
                 || WIND_BURST.equals(enchantmentId)
                 || SWEEPING_EDGE.equals(enchantmentId)
                 || SILK_TOUCH.equals(enchantmentId)
+                || BINDING_CURSE.equals(enchantmentId)
+                || VANISHING_CURSE.equals(enchantmentId)
                 || "minecraft:efficiency".equals(enchantmentId)
                 || "minecraft:feather_falling".equals(enchantmentId)
                 || FORTUNE.equals(enchantmentId)
@@ -2221,6 +2225,22 @@ public final class EnchantmentTweaksEvents {
     }
 
     private static String branchName(String enchantmentId, int branch) {
+        if (BINDING_CURSE.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Bound Legacy";
+                case 1 -> "Familiar Bondage";
+                case 2 -> "Forced Attachment";
+                default -> "Unselected";
+            };
+        }
+        if (VANISHING_CURSE.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Delayed Return";
+                case 1 -> "Echo";
+                case 2 -> "Legacy";
+                default -> "Unselected";
+            };
+        }
         if (SILK_TOUCH.equals(enchantmentId)) {
             return switch (branch) {
                 case 0 -> "Precision Harvest";

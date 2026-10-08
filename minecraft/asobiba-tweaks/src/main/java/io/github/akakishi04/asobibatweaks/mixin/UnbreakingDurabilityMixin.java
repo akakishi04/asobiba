@@ -4,6 +4,7 @@ import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import io.github.akakishi04.asobibatweaks.feature.UnbreakingMasteryEvents;
 import io.github.akakishi04.asobibatweaks.feature.InfinityMasteryEvents;
 import io.github.akakishi04.asobibatweaks.feature.MendingExtendedEvents;
+import io.github.akakishi04.asobibatweaks.feature.CurseMasteryEvents;
 import java.util.function.Consumer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.LivingEntity;
@@ -33,6 +34,7 @@ public abstract class UnbreakingDurabilityMixin {
         int afterUnbreaking = UnbreakingMasteryEvents.adjustDurability(
                 stack, level, wearer, postVanilla);
         int afterInfinity = InfinityMasteryEvents.adjustDurability(stack, level, wearer, afterUnbreaking);
-        return MendingExtendedEvents.absorb(stack, afterInfinity);
+        return CurseMasteryEvents.preserveBoundDurability(stack, wearer,
+                MendingExtendedEvents.absorb(stack, afterInfinity));
     }
 }

@@ -19,6 +19,7 @@ import io.github.akakishi04.asobibatweaks.feature.FrostWalkerMasteryEvents;
 import io.github.akakishi04.asobibatweaks.feature.MaceMasteryEvents;
 import io.github.akakishi04.asobibatweaks.feature.SweepingMasteryEvents;
 import io.github.akakishi04.asobibatweaks.feature.SilkTouchMasteryEvents;
+import io.github.akakishi04.asobibatweaks.feature.CurseMasteryEvents;
 import io.github.akakishi04.asobibatweaks.feature.ForestRegenerationEvents;
 import io.github.akakishi04.asobibatweaks.feature.GiantOrganismEvents;
 import io.github.akakishi04.asobibatweaks.feature.GrowingItemsEvents;
@@ -87,6 +88,7 @@ public final class AsobibaTweaks {
         NeoForge.EVENT_BUS.register(new MaceMasteryEvents());
         NeoForge.EVENT_BUS.register(new SweepingMasteryEvents());
         NeoForge.EVENT_BUS.register(new SilkTouchMasteryEvents());
+        NeoForge.EVENT_BUS.register(new CurseMasteryEvents());
         NeoForge.EVENT_BUS.register(new MendingExtendedEvents());
         NeoForge.EVENT_BUS.register(new EnchantedWorkBlockEvents());
         NeoForge.EVENT_BUS.register(new PlayTimeLimitEvents());
