@@ -139,8 +139,14 @@ public final class EnchantedArrowCopyService {
         long earned = level <= 16 ? level * level + 6L * level
                 : level <= 31 ? (5L * level * level - 81L * level + 720L) / 2L
                 : (9L * level * level - 325L * level + 4440L) / 2L;
-        long progress = (long)Math.floor(
-                Math.max(0.0F, player.experienceProgress) * player.getXpNeededForNextLevel());
+        // Vanilla stores progress as a float fraction of the next level.
+        // floor(progress * needed) can undercount whole XP points by one:
+        // e.g. 7/29 is stored as a float slightly below the true fraction.
+        // Round to the nearest whole XP and clamp to the level's valid range
+        // so quote, actual debit, and post-debit verification agree.
+        long needed = Math.max(1L, player.getXpNeededForNextLevel());
+        long progress = Math.min(needed - 1L, Math.round(
+                Math.max(0.0D, (double)player.experienceProgress) * needed));
         return Math.max(0L, earned + progress);
     }
 
