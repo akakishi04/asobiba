@@ -21,6 +21,10 @@ public final class LoggerConfig {
             .comment("Capture event records such as block breaks and kills.")
             .define("logger.captureEvents", true);
 
+    public static final ModConfigSpec.BooleanValue CAPTURE_SPATIAL_CONTEXT = BUILDER
+            .comment("Include a bounded 6-block server-side crosshair ray and up to 16 nearby living entities in observations. Optional because dense areas cost additional server queries.")
+            .define("logger.captureSpatialContext", false);
+
     public static final ModConfigSpec.IntValue WRITER_QUEUE_CAPACITY = BUILDER
             .comment("Maximum queued JSONL records per output stream before records are dropped.")
             .defineInRange("logger.writerQueueCapacity", 8192, 128, 1000000);
