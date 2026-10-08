@@ -26,7 +26,7 @@ import net.minecraft.world.level.saveddata.SavedData;
  * indexes, caches and planning state that later passes can reconcile against loaded chunks.</p>
  */
 public final class VillageSavedData extends SavedData {
-    public static final int SCHEMA_VERSION = 7;
+    public static final int SCHEMA_VERSION = 8;
 
     private static final String NAME = "asobibatweaks_villages";
     private static final Factory<VillageSavedData> FACTORY =
@@ -1367,6 +1367,9 @@ public final class VillageSavedData extends SavedData {
         private String quality = "dirt";
         private int width = 1;
         private final List<Long> waypoints = new ArrayList<>();
+        // One durable real ChestBoat entity per waterway. Never assume an
+        // unloaded or missing entity means a free boat may be minted.
+        private UUID carrierEntityId;
         private String state = "active";
 
         private RouteRecord(UUID id, UUID villageId, String type, BlockPos from, BlockPos to) {
@@ -1391,7 +1394,9 @@ public final class VillageSavedData extends SavedData {
             return Collections.unmodifiableList(result);
         }
         public String state() { return state; }
+        public UUID carrierEntityId() { return carrierEntityId; }
 
+        public void setCarrierEntityId(UUID value) { carrierEntityId = value; }
         public void setType(String value) { type = safeText(value, "path"); }
         public void setTrafficScore(int value) { trafficScore = Math.max(0, value); }
         public void setQuality(String value) {
@@ -1438,6 +1443,7 @@ public final class VillageSavedData extends SavedData {
                 waypointRows.add(row);
             }
             tag.put("waypoints", waypointRows);
+            putUuid(tag, "carrier", carrierEntityId);
             tag.putString("state", state);
             return tag;
         }
@@ -1459,6 +1465,7 @@ public final class VillageSavedData extends SavedData {
                 if (row.contains("pos", Tag.TAG_LONG)) loadedWaypoints.add(BlockPos.of(row.getLong("pos")));
             }
             record.setWaypoints(loadedWaypoints);
+            record.carrierEntityId = readUuid(tag, "carrier");
             record.state = safeText(tag.getString("state"), "active");
             return record;
         }
