@@ -2192,6 +2192,7 @@ public final class EnchantmentTweaksEvents {
                 || DENSITY.equals(enchantmentId)
                 || WIND_BURST.equals(enchantmentId)
                 || SWEEPING_EDGE.equals(enchantmentId)
+                || SILK_TOUCH.equals(enchantmentId)
                 || "minecraft:efficiency".equals(enchantmentId)
                 || "minecraft:feather_falling".equals(enchantmentId)
                 || FORTUNE.equals(enchantmentId)
@@ -2220,6 +2221,14 @@ public final class EnchantmentTweaksEvents {
     }
 
     private static String branchName(String enchantmentId, int branch) {
+        if (SILK_TOUCH.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Precision Harvest";
+                case 1 -> "Batch Harvest";
+                case 2 -> "State Preservation";
+                default -> "Unselected";
+            };
+        }
         if (SWEEPING_EDGE.equals(enchantmentId)) {
             return switch (branch) {
                 case 0 -> "Wide Arc";
