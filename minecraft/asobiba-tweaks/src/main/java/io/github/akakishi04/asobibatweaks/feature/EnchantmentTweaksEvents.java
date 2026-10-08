@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.resources.ResourceKey;
@@ -33,6 +34,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.Tags;
 import net.neoforged.neoforge.event.AnvilUpdateEvent;
+import net.neoforged.neoforge.event.VanillaGameEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDropsEvent;
@@ -71,6 +73,7 @@ public final class EnchantmentTweaksEvents {
     private static final String AQUA_AFFINITY = "minecraft:aqua_affinity";
     private static final String LOOTING = "minecraft:looting";
     private static final String SOUL_SPEED = "minecraft:soul_speed";
+    private static final String SWIFT_SNEAK = "minecraft:swift_sneak";
     private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
     private static final String PROTECTION_LAST_DAMAGE = "asobibatweaks_protection_last_damage";
     private static final String PROJECTILE_LAST_DAMAGE = "asobibatweaks_projectile_last_damage";
@@ -116,6 +119,35 @@ public final class EnchantmentTweaksEvents {
     private static final String SOUL_SPEED_PREV_DAMAGE = "asobibatweaks_soul_speed_prev_damage";
     private static final String SOUL_SPEED_ACTIVE_SPEED = "asobibatweaks_soul_speed_active_speed";
     private static final String SOUL_SPEED_LINGER_UNTIL = "asobibatweaks_soul_speed_linger_until";
+
+    @SubscribeEvent
+    public void onSwiftSneakVibration(VanillaGameEvent event) {
+        if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || !(event.getCause() instanceof ServerPlayer player)
+                || player.level().isClientSide()
+                || !player.isShiftKeyDown()) {
+            return;
+        }
+
+        BranchRef swiftSneak = armorBranch(player, SWIFT_SNEAK);
+        if (swiftSneak == null || swiftSneak.branch() != 0) return;
+
+        String path = event.getVanillaEvent().unwrapKey()
+                .map(key -> key.location().getPath())
+                .orElse("");
+        boolean movementEvent = "step".equals(path)
+                || "swim".equals(path)
+                || "flap".equals(path)
+                || "hit_ground".equals(path)
+                || "splash".equals(path);
+        if (!movementEvent) return;
+
+        double strength = branchScale(swiftSneak.mastery(), 0.0D, 1.0D);
+        double suppression = 0.20D + 0.50D * strength;
+        if (player.getRandom().nextDouble() < suppression) {
+            event.setCanceled(true);
+        }
+    }
 
     @SubscribeEvent
     public void onLootingDrops(LivingDropsEvent event) {
@@ -1061,6 +1093,53 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
+    public void onSwiftSneakTick(PlayerTickEvent.Post event) {
+        if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || !(event.getEntity() instanceof ServerPlayer player)
+                || player.level().isClientSide()
+                || !player.isShiftKeyDown()) {
+            return;
+        }
+
+        BranchRef swiftSneak = armorBranch(player, SWIFT_SNEAK);
+        if (swiftSneak == null) return;
+
+        double strength = branchScale(swiftSneak.mastery(), 0.0D, 1.0D);
+        var motion = player.getDeltaMovement();
+        double horizontal = Math.sqrt(motion.x * motion.x + motion.z * motion.z);
+        if (horizontal <= 0.002D) return;
+
+        if (swiftSneak.branch() == 1 && player.isUsingItem()) {
+            double slowdownRecovery = 0.10D + 0.25D * strength;
+            double multiplier = 1.0D + 4.0D * slowdownRecovery;
+            double nx = motion.x * multiplier;
+            double nz = motion.z * multiplier;
+            double nextHorizontal = Math.sqrt(nx * nx + nz * nz);
+            if (nextHorizontal > 0.22D) {
+                double scale = 0.22D / nextHorizontal;
+                nx *= scale;
+                nz *= scale;
+            }
+            player.setDeltaMovement(nx, motion.y, nz);
+            return;
+        }
+
+        if (swiftSneak.branch() == 2 && player.onGround() && !player.isUsingItem()
+                && isSneakEdgeActive(player)) {
+            double multiplier = 1.10D + 0.20D * strength;
+            double nx = motion.x * multiplier;
+            double nz = motion.z * multiplier;
+            double nextHorizontal = Math.sqrt(nx * nx + nz * nz);
+            if (nextHorizontal > 0.18D) {
+                double scale = 0.18D / nextHorizontal;
+                nx *= scale;
+                nz *= scale;
+            }
+            player.setDeltaMovement(nx, motion.y, nz);
+        }
+    }
+
+    @SubscribeEvent
     public void onSoulSpeedTick(PlayerTickEvent.Post event) {
         if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
                 || !(event.getEntity() instanceof ServerPlayer player)
@@ -1792,6 +1871,17 @@ public final class EnchantmentTweaksEvents {
         ));
     }
 
+    private static boolean isSneakEdgeActive(ServerPlayer player) {
+        BlockPos below = player.blockPosition().below();
+        if (player.level().getBlockState(below).isAir()) return false;
+
+        for (Direction direction : Direction.Plane.HORIZONTAL) {
+            BlockPos support = below.relative(direction);
+            if (player.level().getBlockState(support).isAir()) return true;
+        }
+        return false;
+    }
+
     private static void markAquaSuccessfulWork(ServerPlayer player,
                                                long constructionTicks,
                                                long currentTicks) {
@@ -2021,7 +2111,8 @@ public final class EnchantmentTweaksEvents {
                 || DEPTH_STRIDER.equals(enchantmentId)
                 || AQUA_AFFINITY.equals(enchantmentId)
                 || LOOTING.equals(enchantmentId)
-                || SOUL_SPEED.equals(enchantmentId);
+                || SOUL_SPEED.equals(enchantmentId)
+                || SWIFT_SNEAK.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -2197,6 +2288,14 @@ public final class EnchantmentTweaksEvents {
                 case 0 -> "Soul-Sole Conservation";
                 case 1 -> "Lingering Momentum";
                 case 2 -> "Soul Footing";
+                default -> "Unselected";
+            };
+        }
+        if (SWIFT_SNEAK.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Silent Sneak";
+                case 1 -> "Combat Stance";
+                case 2 -> "Builder's Sneak";
                 default -> "Unselected";
             };
         }
