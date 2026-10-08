@@ -48,10 +48,11 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Enchantment-Pool Bookshelves | Arcane Bookshelf + `EnchantmentMenuExtensionsMixin` | Implemented |
 | Extended Enchanting Targets | `ExtendedEnchantableItemMixin`, `EnchantmentExtensionMixin`, `EnchantedWorkBlockSavedData` | Implemented; effects intentionally deferred |
 | Raised Enchantment Level Caps | `EnchantmentExtensionMixin` | Implemented; configurable cap |
+| Shared Bow / Crossbow Enchantment Pool | additive `minecraft:enchantable/bow` and `minecraft:enchantable/crossbow` tags, `LauncherEnchantmentCompatibilityMixin` | **V37 eligibility implemented**: both launcher families can receive each other's vanilla enchantment candidates; Infinity + Mending compatibility enabled; Bow Quick Charge timing and full functional cross-launcher effects require follow-up |
 | Atlas / Map Binder | `AtlasItem`, `AtlasItemInHandRendererMixin` | Implemented |
 | Potion Mixing | `AlchemyExplosivesCraftingEvents` | Implemented |
 | TNT Design | `AlchemyExplosivesCraftingEvents`, `TntDesignSavedData`, `PrimedTntMixin` | Implemented |
-| Fletching Table Expansion | `AlchemyExplosivesCraftingEvents` | Implemented |
+| Fletching Table Expansion | `AlchemyExplosivesCraftingEvents` | Base recipes implemented; enchanted-arrow template copying and per-batch XP transaction pending |
 | Giant Crops | `GiantOrganismEvents` | Implemented |
 | Giant Mobs | `GiantOrganismEvents`, `GiantCreeperMixin` | Implemented |
 | Continental Oceans / Islands / Archipelagos | `ContinentalWorldgenEvents` | Implemented; default OFF |
@@ -369,3 +370,25 @@ can now display server-authoritative ammunition while the inventory is closed.
 
 In-game item-conservation, reload, Multishot, server/client and inter-mod
 compatibility playtests remain required.
+
+
+## V37 shared Bow/Crossbow enchantment-pool note
+
+The vanilla minecraft:enchantable/bow item tag now additionally contains
+Crossbows, and minecraft:enchantable/crossbow additionally contains Bows.
+These are additive entries (replace: false), retaining vanilla members and
+third-party contributions. They make the accepted launcher candidate pool
+available through standard enchanting/book/anvil acquisition without
+copying all the enchantment definitions.
+
+A narrowly scoped Enchantment.areCompatible mixin permits Infinity + Mending,
+in both pair orders, while preserving every other vanilla compatibility
+decision (notably Multishot vs Piercing). This compatibility function is
+item-agnostic upstream, so it is necessarily a rule on the enchantment pair;
+the normal supported-item tags still determine legal targets.
+
+V37 specifically addresses eligibility and compatibility, not every
+launcher-specific behavior. Bow Quick Charge reduction still needs a Bow
+draw-duration implementation. Crossbow Power/Punch/Flame and Bow Multishot/
+Piercing need in-game confirmation that their projectile effects are applied
+as intended. Bow and Crossbow firework handling remains launcher-specific.

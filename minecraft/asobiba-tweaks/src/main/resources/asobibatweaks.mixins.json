@@ -21,7 +21,8 @@
     "InventoryMenuQuiverMixin",
     "UnbreakingDurabilityMixin",
     "ProjectileWeaponInfinityMixin",
-    "ProjectileWeaponQuiverMixin"
+    "ProjectileWeaponQuiverMixin",
+    "LauncherEnchantmentCompatibilityMixin"
   ],
   "injectors": {
     "defaultRequire": 1
