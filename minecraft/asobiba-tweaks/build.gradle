@@ -26,6 +26,10 @@ neoForge {
             server()
             programArgument '--nogui'
         }
+        gameTestServer {
+            type = 'gameTestServer'
+            systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
+        }
         configureEach {
             logLevel = org.slf4j.event.Level.INFO
         }

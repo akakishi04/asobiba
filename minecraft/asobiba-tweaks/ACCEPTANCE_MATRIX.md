@@ -5,9 +5,10 @@ Branch: `feat/minecraft-mods-bootstrap`; PR #3.
 
 **Definitions**
 
-- **CI PASS**: both Gradle builds complete and a headless NeoForge
-  dedicated server starts to the Minecraft "Done (" message. This does not
-  prove an interactive feature works or a world remains consistent.
+- **CI PASS**: both Gradle builds complete, a headless NeoForge
+  dedicated server reaches "Done (", and all *registered, required* NeoForge
+  GameTests pass on a real GameTestServer. This does not prove every
+  untested feature or long-lived world remains consistent.
 - **Gameplay PASS**: a real client/host executes the exact item,
   persistence, resource, and world-safety scenarios below.
 - **Release-ready**: all P0 conservation and persistence gates pass, the
@@ -62,3 +63,18 @@ binary JARs as 30-day GitHub Actions artifacts:
 
 In GitHub Actions, open the successful run and download the named artifact
 from the Artifacts section. Do not install a `-sources.jar`.
+
+
+## Automated GameTests (first tranche)
+
+The required tests registered in `AsobibaGameplayTests` execute on a real NeoForge GameTestServer, using the `asobibatweaks:empty3x3x3` structure:
+
+| ID | Test | Property |
+|---|---|---|
+| GT01 | arrowEnchantmentEligibility | Normal/Spectral/Tipped eligibility and the 13-effect allowlist |
+| GT02 | masteryBranchPersistsOnStack | Exact mastery threshold, branch cycling, ItemStack copy |
+| GT03 | workBlockSavedDataRoundTrip | Full enchant/component persistence in encoded SavedData |
+| GT04 | frostWalkerToggleIsItemLocal | Stack-local ON/OFF survives ItemStack copy |
+| GT05 | furnaceEfficiencyAffectsRealSmelting | Actual furnace recipe completes in less than 125 ticks at Efficiency X |
+
+These are **not** substitutes for the remaining G01-G20 full player/projectile/village/save-reload scenarios. All of those remain pending until implemented as equally meaningful GameTests.
