@@ -53,7 +53,13 @@ public final class VillageRiverDockService {
         for (VillageSavedData.WorkSiteRecord site : data.workSitesForVillage(villageId)) {
             if (!"river_dock".equals(site.type())) continue;
             existingDocks++;
-            if ("active".equals(site.state())) return;
+            if (!"active".equals(site.state())) continue;
+            Boolean physicallyValid = verifyPhysicalDock(level, data, site);
+            // Unknown (unloaded) is NOT damage. Do not force-load or rebuild
+            // the same facility merely because its chunk is absent.
+            if (physicallyValid == null || physicallyValid) return;
+            site.setState("inactive");
+            data.touch();
         }
         // Do not fill the world with failed docks if local river geometry later changes.
         if (existingDocks >= 2) return;
@@ -330,6 +336,50 @@ public final class VillageRiverDockService {
         return VillageSimulationScheduler.isChunkLoaded(level, pos)
                 && level.getFluidState(pos).is(FluidTags.WATER)
                 && level.getFluidState(pos).isSource();
+    }
+
+    /**
+     * Recheck existing dock blocks on the next natural river survey.
+     * null means the physical site cannot be observed because it is unloaded.
+     * No stock, items, land, or water are fabricated during this inspection.
+     */
+    private static Boolean verifyPhysicalDock(ServerLevel level, VillageSavedData data,
+                                               VillageSavedData.WorkSiteRecord site) {
+        if (!VillageSimulationScheduler.isAreaLoaded(level, site.min(), site.max())) return null;
+        String purpose = site.purpose();
+        if (!purpose.startsWith("dock:")) return false;
+        UUID projectId;
+        try {
+            projectId = UUID.fromString(purpose.substring("dock:".length()));
+        } catch (IllegalArgumentException ignored) {
+            return false;
+        }
+        VillageSavedData.ProjectRecord project = data.project(projectId).orElse(null);
+        if (project == null || !TEMPLATE.equals(project.templateId())) return false;
+        Block plank = allowedPlank(project.parameter(PLANK));
+        Direction direction = direction(project.parameter(DIRECTION));
+        if (plank == null || direction == null) return false;
+        int waterY;
+        try {
+            waterY = Integer.parseInt(project.parameter(WATER_Y));
+        } catch (NumberFormatException ignored) {
+            return false;
+        }
+        BlockPos ground = project.site();
+        BlockPos water = new BlockPos(ground.getX() + direction.getStepX(),
+                waterY, ground.getZ() + direction.getStepZ());
+        BlockPos barrel = ground.relative(direction.getClockWise()).above();
+        BlockPos second = water.relative(direction);
+        BlockPos third = second.relative(direction);
+        if (!VillageSimulationScheduler.isChunkLoaded(level, third)) return null;
+        return level.getBlockState(ground.above()).is(plank)
+                && level.getBlockState(water.above()).is(plank)
+                && level.getBlockState(second.above()).is(plank)
+                && level.getBlockState(barrel).is(Blocks.BARREL)
+                && level.getBlockEntity(barrel) instanceof Container
+                && waterAt(level, water)
+                && waterAt(level, second)
+                && waterAt(level, third);
     }
 
     private static Block availablePlank(VillageSavedData.VillageRecord village) {
