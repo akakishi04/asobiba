@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.ItemTags;
@@ -36,6 +37,7 @@ public final class VillageRiverCargoService {
     private static final String PHASE = "asobibatweaks_river_cargo_phase";
     private static final String CURSOR = "asobibatweaks_river_cargo_cursor";
     private static final String COURSE_HASH = "asobibatweaks_river_course";
+    private static final String CARGO_ITEM = "asobibatweaks_river_cargo_item";
     private static final int MAX_SHIPMENT = 16;
     private static final double MOVE_SPEED = 0.16D;
     private static final double MOOR_RADIUS_SQUARED = 1.3D * 1.3D;
@@ -108,6 +110,8 @@ public final class VillageRiverCargoService {
             if (loaded.isEmpty()) return;
             boat.setItem(0, loaded);
             source.setChanged();
+            state.putString(CARGO_ITEM,
+                    BuiltInRegistries.ITEM.getKey(loaded.getItem()).toString());
             state.putString(PHASE, "outbound");
             state.putInt(CURSOR, forward ? 1 : points.size() - 2);
             return;
@@ -119,7 +123,7 @@ public final class VillageRiverCargoService {
                     forward ? route.to() : route.from());
             if (destination == null || horizontalDistanceSqr(boat,
                     forward ? route.to() : route.from()) > MOOR_RADIUS_SQUARED) return;
-            if (!unload(boat, destination)) return;
+            if (!unload(boat, destination, state.getString(CARGO_ITEM))) return;
             VillageStorageService.reconcileVillage(route.villageId(), level);
             state.putString(PHASE, "return");
             state.putInt(CURSOR, forward ? points.size() - 2 : 1);
@@ -237,6 +241,8 @@ public final class VillageRiverCargoService {
             state.putString(PHASE, "idle");
         } else {
             boat.setItem(0, shipped);
+            state.putString(CARGO_ITEM,
+                    BuiltInRegistries.ITEM.getKey(shipped.getItem()).toString());
         }
         source.setChanged();
         route.setCarrierEntityId(boat.getUUID());
@@ -315,7 +321,16 @@ public final class VillageRiverCargoService {
         return -1;
     }
 
-    private static boolean unload(ChestBoat boat, Container destination) {
+    private static boolean unload(ChestBoat boat, Container destination, String manifestItem) {
+        if (manifestItem.isBlank()) return false;
+        // The boat is a normal vanilla entity: players/mods may put their own
+        // things inside. Never claim, unload or destroy unrelated contents.
+        for (int i = 0; i < boat.getContainerSize(); i++) {
+            ItemStack stack = boat.getItem(i);
+            if (stack.isEmpty()) continue;
+            if (!approved(stack) || !BuiltInRegistries.ITEM.getKey(
+                    stack.getItem()).toString().equals(manifestItem)) return false;
+        }
         for (int i = 0; i < boat.getContainerSize(); i++) {
             ItemStack stack = boat.getItem(i);
             if (stack.isEmpty()) continue;
