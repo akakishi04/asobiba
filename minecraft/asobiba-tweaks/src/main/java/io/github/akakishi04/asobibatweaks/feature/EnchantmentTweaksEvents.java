@@ -42,6 +42,7 @@ import net.neoforged.neoforge.event.entity.player.AnvilRepairEvent;
 import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.level.BlockDropsEvent;
+import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 
 public final class EnchantmentTweaksEvents {
@@ -64,6 +65,7 @@ public final class EnchantmentTweaksEvents {
     private static final String IMPALING = "minecraft:impaling";
     private static final String FLAME = "minecraft:flame";
     private static final String DEPTH_STRIDER = "minecraft:depth_strider";
+    private static final String AQUA_AFFINITY = "minecraft:aqua_affinity";
     private static final String RESPIRATION_PREV_AIR = "asobibatweaks_respiration_prev_air";
     private static final String PROTECTION_LAST_DAMAGE = "asobibatweaks_protection_last_damage";
     private static final String PROJECTILE_LAST_DAMAGE = "asobibatweaks_projectile_last_damage";
@@ -101,6 +103,8 @@ public final class EnchantmentTweaksEvents {
     private static final String PUNCH_UNTIL = "asobibatweaks_punch_until";
     private static final String IMPALING_HARPOON_STRENGTH = "asobibatweaks_impaling_harpoon_strength";
     private static final String IMPALING_HARPOON_UNTIL = "asobibatweaks_impaling_harpoon_until";
+    private static final String AQUA_CONSTRUCTION_UNTIL = "asobibatweaks_aqua_construction_until";
+    private static final String AQUA_CURRENT_UNTIL = "asobibatweaks_aqua_current_until";
 
     @SubscribeEvent
     public void onBlockDrops(BlockDropsEvent event) {
@@ -112,6 +116,7 @@ public final class EnchantmentTweaksEvents {
 
         if (AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()) {
             applyFortuneBranch(event, tool, player);
+            markAquaSuccessfulWork(player, 30L, 5L);
         }
     }
 
@@ -519,8 +524,36 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
+    public void onAquaAffinityPlace(BlockEvent.EntityPlaceEvent event) {
+        if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || !(event.getEntity() instanceof ServerPlayer player)
+                || player.level().isClientSide()) {
+            return;
+        }
+        markAquaSuccessfulWork(player, 30L, 5L);
+    }
+
+    @SubscribeEvent
     public void onBreakSpeed(PlayerEvent.BreakSpeed event) {
         if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()) return;
+
+        if (event.getEntity() instanceof ServerPlayer player && player.isUnderWater()) {
+            BranchRef aqua = armorBranch(player, AQUA_AFFINITY);
+            if (aqua != null) {
+                double strength = branchScale(aqua.mastery(), 0.0D, 1.0D);
+                if (aqua.branch() == 0 && !player.onGround()) {
+                    double removedPenalty = 0.25D + 0.75D * strength;
+                    double multiplier = 1.0D + 4.0D * removedPenalty;
+                    event.setNewSpeed((float)(event.getNewSpeed() * multiplier));
+                } else if (aqua.branch() == 2) {
+                    player.getPersistentData().putLong(
+                            AQUA_CURRENT_UNTIL,
+                            player.level().getGameTime() + 2L
+                    );
+                }
+            }
+        }
+
         ItemStack stack = event.getEntity().getMainHandItem();
         for (Holder<Enchantment> enchantment : EnchantmentMasteryData.enchantments(stack).keySet()) {
             if (!"minecraft:efficiency".equals(EnchantmentMasteryData.id(enchantment))) continue;
@@ -990,6 +1023,60 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
+    public void onAquaAffinityTick(PlayerTickEvent.Post event) {
+        if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || !(event.getEntity() instanceof ServerPlayer player)
+                || player.level().isClientSide()
+                || !player.isInWater()) {
+            return;
+        }
+
+        BranchRef aqua = armorBranch(player, AQUA_AFFINITY);
+        if (aqua == null) return;
+
+        var persistent = player.getPersistentData();
+        long now = player.level().getGameTime();
+        double strength = branchScale(aqua.mastery(), 0.0D, 1.0D);
+        var motion = player.getDeltaMovement();
+
+        if (aqua.branch() == 1
+                && persistent.contains(AQUA_CONSTRUCTION_UNTIL)
+                && now <= persistent.getLong(AQUA_CONSTRUCTION_UNTIL)) {
+            double disruptionRecovery = 0.15D + 0.25D * strength;
+            double multiplier = 1.0D + 0.25D * disruptionRecovery;
+            double nx = motion.x * multiplier;
+            double nz = motion.z * multiplier;
+            double horizontal = Math.sqrt(nx * nx + nz * nz);
+            if (horizontal > 0.35D) {
+                double scale = 0.35D / horizontal;
+                nx *= scale;
+                nz *= scale;
+            }
+            player.setDeltaMovement(nx, motion.y, nz);
+            return;
+        }
+
+        if (aqua.branch() == 2
+                && persistent.contains(AQUA_CURRENT_UNTIL)
+                && now <= persistent.getLong(AQUA_CURRENT_UNTIL)) {
+            BlockPos pos = player.blockPosition();
+            var fluid = player.level().getFluidState(pos);
+            if (!fluid.is(net.minecraft.tags.FluidTags.WATER)) return;
+
+            var flow = fluid.getFlow(player.level(), pos);
+            double reduction = 0.20D + 0.40D * strength;
+            // Vanilla fluid acceleration is small; remove only the current-like component,
+            // not the player's own movement input.
+            double currentAcceleration = 0.014D;
+            player.setDeltaMovement(
+                    motion.x - flow.x * currentAcceleration * reduction,
+                    motion.y,
+                    motion.z - flow.z * currentAcceleration * reduction
+            );
+        }
+    }
+
+    @SubscribeEvent
     public void onFireProtectionTick(PlayerTickEvent.Post event) {
         if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
                 || !(event.getEntity() instanceof ServerPlayer player)
@@ -1421,6 +1508,27 @@ public final class EnchantmentTweaksEvents {
         }
     }
 
+    private static void markAquaSuccessfulWork(ServerPlayer player,
+                                               long constructionTicks,
+                                               long currentTicks) {
+        if (!player.isUnderWater()) return;
+        BranchRef aqua = armorBranch(player, AQUA_AFFINITY);
+        if (aqua == null) return;
+
+        long now = player.level().getGameTime();
+        if (aqua.branch() == 1) {
+            player.getPersistentData().putLong(
+                    AQUA_CONSTRUCTION_UNTIL,
+                    now + Math.max(1L, constructionTicks)
+            );
+        } else if (aqua.branch() == 2) {
+            player.getPersistentData().putLong(
+                    AQUA_CURRENT_UNTIL,
+                    now + Math.max(1L, currentTicks)
+            );
+        }
+    }
+
     private static void applyFortuneBranch(BlockDropsEvent event, ItemStack tool, ServerPlayer player) {
         BranchRef fortune = branch(tool, FORTUNE);
         if (fortune == null || event.getDrops().isEmpty()) return;
@@ -1626,7 +1734,8 @@ public final class EnchantmentTweaksEvents {
                 || PUNCH.equals(enchantmentId)
                 || IMPALING.equals(enchantmentId)
                 || FLAME.equals(enchantmentId)
-                || DEPTH_STRIDER.equals(enchantmentId);
+                || DEPTH_STRIDER.equals(enchantmentId)
+                || AQUA_AFFINITY.equals(enchantmentId);
     }
 
     private static String branchName(String enchantmentId, int branch) {
@@ -1778,6 +1887,14 @@ public final class EnchantmentTweaksEvents {
                 case 0 -> "Current Rider";
                 case 1 -> "Seabed Runner";
                 case 2 -> "Diver";
+                default -> "Unselected";
+            };
+        }
+        if (AQUA_AFFINITY.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Submerged Mining";
+                case 1 -> "Underwater Construction";
+                case 2 -> "Current Adaptation";
                 default -> "Unselected";
             };
         }
