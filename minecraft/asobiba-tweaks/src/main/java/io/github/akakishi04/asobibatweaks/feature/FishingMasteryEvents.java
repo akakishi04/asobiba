@@ -78,6 +78,16 @@ public final class FishingMasteryEvents {
         }
     }
 
+    public static void recordNetherCatch(ItemStack rod) {
+        if (!AsobibaTweaksConfig.GROWING_ENCHANTMENTS_ENABLED.getAsBoolean()) return;
+        for (var enchantment : EnchantmentMasteryData.enchantments(rod).keySet()) {
+            String id = EnchantmentMasteryData.id(enchantment);
+            if ("minecraft:lure".equals(id) || "minecraft:luck_of_the_sea".equals(id)) {
+                EnchantmentMasteryData.addMastery(rod, enchantment, 1);
+            }
+        }
+    }
+
     @SubscribeEvent
     public void onActualCatch(ItemFishedEvent event) {
         if (event.isCanceled() || !(event.getEntity() instanceof ServerPlayer player)) return;

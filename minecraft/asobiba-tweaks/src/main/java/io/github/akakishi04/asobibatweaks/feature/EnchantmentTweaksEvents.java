@@ -61,6 +61,7 @@ public final class EnchantmentTweaksEvents {
     private static final String MULTISHOT = "minecraft:multishot";
     private static final String PIERCING = "minecraft:piercing";
     private static final String LURE = "minecraft:lure";
+    private static final String LUCK_OF_THE_SEA = "minecraft:luck_of_the_sea";
     private static final String FORTUNE = "minecraft:fortune";
     private static final String SILK_TOUCH = "minecraft:silk_touch";
     private static final String RESPIRATION = "minecraft:respiration";
@@ -2182,6 +2183,7 @@ public final class EnchantmentTweaksEvents {
                 || MULTISHOT.equals(enchantmentId)
                 || PIERCING.equals(enchantmentId)
                 || LURE.equals(enchantmentId)
+                || LUCK_OF_THE_SEA.equals(enchantmentId)
                 || "minecraft:efficiency".equals(enchantmentId)
                 || "minecraft:feather_falling".equals(enchantmentId)
                 || FORTUNE.equals(enchantmentId)
@@ -2210,6 +2212,14 @@ public final class EnchantmentTweaksEvents {
     }
 
     private static String branchName(String enchantmentId, int branch) {
+        if (LUCK_OF_THE_SEA.equals(enchantmentId)) {
+            return switch (branch) {
+                case 0 -> "Treasure Hunter";
+                case 1 -> "Quality Selection";
+                case 2 -> "Rare Catch";
+                default -> "Unselected";
+            };
+        }
         if (LURE.equals(enchantmentId)) {
             return switch (branch) {
                 case 0 -> "Fast Bite";

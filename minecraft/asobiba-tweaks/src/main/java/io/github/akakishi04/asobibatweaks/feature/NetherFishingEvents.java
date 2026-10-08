@@ -150,7 +150,8 @@ public final class NetherFishingEvents {
         }
 
         ItemStack catchStack;
-        int roll = player.getRandom().nextInt(100);
+        int roll = LuckOfSeaMasteryEvents.adjustNetherRoll(
+                player, player.getMainHandItem(), player.getRandom().nextInt(100));
         if (roll < 32) catchStack = new ItemStack(AsobibaRegistries.LAVA_MINNOW_ITEM.get());
         else if (roll < 54) catchStack = new ItemStack(AsobibaRegistries.EMBERFIN_ITEM.get());
         else if (roll < 66) catchStack = new ItemStack(AsobibaRegistries.BASALT_EEL_ITEM.get());
@@ -160,9 +161,11 @@ public final class NetherFishingEvents {
         else if (roll < 97) catchStack = new ItemStack(Items.STRING, 1 + player.getRandom().nextInt(2));
         else catchStack = new ItemStack(Items.MAGMA_CREAM);
 
-        if (!player.getInventory().add(catchStack)) player.drop(catchStack, false);
+        player.getInventory().add(catchStack);
+        if (!catchStack.isEmpty()) player.drop(catchStack, false);
 
         ItemStack rod = player.getMainHandItem();
+        FishingMasteryEvents.recordNetherCatch(rod);
         if (rod.isDamageableItem() && !player.getAbilities().instabuild) {
             rod.hurtAndBreak(1, player, net.minecraft.world.entity.EquipmentSlot.MAINHAND);
         }
