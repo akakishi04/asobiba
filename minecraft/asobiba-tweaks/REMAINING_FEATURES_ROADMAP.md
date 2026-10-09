@@ -13,8 +13,8 @@ This tracks **code implementation**, not a demand to finish all gameplay polishi
 
 | Pass | Area | Remaining acceptance work |
 |---|---|---|
-| V86 | Building reuse and repair | Recognized damaged-house repair from real stored blocks; reuse priority over new houses; avoid replacing player-owned blocks; persist step cursor |
-| V87 | Workstation and building families | Profession-specific validated buildings for Librarian, Armorer, Fisherman and other outstanding trades; no inaccessible stations or imaginary fixture recipes |
+| V86 | Building reuse and repair | **Initial V86 implemented**: real-paid, persistent missing village-owned shell restoration, no player-block overwrite, GT18/19. Still pending: full house reuse, beds, upper floors and larger repair plans |
+| V87 | Workstation and building families | **Initial V87 implemented**: eleven unique career halls with real physical stations, three roof families and exact ingredient recipes. Still pending: detailed building variants, POI reachability, modded workstation support and long playtesting |
 | V88 | Bridges and roads | Real pier/foundation variants for 2-12-block crossings, bridge-versus-detour decisions, safe slope/stair paths, recovery from partly built crossings |
 | V89 | Demand-aware settlement planning | Housing pressure beyond raw nearby bed count, recent overcrowding and welfare inputs, existing-building vertical expansion and deliberate growth cooldown |
 | V90 | More general physical freight | Extend real Porter/pack-animal/boat first- and last-mile handling to more resource sites, mixed loads, storage-demand priorities, boat loss/salvage recovery and finite route work |

@@ -50,7 +50,7 @@ These can silently lose or duplicate real items, XP, villagers or world blocks.
 actual in-game samples.
 
 **Gameplay harness needed**: controlled GameTests and a repeatable long-run
-dedicated-server simulation. Seventeen required NeoForge GameTests are registered in CI (latest run determines whether all pass), but the rest of the player,
+dedicated-server simulation. Twenty-two required NeoForge GameTests are registered in CI (latest run determines whether all pass), but the rest of the player,
 projectile, village, save/reload and multiplayer scenarios still require
 real in-game testing. CI must not be used to label the project feature-complete.
 
@@ -89,5 +89,10 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT15 | returnTripCarriesRealReverseFreightAndReceipts | Real reverse cargo transfers from a physical far dock to the home dock without duplication; both persistent dock receipts are updated |
 | GT16 | corePorterStagesPhysicalShipment | Real village Porter loads 32 actual blocks into persistent work cargo, then delivers the exact count to the core dock Barrel |
 | GT17 | remotePorterCollectsOnlyArrivedFreight | Real Outpost Porter physically collects only the 16 receipted items and delivers to recognized local storage; SavedData roundtrip does not restore spent receipts |
+| GT18 | repairsOnlyMissingVillageBlockForOneRealPlank | A village-owned building's exact original missing roof cell is repaired from a real recognized Barrel and the paid project persists |
+| GT19 | neverOverwritesPlayerReplacementOrChargesMaterial | A player replacement glass block survives a queued village repair and does not consume the reserved material |
+| GT20 | loomConsumesRealPlanksAndString | Physical Loom recipe consumes exactly two planks and two String without minting free items |
+| GT21 | lecternCraftsBookshelfWithExactPhysicalInputs | Real Book, Bookshelf and wood Slab intermediates consume actual paper/leather/planks and retain surplus Slabs |
+| GT22 | specialistBlueprintsOwnDifferentRoofsAndRealWorkstations | Librarian/Armorer/Fisherman templates expose their real job-site, actual storage Barrel and distinct roof structures |
 
 These tests are **not** a full acceptance of G01-G21: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.
