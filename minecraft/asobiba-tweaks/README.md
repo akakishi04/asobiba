@@ -117,6 +117,7 @@ The village family is resource-backed rather than free structure spawning.
 - Housing / storage shortages influence build plans
 - **Forester**, **Quarry worker**, **Porter**, **Quartermaster** and farmer logistics
 - Incremental, paid roof/wall/foundation repair for village-owned houses, warehouses and workshops; no overwriting player-edited blocks
+- Housing pressure considers recognized homes, chronic missing home memories, welfare, food supply, active projects and a persistent three-day cooldown; original one-bed huts can be furnished with a second *real* White Bed before building new detached houses
 - Profession-driven village work halls for 11 additional vanilla careers, with gabled, stone-roof and ventilated building variants plus real workstations/Barrels
 - Shepherds can generate real wool supply for construction
 - Villagers use stored wool + planks to make beds during construction

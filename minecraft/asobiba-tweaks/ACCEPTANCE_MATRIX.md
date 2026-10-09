@@ -39,6 +39,7 @@ Branch: `feat/minecraft-mods-bootstrap`; PR #3.
 | G18 | Refugee/outpost/merger lifecycle | Stable Village IDs, correct destination caps, return and abandonment hysteresis | Needs gameplay test |
 | G19 | Continental worldgen and rivers | Determinism for seed, visually sane lakes/rivers/deltas, no accidental chunk loads | Needs gameplay test |
 | G20 | Multiplayer + world save/reload | No per-tick unbounded work, duplication, dropped inventories, corrupted SaveData | Needs gameplay test |
+| G23 | Housing pressure and safe reuse | Recognized usable homes drive construction; reserve, cooldown, chronic homeless people and food stability change priority; existing village-owned home can gain a real, paid second Bed without modifying player blocks; no bogus extra building capacity | Partial: GT28–GT31 automated; in-place second-floor/roof expansion, sleeping AI and multiplayer still pending |
 | G22 | Road/bridge terrain safety | No generated road from unloaded/unreachable terrain; actual cost comparison prefers cheap detours; 2-12-block bridges pay all physical materials, protect player structures, preserve source water and do not strand villagers on unwalkable grades | Partial: GT23-GT27 automated; long-running villagers, extreme terrain and multiplayer still pending |
 | G21 | River dock and ChestBoat freight | Real material purchase, no water-source deletion, physically validated water route, real boat inventory conservation, pause/resume after unload and save/reload, passenger takeover, blocked route, full destination and no duplicate carriers | Partial: GT09-GT17 server tests registered; full restart/client/multiplayer and real long-distance Porter navigation pending (cargo ON by default; still experimental) |
 
@@ -51,7 +52,7 @@ These can silently lose or duplicate real items, XP, villagers or world blocks.
 actual in-game samples.
 
 **Gameplay harness needed**: controlled GameTests and a repeatable long-run
-dedicated-server simulation. Twenty-seven required NeoForge GameTests passed CI run 37892485566, but the rest of the player,
+dedicated-server simulation. Thirty-one required NeoForge GameTests passed CI run 37896419540, but the rest of the player,
 projectile, village, save/reload and multiplayer scenarios still require
 real in-game testing. CI must not be used to label the project feature-complete.
 
@@ -100,5 +101,9 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT25 | noBridgeForShortWaterOrObstructedBanks | Bridge survey rejects a real player-obstructed shore foundation |
 | GT26 | unloadedRoadCorridorNeverBecomesStraightFallback | Absent FULL chunks cannot produce fake straight roads or cause chunk loading during the planner call |
 | GT27 | materialDetoursAndProtectedBankCanVetoBridge | A bridge must save substantial detour distance and reject unsafe modified lanes along the shortcut |
+| GT28 | healthyReserveAndRecentHouseSuppressSpam | Recognized sleeping-capacity reserve suppresses extra houses, while a saved construction cooldown delays minor shortages |
+| GT29 | acuteShortageBypassesCooldownButDeduplicatesProjects | Real acute overcrowding bypasses normal cooldown, but an already active residential construction blocks duplicates |
+| GT30 | carpenterAddsPaidSecondBedWithoutAnotherHouse | Existing real village house adds one fully paid, wool-and-plank-crafted White Bed, revalidates two sleeping spaces and survives SavedData roundtrip without duplicate BuildingRecords |
+| GT31 | playerOccupiedBedSpaceIsNeverOverwrittenOrCharged | Queued second-bed placement cancels without consuming a physical item or overwriting player Obsidian |
 
 These tests are **not** a full acceptance of G01-G22: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.
