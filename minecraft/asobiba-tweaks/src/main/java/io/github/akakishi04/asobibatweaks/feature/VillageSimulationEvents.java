@@ -2540,9 +2540,36 @@ public final class VillageSimulationEvents {
             data.touch();
             return;
         }
-        data.setRouteWaypoints(route.id(), nodes);
+        // The coarse A* costs water significantly above dry terrain.
+        // When a short, truly safe straight crossing saves >=8 route blocks
+        // compared to the chosen detour, a proper raised bridge is justified.
+        // Otherwise preserve the verified, cheaper land route.
+        int fromX = route.from().getX();
+        int fromZ = route.from().getZ();
+        int toX = route.to().getX();
+        int toZ = route.to().getZ();
+        int directBlocks = Math.abs(toX - fromX) + Math.abs(toZ - fromZ);
+        boolean aligned = (fromX == toX) != (fromZ == toZ);
+        VillageBridgeService.Candidate direct = null;
+        if (aligned && VillageBridgeService.preferableToDetour(
+                directBlocks, roadCenterlineCount(nodes))) {
+            List<BlockPos> straight = List.of(route.from(), route.to());
+            direct = VillageBridgeService.findLoadedCrossing(
+                    level, straight, route.width());
+            if (direct != null && !VillageBridgeService.directShortcutSafe(
+                    level, route.from(), route.to(), direct)) direct = null;
+        }
 
-        if (!VillageBridgeService.queueBridge(level, data, route, project, nodes)) {
+        List<BlockPos> selected = direct == null
+                ? nodes : List.of(route.from(), route.to());
+        data.setRouteWaypoints(route.id(), selected);
+
+        boolean queued = direct != null
+                ? VillageBridgeService.queueValidatedBridge(
+                        level, data, route, project, direct)
+                : VillageBridgeService.queueBridge(
+                        level, data, route, project, selected);
+        if (!queued) {
             project.setPhase("planned");
             project.setPausedReason("");
         }
