@@ -125,14 +125,52 @@ public final class VillageRiverCargoService {
             return;
         }
 
-        if ("unload".equals(phase)) {
+        if ("unload".equals(phase) || "return_unload".equals(phase)) {
             stop(boat);
+            boolean homeward = "return_unload".equals(phase);
+            boolean destinationAtTo = homeward ? !forward : forward;
+            BlockPos destinationPoint = destinationAtTo ? route.to() : route.from();
             Container destination = dockBarrel(level, data, route.villageId(),
-                    forward ? route.to() : route.from());
+                    destinationPoint);
             if (destination == null || horizontalDistanceSqr(boat,
-                    forward ? route.to() : route.from()) > MOOR_RADIUS_SQUARED) return;
-            if (!unload(boat, destination, state.getString(CARGO_ITEM))) return;
-            VillageStorageService.reconcileVillage(route.villageId(), level);
+                    destinationPoint) > MOOR_RADIUS_SQUARED) return;
+
+            String manifest = state.getString(CARGO_ITEM);
+            int before = manifestCount(boat, manifest);
+            boolean emptied = unload(boat, destination, manifest);
+            int physicallyDelivered = before - manifestCount(boat, manifest);
+            if (physicallyDelivered > 0) {
+                route.recordDockDelivery(destinationAtTo, manifest, physicallyDelivered);
+                data.touch();
+                VillageStorageService.reconcileVillage(route.villageId(), level);
+            }
+            // A full destination holds the remaining real cargo in the boat.
+            if (!emptied) return;
+            if (homeward) {
+                state.putString(PHASE, "idle");
+                state.remove(CARGO_ITEM);
+                return;
+            }
+
+            // On the return leg, carry qualifying real stock from the remote
+            // dock when the original endpoint has an actual shortage.
+            // Ordinary second-leg loading uses the same conservation rules.
+            Container origin = dockBarrel(level, data, route.villageId(),
+                    forward ? route.from() : route.to());
+            CargoChoice backhaul = chooseCargo(destination, origin);
+            if (backhaul != null) {
+                ItemStack picked = destination.removeItem(
+                        backhaul.slot(), backhaul.count());
+                if (!picked.isEmpty()) {
+                    boat.setItem(0, picked);
+                    destination.setChanged();
+                    state.putString(CARGO_ITEM,
+                            BuiltInRegistries.ITEM.getKey(picked.getItem()).toString());
+                    VillageStorageService.reconcileVillage(route.villageId(), level);
+                }
+            } else {
+                state.remove(CARGO_ITEM);
+            }
             state.putString(PHASE, "return");
             state.putInt(CURSOR, forward ? points.size() - 2 : 1);
             return;
@@ -161,7 +199,7 @@ public final class VillageRiverCargoService {
                 if ("outbound".equals(phase)) {
                     state.putString(PHASE, "unload");
                 } else {
-                    state.putString(PHASE, "idle");
+                    state.putString(PHASE, emptyCargo(boat) ? "idle" : "return_unload");
                 }
                 return;
             }
@@ -263,7 +301,7 @@ public final class VillageRiverCargoService {
         return boat;
     }
 
-    private static Container dockBarrel(ServerLevel level, VillageSavedData data,
+    static Container dockBarrel(ServerLevel level, VillageSavedData data,
                                         UUID villageId, BlockPos waterEnd) {
         for (VillageSavedData.WorkSiteRecord site : data.workSitesForVillage(villageId)) {
             if (!"river_dock".equals(site.type()) || !"active".equals(site.state())
@@ -318,7 +356,7 @@ public final class VillageRiverCargoService {
         return total;
     }
 
-    private static boolean approved(ItemStack stack) {
+    static boolean approved(ItemStack stack) {
         return stack.is(ItemTags.LOGS) || stack.is(ItemTags.PLANKS)
                 || stack.is(ItemTags.WOOL) || stack.is(Items.COBBLESTONE)
                 || stack.is(Items.STONE) || stack.is(Items.IRON_INGOT)
@@ -332,6 +370,17 @@ public final class VillageRiverCargoService {
             if (source.getItem(i).is(Items.OAK_CHEST_BOAT)) return i;
         }
         return -1;
+    }
+
+    private static int manifestCount(ChestBoat boat, String manifest) {
+        if (manifest.isBlank()) return 0;
+        int total = 0;
+        for (int i = 0; i < boat.getContainerSize(); i++) {
+            ItemStack stack = boat.getItem(i);
+            if (!stack.isEmpty() && BuiltInRegistries.ITEM.getKey(
+                    stack.getItem()).toString().equals(manifest)) total += stack.getCount();
+        }
+        return total;
     }
 
     private static boolean unload(ChestBoat boat, Container destination, String manifestItem) {
