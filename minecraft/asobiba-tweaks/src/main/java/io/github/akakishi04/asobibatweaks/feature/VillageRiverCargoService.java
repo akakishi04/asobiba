@@ -312,17 +312,17 @@ public final class VillageRiverCargoService {
                                         UUID villageId, BlockPos waterEnd) {
         for (VillageSavedData.WorkSiteRecord site : data.workSitesForVillage(villageId)) {
             if (!"river_dock".equals(site.type()) || !"active".equals(site.state())
-                    || !waterEnd.equals(VillageRiverNavigationService.dockWater(
-                            level, data, site))) continue;
-            String purpose = site.purpose();
+                    || !site.purpose().startsWith("dock:")) continue;
             UUID projectId;
             try {
-                projectId = UUID.fromString(purpose.substring("dock:".length()));
+                projectId = UUID.fromString(site.purpose().substring("dock:".length()));
             } catch (IllegalArgumentException ignored) {
                 continue;
             }
             VillageSavedData.ProjectRecord project = data.project(projectId).orElse(null);
-            if (project == null) continue;
+            if (project == null || !VillageRiverDockService.TEMPLATE.equals(project.templateId())
+                    || !"complete".equals(project.phase())
+                    || !project.villageId().equals(villageId)) continue;
             Direction direction = switch (project.parameter("dock_direction")) {
                 case "north" -> Direction.NORTH;
                 case "south" -> Direction.SOUTH;
@@ -331,7 +331,22 @@ public final class VillageRiverCargoService {
                 default -> null;
             };
             if (direction == null) continue;
-            BlockPos storagePos = project.site().relative(direction.getClockWise()).above();
+            int waterY;
+            try {
+                waterY = Integer.parseInt(project.parameter("dock_water_y"));
+            } catch (NumberFormatException ignored) {
+                continue;
+            }
+            BlockPos bank = project.site();
+            BlockPos savedBerth = new BlockPos(
+                    bank.getX() + direction.getStepX() * 3, waterY,
+                    bank.getZ() + direction.getStepZ() * 3);
+            if (!waterEnd.equals(savedBerth)) continue;
+            // Sailing must validate real water. Once the vessel has reached a
+            // dock, unloading requires the VERIFIED physical Barrel and saved
+            // storage identity, not re-running navigability checks that can
+            // transiently fail in a changing game-test or player-built world.
+            BlockPos storagePos = bank.relative(direction.getClockWise()).above();
             if (!VillageSimulationScheduler.isChunkLoaded(level, storagePos)
                     || !level.getBlockState(storagePos).is(net.minecraft.world.level.block.Blocks.BARREL)
                     || data.storageAt(villageId, storagePos).isEmpty()) continue;
