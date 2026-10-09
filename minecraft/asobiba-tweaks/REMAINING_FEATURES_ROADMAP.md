@@ -15,7 +15,7 @@ This tracks **code implementation**, not a demand to finish all gameplay polishi
 |---|---|---|
 | V86 | Building reuse and repair | **Initial V86 implemented**: real-paid, persistent missing village-owned shell restoration, no player-block overwrite, GT18/19. Still pending: full house reuse, beds, upper floors and larger repair plans |
 | V87 | Workstation and building families | **Initial V87 implemented**: eleven unique career halls with real physical stations, three roof families and exact ingredient recipes. Still pending: detailed building variants, POI reachability, modded workstation support and long playtesting |
-| V88 | Bridges and roads | Real pier/foundation variants for 2-12-block crossings, bridge-versus-detour decisions, safe slope/stair paths, recovery from partly built crossings |
+| V88 | Bridges and roads | **V88 initial implemented:** persisted phased 2-12-wide crossing span, outboard waterlogged piers, stair-bank approaches, real wood/mixed/stone material bills, explicit safe detour comparison, no unverified road fallback, 5 additional real GameTests. Remaining: multi-crossing routes, diagonals, ravines and long NPC pathing |
 | V89 | Demand-aware settlement planning | Housing pressure beyond raw nearby bed count, recent overcrowding and welfare inputs, existing-building vertical expansion and deliberate growth cooldown |
 | V90 | More general physical freight | Extend real Porter/pack-animal/boat first- and last-mile handling to more resource sites, mixed loads, storage-demand priorities, boat loss/salvage recovery and finite route work |
 | V91 | Inter-settlement economy | Recognized inter-village routes, demand/surplus matching and transferred actual ItemStacks, without hidden money/resources |

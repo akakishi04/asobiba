@@ -120,7 +120,7 @@ The village family is resource-backed rather than free structure spawning.
 - Profession-driven village work halls for 11 additional vanilla careers, with gabled, stone-roof and ventilated building variants plus real workstations/Barrels
 - Shepherds can generate real wool supply for construction
 - Villagers use stored wool + planks to make beds during construction
-- Roads and simple water-crossing bridges
+- Roads are selected by loaded-terrain cost instead of unverified straight fallbacks; qualifying 2-12-block crossings gain staged real raised bridges with waterlogged outboard piers, walkable shore stairs and railings (wood/mixed/stone), without filling the central boat channel
 - Physical river landings built by Carpenters after a navigable-river survey: three plank deck sections and a recognized storage Barrel, with actual material withdrawals and no water block replacement
 - Dock-to-dock route discovery along verified already-loaded source water, without teleporting cargo
 - Porter first/last-mile deliveries connect recognized core and Outpost warehouses to the physically built dock Barrels; a persisted route receipt tracks each delivered item until a real Porter picks it up, and return boats may carry actual reverse freight
