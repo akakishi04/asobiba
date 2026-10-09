@@ -25,7 +25,7 @@ public final class VillageInterSettlementFreightGameTests {
     private static final BlockPos MARK = new BlockPos(8, 2, 4);
     private VillageInterSettlementFreightGameTests() {}
 
-    @GameTest(template = "empty16x6x9", batch = "inter_village_trade")
+    @GameTest(template = "empty16x6x9")
     public static void realPorterMovesPaidStockBetweenSeparateVillageBarrels(GameTestHelper helper) {
         Fixture f = setup(helper);
         f.source().setItem(0, new ItemStack(Items.COBBLESTONE, 64));
@@ -66,7 +66,7 @@ public final class VillageInterSettlementFreightGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty16x6x9", batch = "inter_village_trade")
+    @GameTest(template = "empty16x6x9")
     public static void fullDestinationRetainsRealPorterParcelUntilSpaceReturns(GameTestHelper helper) {
         Fixture f = setup(helper);
         f.source().setItem(0, new ItemStack(Items.WHEAT, 64));
@@ -97,7 +97,7 @@ public final class VillageInterSettlementFreightGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty16x6x9", batch = "inter_village_trade")
+    @GameTest(template = "empty16x6x9")
     public static void removedSourceStockCancelsUnpaidTransfer(GameTestHelper helper) {
         Fixture f = setup(helper);
         f.source().setItem(0, new ItemStack(Items.COBBLESTONE, 64));
