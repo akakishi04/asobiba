@@ -179,6 +179,66 @@ public final class VillageInterSettlementFreightGameTests {
         helper.succeed();
     }
 
+    /** Genuinely different items satisfying the same material category prevent import churn. */
+    @GameTest(template = "empty16x6x9")
+    public static void stoneSupplyCategoryBlocksRedundantCobbleExport(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        f.source().setItem(0, new ItemStack(Items.COBBLESTONE, 64));
+        f.source().setItem(1, new ItemStack(Items.COBBLESTONE, 64));
+        VillageSavedData data = VillageSavedData.get(f.level());
+        var origin = data.village(f.origin()).orElseThrow();
+        var destination = data.village(f.destination()).orElseThrow();
+        var source = VillageInterSettlementFreightService.categoryInventory(
+                VillageStorageService.containers(f.origin(), f.level()));
+        var target = VillageInterSettlementFreightService.categoryInventory(
+                VillageStorageService.containers(f.destination(), f.level()));
+        if (!VillageInterSettlementFreightService.categoryTradeEligible(
+                origin, destination, source, target, f.source().getItem(0))) {
+            helper.fail("Actual source surplus to empty village should be exportable", MARK);
+            return;
+        }
+        f.target().setItem(0, new ItemStack(Items.STONE, 64));
+        target = VillageInterSettlementFreightService.categoryInventory(
+                VillageStorageService.containers(f.destination(), f.level()));
+        if (VillageInterSettlementFreightService.categoryTradeEligible(
+                origin, destination, source, target, f.source().getItem(0))
+                || count(f.source(), Items.COBBLESTONE) != 128
+                || count(f.target(), Items.STONE) != 64) {
+            helper.fail("A village already stocked with stone must not import redundant cobble", MARK);
+            return;
+        }
+        helper.succeed();
+    }
+
+    /** Construction reservations reduce real category surplus before logistics planning. */
+    @GameTest(template = "empty16x6x9")
+    public static void reservedConstructionMaterialRemainsAtHome(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        f.source().setItem(0, new ItemStack(Items.COBBLESTONE, 64));
+        f.source().setItem(1, new ItemStack(Items.COBBLESTONE, 64));
+        VillageSavedData data = VillageSavedData.get(f.level());
+        var village = data.village(f.origin()).orElseThrow();
+        var other = data.village(f.destination()).orElseThrow();
+        var from = VillageInterSettlementFreightService.categoryInventory(
+                VillageStorageService.containers(f.origin(), f.level()));
+        var to = VillageInterSettlementFreightService.categoryInventory(
+                VillageStorageService.containers(f.destination(), f.level()));
+        if (!VillageInterSettlementFreightService.categoryTradeEligible(
+                village, other, from, to, f.source().getItem(0))) {
+            helper.fail("Unreserved real surplus should pass source reserve gate", MARK);
+            return;
+        }
+        village.replaceLedger(java.util.Map.of("minecraft:cobblestone", 128));
+        if (!village.reserve("minecraft:cobblestone", 32)
+                || VillageInterSettlementFreightService.categoryTradeEligible(
+                    village, other, from, to, f.source().getItem(0))
+                || count(f.source(), Items.COBBLESTONE) != 128) {
+            helper.fail("Village project reserved stone was wrongly marked exportable", MARK);
+            return;
+        }
+        helper.succeed();
+    }
+
     private static boolean start(Fixture f) {
         return VillageInterSettlementFreightService.assign(f.porter(), f.level(),
                 f.route().id(), f.origin(), f.destination(), f.sourcePos(),

@@ -116,5 +116,7 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT40 | roadAndStorageNearSaplingAreProtected | Player-built cobble roads and Barrel storage reject natural sapling placement outside any village index |
 | GT41 | splitRealStockStillPaysExactParcel | Genuine identical inventory split across multiple stacks contributes exactly 16 paid pieces while retaining 48 local pieces |
 | GT42 | sameItemWithDifferentComponentsIsNotSwapped | Custom-named and plain stacks of one vanilla item remain distinguishable during real cross-village pickup/delivery |
+| GT43 | stoneSupplyCategoryBlocksRedundantCobbleExport | Real Stone inventory satisfies the same construction category as Cobblestone; redundant import does not start or move any items |
+| GT44 | reservedConstructionMaterialRemainsAtHome | A real resource reservation reduces exportable source-category stock and preserves the intended building material |
 
 These tests are **not** a full acceptance of G01-G22: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.

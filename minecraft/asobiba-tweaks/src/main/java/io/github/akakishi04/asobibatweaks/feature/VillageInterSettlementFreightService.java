@@ -3,6 +3,9 @@ package io.github.akakishi04.asobibatweaks.feature;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
+import net.minecraft.resources.ResourceLocation;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -64,6 +67,7 @@ public final class VillageInterSettlementFreightService {
 
         List<VillageStorageService.LocatedContainer> sources = stores(level, data, origin);
         if (sources.isEmpty()) return false;
+        Map<String, Integer> originCategories = categoryInventory(sources);
         List<VillageSavedData.VillageRecord> neighbors = data.villagesView().values().stream()
                 .filter(v -> !v.id().equals(originId) && "active".equals(v.lifecycle())
                         && v.center().distManhattan(origin.center()) <= MAX_VILLAGE_DISTANCE)
@@ -72,17 +76,18 @@ public final class VillageInterSettlementFreightService {
         for (VillageSavedData.VillageRecord neighbor : neighbors) {
             List<VillageStorageService.LocatedContainer> targets = stores(level, data, neighbor);
             if (targets.isEmpty()) continue;
+            Map<String, Integer> destinationCategories = categoryInventory(targets);
             for (VillageStorageService.LocatedContainer source : sources) {
                 BlockPos from = source.record().pos();
                 if (porter.distanceToSqr(from.getCenter()) > 24.0D * 24.0D) continue;
                 for (int slot = 0; slot < source.container().getContainerSize(); slot++) {
                     ItemStack offered = source.container().getItem(slot);
                     if (offered.isEmpty() || !VillageRiverCargoService.approved(offered)
-                            || stock(sources, offered) < 48) continue;
+                            || !categoryTradeEligible(origin, neighbor,
+                                    originCategories, destinationCategories, offered)) continue;
                     for (VillageStorageService.LocatedContainer target : targets) {
                         BlockPos to = target.record().pos();
                         if (from.distManhattan(to) > MAX_VILLAGE_DISTANCE
-                                || stock(targets, offered) >= 16
                                 || !canReceive(target.container(), offered, MAX_SHIPMENT)) continue;
                         // Never infer a direct road across unknown terrain. This
                         // planner returns empty for unloaded or failed corridors.
@@ -104,15 +109,96 @@ public final class VillageInterSettlementFreightService {
     private static List<VillageStorageService.LocatedContainer> stores(
             ServerLevel level, VillageSavedData data, VillageSavedData.VillageRecord village) {
         List<VillageStorageService.LocatedContainer> result = new ArrayList<>();
-        for (VillageStorageService.LocatedContainer found :
-                VillageStorageService.containers(village.id(), level)) {
-            if (result.size() >= MAX_STORES) break;
-            if (!"valid".equals(found.record().validationState())
-                    || found.record().pos().distManhattan(village.center()) > 24) continue;
-            result.add(found);
+        // A partially unloaded local warehouse is UNKNOWN, not empty. Its
+        // missing inventory must not produce an artificial import request.
+        for (VillageSavedData.StorageRecord record : data.storagesForVillage(village.id())) {
+            if (record.pos().distManhattan(village.center()) > 24) continue;
+            if (result.size() >= MAX_STORES
+                    || !"valid".equals(record.validationState())
+                    || !VillageSimulationScheduler.isChunkLoaded(level, record.pos())
+                    || !(level.getBlockEntity(record.pos()) instanceof Container container)) {
+                return List.of();
+            }
+            result.add(new VillageStorageService.LocatedContainer(record, container));
         }
         result.sort(Comparator.comparing(x -> x.record().id().toString()));
         return result;
+    }
+
+    /** Read real ItemStacks once per local warehouse snapshot, never abstract stock. */
+    static Map<String, Integer> categoryInventory(
+            List<VillageStorageService.LocatedContainer> stores) {
+        Map<String, Integer> totals = new HashMap<>();
+        for (VillageStorageService.LocatedContainer located : stores) {
+            for (int i = 0; i < located.container().getContainerSize(); i++) {
+                ItemStack stack = located.container().getItem(i);
+                if (stack.isEmpty()) continue;
+                String category = VillageEconomyService.category(stack.getItem());
+                if (category != null) totals.merge(category, stack.getCount(),
+                        (a, b) -> (int)Math.min(Integer.MAX_VALUE, (long)a + b));
+            }
+        }
+        return totals;
+    }
+
+    /** Conservative category-wide demand, consistent with the daily village market. */
+    static boolean categoryTradeEligible(
+            VillageSavedData.VillageRecord origin,
+            VillageSavedData.VillageRecord destination,
+            Map<String, Integer> originStock,
+            Map<String, Integer> destinationStock,
+            ItemStack offered) {
+        if (offered == null || offered.isEmpty()
+                || !VillageRiverCargoService.approved(offered)) return false;
+        String category = VillageEconomyService.category(offered.getItem());
+        if (category == null || "luxury".equals(category)) return false;
+
+        long free = (long)originStock.getOrDefault(category, 0)
+                - categoryReservations(origin, category);
+        int reserve = categoryReserve(origin, category);
+        int destinationNeed = categoryReserve(destination, category);
+        // One complete paid parcel may leave only above the destination
+        // village's genuine category shortage and the origin's local reserve.
+        return free >= (long)reserve + MAX_SHIPMENT
+                && destinationStock.getOrDefault(category, 0)
+                        < Math.max(1, destinationNeed * 3 / 5);
+    }
+
+    private static int categoryReserve(VillageSavedData.VillageRecord village, String category) {
+        int population = Math.max(1, Math.max(village.residentIds().size(),
+                village.lastKnownPopulation()));
+        return switch (category) {
+            case "food" -> Math.max(24, population * 24);
+            case "wood", "stone" -> Math.max(96, population * 16);
+            case "metal" -> Math.max(24, population * 4);
+            case "farming" -> Math.max(32, population * 4);
+            case "fishing" -> Math.max(24, population * 3);
+            default -> Integer.MAX_VALUE / 2;
+        };
+    }
+
+    private static long categoryReservations(
+            VillageSavedData.VillageRecord village, String category) {
+        long reserved = 0L;
+        for (Map.Entry<String, Integer> entry : village.reservedCounts().entrySet()) {
+            String key = entry.getKey();
+            String candidate = null;
+            if (key.startsWith("minecraft:") || key.startsWith("asobibatweaks:")) {
+                try {
+                    candidate = VillageEconomyService.category(
+                            BuiltInRegistries.ITEM.get(ResourceLocation.parse(key)));
+                } catch (IllegalArgumentException ignored) {
+                    // A malformed item reservation never authorizes shipment.
+                }
+            } else if ("wood".equals(category) && (key.contains("plank") || key.contains("log"))) {
+                candidate = "wood";
+            } else if ("stone".equals(category)
+                    && (key.contains("stone") || key.contains("cobble"))) {
+                candidate = "stone";
+            }
+            if (category.equals(candidate)) reserved += Math.max(0, entry.getValue());
+        }
+        return reserved;
     }
 
     private static VillageSavedData.RouteRecord findOrCreateRoute(
