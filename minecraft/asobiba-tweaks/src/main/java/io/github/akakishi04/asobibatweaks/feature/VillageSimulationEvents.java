@@ -294,6 +294,13 @@ public final class VillageSimulationEvents {
             villager.getPersistentData().putLong(NEXT_BUILD, now + 2400L);
             return;
         }
+        // Prefer a physically paid, conservative second-storey expansion of
+        // an original village-owned house over taking additional open land.
+        if (housingNeed && VillageHouseVerticalExpansionService.tryPlan(
+                villager, level, villageId.get())) {
+            villager.getPersistentData().putLong(NEXT_BUILD, now + 2400L);
+            return;
+        }
 
         // Reuse a safe, publicly usable player-adopted structure before
         // spending a full new-building budget. Only completed workstation
@@ -455,6 +462,10 @@ public final class VillageSimulationEvents {
         }
         if (VillageHouseReuseService.TEMPLATE.equals(project.templateId())) {
             VillageHouseReuseService.advance(villager, level, project);
+            return;
+        }
+        if (VillageHouseVerticalExpansionService.TEMPLATE.equals(project.templateId())) {
+            VillageHouseVerticalExpansionService.advance(villager, level, project);
             return;
         }
 

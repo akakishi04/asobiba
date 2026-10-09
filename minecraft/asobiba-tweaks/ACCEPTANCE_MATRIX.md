@@ -124,5 +124,9 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT48 | alreadyPresentFoundationAdvancesWithoutPayingAgain | An exact structural block already present when construction resumes advances the durable cursor and releases only the corresponding bookkeeping reservation without any material debit |
 | GT49 | completedTwoHalfBedReconcilesExactlyOneUnpaidCursor | A matching real two-block Bed assembled before its project cursor advanced is acknowledged once, without consuming another three wool and three planks |
 | GT50 | brokenBedHalfNeverApprovesFreeCompletedBed | A partially missing or player-obstructed bed head cannot be mistaken for completed usable furniture or allow the work cursor and reservations to advance |
+| GT51 | originalPaidHouseSchedulesPersistedSecondFloor | Only a genuine completed village-built one-story home is eligible; its planned in-place expansion retains the original BuildingRecord ID after SavedData roundtrip |
+| GT52 | playerUpperShellEditBlocksExpansionWithoutPayment | Existing player-made upper blocks veto construction before any real material is withdrawn |
+| GT53 | placedUpperWallReconcilesWithoutSecondItemDebit | Actual Carpenter cargo and Barrel withdraw one plank for a new wall, but repeated cursor reconciliation never spends it twice |
+| GT54 | physicallyCompleteSecondStoreyRetainsBuildingIdAndCountsBeds | A complete real stairwell, roof and two upper beds expand original bounds without a duplicate record; 3 real beds remain valid after saved-world roundtrip |
 
 These tests are **not** a full acceptance of G01-G22: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.
