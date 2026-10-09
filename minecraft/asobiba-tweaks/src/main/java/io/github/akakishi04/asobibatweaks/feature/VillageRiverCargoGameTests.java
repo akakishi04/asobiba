@@ -238,7 +238,7 @@ public final class VillageRiverCargoGameTests {
         helper.succeed();
     }
 
-    private static Fixture setup(GameTestHelper helper) {
+    static Fixture setup(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
 
         // Everything remains inside this test's dedicated 16x6x9 structure.
@@ -347,7 +347,7 @@ public final class VillageRiverCargoGameTests {
         return Math.sqrt(dx * dx + dz * dz);
     }
 
-    private record Fixture(ServerLevel level, VillageSavedData data,
+    static record Fixture(ServerLevel level, VillageSavedData data,
                            VillageSavedData.RouteRecord route,
                            Container source, Container destination,
                            BlockPos start, BlockPos end) {}
