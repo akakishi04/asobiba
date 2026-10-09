@@ -41,7 +41,11 @@ public final class VillageRiverCargoGameTests {
 
     private VillageRiverCargoGameTests() {}
 
-    @GameTest(template = "empty16x6x9", timeoutTicks = 340)
+    // The long-running physics/return trip has its own GameTest batch.
+    // Short transaction fixtures in the normal batch tear down their world
+    // regions as soon as they pass; do not permit their cleanup to remove a
+    // live carrier mid-voyage in the shared GameTestServer dimension.
+    @GameTest(template = "empty16x6x9", timeoutTicks = 340, batch = "river_cargo_soak")
     public static void realChestBoatDeliversAndReturnsWithExactInventory(GameTestHelper helper) {
         Fixture test = setup(helper);
         // GameTestServer runs without a human player: add a real server-side
