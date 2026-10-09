@@ -309,8 +309,14 @@ public final class VillageSimulationEvents {
                 && !colony && !outpost && skill >= 25
                 && VillageCraftHallPlanner.needsHall(
                         villager, level, data, villageId.get());
+        String specialist = !housingNeed && !storageNeed
+                && !colony && !outpost && !craftHallNeed && skill >= 25
+                ? VillageSpecialistWorkshopService.neededTemplate(
+                        villager, level, data, villageId.get())
+                : "";
 
-        if (!housingNeed && !storageNeed && !outpost && !colony && !craftHallNeed) {
+        if (!housingNeed && !storageNeed && !outpost && !colony
+                && !craftHallNeed && specialist.isBlank()) {
             villager.getPersistentData().putLong(NEXT_BUILD, now + 12000L);
             return;
         }
@@ -330,6 +336,7 @@ public final class VillageSimulationEvents {
         else if (colony) templateId = "house_2story_5x5";
         else if (outpost) templateId = "house_5x5";
         else if (craftHallNeed) templateId = VillageCraftHallPlanner.TEMPLATE;
+        else if (!specialist.isBlank()) templateId = specialist;
         else if (skill >= 75 && population >= 16) templateId = "house_3story_5x5";
         else if (skill >= 50 && population >= 8) templateId = "house_2story_5x5";
         else if (skill >= 25 && population >= 6) templateId = "house_gabled_5x5";
@@ -352,7 +359,8 @@ public final class VillageSimulationEvents {
 
         VillageSavedData.ProjectRecord project = data.createProject(
                 villageId.get(), "building",
-                housingNeed ? 80 : storageNeed ? 70 : craftHallNeed ? 65 : 40, site);
+                housingNeed ? 80 : storageNeed ? 70
+                        : craftHallNeed || !specialist.isBlank() ? 65 : 40, site);
         project.setTemplateId(templateId);
         project.setVariantSeed(villager.getUUID().getLeastSignificantBits() ^ site.asLong());
         project.setLeadCarpenterId(villager.getUUID());
@@ -1009,7 +1017,8 @@ public final class VillageSimulationEvents {
             return "interior";
         }
         if ("house_gabled_5x5".equals(template)
-                || VillageCraftHallPlanner.TEMPLATE.equals(template)) {
+                || VillageCraftHallPlanner.TEMPLATE.equals(template)
+                || VillageSpecialistWorkshopService.hasGabledRoof(template)) {
             if (progress < 0.58D) return "walls";
             if (progress < 0.88D) return "gabled_roof";
             return "interior";
@@ -1020,6 +1029,7 @@ public final class VillageSimulationEvents {
     }
 
     private static int templateMaxY(String templateId) {
+        if (VillageSpecialistWorkshopService.hasGabledRoof(templateId)) return 6;
         return switch (templateId) {
             case "house_gabled_5x5", VillageCraftHallPlanner.TEMPLATE -> 6;
             case "house_2story_5x5" -> 8;
@@ -1032,6 +1042,8 @@ public final class VillageSimulationEvents {
         if ("storage_5x5".equals(project.templateId())) return storagePlan(project);
         if (VillageCraftHallPlanner.TEMPLATE.equals(project.templateId()))
             return craftHallPlan(project);
+        if (VillageSpecialistWorkshopService.isSpecialistTemplate(project.templateId()))
+            return VillageSpecialistWorkshopService.plan(project, storagePlan(project));
         return hutPlan(project);
     }
 
@@ -2291,6 +2303,8 @@ public final class VillageSimulationEvents {
         BlockPos base = project.site();
         boolean storage = "storage_5x5".equals(project.templateId());
         boolean craftHall = VillageCraftHallPlanner.TEMPLATE.equals(project.templateId());
+        boolean specialist = VillageSpecialistWorkshopService.isSpecialistTemplate(
+                project.templateId());
         boolean gabled = "house_gabled_5x5".equals(project.templateId());
         boolean twoStory = "house_2story_5x5".equals(project.templateId());
         boolean threeStory = "house_3story_5x5".equals(project.templateId());
@@ -2319,12 +2333,18 @@ public final class VillageSimulationEvents {
         VillageSavedData.BuildingRecord building = data.createBuilding(
                 ownerVillageId, base, base.offset(4, maxY, 4), true);
         building.setTemplateId(project.templateId());
-        building.setClassification(storage ? "storage" : craftHall ? "workshop" : "residential");
+        building.setClassification(storage ? "storage"
+                : craftHall || specialist ? "workshop" : "residential");
+        int specialistCapacity = specialist
+                && level.getBlockState(base.offset(2, 1, 2)).is(
+                        VillageSpecialistWorkshopService.primaryStation(project.templateId()))
+                ? 1 : 0;
         int craftCapacity = craftHall
                 ? (level.getBlockState(base.offset(1, 1, 2)).is(Blocks.SMITHING_TABLE) ? 1 : 0)
                         + (level.getBlockState(base.offset(3, 1, 2)).is(Blocks.STONECUTTER) ? 1 : 0)
                 : 0;
         building.setValidatedCapacity(storage ? 0
+                : specialist ? specialistCapacity
                 : craftHall ? craftCapacity
                 : threeStory ? 6
                 : twoStory ? 4
@@ -2333,7 +2353,9 @@ public final class VillageSimulationEvents {
         // Do not advertise an apparently complete craft hall as a valid
         // two-job workstation if a placement hook or outside block change
         // removed either of its physical stations.
-        building.setValidationState(craftHall && craftCapacity < 2 ? "invalid" : "valid");
+        building.setValidationState(
+                craftHall && craftCapacity < 2 || specialist && specialistCapacity < 1
+                        ? "invalid" : "valid");
         building.setLastValidatedGameTime(level.getGameTime());
 
         String plank = project.parameter("plank");
@@ -2367,10 +2389,11 @@ public final class VillageSimulationEvents {
             });
         }
 
-        if (storage || craftHall) {
+        if (storage || craftHall || specialist) {
             List<BlockPos> storagePositions = storage
                     ? List.of(base.offset(1, 1, 2), base.offset(3, 1, 2))
-                    : List.of(base.offset(2, 1, 3));
+                    : craftHall ? List.of(base.offset(2, 1, 3))
+                    : List.of(base.offset(3, 1, 3));
             for (BlockPos storagePos : storagePositions) {
                 if (level.getBlockEntity(storagePos) instanceof Container
                         && data.storageAt(ownerVillageId, storagePos).isEmpty()) {

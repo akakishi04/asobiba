@@ -9,6 +9,7 @@ import net.minecraft.tags.BlockTags;
 import net.minecraft.world.Container;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.BedBlock;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BedPart;
 
@@ -233,11 +234,20 @@ public final class VillageBuildingService {
             valid = containers > 0 && usableInteriorCells >= 1;
             building.setValidatedCapacity(0);
         } else if ("workshop".equals(classification)) {
-            // A workspace loses its functional capacity when its actual
-            // professional stations are removed. Never perpetuate an old
-            // positive capacity merely because floor/headroom still exist.
-            valid = nonStorageWorkstations > 0 && usableInteriorCells >= 2;
-            building.setValidatedCapacity(valid ? nonStorageWorkstations : 0);
+            // In purpose-built specialist workshops, the explicit primary
+            // job-site anchor must physically survive. The fishing Barrel
+            // must never be confused with the separately registered storage
+            // Barrel when recalculating functional workstation capacity.
+            Block expected = VillageSpecialistWorkshopService.primaryStation(
+                    building.templateId());
+            if (expected != null) {
+                valid = level.getBlockState(min.offset(2, 1, 2)).is(expected)
+                        && usableInteriorCells >= 2;
+                building.setValidatedCapacity(valid ? 1 : 0);
+            } else {
+                valid = nonStorageWorkstations > 0 && usableInteriorCells >= 2;
+                building.setValidatedCapacity(valid ? nonStorageWorkstations : 0);
+            }
         } else {
             valid = usableInteriorCells >= 1;
             building.setValidatedCapacity(0);

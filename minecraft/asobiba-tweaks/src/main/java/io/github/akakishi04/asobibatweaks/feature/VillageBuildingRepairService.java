@@ -252,7 +252,8 @@ public final class VillageBuildingRepairService {
                 || "house_2story_5x5".equals(name)
                 || "house_3story_5x5".equals(name)
                 || "storage_5x5".equals(name)
-                || VillageCraftHallPlanner.TEMPLATE.equals(name);
+                || VillageCraftHallPlanner.TEMPLATE.equals(name)
+                || VillageSpecialistWorkshopService.isSpecialistTemplate(name);
     }
 
     private static boolean within(BlockPos pos, BlockPos min, BlockPos max) {
