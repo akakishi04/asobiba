@@ -37,6 +37,45 @@ public final class VillageRiverPorterService {
     private VillageRiverPorterService() {}
 
     /**
+     * A remote dock with a real outstanding boat-delivery receipt is genuine
+     * Porter demand even when ordinary Outpost production has gone quiet.
+     * Unknown chunks do not count as available items.
+     */
+    public static boolean hasPendingDockDelivery(
+            ServerLevel level, VillageSavedData data,
+            VillageSavedData.VillageRecord village,
+            VillageSavedData.WorkSiteRecord site) {
+        if (village == null || site == null
+                || !"outpost".equals(site.type()) || !"active".equals(site.state())) return false;
+        BlockPos center = new BlockPos((site.min().getX() + site.max().getX()) / 2,
+                (site.min().getY() + site.max().getY()) / 2,
+                (site.min().getZ() + site.max().getZ()) / 2);
+        int examined = 0;
+        for (UUID routeId : village.routeIds()) {
+            if (++examined > MAX_ROUTES_EXAMINED) break;
+            VillageSavedData.RouteRecord route = data.route(routeId).orElse(null);
+            if (route == null || !"river".equals(route.type())) continue;
+            for (boolean atTo : new boolean[]{false, true}) {
+                BlockPos berth = atTo ? route.to() : route.from();
+                if (berth.distManhattan(center) > 48
+                        || route.dockReceipts(atTo).isEmpty()) continue;
+                Container dock = VillageRiverCargoService.dockBarrel(
+                        level, data, village.id(), berth);
+                if (dock == null) continue;
+                for (int slot = 0; slot < dock.getContainerSize(); slot++) {
+                    ItemStack stack = dock.getItem(slot);
+                    if (!stack.isEmpty()
+                            && VillageRiverCargoService.approved(stack)
+                            && route.dockReceipts(atTo).getOrDefault(itemId(stack), 0) > 0) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * @param assignedOutpost null for an ordinary core Porter; an explicit
      *                        active Outpost UUID for its assigned local Porter
      * @return whether a durable river transfer claimed this worker tick
