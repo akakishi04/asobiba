@@ -117,7 +117,7 @@ public final class VillageBridgeService {
         BlockPos start = first.relative(face.getOpposite(), 3);
         BlockPos end = last.relative(face, 3);
         if (!VillageSimulationScheduler.isAreaLoaded(level,
-                start.offset(-3, 0, -3), end.offset(3, 0, 3))) return null;
+                start.offset(-2, 0, -2), end.offset(2, 0, 2))) return null;
         int waterY = candidate.waterY();
 
         for (int i = 0; i < candidate.length(); i++) {
