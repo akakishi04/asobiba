@@ -26,7 +26,7 @@ import net.minecraft.world.level.saveddata.SavedData;
  * indexes, caches and planning state that later passes can reconcile against loaded chunks.</p>
  */
 public final class VillageSavedData extends SavedData {
-    public static final int SCHEMA_VERSION = 9;
+    public static final int SCHEMA_VERSION = 10;
 
     private static final String NAME = "asobibatweaks_villages";
     private static final Factory<VillageSavedData> FACTORY =
@@ -815,6 +815,7 @@ public final class VillageSavedData extends SavedData {
         private int settlementViability = 100;
         private int lastKnownPopulation;
         private long nextPlanningGameTime;
+        private long nextHousingExpansionGameTime;
         private long nextMarketUpdateGameTime;
         private long nextPublicWorksUpdateGameTime;
         private long nextBirthGameTime;
@@ -912,6 +913,7 @@ public final class VillageSavedData extends SavedData {
         public int reservedCount(String itemKey) { return Math.max(0, reservedCounts.getOrDefault(itemKey, 0)); }
         public int availableCount(String itemKey) { return Math.max(0, ledgerCount(itemKey) - reservedCount(itemKey)); }
         public long nextPlanningGameTime() { return nextPlanningGameTime; }
+        public long nextHousingExpansionGameTime() { return nextHousingExpansionGameTime; }
         public long lastValidatedGameTime() { return lastValidatedGameTime; }
 
         public void setCenter(BlockPos center) { this.center = center.immutable(); }
@@ -1041,6 +1043,9 @@ public final class VillageSavedData extends SavedData {
         }
 
         public void setNextPlanningGameTime(long value) { this.nextPlanningGameTime = value; }
+        public void setNextHousingExpansionGameTime(long value) {
+            this.nextHousingExpansionGameTime = Math.max(0L, value);
+        }
         public void setLastValidatedGameTime(long value) { this.lastValidatedGameTime = value; }
 
         private CompoundTag save() {
@@ -1075,6 +1080,7 @@ public final class VillageSavedData extends SavedData {
             tag.putInt("settlement_viability", settlementViability);
             tag.putInt("last_population", lastKnownPopulation);
             tag.putLong("next_planning", nextPlanningGameTime);
+            tag.putLong("next_housing_expansion", nextHousingExpansionGameTime);
             tag.putLong("next_market_update", nextMarketUpdateGameTime);
             tag.putLong("next_public_works_update", nextPublicWorksUpdateGameTime);
             tag.putLong("next_birth", nextBirthGameTime);
@@ -1126,6 +1132,8 @@ public final class VillageSavedData extends SavedData {
                     ? Math.max(0, Math.min(100, tag.getInt("settlement_viability"))) : 100;
             record.lastKnownPopulation = Math.max(0, tag.getInt("last_population"));
             record.nextPlanningGameTime = tag.getLong("next_planning");
+            record.nextHousingExpansionGameTime = Math.max(0L,
+                    tag.getLong("next_housing_expansion"));
             record.nextMarketUpdateGameTime = tag.getLong("next_market_update");
             record.nextPublicWorksUpdateGameTime = tag.getLong("next_public_works_update");
             record.nextBirthGameTime = tag.getLong("next_birth");
