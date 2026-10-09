@@ -355,11 +355,22 @@ public final class VillageRiverCargoService {
         return null;
     }
 
-    /** Conservative small-stacks-only freight, never private equipment. */
+    /**
+     * Select real cargo using receiving capacity before slot order. A full
+     * destination is still allowed as a last resort: the physical ChestBoat
+     * retains the shipment until its Barrel has room (GT12).
+     *
+     * Among equally receivable goods prefer the one with less stock in the
+     * destination Barrel. This is only a dock-level V90 priority, not yet a
+     * village-wide scarcity or inter-settlement market decision.
+     */
     private static CargoChoice chooseCargo(
             Container source, Container destination,
             java.util.Map<String, Integer> pendingDockDeliveries) {
         if (source == null || destination == null) return null;
+        CargoChoice best = null;
+        boolean bestFits = false;
+        int bestDestinationCount = Integer.MAX_VALUE;
         for (int slot = 0; slot < source.getContainerSize(); slot++) {
             ItemStack stack = source.getItem(slot);
             if (stack.isEmpty() || !approved(stack)) continue;
@@ -373,9 +384,36 @@ public final class VillageRiverCargoService {
             if (destinationCount >= 16) continue;
             int quantity = Math.min(MAX_SHIPMENT,
                     Math.min(available - 16, 16 - destinationCount));
-            if (quantity > 0) return new CargoChoice(slot, quantity);
+            if (quantity <= 0) continue;
+
+            boolean fits = canReceive(destination, stack, quantity);
+            if (best == null
+                    || (fits && !bestFits)
+                    || (fits == bestFits && destinationCount < bestDestinationCount)) {
+                best = new CargoChoice(slot, quantity);
+                bestFits = fits;
+                bestDestinationCount = destinationCount;
+            }
         }
-        return null;
+        return best;
+    }
+
+    /** Does the physical destination currently have room for this exact stack? */
+    private static boolean canReceive(Container destination, ItemStack candidate, int amount) {
+        int space = 0;
+        int emptyCapacity = Math.min(candidate.getMaxStackSize(), destination.getMaxStackSize());
+        for (int slot = 0; slot < destination.getContainerSize(); slot++) {
+            ItemStack existing = destination.getItem(slot);
+            if (existing.isEmpty()) {
+                space += emptyCapacity;
+            } else if (ItemStack.isSameItemSameComponents(existing, candidate)) {
+                space += Math.max(0,
+                        Math.min(existing.getMaxStackSize(), destination.getMaxStackSize())
+                                - existing.getCount());
+            }
+            if (space >= amount) return true;
+        }
+        return false;
     }
 
     private static int countMatching(Container container, ItemStack exemplar) {

@@ -217,6 +217,67 @@ public final class VillageRiverCargoGameTests {
         helper.succeed();
     }
 
+    /** V90: a full target must not block a different, physically receivable shipment. */
+    @GameTest(template = "empty16x6x9")
+    public static void receivingCapacityWinsOverBlockedDockItem(GameTestHelper helper) {
+        Fixture test = setup(helper);
+        test.source().setItem(0, new ItemStack(Items.OAK_CHEST_BOAT));
+        test.source().setItem(1, new ItemStack(Items.COBBLESTONE, 40));
+        test.source().setItem(2, new ItemStack(Items.WHEAT, 40));
+        for (int slot = 0; slot < test.destination().getContainerSize(); slot++) {
+            test.destination().setItem(slot, new ItemStack(Items.DIRT, 64));
+        }
+        test.destination().setItem(26, new ItemStack(Items.WHEAT, 8));
+
+        ChestBoat boat = VillageRiverCargoService.tryLaunch(
+                test.level(), test.data(), test.route());
+        if (boat == null || count(boat, Items.WHEAT) != 8
+                || count(boat, Items.COBBLESTONE) != 0
+                || count(test.source(), Items.WHEAT) != 32
+                || count(test.source(), Items.COBBLESTONE) != 40) {
+            helper.fail("Dock prioritized blocked stone over real wheat receiving space", TEST_MARKER);
+            return;
+        }
+
+        // Exercise the real destination Barrel, entity inventory and receipt.
+        boat.setPos(test.end().getX() + 0.5D,
+                test.end().getY() + 1.0D, test.end().getZ() + 0.5D);
+        boat.getPersistentData().putString("asobibatweaks_river_cargo_phase", "unload");
+        VillageRiverCargoService.tickCarrier(boat, test.level());
+        if (count(test.destination(), Items.WHEAT) != 16
+                || count(boat, Items.WHEAT) != 0
+                || count(test.source(), Items.WHEAT) != 32
+                || count(test.source(), Items.COBBLESTONE) != 40
+                || test.route().dockReceipts(true).getOrDefault("minecraft:wheat", 0) != 8) {
+            helper.fail("Receivable freight was lost, duplicated or not receipted", TEST_MARKER);
+            return;
+        }
+        helper.succeed();
+    }
+
+    /** V90: among receivable goods prefer genuine dock shortage over source slot order. */
+    @GameTest(template = "empty16x6x9")
+    public static void lowerDestinationStockTakesFreightPriority(GameTestHelper helper) {
+        Fixture test = setup(helper);
+        test.source().setItem(0, new ItemStack(Items.OAK_CHEST_BOAT));
+        test.source().setItem(1, new ItemStack(Items.COBBLESTONE, 40));
+        test.source().setItem(2, new ItemStack(Items.WHEAT, 40));
+        test.destination().setItem(0, new ItemStack(Items.COBBLESTONE, 8));
+
+        ChestBoat boat = VillageRiverCargoService.tryLaunch(
+                test.level(), test.data(), test.route());
+        if (boat == null || count(boat, Items.WHEAT) != 16
+                || count(boat, Items.COBBLESTONE) != 0
+                || count(test.source(), Items.WHEAT) != 24
+                || count(test.source(), Items.COBBLESTONE) != 40
+                || count(test.destination(), Items.COBBLESTONE) != 8) {
+            helper.fail("Boat did not prioritize the less-stocked real destination item",
+                    TEST_MARKER);
+            return;
+        }
+        helper.succeed();
+    }
+
     @GameTest(template = "empty16x6x9")
     public static void noBoatItemNeverSpawnsBoatOrTransfersCargo(GameTestHelper helper) {
         Fixture test = setup(helper);

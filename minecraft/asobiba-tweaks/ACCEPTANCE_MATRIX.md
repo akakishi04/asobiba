@@ -105,5 +105,7 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT29 | acuteShortageBypassesCooldownButDeduplicatesProjects | Real acute overcrowding bypasses normal cooldown, but an already active residential construction blocks duplicates |
 | GT30 | carpenterAddsPaidSecondBedWithoutAnotherHouse | Existing real village house adds one fully paid, wool-and-plank-crafted White Bed, revalidates two sleeping spaces and survives SavedData roundtrip without duplicate BuildingRecords |
 | GT31 | playerOccupiedBedSpaceIsNeverOverwrittenOrCharged | Queued second-bed placement cancels without consuming a physical item or overwriting player Obsidian |
+| GT32 | receivingCapacityWinsOverBlockedDockItem | A real ChestBoat transports physically receivable Wheat rather than unavailable Cobblestone, conserves both inventories and records the exact real dock receipt |
+| GT33 | lowerDestinationStockTakesFreightPriority | When both goods can be received, a less-stocked destination item wins over earlier source-slot order with unchanged total stock |
 
 These tests are **not** a full acceptance of G01-G22: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.
