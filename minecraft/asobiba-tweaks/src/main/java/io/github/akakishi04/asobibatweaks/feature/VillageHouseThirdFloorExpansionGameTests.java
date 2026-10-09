@@ -189,7 +189,25 @@ public final class VillageHouseThirdFloorExpansionGameTests {
                     || home.validatedCapacity() != 5
                     || !home.max().equals(f.base().offset(4, 12, 4))
                     || loaded.village(f.villageId()).orElseThrow().buildingIds().size() != 1) {
-                helper.fail("Upper housing invalid: home=" + (home == null ? "null"
+                StringBuilder rooms = new StringBuilder();
+                for (BlockPos local : List.of(
+                        new BlockPos(2, 1, 2), new BlockPos(3, 1, 2),
+                        new BlockPos(1, 5, 2), new BlockPos(1, 9, 2),
+                        new BlockPos(2, 9, 1))) {
+                    BlockPos foot = f.base().offset(local);
+                    var block = f.level().getBlockState(foot);
+                    var direction = block.hasProperty(BedBlock.FACING)
+                            ? block.getValue(BedBlock.FACING) : net.minecraft.core.Direction.NORTH;
+                    var head = f.level().getBlockState(foot.relative(direction));
+                    rooms.append(local).append("=").append(block)
+                            .append("/head=").append(head)
+                            .append("/standing=")
+                            .append(VillageBuildingAdoptionService.hasAdjacentStandingSpace(
+                                    f.level(), foot, f.base(), f.base().offset(4, 12, 4)))
+                            .append(";");
+                }
+                helper.fail("Upper housing invalid: rooms=" + rooms
+                        + ", home=" + (home == null ? "null"
                         : home.validationState() + "/capacity=" + home.validatedCapacity()
                         + "/template=" + home.templateId() + "/max=" + home.max())
                         + ", expected=" + f.base().offset(4, 12, 4)
