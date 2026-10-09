@@ -237,6 +237,23 @@ public final class VillageCarpenterCraftingService {
         return false;
     }
 
+    /** Exact vanilla white bed: three WHITE wool + three matching planks. */
+    static boolean ensureWhiteBed(
+            Villager carpenter, ServerLevel level, Block planks, int capacity) {
+        if (VillagerSimData.workCargoCount(
+                carpenter, level.registryAccess(), capacity, Items.WHITE_BED) > 0) return true;
+        if (VillageSimulationEvents.ensureCargoItem(
+                carpenter, level, Items.WHITE_BED, 1, capacity)) return true;
+        Item timber = planks.asItem();
+        if (!VillageSimulationEvents.ensureCargoItem(
+                carpenter, level, Items.WHITE_WOOL, 3, capacity)
+                || !VillageSimulationEvents.ensureCargoItem(
+                        carpenter, level, timber, 3, capacity)) return false;
+        return assemble(carpenter, level, capacity, new ItemStack(Items.WHITE_BED),
+                new Ingredient(Items.WHITE_WOOL, 3),
+                new Ingredient(timber, 3));
+    }
+
     private static boolean ensureBookshelf(
             Villager carpenter, ServerLevel level, Item plank, int capacity) {
         if (VillagerSimData.workCargoCount(carpenter,
