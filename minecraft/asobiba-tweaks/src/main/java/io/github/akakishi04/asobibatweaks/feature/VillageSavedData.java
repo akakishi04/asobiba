@@ -26,7 +26,7 @@ import net.minecraft.world.level.saveddata.SavedData;
  * indexes, caches and planning state that later passes can reconcile against loaded chunks.</p>
  */
 public final class VillageSavedData extends SavedData {
-    public static final int SCHEMA_VERSION = 8;
+    public static final int SCHEMA_VERSION = 9;
 
     private static final String NAME = "asobibatweaks_villages";
     private static final Factory<VillageSavedData> FACTORY =
@@ -1370,6 +1370,11 @@ public final class VillageSavedData extends SavedData {
         // One durable real ChestBoat entity per waterway. Never assume an
         // unloaded or missing entity means a free boat may be minted.
         private UUID carrierEntityId;
+        // Counts are receipts for items PHYSICALLY unloaded from this
+        // route's actual carrier into either dock Barrel. These are not
+        // virtual stock; Porters may acknowledge only real withdrawals.
+        private final Map<String, Integer> deliveredAtFrom = new HashMap<>();
+        private final Map<String, Integer> deliveredAtTo = new HashMap<>();
         private String state = "active";
 
         private RouteRecord(UUID id, UUID villageId, String type, BlockPos from, BlockPos to) {
@@ -1395,6 +1400,24 @@ public final class VillageSavedData extends SavedData {
         }
         public String state() { return state; }
         public UUID carrierEntityId() { return carrierEntityId; }
+        public Map<String, Integer> dockReceipts(boolean atTo) {
+            return Collections.unmodifiableMap(atTo ? deliveredAtTo : deliveredAtFrom);
+        }
+
+        public void recordDockDelivery(boolean atTo, String itemId, int count) {
+            if (itemId == null || itemId.isBlank() || count <= 0) return;
+            Map<String, Integer> receipts = atTo ? deliveredAtTo : deliveredAtFrom;
+            receipts.merge(itemId, count, (a, b) -> (int)Math.min(
+                    Integer.MAX_VALUE, (long)a + b));
+        }
+
+        public void acknowledgeDockDelivery(boolean atTo, String itemId, int count) {
+            if (itemId == null || count <= 0) return;
+            Map<String, Integer> receipts = atTo ? deliveredAtTo : deliveredAtFrom;
+            int left = receipts.getOrDefault(itemId, 0) - count;
+            if (left > 0) receipts.put(itemId, left);
+            else receipts.remove(itemId);
+        }
 
         public void setCarrierEntityId(UUID value) { carrierEntityId = value; }
         public void setType(String value) { type = safeText(value, "path"); }
@@ -1444,6 +1467,8 @@ public final class VillageSavedData extends SavedData {
             }
             tag.put("waypoints", waypointRows);
             putUuid(tag, "carrier", carrierEntityId);
+            tag.put("dock_deliveries_from", writeIntMap(deliveredAtFrom));
+            tag.put("dock_deliveries_to", writeIntMap(deliveredAtTo));
             tag.putString("state", state);
             return tag;
         }
@@ -1466,6 +1491,8 @@ public final class VillageSavedData extends SavedData {
             }
             record.setWaypoints(loadedWaypoints);
             record.carrierEntityId = readUuid(tag, "carrier");
+            record.deliveredAtFrom.putAll(readIntMap(tag, "dock_deliveries_from"));
+            record.deliveredAtTo.putAll(readIntMap(tag, "dock_deliveries_to"));
             record.state = safeText(tag.getString("state"), "active");
             return record;
         }
