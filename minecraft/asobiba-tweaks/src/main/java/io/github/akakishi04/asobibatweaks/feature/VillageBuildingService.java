@@ -151,19 +151,32 @@ public final class VillageBuildingService {
         return Math.sqrt(dx * dx + dz * dz);
     }
 
+    // A finite retry budget keeps crowded chunks from losing their validated
+    // building capacity forever when unrelated work exhausts the shared
+    // background probe allowance at the instant of dirty-chunk processing.
+    private static final int MAX_BUDGET_RETRIES = 16;
+
     public static void revalidateChunk(ServerLevel level, ChunkPos chunk) {
+        revalidateChunk(level, chunk, 0);
+    }
+
+    private static void revalidateChunk(ServerLevel level, ChunkPos chunk, int budgetRetries) {
         VillageSavedData data = VillageSavedData.get(level);
         VillageSavedData.ChunkIndexView indexed = data.recordsForChunk(chunk);
         if (indexed.buildingIds().isEmpty() && indexed.storageIds().isEmpty()) return;
 
         Set<UUID> touchedVillages = new HashSet<>();
+        boolean budgetExhausted = false;
         for (UUID buildingId : indexed.buildingIds()) {
             VillageSavedData.BuildingRecord building = data.building(buildingId).orElse(null);
             if (building == null) continue;
             if (!VillageSimulationScheduler.isAreaLoaded(level, building.min(), building.max())) continue;
 
             if (!revalidateBuilding(level, building)) {
-                // Probe budget exhausted; leave it dirty for a later scheduled validation.
+                // Validation must not lose this building permanently merely
+                // because another job consumed this tick's finite probe
+                // budget. The building's cached state remains unmodified.
+                budgetExhausted = true;
                 continue;
             }
             touchedVillages.add(building.villageId());
@@ -176,6 +189,15 @@ public final class VillageBuildingService {
             VillageStorageService.reconcileVillage(villageId, level);
         }
         if (!touchedVillages.isEmpty()) data.touch();
+        if (budgetExhausted && budgetRetries < MAX_BUDGET_RETRIES) {
+            // Queue for another bounded server tick. The same stable key
+            // deduplicates overlapping invalidation sources. No chunk is
+            // force-loaded, and a permanently undersized user-configured
+            // budget cannot create an infinite retry storm.
+            VillageSimulationScheduler.enqueueValidation(level,
+                    "budget_revalidate:" + chunk.toLong(),
+                    () -> revalidateChunk(level, chunk, budgetRetries + 1));
+        }
     }
 
     /**

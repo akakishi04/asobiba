@@ -181,12 +181,24 @@ public final class VillageHouseThirdFloorExpansionGameTests {
             helper.fail("Full third floor did not safely upgrade original BuildingRecord", MARK);
             return;
         }
-        helper.runAtTickTime(40, () -> {
-            VillageBuildingService.revalidateChunk(
-                    f.level(), new ChunkPos(f.base()));
+        // In a crowded GameTestServer, unrelated validation and ecology jobs
+        // may exhaust the same bounded probe budget. Retry across distinct
+        // ticks rather than asserting the house is valid on one arbitrary tick.
+        helper.runAtTickTime(40, () -> validateExpandedHouseEventually(helper, f, 40));
+    }
+
+    private static void validateExpandedHouseEventually(
+            GameTestHelper helper, Fixture f, int tick) {
+        VillageBuildingService.revalidateChunk(
+                f.level(), new ChunkPos(f.base()));
             var nbt = f.data().save(new CompoundTag(), f.level().registryAccess());
             var loaded = VillageSavedData.load(nbt, f.level().registryAccess());
             var home = loaded.building(f.house().id()).orElse(null);
+            if (home != null && "unknown".equals(home.validationState()) && tick < 80) {
+                helper.runAtTickTime(tick + 10,
+                        () -> validateExpandedHouseEventually(helper, f, tick + 10));
+                return;
+            }
             if (home == null || !"valid".equals(home.validationState())
                     || home.validatedCapacity() != 5
                     || !home.max().equals(f.base().offset(4, 12, 4))
@@ -217,6 +229,40 @@ public final class VillageHouseThirdFloorExpansionGameTests {
                             .orElseThrow().buildingIds().size()
                         + ", stairs=" + VillageBuildingService.connectedUpperStories(
                             f.level(), f.base(), 2), MARK);
+                return;
+            }
+            helper.succeed();
+    }
+
+    /**
+     * A busy server can exhaust this tick's shared background block probes.
+     * The original BuildingRecord must remain pending, then revalidate on
+     * later server ticks without any synthetic beds or force-loaded chunks.
+     */
+    @GameTest(template = "empty16x14x9", timeoutTicks = 105)
+    public static void blockProbeExhaustionSchedulesFiniteHousingRetry(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        f.house().setValidationState("unknown");
+        f.house().setValidatedCapacity(0);
+        int before = VillageSimulationScheduler.snapshot(f.level()).validation();
+        for (int i = 0; i < 2048
+                && VillageSimulationScheduler.tryConsumeBlockProbe(f.level()); i++) {
+            // Exhaust precisely the configured physical block probe budget.
+        }
+        VillageBuildingService.revalidateChunk(f.level(), new ChunkPos(f.base()));
+        if (!"unknown".equals(f.house().validationState())
+                || f.house().validatedCapacity() != 0
+                || VillageSimulationScheduler.snapshot(f.level()).validation() <= before) {
+            helper.fail("An exhausted validation budget must preserve unknown capacity and queue work", MARK);
+            return;
+        }
+        helper.runAtTickTime(85, () -> {
+            if (!"valid".equals(f.house().validationState())
+                    || f.house().validatedCapacity() != 4
+                    || !f.house().max().equals(f.base().offset(4, 8, 4))) {
+                helper.fail("A loaded two-storey house was stranded after background probe starvation: "
+                        + f.house().validationState() + "/capacity="
+                        + f.house().validatedCapacity(), MARK);
                 return;
             }
             helper.succeed();
