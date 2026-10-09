@@ -110,5 +110,9 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT34 | realPorterMovesPaidStockBetweenSeparateVillageBarrels | Two separately owned real Barrels exchange 16 actually carried blocks via a persistent Porter ticket without minted inventory or duplicated Village IDs |
 | GT35 | fullDestinationRetainsRealPorterParcelUntilSpaceReturns | An obstructed receiving warehouse holds the original parcel in Villager NBT until genuine storage capacity returns |
 | GT36 | removedSourceStockCancelsUnpaidTransfer | A pending, unpaid shipment does not fabricate its 16 physical items when source stock disappears |
+| GT37 | emptyIdleCarrierReturnsExactlyOnePaidBoatItem | After actually delivering freight, an empty idle ChestBoat returns one genuine reusable boat item to its registered home dock and releases the carrier ID |
+| GT38 | idleCarrierWithCargoCannotBeDestroyedForBoatItem | An apparently idle boat with real cargo cannot be converted into a second boat item or lose its freight |
+| GT39 | unmodifiedClearingCanRegrowButFarmCannot | A naturally empty dirt clearing is allowed for forest regrowth but physically adjacent farmland is protected |
+| GT40 | roadAndStorageNearSaplingAreProtected | Player-built cobble roads and Barrel storage reject natural sapling placement outside any village index |
 
 These tests are **not** a full acceptance of G01-G22: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.

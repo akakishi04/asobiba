@@ -7,10 +7,12 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.vehicle.ChestBoat;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -38,6 +40,8 @@ public final class VillageRiverCargoService {
     private static final String CURSOR = "asobibatweaks_river_cargo_cursor";
     private static final String COURSE_HASH = "asobibatweaks_river_course";
     private static final String CARGO_ITEM = "asobibatweaks_river_cargo_item";
+    private static final String IDLE_SINCE = "asobibatweaks_river_idle_since";
+    private static final long MAX_IDLE_TICKS = 24_000L;
     private static final int MAX_SHIPMENT = 16;
     private static final double MOVE_SPEED = 0.16D;
     // Real vanilla boat hulls can drift while damping velocity near a dock.
@@ -83,6 +87,8 @@ public final class VillageRiverCargoService {
         CompoundTag state = boat.getPersistentData();
         if (!state.hasUUID(ROUTE)) return;
         if (!boat.isAlive() || boat.isVehicle()) {
+            // If a player took control, restart the conservative idle period.
+            if (boat.isVehicle()) state.remove(IDLE_SINCE);
             stop(boat);
             return;
         }
@@ -107,6 +113,11 @@ public final class VillageRiverCargoService {
         String phase = state.getString(PHASE);
         if ("idle".equals(phase)) {
             stop(boat);
+            if (!state.contains(IDLE_SINCE, Tag.TAG_LONG))
+                state.putLong(IDLE_SINCE, level.getGameTime());
+            if (emptyCargo(boat)
+                    && level.getGameTime() - state.getLong(IDLE_SINCE) >= MAX_IDLE_TICKS
+                    && releaseIdleBoat(boat, level, data, route, forward)) return;
             if (boat.tickCount % 40 != 0 || !emptyCargo(boat)) return;
             BlockPos sourcePoint = forward ? route.from() : route.to();
             if (horizontalDistanceSqr(boat, sourcePoint) > MOOR_RADIUS_SQUARED) return;
@@ -125,6 +136,7 @@ public final class VillageRiverCargoService {
             state.putString(CARGO_ITEM,
                     BuiltInRegistries.ITEM.getKey(loaded.getItem()).toString());
             state.putString(PHASE, "outbound");
+            state.remove(IDLE_SINCE);
             state.putInt(CURSOR, forward ? 1 : points.size() - 2);
             return;
         }
@@ -152,6 +164,7 @@ public final class VillageRiverCargoService {
             if (!emptied) return;
             if (homeward) {
                 state.putString(PHASE, "idle");
+                state.putLong(IDLE_SINCE, level.getGameTime());
                 state.remove(CARGO_ITEM);
                 return;
             }
@@ -205,6 +218,7 @@ public final class VillageRiverCargoService {
                     state.putString(PHASE, "unload");
                 } else {
                     state.putString(PHASE, emptyCargo(boat) ? "idle" : "return_unload");
+                    if (emptyCargo(boat)) state.putLong(IDLE_SINCE, level.getGameTime());
                 }
                 return;
             }
@@ -238,6 +252,39 @@ public final class VillageRiverCargoService {
                 towardX * MOVE_SPEED,
                 boat.getDeltaMovement().y,
                 towardZ * MOVE_SPEED));
+    }
+
+    /**
+     * Return an EMPTY physical ChestBoat to one physical item after an entire
+     * idle Minecraft day at its real registered home berth. No cargo,
+     * passengers or player-added stock may be deleted by maintenance.
+     */
+    static boolean releaseIdleBoat(ChestBoat boat, ServerLevel level,
+                                   VillageSavedData data, VillageSavedData.RouteRecord route,
+                                   boolean forward) {
+        if (!boat.isAlive() || boat.isVehicle() || !emptyCargo(boat)
+                || !boat.getUUID().equals(route.carrierEntityId())
+                || !"active".equals(route.state())
+                || !"idle".equals(boat.getPersistentData().getString(PHASE))) return false;
+        BlockPos home = forward ? route.from() : route.to();
+        if (horizontalDistanceSqr(boat, home) > MOOR_RADIUS_SQUARED) return false;
+        Container dock = dockBarrel(level, data, route.villageId(), home);
+        if (dock == null) return false;
+
+        // Convert the paid entity to exactly one reusable physical item.
+        // A rejected world-item spawn leaves the original entity intact.
+        ItemStack remaining = insert(dock, new ItemStack(Items.OAK_CHEST_BOAT));
+        if (!remaining.isEmpty()) {
+            ItemEntity dropped = new ItemEntity(level, boat.getX(),
+                    boat.getY() + 0.35D, boat.getZ(), remaining);
+            if (!level.addFreshEntity(dropped)) return false;
+        }
+        route.setCarrierEntityId(null);
+        data.touch();
+        boat.getPersistentData().remove(ROUTE);
+        boat.discard();
+        VillageStorageService.reconcileVillage(route.villageId(), level);
+        return true;
     }
 
     static ChestBoat tryLaunch(ServerLevel level, VillageSavedData data,

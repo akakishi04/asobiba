@@ -37,6 +37,11 @@ public final class VillageInterSettlementFreightService {
 
     private VillageInterSettlementFreightService() {}
 
+    /** A reserved inter-village parcel takes priority over other Porter work. */
+    public static boolean hasActiveTicket(Villager porter) {
+        return porter.getPersistentData().contains(TICKET, Tag.TAG_COMPOUND);
+    }
+
     public static boolean handlePorter(Villager porter, ServerLevel level) {
         CompoundTag persistent = porter.getPersistentData();
         if (persistent.contains(TICKET, Tag.TAG_COMPOUND)) {

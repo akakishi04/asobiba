@@ -279,6 +279,66 @@ public final class VillageRiverCargoGameTests {
     }
 
     @GameTest(template = "empty16x6x9")
+    public static void emptyIdleCarrierReturnsExactlyOnePaidBoatItem(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        f.source().setItem(0, new ItemStack(Items.OAK_CHEST_BOAT));
+        f.source().setItem(1, new ItemStack(Items.COBBLESTONE, 40));
+        ChestBoat boat = VillageRiverCargoService.tryLaunch(f.level(), f.data(), f.route());
+        if (boat == null) {
+            helper.fail("Cannot reclaim an unlaunched paid carrier", TEST_MARKER);
+            return;
+        }
+        // GT11 proves the actual voyage. This fixture exercises the physical
+        // destination transaction and conversion of the original paid hull.
+        boat.setPos(f.end().getX() + 0.5D,
+                f.end().getY() + 1.0D, f.end().getZ() + 0.5D);
+        boat.getPersistentData().putString("asobibatweaks_river_cargo_phase", "unload");
+        VillageRiverCargoService.tickCarrier(boat, f.level());
+        if (count(f.destination(), Items.COBBLESTONE) != 16
+                || count(boat, Items.COBBLESTONE) != 0) {
+            helper.fail("Must unload real cargo before recovering the empty hull", TEST_MARKER);
+            return;
+        }
+        boat.setPos(f.start().getX() + 0.5D,
+                f.start().getY() + 1.0D, f.start().getZ() + 0.5D);
+        boat.getPersistentData().putString("asobibatweaks_river_cargo_phase", "idle");
+        boat.getPersistentData().putLong("asobibatweaks_river_idle_since",
+                f.level().getGameTime() - 24_001L);
+        VillageRiverCargoService.tickCarrier(boat, f.level());
+        if (boat.isAlive() || f.route().carrierEntityId() != null
+                || count(f.source(), Items.OAK_CHEST_BOAT) != 1
+                || count(f.source(), Items.COBBLESTONE) != 24
+                || count(f.destination(), Items.COBBLESTONE) != 16) {
+            helper.fail("Returning an empty carrier must recover exactly one real boat", TEST_MARKER);
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty16x6x9")
+    public static void idleCarrierWithCargoCannotBeDestroyedForBoatItem(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        f.source().setItem(0, new ItemStack(Items.OAK_CHEST_BOAT));
+        f.source().setItem(1, new ItemStack(Items.COBBLESTONE, 40));
+        ChestBoat boat = VillageRiverCargoService.tryLaunch(f.level(), f.data(), f.route());
+        if (boat == null) {
+            helper.fail("Cannot inspect an absent real carrier", TEST_MARKER);
+            return;
+        }
+        boat.getPersistentData().putString("asobibatweaks_river_cargo_phase", "idle");
+        boat.getPersistentData().putLong("asobibatweaks_river_idle_since",
+                f.level().getGameTime() - 48_000L);
+        VillageRiverCargoService.tickCarrier(boat, f.level());
+        if (!boat.isAlive() || !boat.getUUID().equals(f.route().carrierEntityId())
+                || count(boat, Items.COBBLESTONE) != 16
+                || count(f.source(), Items.OAK_CHEST_BOAT) != 0) {
+            helper.fail("Idle cleanup must not destroy occupied cargo or spawn another boat", TEST_MARKER);
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty16x6x9")
     public static void noBoatItemNeverSpawnsBoatOrTransfersCargo(GameTestHelper helper) {
         Fixture test = setup(helper);
         test.source().setItem(0, new ItemStack(Items.COBBLESTONE, 40));

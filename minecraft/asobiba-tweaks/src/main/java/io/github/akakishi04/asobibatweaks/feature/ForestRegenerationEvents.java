@@ -6,6 +6,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
@@ -15,8 +16,8 @@ public final class ForestRegenerationEvents {
     public void onPlayerTick(PlayerTickEvent.Post event) {
         if (!AsobibaTweaksConfig.FOREST_REGENERATION_ENABLED.getAsBoolean()
                 || !(event.getEntity() instanceof ServerPlayer player)
-                || player.tickCount % 1200 != Math.floorMod(player.getId(), 1200)
-                || player.getRandom().nextDouble() > 0.22D) {
+                || player.tickCount % 2400 != Math.floorMod(player.getId(), 2400)
+                || player.getRandom().nextDouble() > 0.12D) {
             return;
         }
 
@@ -54,6 +55,7 @@ public final class ForestRegenerationEvents {
                 continue;
             }
 
+            if (!safeRegrowthSite(level, plant)) continue;
             Block sapling = nearbyTreeSapling(level, plant, player);
             if (sapling == null) continue;
 
@@ -67,6 +69,49 @@ public final class ForestRegenerationEvents {
             level.setBlockAndUpdate(plant, sapling.defaultBlockState());
             return;
         }
+    }
+
+    /**
+     * A bounded loaded-only check prevents unmanaged background forest growth
+     * from invading player gardens, roads and workshops outside recognized
+     * villages. The visual signal is intentionally conservative: this is not
+     * an ownership claim on every natural dirt or stone block.
+     */
+    static boolean safeRegrowthSite(ServerLevel level, BlockPos plant) {
+        if (!VillageSimulationScheduler.isAreaLoaded(level,
+                plant.offset(-2, -1, -2), plant.offset(2, 2, 2))
+                || !level.getBlockState(plant).isAir()) return false;
+        BlockState soil = level.getBlockState(plant.below());
+        if (!soil.is(Blocks.GRASS_BLOCK) && !soil.is(Blocks.DIRT)
+                && !soil.is(Blocks.COARSE_DIRT)) return false;
+
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                for (int dy = -1; dy <= 2; dy++) {
+                    if (!VillageSimulationScheduler.tryConsumeBlockProbe(level))
+                        return false; // exhausted shared background budget
+                    BlockState state = level.getBlockState(plant.offset(dx, dy, dz));
+                    if (state.is(BlockTags.PLANKS)
+                            || state.is(BlockTags.FENCES)
+                            || state.is(BlockTags.DOORS)
+                            || state.is(Blocks.COBBLESTONE)
+                            || state.is(Blocks.STONE_BRICKS)
+                            || state.is(Blocks.DIRT_PATH)
+                            || state.is(Blocks.FARMLAND)
+                            || state.is(Blocks.CRAFTING_TABLE)
+                            || state.is(Blocks.CHEST)
+                            || state.is(Blocks.BARREL)
+                            || state.is(Blocks.FURNACE)
+                            || state.is(Blocks.TORCH)
+                            || state.is(Blocks.LANTERN)
+                            || state.is(Blocks.CAMPFIRE)
+                            || state.is(Blocks.RAIL)
+                            || state.is(Blocks.GLASS)
+                            || state.is(Blocks.GLASS_PANE)) return false;
+                }
+            }
+        }
+        return true;
     }
 
     private static Block nearbyTreeSapling(ServerLevel level, BlockPos center, ServerPlayer player) {

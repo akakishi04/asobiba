@@ -1955,6 +1955,12 @@ public final class VillageSimulationEvents {
         if (level.getGameTime() % 100 != Math.floorMod(villager.getId(), 100)) return;
         // Physical dock deliveries take precedence over collecting random
         // nearby drops and ordinary fallback cargo deposit.
+        if (VillageInterSettlementFreightService.hasActiveTicket(villager)) {
+            // Preserve the current real parcel's worker ownership even if a
+            // river-dock delivery becomes available during an inter-village haul.
+            VillageInterSettlementFreightService.handlePorter(villager, level);
+            return;
+        }
         if (VillageRiverPorterService.handlePorter(villager, level, null)) return;
         // A paid shipment may need to resume after a saved world or
         // destination-chunk reload before ordinary loose-item collection.
