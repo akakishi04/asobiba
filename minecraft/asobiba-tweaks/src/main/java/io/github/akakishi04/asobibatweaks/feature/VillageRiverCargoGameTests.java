@@ -35,8 +35,8 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 @GameTestHolder(AsobibaTweaks.MOD_ID)
 @PrefixGameTestTemplate(false)
 public final class VillageRiverCargoGameTests {
-    private static final BlockPos BANK_LEFT = new BlockPos(0, 1, 4);
-    private static final BlockPos BANK_RIGHT = new BlockPos(15, 1, 4);
+    private static final BlockPos BANK_LEFT = new BlockPos(1, 1, 4);
+    private static final BlockPos BANK_RIGHT = new BlockPos(14, 1, 4);
     private static final BlockPos TEST_MARKER = new BlockPos(8, 2, 4);
 
     private VillageRiverCargoGameTests() {}
@@ -321,7 +321,7 @@ public final class VillageRiverCargoGameTests {
         ServerLevel level = helper.getLevel();
 
         // Everything remains inside this test's dedicated 16x6x9 structure.
-        // Enclose the 14-long, 5-wide, one-block source-water corridor so
+        // Enclose the 12-long, 5-wide, one-block source-water corridor so
         // real liquid ticks do not flow into another test's world.
         for (int x = 0; x < 16; x++) {
             for (int z = 0; z < 9; z++) {
@@ -334,11 +334,11 @@ public final class VillageRiverCargoGameTests {
                 for (int y = 2; y <= 5; y++) {
                     helper.setBlock(new BlockPos(x, y, z), Blocks.AIR);
                 }
-                boolean channel = x >= 1 && x <= 14 && z >= 2 && z <= 6;
+                boolean channel = x >= 2 && x <= 13 && z >= 2 && z <= 6;
                 if (!channel) helper.setBlock(new BlockPos(x, 1, z), Blocks.STONE);
             }
         }
-        for (int x = 1; x <= 14; x++) {
+        for (int x = 2; x <= 13; x++) {
             for (int z = 2; z <= 6; z++) {
                 helper.setBlock(new BlockPos(x, 1, z), Blocks.WATER);
             }
