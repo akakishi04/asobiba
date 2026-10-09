@@ -91,19 +91,73 @@ public final class VillageSpecialistWorkshopService {
             int stock = VillageStorageService.count(carpenter, level, item)
                     + VillagerSimData.workCargoCount(carpenter,
                             level.registryAccess(), 8, item);
-            if (stock <= 0) {
-                // A Barrel/Composter is the only new family with an already
-                // supported exact physical Carpenter crafting recipe.
-                if (item != Items.BARREL && item != Items.COMPOSTER) continue;
-                int planks = VillageStorageService.count(carpenter, level,
-                        Items.OAK_PLANKS, Items.SPRUCE_PLANKS, Items.BIRCH_PLANKS,
-                        Items.JUNGLE_PLANKS, Items.ACACIA_PLANKS, Items.DARK_OAK_PLANKS,
-                        Items.MANGROVE_PLANKS, Items.CHERRY_PLANKS);
-                if (planks < 12) continue;
+            if (stock <= 0 && !hasRealRecipeInputs(carpenter, level, item)) {
+                // An uncraftable/unsupplied station is not a real build need:
+                // do not reserve a building shell whose job site cannot exist.
+                continue;
             }
             return family.template();
         }
         return "";
+    }
+
+    private static boolean hasRealRecipeInputs(
+            Villager carpenter, ServerLevel level, Item workstation) {
+        int planks = VillageStorageService.count(carpenter, level,
+                Items.OAK_PLANKS, Items.SPRUCE_PLANKS, Items.BIRCH_PLANKS,
+                Items.JUNGLE_PLANKS, Items.ACACIA_PLANKS, Items.DARK_OAK_PLANKS,
+                Items.MANGROVE_PLANKS, Items.CHERRY_PLANKS);
+        if (workstation == Items.BARREL || workstation == Items.COMPOSTER)
+            return planks >= 12;
+        if (workstation == Items.LOOM)
+            return planks >= 2 && VillageStorageService.count(
+                    carpenter, level, Items.STRING) >= 2;
+        if (workstation == Items.FLETCHING_TABLE)
+            return planks >= 4 && VillageStorageService.count(
+                    carpenter, level, Items.FLINT) >= 2;
+        if (workstation == Items.CARTOGRAPHY_TABLE)
+            return planks >= 4 && VillageStorageService.count(
+                    carpenter, level, Items.PAPER) >= 2;
+        if (workstation == Items.CAULDRON)
+            return VillageStorageService.count(
+                    carpenter, level, Items.IRON_INGOT) >= 7;
+        if (workstation == Items.BREWING_STAND)
+            return VillageStorageService.count(
+                    carpenter, level, Items.BLAZE_ROD) >= 1
+                    && VillageStorageService.count(
+                            carpenter, level, Items.COBBLESTONE) >= 3;
+        if (workstation == Items.BLAST_FURNACE)
+            return VillageStorageService.count(carpenter, level, Items.FURNACE) >= 1
+                    && VillageStorageService.count(
+                            carpenter, level, Items.IRON_INGOT) >= 5
+                    && VillageStorageService.count(
+                            carpenter, level, Items.SMOOTH_STONE) >= 3;
+        if (workstation == Items.SMOKER)
+            return VillageStorageService.count(carpenter, level, Items.FURNACE) >= 1
+                    && VillageStorageService.count(carpenter, level,
+                            Items.OAK_LOG, Items.SPRUCE_LOG, Items.BIRCH_LOG,
+                            Items.JUNGLE_LOG, Items.ACACIA_LOG, Items.DARK_OAK_LOG,
+                            Items.MANGROVE_LOG, Items.CHERRY_LOG) >= 4;
+        if (workstation == Items.GRINDSTONE)
+            return planks >= 2
+                    && VillageStorageService.count(carpenter, level, Items.STICK) >= 2
+                    && (VillageStorageService.count(
+                            carpenter, level, Items.STONE_SLAB) >= 1
+                            || VillageStorageService.count(
+                                    carpenter, level, Items.STONE) >= 3);
+        if (workstation == Items.LECTERN) {
+            boolean bookshelf = VillageStorageService.count(
+                    carpenter, level, Items.BOOKSHELF) > 0
+                    || (planks >= 9
+                            && (VillageStorageService.count(
+                                    carpenter, level, Items.BOOK) >= 3
+                                    || VillageStorageService.count(
+                                            carpenter, level, Items.PAPER) >= 9
+                                        && VillageStorageService.count(
+                                            carpenter, level, Items.LEATHER) >= 3));
+            return planks >= 3 && bookshelf;
+        }
+        return false;
     }
 
     public static boolean isSpecialistTemplate(String name) {
