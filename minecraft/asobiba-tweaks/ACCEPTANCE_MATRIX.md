@@ -39,7 +39,7 @@ Branch: `feat/minecraft-mods-bootstrap`; PR #3.
 | G18 | Refugee/outpost/merger lifecycle | Stable Village IDs, correct destination caps, return and abandonment hysteresis | Needs gameplay test |
 | G19 | Continental worldgen and rivers | Determinism for seed, visually sane lakes/rivers/deltas, no accidental chunk loads | Needs gameplay test |
 | G20 | Multiplayer + world save/reload | No per-tick unbounded work, duplication, dropped inventories, corrupted SaveData | Needs gameplay test |
-| G21 | River dock and ChestBoat freight | Real material purchase, no water-source deletion, physically validated water route, real boat inventory conservation, pause/resume after unload and save/reload, passenger takeover, blocked route, full destination and no duplicate carriers | Partial: GT09-GT14 automated; full restart/client/multiplayer still pending (cargo ON by default; still experimental) |
+| G21 | River dock and ChestBoat freight | Real material purchase, no water-source deletion, physically validated water route, real boat inventory conservation, pause/resume after unload and save/reload, passenger takeover, blocked route, full destination and no duplicate carriers | Partial: GT09-GT17 server tests registered; full restart/client/multiplayer and real long-distance Porter navigation pending (cargo ON by default; still experimental) |
 
 ## Focused priorities
 
@@ -50,7 +50,7 @@ These can silently lose or duplicate real items, XP, villagers or world blocks.
 actual in-game samples.
 
 **Gameplay harness needed**: controlled GameTests and a repeatable long-run
-dedicated-server simulation. Fourteen required NeoForge GameTests now run in CI, but the rest of the player,
+dedicated-server simulation. Seventeen required NeoForge GameTests are registered in CI (latest run determines whether all pass), but the rest of the player,
 projectile, village, save/reload and multiplayer scenarios still require
 real in-game testing. CI must not be used to label the project feature-complete.
 
@@ -86,5 +86,8 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT12 | fullBarrelAndPlayerCargoNeverDeleteFreight | Full destination retains freight onboard; unrelated player cargo blocks automated unloading; transfer resumes with exact counts after storage space is freed |
 | GT13 | noBoatItemNeverSpawnsBoatOrTransfersCargo | Real items cannot teleport to another dock or synthesize an unpaid boat |
 | GT14 | actualBoatAndCarrierSavedDataRoundTrip | Exact boat cargo and unique carrier/route/phase survive NBT encode/decode, without claiming a complete server-process restart |
+| GT15 | returnTripCarriesRealReverseFreightAndReceipts | Real reverse cargo transfers from a physical far dock to the home dock without duplication; both persistent dock receipts are updated |
+| GT16 | corePorterStagesPhysicalShipment | Real village Porter loads 32 actual blocks into persistent work cargo, then delivers the exact count to the core dock Barrel |
+| GT17 | remotePorterCollectsOnlyArrivedFreight | Real Outpost Porter physically collects only the 16 receipted items and delivers to recognized local storage; SavedData roundtrip does not restore spent receipts |
 
 These tests are **not** a full acceptance of G01-G21: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.

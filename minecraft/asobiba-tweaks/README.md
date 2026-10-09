@@ -121,6 +121,7 @@ The village family is resource-backed rather than free structure spawning.
 - Roads and simple water-crossing bridges
 - Physical river landings built by Carpenters after a navigable-river survey: three plank deck sections and a recognized storage Barrel, with actual material withdrawals and no water block replacement
 - Dock-to-dock route discovery along verified already-loaded source water, without teleporting cargo
+- Porter first/last-mile deliveries connect recognized core and Outpost warehouses to the physically built dock Barrels; a persisted route receipt tracks each delivered item until a real Porter picks it up, and return boats may carry actual reverse freight
 - Experimental autonomous real ChestBoat cargo trips between finished dock Barrels, **ON by default** via `village.experimentalRiverCargo = true`. A real Oak Chest Boat item must be present in the source dock's recognized storage; no synthetic boat or hidden cargo inventory is created. On existing installations, a previously generated `config/asobibatweaks-common.toml` can still explicitly contain `false`; change that entry to `true` to enable it there.
 - Satellite outposts and physical settler movement
 - Fire emergencies and reconstruction pressure
