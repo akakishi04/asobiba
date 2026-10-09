@@ -61,9 +61,17 @@ public final class VillageBuildingRepairService {
                     || !VillageSimulationScheduler.isAreaLoaded(
                             level, building.min(), building.max())
                     || data.activeProjectsForVillage(villageId).stream()
-                            .anyMatch(p -> TEMPLATE.equals(p.templateId())
-                                    && building.id().toString().equals(
-                                            p.parameter(BUILDING_ID)))) continue;
+                            .anyMatch(p -> (TEMPLATE.equals(p.templateId())
+                                        && building.id().toString().equals(
+                                                p.parameter(BUILDING_ID)))
+                                    // Upper-storey builders deliberately remove
+                                    // TWO original roof planks for the staircase.
+                                    // Never queue shell repair to close that
+                                    // active, physically verified opening.
+                                    || (VillageHouseVerticalExpansionService.TEMPLATE.equals(
+                                            p.templateId())
+                                        && building.id().toString().equals(
+                                                p.parameter("expand_building"))))) continue;
 
             VillageSavedData.ProjectRecord original = village.projectIds().stream()
                     .map(data::project).flatMap(java.util.Optional::stream)

@@ -44,6 +44,7 @@ public final class VillageHouseVerticalExpansionGameTests {
             }
             var p = active(f);
             if (p == null || !p.site().equals(f.base()) || !"upper_shell".equals(p.phase())
+                    || p.reservations().getOrDefault("minecraft:oak_planks", 0) != 71
                     || f.village().buildingIds().size() != 1) {
                 helper.fail("In-place extension must retain the original house identity", MARK);
                 return;
@@ -199,6 +200,52 @@ public final class VillageHouseVerticalExpansionGameTests {
                 }
                 helper.succeed();
             });
+        });
+    }
+
+    @GameTest(template = "empty16x14x9", timeoutTicks = 70)
+    public static void liveExpansionExcludesConflictingHouseRepairs(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        helper.runAtTickTime(4, () -> {
+            VillageSavedData.ProjectRecord expansion = f.data().createProject(
+                    f.villageId(), "building", 86, f.base());
+            expansion.setTemplateId(VillageHouseVerticalExpansionService.TEMPLATE);
+            expansion.setParameter("expand_building", f.house().id().toString());
+            expansion.setParameter("expand_plank", "oak");
+            expansion.setPhase("upper_shell");
+
+            // The deliberate roof opening is a real missing old roof block.
+            // It must not trigger the other Carpenter's routine shell repair,
+            // nor schedule a separate second-bed job in the same structure.
+            BlockPos opening = f.base().offset(3, 4, 1);
+            f.level().setBlock(opening, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
+            boolean repairConflict = VillageBuildingRepairService.tryPlan(
+                    f.builder(), f.level(), f.villageId());
+            boolean bedConflict = VillageHouseReuseService.tryPlan(
+                    f.builder(), f.level(), f.villageId());
+            if (repairConflict || bedConflict
+                    || f.data().activeProjectsForVillage(f.villageId()).size() != 1) {
+                helper.fail("An active roof conversion must veto competing house projects", MARK);
+                return;
+            }
+
+            // Conversely, a genuine existing repair must block a second new
+            // expansion even after the old roof is physically restored.
+            expansion.setPhase("cancelled");
+            f.level().setBlock(opening, Blocks.OAK_PLANKS.defaultBlockState(),
+                    Block.UPDATE_ALL);
+            var repair = f.data().createProject(f.villageId(), "building", 85, f.base());
+            repair.setTemplateId(VillageBuildingRepairService.TEMPLATE);
+            repair.setParameter("repair_building_id", f.house().id().toString());
+            repair.setPhase("repair");
+            if (VillageHouseVerticalExpansionService.tryPlan(
+                    f.builder(), f.level(), f.villageId())
+                    || f.data().activeProjectsForVillage(f.villageId()).size() != 1
+                    || count(f.materials(), Items.OAK_PLANKS) != 128) {
+                helper.fail("Housing planner ignored an active repair or spent materials", MARK);
+                return;
+            }
+            helper.succeed();
         });
     }
 

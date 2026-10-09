@@ -63,8 +63,12 @@ public final class VillageHouseReuseService {
                             level, home.min(), home.max())
                     || !isOriginalSingleHouse(home)
                     || data.activeProjectsForVillage(villageId).stream()
-                            .anyMatch(p -> TEMPLATE.equals(p.templateId())
-                                    && home.id().toString().equals(p.parameter(BUILDING)))) {
+                            .anyMatch(p -> (TEMPLATE.equals(p.templateId())
+                                        && home.id().toString().equals(p.parameter(BUILDING)))
+                                    || (VillageHouseVerticalExpansionService.TEMPLATE.equals(
+                                            p.templateId())
+                                        && home.id().toString().equals(
+                                                p.parameter("expand_building"))))) {
                 continue;
             }
             VillageSavedData.ProjectRecord original = village.projectIds().stream()

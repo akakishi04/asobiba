@@ -62,8 +62,12 @@ public final class VillageHouseVerticalExpansionService {
                     || home.min().distManhattan(carpenter.blockPosition()) > 72
                     || !isOriginalOneStory(home)
                     || data.activeProjectsForVillage(villageId).stream().anyMatch(p ->
-                        TEMPLATE.equals(p.templateId())
-                            && home.id().toString().equals(p.parameter(BUILDING)))) continue;
+                        (TEMPLATE.equals(p.templateId())
+                            && home.id().toString().equals(p.parameter(BUILDING)))
+                        || (VillageBuildingRepairService.TEMPLATE.equals(p.templateId())
+                            && home.id().toString().equals(p.parameter("repair_building_id")))
+                        || (VillageHouseReuseService.TEMPLATE.equals(p.templateId())
+                            && home.id().toString().equals(p.parameter("reuse_building"))))) continue;
 
             VillageSavedData.ProjectRecord original = village.projectIds().stream()
                     .map(data::project).flatMap(java.util.Optional::stream)
@@ -89,7 +93,7 @@ public final class VillageHouseVerticalExpansionService {
             project.setParameter(WOOD, original.parameter("plank"));
             project.setPhase("upper_shell");
             project.setWorkCursor(0);
-            project.setReservation(VillageStorageService.itemKey(plank.asItem()), 75);
+            project.setReservation(VillageStorageService.itemKey(plank.asItem()), 71);
             project.setReservation(VillageStorageService.itemKey(
                     VillageSimulationEvents.stairsForPlank(plank).asItem()), 4);
             project.setReservation(VillageStorageService.itemKey(Items.WHITE_BED), 2);

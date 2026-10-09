@@ -128,5 +128,6 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT52 | playerUpperShellEditBlocksExpansionWithoutPayment | Existing player-made upper blocks veto construction before any real material is withdrawn |
 | GT53 | placedUpperWallReconcilesWithoutSecondItemDebit | Actual Carpenter cargo and Barrel withdraw one plank for a new wall, but repeated cursor reconciliation never spends it twice |
 | GT54 | physicallyCompleteSecondStoreyRetainsBuildingIdAndCountsBeds | A complete real stairwell, roof and two upper beds expand original bounds without a duplicate record; 3 real beds remain valid after saved-world roundtrip |
+| GT55 | liveExpansionExcludesConflictingHouseRepairs | A live stairwell opening never triggers competing Carpenter shell repair or second-bed furnishings, and a pending repair blocks duplicate expansion; original supplies remain untouched |
 
 These tests are **not** a full acceptance of G01-G22: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.
