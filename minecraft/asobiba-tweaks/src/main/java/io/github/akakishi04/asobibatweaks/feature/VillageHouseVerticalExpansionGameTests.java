@@ -102,13 +102,18 @@ public final class VillageHouseVerticalExpansionGameTests {
             f.data().touch();
             var work = VillageHouseVerticalExpansionService.steps(p);
             VillageHouseVerticalExpansionService.Step first = work.getFirst();
-            // First withdraw a REAL plank while standing at the registered
-            // materials Barrel, then physically carry that stack upstairs.
-            if (!VillageSimulationEvents.ensureCargoItem(
-                    f.builder(), f.level(), Items.OAK_PLANKS, 1, 8)) {
-                helper.fail("Could not take a real plank from the recognized Barrel", MARK);
+            // Source the exact material from a real Barrel, then stage it in
+            // the persistent worker cargo. GT53 isolates paid placement and
+            // cursor crash-reconciliation from the separate navigation and
+            // automatic supply planner exercised by other test families.
+            ItemStack withdrawn = f.materials().removeItem(0, 1);
+            if (!withdrawn.is(Items.OAK_PLANKS) || withdrawn.getCount() != 1
+                    || !VillagerSimData.insertWorkCargo(
+                            f.builder(), f.level().registryAccess(), withdrawn, 8).isEmpty()) {
+                helper.fail("Could not physically stage the one real plank", MARK);
                 return;
             }
+            f.materials().setChanged();
             f.builder().setPos(first.pos().getX() + 0.5D,
                     first.pos().getY(), first.pos().getZ() + 0.5D);
             VillageHouseVerticalExpansionService.advance(f.builder(), f.level(), p);
