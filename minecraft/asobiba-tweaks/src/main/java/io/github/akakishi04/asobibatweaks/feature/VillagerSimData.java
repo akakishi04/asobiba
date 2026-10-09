@@ -437,7 +437,7 @@ public final class VillagerSimData {
         CompoundTag root = root(villager, false);
         if (!root.contains(RIVER_HAUL, Tag.TAG_COMPOUND)) return Optional.empty();
         CompoundTag tag = root.getCompound(RIVER_HAUL);
-        UUID routeId = readUuid(tag, "route");
+        UUID routeId = readUuid(tag, "route").orElse(null);
         String itemId = tag.getString("item");
         String phase = tag.getString("phase");
         if (routeId == null || itemId.isBlank()
