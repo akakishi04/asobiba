@@ -107,5 +107,8 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT31 | playerOccupiedBedSpaceIsNeverOverwrittenOrCharged | Queued second-bed placement cancels without consuming a physical item or overwriting player Obsidian |
 | GT32 | receivingCapacityWinsOverBlockedDockItem | A real ChestBoat transports physically receivable Wheat rather than unavailable Cobblestone, conserves both inventories and records the exact real dock receipt |
 | GT33 | lowerDestinationStockTakesFreightPriority | When both goods can be received, a less-stocked destination item wins over earlier source-slot order with unchanged total stock |
+| GT34 | realPorterMovesPaidStockBetweenSeparateVillageBarrels | Two separately owned real Barrels exchange 16 actually carried blocks via a persistent Porter ticket without minted inventory or duplicated Village IDs |
+| GT35 | fullDestinationRetainsRealPorterParcelUntilSpaceReturns | An obstructed receiving warehouse holds the original parcel in Villager NBT until genuine storage capacity returns |
+| GT36 | removedSourceStockCancelsUnpaidTransfer | A pending, unpaid shipment does not fabricate its 16 physical items when source stock disappears |
 
 These tests are **not** a full acceptance of G01-G22: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.
