@@ -238,6 +238,59 @@ public final class VillageRiverCargoGameTests {
         helper.succeed();
     }
 
+    /** Both directions spend and deliver real inventory, with per-dock receipts. */
+    @GameTest(template = "empty16x6x9")
+    public static void returnTripCarriesRealReverseFreightAndReceipts(GameTestHelper helper) {
+        Fixture test = setup(helper);
+        test.source().setItem(0, new ItemStack(Items.OAK_CHEST_BOAT));
+        test.source().setItem(1, new ItemStack(Items.COBBLESTONE, 40));
+        test.destination().setItem(0, new ItemStack(Items.WHEAT, 40));
+        ChestBoat boat = VillageRiverCargoService.tryLaunch(
+                test.level(), test.data(), test.route());
+        if (boat == null || count(boat, Items.COBBLESTONE) != 16) {
+            helper.fail("The actual forward freight must load 16 Cobblestone",
+                    new BlockPos(8, 2, 4));
+            return;
+        }
+
+        // Test only the two *real* dock transactions; GT11 independently
+        // drives the complete vanilla boat travel between these docks.
+        boat.setPos(test.end().getX() + 0.5D,
+                test.end().getY() + 1.0D, test.end().getZ() + 0.5D);
+        boat.getPersistentData().putString("asobibatweaks_river_cargo_phase", "unload");
+        VillageRiverCargoService.tickCarrier(boat, test.level());
+        if (count(test.destination(), Items.COBBLESTONE) != 16
+                || count(test.destination(), Items.WHEAT) != 24
+                || count(boat, Items.WHEAT) != 16
+                || count(boat, Items.COBBLESTONE) != 0
+                || test.route().dockReceipts(true)
+                    .getOrDefault("minecraft:cobblestone", 0) != 16) {
+            helper.fail("Remote dock did not unload outbound and load actual return goods",
+                    new BlockPos(8, 2, 4));
+            return;
+        }
+
+        boat.setPos(test.start().getX() + 0.5D,
+                test.start().getY() + 1.0D, test.start().getZ() + 0.5D);
+        boat.getPersistentData().putString(
+                "asobibatweaks_river_cargo_phase", "return_unload");
+        VillageRiverCargoService.tickCarrier(boat, test.level());
+        if (count(test.source(), Items.COBBLESTONE) != 24
+                || count(test.source(), Items.WHEAT) != 16
+                || count(test.destination(), Items.COBBLESTONE) != 16
+                || count(test.destination(), Items.WHEAT) != 24
+                || !boat.getItem(0).isEmpty()
+                || test.route().dockReceipts(false)
+                    .getOrDefault("minecraft:wheat", 0) != 16
+                || !"idle".equals(boat.getPersistentData().getString(
+                        "asobibatweaks_river_cargo_phase"))) {
+            helper.fail("Reverse freight disappeared, duplicated or failed to receipt",
+                    new BlockPos(8, 2, 4));
+            return;
+        }
+        helper.succeed();
+    }
+
     static Fixture setup(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
 
