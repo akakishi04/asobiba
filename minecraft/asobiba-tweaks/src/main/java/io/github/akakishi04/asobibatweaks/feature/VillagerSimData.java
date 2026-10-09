@@ -8,6 +8,7 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.item.Item;
@@ -21,7 +22,7 @@ import net.minecraft.world.item.ItemStack;
  * namespace without changing the shared VillageSavedData schema.</p>
  */
 public final class VillagerSimData {
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
 
     private static final String ROOT = "asobibatweaks_village_sim";
     private static final String SCHEMA = "schema";
@@ -39,6 +40,7 @@ public final class VillagerSimData {
     private static final String DISPLACED_SINCE_ACTIVE = "displaced_since_active";
     private static final String OUTPOST_SITE_ID = "outpost_site_id";
     private static final String OUTPOST_HAUL_MODE = "outpost_haul_mode";
+    private static final String RIVER_HAUL = "river_porter_haul_v1";
     private static final String WORK_CARGO = "work_cargo";
     private static final String REFUSAL = "refusal";
     private static final String LAST_WELFARE_PRICE_PERCENT = "last_welfare_price_percent";
@@ -424,6 +426,54 @@ public final class VillagerSimData {
 
     public static void clearWorkCargo(Villager villager) {
         root(villager, true).remove(WORK_CARGO);
+    }
+
+    /** An in-flight physical dock-to-warehouse (or inverse) transfer. */
+    public record RiverHaul(UUID routeId, BlockPos source, BlockPos destination,
+                            String itemId, int requested, boolean incoming,
+                            boolean receiptAtTo, String phase) {}
+
+    public static Optional<RiverHaul> riverHaul(Villager villager) {
+        CompoundTag root = root(villager, false);
+        if (!root.contains(RIVER_HAUL, Tag.TAG_COMPOUND)) return Optional.empty();
+        CompoundTag tag = root.getCompound(RIVER_HAUL);
+        UUID routeId = readUuid(tag, "route");
+        String itemId = tag.getString("item");
+        String phase = tag.getString("phase");
+        if (routeId == null || itemId.isBlank()
+                || !tag.contains("source", Tag.TAG_LONG)
+                || !tag.contains("destination", Tag.TAG_LONG)
+                || (!"pickup".equals(phase) && !"delivery".equals(phase))) {
+            return Optional.empty();
+        }
+        return Optional.of(new RiverHaul(routeId,
+                BlockPos.of(tag.getLong("source")),
+                BlockPos.of(tag.getLong("destination")),
+                itemId, Math.max(1, Math.min(64, tag.getInt("requested"))),
+                tag.getBoolean("incoming"), tag.getBoolean("receipt_at_to"), phase));
+    }
+
+    public static void setRiverHaul(Villager villager, RiverHaul haul) {
+        CompoundTag tag = new CompoundTag();
+        putUuid(tag, "route", haul.routeId());
+        tag.putLong("source", haul.source().asLong());
+        tag.putLong("destination", haul.destination().asLong());
+        tag.putString("item", haul.itemId());
+        tag.putInt("requested", Math.max(1, Math.min(64, haul.requested())));
+        tag.putBoolean("incoming", haul.incoming());
+        tag.putBoolean("receipt_at_to", haul.receiptAtTo());
+        tag.putString("phase", haul.phase());
+        root(villager, true).put(RIVER_HAUL, tag);
+    }
+
+    public static void setRiverHaulPhase(Villager villager, String phase) {
+        CompoundTag root = root(villager, true);
+        if (!root.contains(RIVER_HAUL, Tag.TAG_COMPOUND)) return;
+        root.getCompound(RIVER_HAUL).putString("phase", phase);
+    }
+
+    public static void clearRiverHaul(Villager villager) {
+        root(villager, true).remove(RIVER_HAUL);
     }
 
     private static CompoundTag root(Villager villager, boolean create) {
