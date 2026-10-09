@@ -166,8 +166,15 @@ public final class VillageBridgeService {
                 || !parent.parameter("bridge_project_id").isBlank()) return false;
         int width = Math.max(1, Math.min(3, route.width()));
         Candidate candidate = findLoadedCrossing(level, routeNodes, width);
-        if (candidate == null) return false;
+        return queueValidatedBridge(level, data, route, parent, candidate);
+    }
 
+    static boolean queueValidatedBridge(
+            ServerLevel level, VillageSavedData data,
+            VillageSavedData.RouteRecord route,
+            VillageSavedData.ProjectRecord parent, Candidate candidate) {
+        if (route == null || parent == null || candidate == null
+                || !parent.parameter("bridge_project_id").isBlank()) return false;
         VillageSavedData.ProjectRecord bridge = data.createProject(
                 parent.villageId(), "road", 55,
                 candidate.firstWater().relative(candidate.facing().getOpposite(), 3));
@@ -206,6 +213,71 @@ public final class VillageBridgeService {
         }
         data.touch();
         return true;
+    }
+
+    /**
+     * Direct short bridges win only when a real loaded land detour would be
+     * substantially longer. The route planner already charges elevated
+     * water penalties; this threshold avoids building a bridge for a trivial
+     * flat-road detour that happens to have equal route cost.
+     */
+    static boolean preferableToDetour(int directBlocks, int landDetourBlocks) {
+        return directBlocks >= 8 && directBlocks <= 48
+                && landDetourBlocks >= directBlocks + Math.max(8, directBlocks / 3);
+    }
+
+    /**
+     * The full shortcut is checked against actual unmodified loaded terrain,
+     * not just the small water span. Nothing is acquired or destroyed.
+     *
+     * Only ordinary natural/road ground and <=1-block slopes are accepted on
+     * both dry approaches. Existing buildings/player decorations veto this
+     * shortcut, and an unloaded/unknown column is never considered clear.
+     */
+    static boolean directShortcutSafe(ServerLevel level,
+                                      BlockPos from, BlockPos to,
+                                      Candidate crossing) {
+        if (crossing == null) return false;
+        int dx = to.getX() - from.getX();
+        int dz = to.getZ() - from.getZ();
+        if ((dx == 0) == (dz == 0)) return false;
+        int length = Math.abs(dx) + Math.abs(dz);
+        if (length < 8 || length > 48 || crossing.width() > 3) return false;
+        Direction dir = dx > 0 ? Direction.EAST
+                : dx < 0 ? Direction.WEST
+                : dz > 0 ? Direction.SOUTH : Direction.NORTH;
+        if (dir != crossing.facing()) return false;
+
+        int previousY = Integer.MIN_VALUE;
+        boolean reachedWater = false;
+        boolean passedWater = false;
+        for (int i = 0; i <= length; i++) {
+            BlockPos pos = from.relative(dir, i);
+            BlockPos column = new BlockPos(pos.getX(),
+                    level.getMinBuildHeight(), pos.getZ());
+            if (!VillageSimulationScheduler.isChunkLoaded(level, column)
+                    || !VillageSimulationScheduler.tryConsumeBlockProbe(level)) return false;
+            int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                    pos.getX(), pos.getZ()) - 1;
+            BlockPos surface = withY(pos, y);
+            boolean wet = sourceWater(level, surface);
+            if (wet) {
+                if (passedWater || y != crossing.waterY()) return false;
+                reachedWater = true;
+            } else {
+                if (reachedWater) passedWater = true;
+                if (!naturalBank(level.getBlockState(surface))
+                        && !level.getBlockState(surface).is(Blocks.DIRT_PATH)
+                        && !level.getBlockState(surface).is(Blocks.STONE_BRICKS))
+                    return false;
+                if (Math.abs(y - crossing.waterY()) > 1) return false;
+                if (!clearHeadroom(level, surface, 2)) return false;
+            }
+            if (previousY != Integer.MIN_VALUE
+                    && Math.abs(y - previousY) > 1) return false;
+            previousY = y;
+        }
+        return reachedWater && passedWater;
     }
 
     static void advance(Villager worker, ServerLevel level,
