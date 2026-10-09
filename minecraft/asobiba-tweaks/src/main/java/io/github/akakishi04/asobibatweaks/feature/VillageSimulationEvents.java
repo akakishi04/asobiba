@@ -1863,6 +1863,9 @@ public final class VillageSimulationEvents {
 
     private static void tickPorter(Villager villager, ServerLevel level) {
         if (level.getGameTime() % 100 != Math.floorMod(villager.getId(), 100)) return;
+        // Physical dock deliveries take precedence over collecting random
+        // nearby drops and ordinary fallback cargo deposit.
+        if (VillageRiverPorterService.handlePorter(villager, level, null)) return;
         if (!areaLoaded(level, villager.blockPosition(), 14, 3, 3)) return;
 
         if (VillagerSimData.hasWorkCargo(villager, level.registryAccess(), PORTER_CARGO_SLOTS)) {
