@@ -109,7 +109,8 @@ public final class VillageHouseThirdFloorExpansionGameTests {
         var foot = steps.get(salvageIndex).pos();
         int beforeDrops = f.level().getEntitiesOfClass(ItemEntity.class,
                 new AABB(foot).inflate(3.0D),
-                x -> x.isAlive() && x.getItem().is(Items.WHITE_BED))
+                x -> x.isAlive() && x.getItem().is(Items.WHITE_BED)
+                        && Math.abs(x.getY() - (foot.getY() + 0.5D)) < 1.5D)
                 .stream().mapToInt(e -> e.getItem().getCount()).sum();
         f.builder().setPos(foot.getX() + 0.5D, foot.getY() + 1, foot.getZ() + 0.5D);
         project.setWorkCursor(oldCursor);
@@ -129,7 +130,8 @@ public final class VillageHouseThirdFloorExpansionGameTests {
         helper.runAtTickTime(5, () -> {
             List<ItemEntity> drops = f.level().getEntitiesOfClass(ItemEntity.class,
                     new AABB(foot).inflate(3.0D),
-                    x -> x.isAlive() && x.getItem().is(Items.WHITE_BED));
+                    x -> x.isAlive() && x.getItem().is(Items.WHITE_BED)
+                        && Math.abs(x.getY() - (foot.getY() + 0.5D)) < 1.5D);
             int units = drops.stream().mapToInt(e -> e.getItem().getCount()).sum();
             if (units - beforeDrops != 1) {
                 String detail = drops.stream().map(e -> e.getItem().getCount()
