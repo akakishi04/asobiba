@@ -111,7 +111,7 @@ public final class VillageBridgeService {
                 || candidate.length() > MAX_SPAN || candidate.width() < 1
                 || candidate.width() > 3) return null;
         Direction face = candidate.facing();
-        if (face.getAxis().isVertical()) return null;
+        if (face.getAxis() == Direction.Axis.Y) return null;
         BlockPos first = candidate.firstWater();
         BlockPos last = first.relative(face, candidate.length() - 1);
         BlockPos start = first.relative(face.getOpposite(), 3);
@@ -123,16 +123,14 @@ public final class VillageBridgeService {
         for (int i = 0; i < candidate.length(); i++) {
             BlockPos center = first.relative(face, i);
             for (int lane = 0; lane < candidate.width(); lane++) {
-                BlockPos sample = side(center, face, laneOffset(candidate.width(), lane))
-                        .atY(waterY);
+                BlockPos sample = withY(side(center, face, laneOffset(candidate.width(), lane)), waterY);
                 if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)
                         || !sourceWater(level, sample)
                         || !clearHeadroom(level, sample, 4)) return null;
             }
             if (i % 3 == 0 || i == candidate.length() - 1) {
                 for (int edge : new int[]{-1, candidate.width()}) {
-                    BlockPos sample = side(center, face, edge + laneOffsetBase(candidate.width()))
-                            .atY(waterY);
+                    BlockPos sample = withY(side(center, face, edge + laneOffsetBase(candidate.width())), waterY);
                     if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)
                             || !sourceWater(level, sample)
                             || !clearHeadroom(level, sample, 4)) return null;
@@ -145,8 +143,7 @@ public final class VillageBridgeService {
                         ? first.relative(face.getOpposite(), n)
                         : last.relative(face, n);
                 for (int lane = 0; lane < candidate.width(); lane++) {
-                    BlockPos pos = side(land, face,
-                            laneOffset(candidate.width(), lane)).atY(waterY);
+                    BlockPos pos = withY(side(land, face, laneOffset(candidate.width(), lane)), waterY);
                     if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)
                             || !naturalBank(level.getBlockState(pos))
                             || !clearHeadroom(level, pos, 4)) return null;
@@ -364,7 +361,7 @@ public final class VillageBridgeService {
                     BlockState state = wall.defaultBlockState();
                     if (waterlogged) state = state.setValue(
                             BlockStateProperties.WATERLOGGED, true);
-                    result.add(new Step(outer.atY(y), state,
+                    result.add(new Step(withY(outer, y), state,
                             wall.asItem(), "piers", waterlogged));
                 }
             }
@@ -382,13 +379,13 @@ public final class VillageBridgeService {
                             laneOffset(width, lane));
                     int top = waterY + (n == 2 ? 1 : 2);
                     for (int y = waterY + 1; y < top; y++) {
-                        result.add(new Step(column.atY(y),
+                        result.add(new Step(withY(column, y),
                                 deck.defaultBlockState(), deck.asItem(),
                                 "approach_foundation", false));
                     }
                     BlockState stair = staircase.defaultBlockState()
                             .setValue(HorizontalDirectionalBlock.FACING, uphill);
-                    result.add(new Step(column.atY(top), stair,
+                    result.add(new Step(withY(column, top), stair,
                             staircase.asItem(), "approach_stairs", false));
                 }
             }
@@ -398,7 +395,7 @@ public final class VillageBridgeService {
             BlockPos across = first.relative(dir, i);
             for (int lane = 0; lane < width; lane++) {
                 BlockPos center = side(across, dir, laneOffset(width, lane));
-                result.add(new Step(center.atY(deckY),
+                result.add(new Step(withY(center, deckY),
                         deck.defaultBlockState(), deck.asItem(), "deck", false));
             }
         }
@@ -406,11 +403,15 @@ public final class VillageBridgeService {
             BlockPos across = first.relative(dir, i);
             for (int edge : new int[]{-1, width}) {
                 BlockPos outer = side(across, dir, edge + laneOffsetBase(width));
-                result.add(new Step(outer.atY(deckY + 1),
+                result.add(new Step(withY(outer, deckY + 1),
                         wall.defaultBlockState(), wall.asItem(), "railings", false));
             }
         }
         return result.size() <= MAX_STEPS ? List.copyOf(result) : List.of();
+    }
+
+    private static BlockPos withY(BlockPos pos, int y) {
+        return new BlockPos(pos.getX(), y, pos.getZ());
     }
 
     private static boolean sourceWater(ServerLevel level, BlockPos pos) {
