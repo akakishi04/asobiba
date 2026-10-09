@@ -191,7 +191,7 @@ public final class VillageBridgeService {
         bridge.setParameter(WIDTH, Integer.toString(candidate.width()));
         bridge.setParameter(PLANK, parent.parameter("plank"));
         bridge.setParameter(STYLE, "stone".equals(parent.parameter("road_quality"))
-                ? STONE : width >= 2 ? MIXED : WOOD);
+                ? STONE : candidate.width() >= 2 ? MIXED : WOOD);
         bridge.setParameter(PARENT, parent.id().toString());
         bridge.setParameter("route_id", route.id().toString());
         parent.setParameter("bridge_project_id", bridge.id().toString());
