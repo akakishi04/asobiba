@@ -71,6 +71,31 @@ public final class ForestRegenerationGameTests {
         });
     }
 
+    @GameTest(template = "empty16x6x9", timeoutTicks = 35)
+    public static void nonVanillaLikeBlockEntitiesProtectPlayerLand(GameTestHelper helper) {
+        prepare(helper);
+        helper.runAtTickTime(12, () -> {
+            var level = helper.getLevel();
+            BlockPos local = CENTER.offset(1, 0, 0);
+            BlockPos actual = helper.absolutePos(local);
+            // Hopper is a vanilla BlockEntity not included in the old
+            // hardcoded protected-surface list, modeling the same conservative
+            // discovery mechanism used for modded storage and machines.
+            helper.setBlock(local, Blocks.HOPPER);
+            if (level.getBlockEntity(actual) == null
+                    || ForestRegenerationEvents.isMaintainedSurface(
+                            level.getBlockState(actual))
+                    || !ForestRegenerationEvents.isProtectedSurface(level, actual)
+                    || ForestRegenerationEvents.safeRegrowthSite(
+                            level, helper.absolutePos(CENTER))) {
+                helper.fail("A physical block entity must protect natural land even "
+                        + "without explicit vanilla/modded block allowlists", CENTER);
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
     private static void prepare(GameTestHelper helper) {
         for (int x = 5; x <= 11; x++) {
             for (int z = 1; z <= 7; z++) {

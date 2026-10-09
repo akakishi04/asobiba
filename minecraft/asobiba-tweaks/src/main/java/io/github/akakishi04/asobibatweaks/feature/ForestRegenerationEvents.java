@@ -90,12 +90,24 @@ public final class ForestRegenerationEvents {
                 for (int dy = -1; dy <= 2; dy++) {
                     if (!VillageSimulationScheduler.tryConsumeBlockProbe(level))
                         return false; // exhausted shared background budget
-                    BlockState state = level.getBlockState(plant.offset(dx, dy, dz));
-                    if (isMaintainedSurface(state)) return false;
+                    BlockPos candidate = plant.offset(dx, dy, dz);
+                    if (isProtectedSurface(level, candidate)) return false;
                 }
             }
         }
         return true;
+    }
+
+    /**
+     * A real, already-loaded block entity is a strong indication of player or
+     * mod-managed land. This conservatively protects modded machines/chests
+     * without needing a hardcoded registry of third-party blocks, never
+     * serializes the block entity, and never queries an unloaded chunk.
+     */
+    static boolean isProtectedSurface(ServerLevel level, BlockPos pos) {
+        if (!VillageSimulationScheduler.isChunkLoaded(level, pos)) return true;
+        return isMaintainedSurface(level.getBlockState(pos))
+                || level.getBlockEntity(pos) != null;
     }
 
     /** Pure maintained-surface classification, independent of scheduling budgets. */

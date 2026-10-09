@@ -79,16 +79,12 @@ public final class VillageBuildingRepairService {
 
             VillageSavedData.ProjectRecord original = village.projectIds().stream()
                     .map(data::project).flatMap(java.util.Optional::stream)
-                    .filter(p -> "building".equals(p.type())
-                            && "complete".equals(p.phase())
-                            && p.site().equals(building.min())
-                            && p.templateId().equals(building.templateId()))
+                    .filter(p -> sourceMatches(building, p))
                     .min(Comparator.comparing(p -> p.id().toString()))
                     .orElse(null);
             if (original == null) continue;
 
-            List<VillageSimulationEvents.BuildStep> blueprint =
-                    VillageSimulationEvents.projectPlan(original);
+            List<VillageSimulationEvents.BuildStep> blueprint = repairBlueprint(original);
             if (blueprint.isEmpty() || blueprint.size() > MAX_REPAIR_STEPS) continue;
             List<Integer> missing = new ArrayList<>();
             Map<Item, Integer> supplies = new HashMap<>();
@@ -153,9 +149,7 @@ public final class VillageBuildingRepairService {
         if (building == null || original == null || !building.villageBuilt()
                 || !building.villageId().equals(repair.villageId())
                 || !original.site().equals(building.min())
-                || !original.templateId().equals(building.templateId())
-                || !"complete".equals(original.phase())
-                || !supportedTemplate(original.templateId())) {
+                || !sourceMatches(building, original)) {
             cancel(data, repair, "original village-owned blueprint missing");
             return;
         }
@@ -165,8 +159,7 @@ public final class VillageBuildingRepairService {
         }
 
         List<Integer> indices = parseIndices(repair.parameter(STEP_INDICES));
-        List<VillageSimulationEvents.BuildStep> blueprint =
-                VillageSimulationEvents.projectPlan(original);
+        List<VillageSimulationEvents.BuildStep> blueprint = repairBlueprint(original);
         if (indices.isEmpty() || blueprint.size() > MAX_REPAIR_STEPS
                 || indices.stream().anyMatch(i -> i < 0 || i >= blueprint.size()
                         || !structural(blueprint.get(i))
@@ -250,6 +243,51 @@ public final class VillageBuildingRepairService {
         VillageSimulationScheduler.enqueueValidation(level,
                 "repair_revalidate:" + building.id(),
                 () -> VillageBuildingService.revalidateChunk(level, chunk));
+    }
+
+    /**
+     * Old houses keep their original construction ProjectRecord even after a
+     * paid in-place height upgrade. The completed expansion plan becomes the
+     * authoritative top-floor shell source, not the original lower roof.
+     * Never accept records belonging to another BuildingRecord or adopted home.
+     */
+    private static boolean sourceMatches(
+            VillageSavedData.BuildingRecord building,
+            VillageSavedData.ProjectRecord project) {
+        if (!"building".equals(project.type())
+                || !"complete".equals(project.phase())
+                || !project.site().equals(building.min())) return false;
+        if (project.templateId().equals(building.templateId())
+                && supportedTemplate(project.templateId())) return true;
+        if ("house_2story_5x5".equals(building.templateId())
+                && VillageHouseVerticalExpansionService.TEMPLATE.equals(project.templateId()))
+            return building.id().toString().equals(project.parameter("expand_building"));
+        if ("house_3story_5x5".equals(building.templateId())
+                && VillageHouseThirdFloorExpansionService.TEMPLATE.equals(project.templateId()))
+            return building.id().toString().equals(project.parameter("third_building"));
+        return false;
+    }
+
+    /** Only actual PAID shell material steps, excluding demolished openings. */
+    private static List<VillageSimulationEvents.BuildStep> repairBlueprint(
+            VillageSavedData.ProjectRecord project) {
+        if (VillageHouseVerticalExpansionService.TEMPLATE.equals(project.templateId())) {
+            return VillageHouseVerticalExpansionService.steps(project).stream()
+                    .filter(s -> !s.remove() && !s.bed() && s.material() != null
+                            && s.state().is(BlockTags.PLANKS))
+                    .map(s -> new VillageSimulationEvents.BuildStep(
+                            s.pos(), s.state(), s.material()))
+                    .toList();
+        }
+        if (VillageHouseThirdFloorExpansionService.TEMPLATE.equals(project.templateId())) {
+            return VillageHouseThirdFloorExpansionService.steps(project).stream()
+                    .filter(s -> s.kind() == VillageHouseThirdFloorExpansionService.PLACE
+                            && s.material() != null && s.state().is(BlockTags.PLANKS))
+                    .map(s -> new VillageSimulationEvents.BuildStep(
+                            s.pos(), s.state(), s.material()))
+                    .toList();
+        }
+        return VillageSimulationEvents.projectPlan(project);
     }
 
     private static boolean structural(VillageSimulationEvents.BuildStep step) {

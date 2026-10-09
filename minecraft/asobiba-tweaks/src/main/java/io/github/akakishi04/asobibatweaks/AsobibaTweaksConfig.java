@@ -125,6 +125,10 @@ public final class AsobibaTweaksConfig {
             BUILDER.defineInRange("village.scheduler.routeSearchIntervalTicks", 10, 1, 200);
     public static final ModConfigSpec.IntValue VILLAGE_BACKGROUND_PROBES_PER_TICK =
             BUILDER.defineInRange("village.scheduler.backgroundProbesPerTick", 256, 16, 16384);
+    // Independent lane: 81 loaded interior cells for a three-storey home must
+    // fit even if all ordinary ecology/background probes have been consumed.
+    public static final ModConfigSpec.IntValue VILLAGE_BUILDING_VALIDATION_PROBES_PER_TICK =
+            BUILDER.defineInRange("village.scheduler.buildingValidationProbesPerTick", 256, 81, 16384);
     public static final ModConfigSpec.IntValue VILLAGE_WORKER_PROBES_PER_TICK =
             BUILDER.defineInRange("village.scheduler.workerProbesPerTick", 2048, 64, 65536);
     public static final ModConfigSpec.IntValue VILLAGE_EMERGENCY_PROBES_PER_TICK =

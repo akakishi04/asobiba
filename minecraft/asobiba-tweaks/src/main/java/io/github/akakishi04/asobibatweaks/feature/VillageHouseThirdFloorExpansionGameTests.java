@@ -271,6 +271,98 @@ public final class VillageHouseThirdFloorExpansionGameTests {
         });
     }
 
+    /**
+     * V86: a genuine previously expanded building has no original new-build
+     * three-storey ProjectRecord. Repair must use the completed, owner-linked
+     * expansion shell instead of forgetting it or reconstructing an old roof.
+     */
+    @GameTest(template = "empty16x14x9", timeoutTicks = 95,
+            batch = "expanded_shell_repair")
+    public static void expandedUpperRoofUsesOneRealRepairPlankAndRespectsPlayerEdit(
+            GameTestHelper helper) {
+        Fixture f = setup(helper);
+        var completedExtension = project(f);
+        List<VillageHouseThirdFloorExpansionService.Step> planned =
+                VillageHouseThirdFloorExpansionService.steps(completedExtension);
+        for (var step : planned) {
+            if (step.kind() == VillageHouseThirdFloorExpansionService.SALVAGE_BED) {
+                f.level().destroyBlock(step.pos(), false);
+            } else if (step.kind() == VillageHouseThirdFloorExpansionService.REMOVE_ROOF) {
+                f.level().setBlock(step.pos(), Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
+            } else if (step.kind() == VillageHouseThirdFloorExpansionService.PLACE_BED) {
+                f.level().setBlock(step.pos(), step.state(), Block.UPDATE_CLIENTS);
+                f.level().setBlock(step.pos().relative(
+                        step.state().getValue(BedBlock.FACING)),
+                        step.state().setValue(
+                                BedBlock.PART, net.minecraft.world.level.block.state.properties.BedPart.HEAD),
+                        Block.UPDATE_CLIENTS);
+            } else {
+                f.level().setBlock(step.pos(), step.state(), Block.UPDATE_CLIENTS);
+            }
+        }
+        completedExtension.setWorkCursor(planned.size());
+        completedExtension.setPhase("complete");
+        if (!VillageHouseThirdFloorExpansionService.allComplete(f.level(), completedExtension)
+                || !f.data().upgradeVillageHouseThirdFloor(f.house().id())) {
+            helper.fail("Expanded roof fixture could not preserve a genuine third-storey identity", MARK);
+            return;
+        }
+
+        BlockPos missing = f.base().offset(1, 12, 2);
+        BlockPos playerEdit = f.base().offset(2, 12, 2);
+        f.level().setBlock(missing, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
+        f.level().setBlock(playerEdit, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
+
+        // Plan before any worker debit; only actual missing planks are candidates.
+        if (!VillageBuildingRepairService.tryPlan(
+                f.builder(), f.level(), f.villageId())) {
+            helper.fail("Missing actual expanded roof cells did not produce a repair project", MARK);
+            return;
+        }
+        var repairs = f.data().activeProjectsForVillage(f.villageId()).stream()
+                .filter(p -> VillageBuildingRepairService.TEMPLATE.equals(p.templateId()))
+                .findFirst().orElse(null);
+        if (repairs == null || repairs.workCursor() != 0
+                || !completedExtension.id().toString().equals(
+                        repairs.parameter("repair_source_project"))
+                || repairs.reservations().getOrDefault("minecraft:oak_planks", 0) != 2) {
+            helper.fail("Repair must use genuine completed 3F expansion as its shell source", MARK);
+            return;
+        }
+
+        // Source one real physical unit from the Barrel, then physically carry it
+        // in the Carpenter's persistent eight-slot work inventory.
+        ItemStack withdrawn = f.storage().removeItem(0, 1);
+        if (!withdrawn.is(Items.OAK_PLANKS) || withdrawn.getCount() != 1
+                || !VillagerSimData.insertWorkCargo(
+                        f.builder(), f.level().registryAccess(), withdrawn, 8).isEmpty()) {
+            helper.fail("Expanded roof repair did not take one physical material", MARK);
+            return;
+        }
+        f.storage().setChanged();
+        f.builder().setPos(missing.getX() + 0.5D, missing.getY(), missing.getZ() + 0.5D);
+        VillageBuildingRepairService.advance(f.builder(), f.level(), repairs);
+        if (!f.level().getBlockState(missing).is(Blocks.OAK_PLANKS)
+                || repairs.workCursor() != 1
+                || VillagerSimData.hasWorkCargo(f.builder(), f.level().registryAccess(), 8)) {
+            helper.fail("Existing third-floor roof was not repaired by one paid plank", MARK);
+            return;
+        }
+
+        // The second hole is filled by a player; don't overwrite or charge.
+        f.level().setBlock(playerEdit, Blocks.GLASS.defaultBlockState(), Block.UPDATE_ALL);
+        VillageBuildingRepairService.advance(f.builder(), f.level(), repairs);
+        if (!"complete".equals(repairs.phase())
+                || !f.level().getBlockState(playerEdit).is(Blocks.GLASS)
+                || count(f.storage(), Items.OAK_PLANKS) != 127
+                || !f.house().max().equals(f.base().offset(4, 12, 4))
+                || f.village().buildingIds().size() != 1) {
+            helper.fail("Upper shell repair overwrote player block, overcharged or duplicated house", MARK);
+            return;
+        }
+        helper.succeed();
+    }
+
     private static VillageSavedData.ProjectRecord project(Fixture f) {
         var p = f.data().createProject(f.villageId(), "building", 87, f.base());
         p.setTemplateId(VillageHouseThirdFloorExpansionService.TEMPLATE);

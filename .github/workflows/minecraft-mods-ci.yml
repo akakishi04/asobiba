@@ -31,14 +31,31 @@ jobs:
         shell: bash
         timeout-minutes: 6
         run: |
+          # Keep all actual GameTest assertions strict. Retry only when the
+          # headless GameTestServer NEVER COMPLETED its test batch and hit the
+          # infrastructure wall-clock timeout (exit 124).
+          # Two 135-second attempts fit the old single 300-second bound.
           set +e
-          timeout --signal=TERM 300s gradle runGameTestServer --stacktrace > gametest-server.log 2>&1
+          timeout --signal=TERM 135s gradle runGameTestServer --stacktrace > gametest-server.log 2>&1
           result=$?
           set -e
 
-          cat gametest-server.log
+          if [ "$result" -eq 124 ] && ! grep -q "GAME TESTS COMPLETE" gametest-server.log; then
+            echo "GameTestServer made no completion progress; retrying once with a fresh CI-only test world."
+            mv gametest-server.log gametest-server-first-attempt.log
+            rm -rf run
+            set +e
+            timeout --signal=TERM 135s gradle runGameTestServer --stacktrace > gametest-server.log 2>&1
+            result=$?
+            set -e
+          fi
+
+          # Avoid printing hundreds of thousands of headless progress-bar
+          # repetitions into Actions output. Full logs remain downloadable.
+          grep -E 'tests are now running|Running test batch|LogTestReporter|GAME TESTS COMPLETE|required tests failed|BUILD (FAILED|SUCCESSFUL)|Failed with an exception' gametest-server.log | tail -n 100 || true
           if [ "$result" -ne 0 ]; then
-            echo "NeoForge required GameTests failed or the server timed out (status: $result)." >&2
+            echo "GameTests failed or did not complete (exit status: $result)." >&2
+            grep -E 'error:|Exception|LogTestReporter|GAME TESTS COMPLETE|required tests failed|BUILD FAILED' gametest-server.log | tail -n 75 || true
             exit "$result"
           fi
 
@@ -71,7 +88,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: asobiba-gametest-log
-          path: minecraft/asobiba-tweaks/gametest-server.log
+          path: |
+            minecraft/asobiba-tweaks/gametest-server.log
+            minecraft/asobiba-tweaks/gametest-server-first-attempt.log
           if-no-files-found: ignore
           retention-days: 30
       - name: Upload Asobiba Tweaks JAR

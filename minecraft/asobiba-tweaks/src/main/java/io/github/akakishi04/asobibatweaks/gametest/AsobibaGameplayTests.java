@@ -131,7 +131,11 @@ public final class AsobibaGameplayTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty3x3x3", timeoutTicks = 165)
+    // This real 125-tick block-entity smelting test must not share a
+    // concurrently reset default-batch fixture with unrelated construction
+    // tests. Batching changes no enchantment logic or required assertion.
+    @GameTest(template = "empty3x3x3", timeoutTicks = 165,
+            batch = "furnace_real_smelting")
     public static void furnaceEfficiencyAffectsRealSmelting(GameTestHelper helper) {
         // On a GameTestServer without a nearby human, an otherwise perfectly
         // initialized furnace can stop receiving normal block-entity ticks.
@@ -165,6 +169,11 @@ public final class AsobibaGameplayTests {
         // at twice that throughput, so one ingot must exist by tick 125.
         helper.runAtTickTime(125, () -> {
             try {
+                if (!helper.getLevel().getBlockState(absolute).is(Blocks.FURNACE)
+                        || helper.getLevel().getBlockEntity(absolute) != furnace) {
+                    helper.fail("The physical furnace fixture was replaced before live smelting finished", CENTER);
+                    return;
+                }
                 if (!furnace.getItem(2).is(Items.IRON_INGOT)
                         || !furnace.getItem(0).isEmpty()) {
                     helper.fail("Efficiency X did not finish a real recipe within 125 ticks"

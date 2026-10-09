@@ -30,9 +30,8 @@ public final class VillageSimulationScheduler {
     public static final int MAX_RECONCILE_PER_TICK = 4;
     public static final int MAX_VALIDATION_PER_TICK = 2;
     public static final int MAX_BACKGROUND_PROBES_PER_TICK = 256;
-    // Housing/structure validation must not be permanently starved by
-    // lower-priority forest, surveying or general background checks.
-    public static final int MAX_BUILDING_VALIDATION_PROBES_PER_TICK = 256;
+    // Housing/structure validation has its own configurable finite allowance,
+    // independent of lower-priority forest/background work.
     public static final int MAX_WORKER_PROBES_PER_TICK = 2048;
     public static final int MAX_EMERGENCY_PROBES_PER_TICK = 4096;
 
@@ -102,7 +101,9 @@ public final class VillageSimulationScheduler {
     public static boolean tryConsumeBuildingValidationProbe(ServerLevel level) {
         LevelState state = state(level);
         state.beginTick(level.getGameTime());
-        if (state.buildingValidationProbes >= MAX_BUILDING_VALIDATION_PROBES_PER_TICK) return false;
+        if (state.buildingValidationProbes
+                >= AsobibaTweaksConfig.VILLAGE_BUILDING_VALIDATION_PROBES_PER_TICK.getAsInt())
+            return false;
         state.buildingValidationProbes++;
         return true;
     }
