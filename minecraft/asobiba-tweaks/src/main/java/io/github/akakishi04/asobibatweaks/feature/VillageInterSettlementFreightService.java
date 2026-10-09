@@ -176,6 +176,9 @@ public final class VillageInterSettlementFreightService {
         ticket.putLong("source", from.asLong());
         ticket.putLong("target", to.asLong());
         ticket.putString("item", itemId(sample));
+        // Preserve exact item component identity: custom-named or component-
+        // bearing stock is not interchangeable merely by vanilla item ID.
+        ticket.put("sample", sample.copyWithCount(1).saveOptional(level.registryAccess()));
         ticket.putInt("remaining", quantity);
         ticket.putString("phase", "pickup");
         porter.getPersistentData().put(TICKET, ticket);
@@ -213,27 +216,48 @@ public final class VillageInterSettlementFreightService {
         }
         if (!delivery) {
             if (VillagerSimData.hasWorkCargo(porter, level.registryAccess(), SLOTS)) return true;
+
+            // Revalidate the combined inventory of real *component-identical*
+            // stacks, not one stack's count. Reserve 32 real pieces locally.
+            ItemStack exemplar = ItemStack.EMPTY;
+            int available = 0;
             for (int i = 0; i < container.getContainerSize(); i++) {
                 ItemStack stack = container.getItem(i);
-                if (stack.isEmpty() || !VillageRiverCargoService.approved(stack)
-                        || !ticket.getString("item").equals(itemId(stack))
-                        || stack.getCount() < remaining + 32) continue;
-                ItemStack parcel = stack.copyWithCount(remaining);
-                if (!VillagerSimData.canInsertWorkCargo(
-                        porter, level.registryAccess(), parcel, SLOTS)) return true;
-                ItemStack leftover = VillagerSimData.insertWorkCargo(
-                        porter, level.registryAccess(), parcel, SLOTS);
-                int taken = remaining - leftover.getCount();
-                if (taken <= 0) return true;
-                stack.shrink(taken);
-                container.setChanged();
-                ticket.putInt("remaining", taken);
-                ticket.putString("phase", "delivery");
-                VillageStorageService.reconcileVillage(originId, level);
+                if (!matchesTicket(level, ticket, stack)
+                        || !VillageRiverCargoService.approved(stack)) continue;
+                if (exemplar.isEmpty()) exemplar = stack.copyWithCount(1);
+                available += stack.getCount();
+            }
+            if (available < remaining + 32 || exemplar.isEmpty()) {
+                // No physical stock was withdrawn: an obsolete unpaid ticket
+                // can be removed without changing real inventory.
+                porter.getPersistentData().remove(TICKET);
                 return true;
             }
-            // No resource at pickup: the parcel was never paid. Safe to cancel.
-            porter.getPersistentData().remove(TICKET);
+            if (!VillagerSimData.canInsertWorkCargo(
+                    porter, level.registryAccess(), exemplar.copyWithCount(remaining), SLOTS))
+                return true;
+
+            int stillNeeded = remaining;
+            for (int i = 0; i < container.getContainerSize() && stillNeeded > 0; i++) {
+                ItemStack stack = container.getItem(i);
+                if (stack.isEmpty() || !ItemStack.isSameItemSameComponents(stack, exemplar)) continue;
+                int requested = Math.min(stillNeeded, stack.getCount());
+                ItemStack leftover = VillagerSimData.insertWorkCargo(
+                        porter, level.registryAccess(), stack.copyWithCount(requested), SLOTS);
+                int physicallyTaken = requested - leftover.getCount();
+                if (physicallyTaken > 0) {
+                    stack.shrink(physicallyTaken);
+                    container.setChanged();
+                    stillNeeded -= physicallyTaken;
+                }
+            }
+            if (stillNeeded >= remaining) return true;
+            // If a partial transaction is interrupted, deliver the actual
+            // parcel; never record or later create the unpaid remainder.
+            ticket.putInt("remaining", remaining - stillNeeded);
+            ticket.putString("phase", "delivery");
+            VillageStorageService.reconcileVillage(originId, level);
             return true;
         }
 
@@ -242,7 +266,7 @@ public final class VillageInterSettlementFreightService {
         int delivered = 0;
         for (int i = 0; i < cargo.size() && delivered < remaining; i++) {
             ItemStack carried = cargo.get(i);
-            if (carried.isEmpty() || !ticket.getString("item").equals(itemId(carried))) continue;
+            if (carried.isEmpty() || !matchesTicket(level, ticket, carried)) continue;
             int take = Math.min(carried.getCount(), remaining - delivered);
             ItemStack left = insert(container, carried.copyWithCount(take));
             int accepted = take - left.getCount();
@@ -269,6 +293,17 @@ public final class VillageInterSettlementFreightService {
                 || data.storageAt(villageId, pos)
                         .filter(s -> "valid".equals(s.validationState())).isEmpty()) return null;
         return level.getBlockEntity(pos) instanceof Container c ? c : null;
+    }
+
+    private static boolean matchesTicket(ServerLevel level, CompoundTag ticket,
+                                         ItemStack stack) {
+        if (stack.isEmpty() || !ticket.getString("item").equals(itemId(stack))) return false;
+        // Legacy tickets created before component snapshots keep moving the
+        // actual carried stack, rather than deleting the shipment.
+        if (!ticket.contains("sample", Tag.TAG_COMPOUND)) return true;
+        ItemStack sample = ItemStack.parseOptional(
+                level.registryAccess(), ticket.getCompound("sample"));
+        return !sample.isEmpty() && ItemStack.isSameItemSameComponents(sample, stack);
     }
 
     private static String itemId(ItemStack stack) {

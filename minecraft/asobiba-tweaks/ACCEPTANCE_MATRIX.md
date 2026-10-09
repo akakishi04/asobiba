@@ -114,5 +114,7 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT38 | idleCarrierWithCargoCannotBeDestroyedForBoatItem | An apparently idle boat with real cargo cannot be converted into a second boat item or lose its freight |
 | GT39 | unmodifiedClearingCanRegrowButFarmCannot | A naturally empty dirt clearing is allowed for forest regrowth but physically adjacent farmland is protected |
 | GT40 | roadAndStorageNearSaplingAreProtected | Player-built cobble roads and Barrel storage reject natural sapling placement outside any village index |
+| GT41 | splitRealStockStillPaysExactParcel | Genuine identical inventory split across multiple stacks contributes exactly 16 paid pieces while retaining 48 local pieces |
+| GT42 | sameItemWithDifferentComponentsIsNotSwapped | Custom-named and plain stacks of one vanilla item remain distinguishable during real cross-village pickup/delivery |
 
 These tests are **not** a full acceptance of G01-G22: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.

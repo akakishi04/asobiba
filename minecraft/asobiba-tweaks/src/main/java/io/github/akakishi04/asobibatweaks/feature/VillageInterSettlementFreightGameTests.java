@@ -4,6 +4,8 @@ import io.github.akakishi04.asobibatweaks.AsobibaTweaks;
 import java.util.List;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.network.chat.Component;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
@@ -112,6 +114,66 @@ public final class VillageInterSettlementFreightGameTests {
                 || f.porter().getPersistentData().contains(
                         "asobibatweaks_inter_village_freight", Tag.TAG_COMPOUND)) {
             helper.fail("Unpaid cross-village cargo was created from absent stock", MARK);
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty16x6x9")
+    public static void splitRealStockStillPaysExactParcel(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        for (int i = 0; i < 8; i++)
+            f.source().setItem(i, new ItemStack(Items.COBBLESTONE, 8));
+        if (!start(f)) {
+            helper.fail("A genuine aggregate of 64 blocks across stacks should fund a ticket", MARK);
+            return;
+        }
+        VillageInterSettlementFreightService.handlePorter(f.porter(), f.level());
+        if (count(f.source(), Items.COBBLESTONE) != 48
+                || VillagerSimData.workCargoCount(f.porter(),
+                        f.level().registryAccess(), 16, Items.COBBLESTONE) != 16) {
+            helper.fail("Split inventory failed to fund exactly one physical parcel", MARK);
+            return;
+        }
+        f.porter().setPos(f.targetPos().getX() + 0.5D,
+                f.targetPos().getY() + 1.0D, f.targetPos().getZ() + 0.5D);
+        VillageInterSettlementFreightService.handlePorter(f.porter(), f.level());
+        if (count(f.source(), Items.COBBLESTONE) != 48
+                || count(f.target(), Items.COBBLESTONE) != 16
+                || VillagerSimData.hasWorkCargo(f.porter(), f.level().registryAccess(), 16)) {
+            helper.fail("Multiple physical source stacks did not conserve real inventory", MARK);
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty16x6x9")
+    public static void sameItemWithDifferentComponentsIsNotSwapped(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        ItemStack named = new ItemStack(Items.COBBLESTONE, 64);
+        named.set(DataComponents.CUSTOM_NAME, Component.literal("Do not trade this stack"));
+        f.source().setItem(0, named);
+        f.source().setItem(1, new ItemStack(Items.COBBLESTONE, 64));
+        if (!VillageInterSettlementFreightService.assign(f.porter(), f.level(),
+                    f.route().id(), f.origin(), f.destination(),
+                    f.sourcePos(), f.targetPos(), f.source().getItem(1), 16)) {
+            helper.fail("Cannot reserve component-identical ordinary stack", MARK);
+            return;
+        }
+        VillageInterSettlementFreightService.handlePorter(f.porter(), f.level());
+        if (f.source().getItem(0).getCount() != 64
+                || f.source().getItem(0).get(DataComponents.CUSTOM_NAME) == null
+                || f.source().getItem(1).getCount() != 48) {
+            helper.fail("Exact-stack shipment illegally consumed customized goods", MARK);
+            return;
+        }
+        f.porter().setPos(f.targetPos().getX() + 0.5D,
+                f.targetPos().getY() + 1.0D, f.targetPos().getZ() + 0.5D);
+        VillageInterSettlementFreightService.handlePorter(f.porter(), f.level());
+        if (count(f.target(), Items.COBBLESTONE) != 16
+                || f.target().getItem(0).get(DataComponents.CUSTOM_NAME) != null
+                || f.source().getItem(0).getCount() != 64) {
+            helper.fail("Inter-village ItemStack components were silently replaced", MARK);
             return;
         }
         helper.succeed();
