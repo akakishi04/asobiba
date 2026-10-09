@@ -140,7 +140,14 @@ public final class VillageRiverCargoGameTests {
                             + ", aheadWater=" + test.level().getFluidState(ahead).isSource()
                             + ", aheadAir=" + test.level().getBlockState(ahead.above()).isAir()
                             + ", aheadNavigable=" + VillageRiverNavigationService.navigable(
-                                    test.level(), ahead),
+                                    test.level(), ahead)
+                            + ", actualDockContainer=" + (VillageRiverCargoService.dockBarrel(
+                                    test.level(), test.data(), test.route().villageId(),
+                                    test.route().to()) != null)
+                            + ", toDistance=" + horizontalDistance(boat, test.end())
+                            + ", cargoManifest=" + boat.getPersistentData()
+                                    .getString("asobibatweaks_river_cargo_item")
+                            + ", dockReceipt=" + test.route().dockReceipts(true),
                             TEST_MARKER);
                 }
             });
