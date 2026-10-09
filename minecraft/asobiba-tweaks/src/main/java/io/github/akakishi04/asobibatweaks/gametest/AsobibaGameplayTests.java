@@ -11,6 +11,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.CustomData;
@@ -132,8 +133,16 @@ public final class AsobibaGameplayTests {
 
     @GameTest(template = "empty3x3x3", timeoutTicks = 165)
     public static void furnaceEfficiencyAffectsRealSmelting(GameTestHelper helper) {
+        // On a GameTestServer without a nearby human, an otherwise perfectly
+        // initialized furnace can stop receiving normal block-entity ticks.
+        // Keep a genuine mock ServerPlayer standing on its physically stable
+        // test block, as in the real loaded survival-world experience.
+        helper.setBlock(CENTER.below(), Blocks.STONE);
         helper.setBlock(CENTER, Blocks.FURNACE);
         BlockPos absolute = helper.absolutePos(CENTER);
+        ServerPlayer observer = helper.makeMockServerPlayerInLevel();
+        observer.setPos(absolute.getX() + 0.5D,
+                absolute.getY() + 1.0D, absolute.getZ() + 0.5D);
         var entity = helper.getLevel().getBlockEntity(absolute);
         if (!(entity instanceof AbstractFurnaceBlockEntity furnace)) {
             helper.fail("GameTest furnace block entity was not created", CENTER);
@@ -158,8 +167,10 @@ public final class AsobibaGameplayTests {
             try {
                 if (!furnace.getItem(2).is(Items.IRON_INGOT)
                         || !furnace.getItem(0).isEmpty()) {
-                    helper.fail("Efficiency X did not finish a real recipe within 125 ticks",
-                            CENTER);
+                    helper.fail("Efficiency X did not finish a real recipe within 125 ticks"
+                            + " with loaded observer at " + observer.blockPosition()
+                            + "; actual input=" + furnace.getItem(0)
+                            + ", output=" + furnace.getItem(2), CENTER);
                 }
             } finally {
                 persisted.remove(absolute.asLong());
