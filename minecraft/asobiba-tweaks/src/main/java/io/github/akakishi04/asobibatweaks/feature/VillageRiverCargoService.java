@@ -110,7 +110,8 @@ public final class VillageRiverCargoService {
             Container source = dockBarrel(level, data, route.villageId(), sourcePoint);
             Container target = dockBarrel(level, data, route.villageId(),
                     forward ? route.to() : route.from());
-            CargoChoice cargo = chooseCargo(source, target);
+            CargoChoice cargo = chooseCargo(source, target,
+                    route.dockReceipts(!forward));
             if (cargo == null) return;
             // The boat physically receives the same stack removed from the
             // source Barrel. Nothing is copied or regenerated on departure.
@@ -157,7 +158,8 @@ public final class VillageRiverCargoService {
             // Ordinary second-leg loading uses the same conservation rules.
             Container origin = dockBarrel(level, data, route.villageId(),
                     forward ? route.from() : route.to());
-            CargoChoice backhaul = chooseCargo(destination, origin);
+            CargoChoice backhaul = chooseCargo(destination, origin,
+                    route.dockReceipts(destinationAtTo));
             if (backhaul != null) {
                 ItemStack picked = destination.removeItem(
                         backhaul.slot(), backhaul.count());
@@ -248,10 +250,12 @@ public final class VillageRiverCargoService {
         if (first == null || second == null) return null;
 
         boolean forward = true;
-        CargoChoice shipment = chooseCargo(first, second);
+        CargoChoice shipment = chooseCargo(first, second,
+                route.dockReceipts(false));
         Container source = first;
         if (shipment == null) {
-            shipment = chooseCargo(second, first);
+            shipment = chooseCargo(second, first,
+                    route.dockReceipts(true));
             source = second;
             forward = false;
         }
@@ -334,15 +338,24 @@ public final class VillageRiverCargoService {
     }
 
     /** Conservative small-stacks-only freight, never private equipment. */
-    private static CargoChoice chooseCargo(Container source, Container destination) {
+    private static CargoChoice chooseCargo(
+            Container source, Container destination,
+            java.util.Map<String, Integer> pendingDockDeliveries) {
         if (source == null || destination == null) return null;
         for (int slot = 0; slot < source.getContainerSize(); slot++) {
             ItemStack stack = source.getItem(slot);
-            if (stack.isEmpty() || stack.getCount() < 32 || !approved(stack)) continue;
+            if (stack.isEmpty() || !approved(stack)) continue;
+            String key = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+            // Boat arrivals are already owned by the local warehouse
+            // transfer backlog. Never send the same stock straight back.
+            int awaitingPorter = pendingDockDeliveries.getOrDefault(key, 0);
+            int available = stack.getCount() - awaitingPorter;
+            if (available < 32) continue;
             int destinationCount = countMatching(destination, stack);
             if (destinationCount >= 16) continue;
-            return new CargoChoice(slot, Math.min(
-                    MAX_SHIPMENT, Math.min(stack.getCount() - 16, 16 - destinationCount)));
+            int quantity = Math.min(MAX_SHIPMENT,
+                    Math.min(available - 16, 16 - destinationCount));
+            if (quantity > 0) return new CargoChoice(slot, quantity);
         }
         return null;
     }
