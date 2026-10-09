@@ -118,5 +118,8 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT42 | sameItemWithDifferentComponentsIsNotSwapped | Custom-named and plain stacks of one vanilla item remain distinguishable during real cross-village pickup/delivery |
 | GT43 | stoneSupplyCategoryBlocksRedundantCobbleExport | Real Stone inventory satisfies the same construction category as Cobblestone; redundant import does not start or move any items |
 | GT44 | reservedConstructionMaterialRemainsAtHome | A real resource reservation reduces exportable source-category stock and preserves the intended building material |
+| GT45 | upperFloorRequiresPhysicalOrientedStairsAndSafeLanding | A real four-tread staircase requires the correct physical orientation, safe landing support and open stairwell; a turned or blocked tread denies upper-floor recognition |
+| GT46 | multistoryBlueprintKeepsUpperLandingFreeOfBeds | New 2-/3-storey village house plans allocate physically distinct roof openings, stairs and safely placed beds, with no landing occupied by bedroom furniture |
+| GT47 | threeStoryRevalidationFitsDefaultBoundedProbeBudget | 2-story and 3-story built-house semantic scans use 54 and 81 interior cells, not the 325-cell 3-story shell that exceeds the default 256-probe budget |
 
 These tests are **not** a full acceptance of G01-G22: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.

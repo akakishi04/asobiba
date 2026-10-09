@@ -4,11 +4,14 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.Container;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.BedBlock;
+import net.minecraft.world.level.block.StairBlock;
+import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BedPart;
@@ -175,6 +178,55 @@ public final class VillageBuildingService {
         if (!touchedVillages.isEmpty()) data.touch();
     }
 
+    /**
+     * V89: direct, bounded validation of the intentionally supported 5x5
+     * staircase family. Three rising EAST treads and a SOUTH turning tread
+     * connect each floor, with real upper landing support and headroom.
+     * Missing or rotated physical stairs fail closed; no upper-floor capacity
+     * is inferred from the mere presence of higher beds.
+     */
+    static boolean connectedUpperStories(ServerLevel level, BlockPos base, int stories) {
+        if (stories < 1 || stories > 2) return false;
+        for (int floor = 0; floor < stories; floor++) {
+            int offsetY = floor * 4;
+            for (int x = 1; x <= 3; x++) {
+                BlockPos tread = base.offset(x, x + offsetY, 1);
+                if (!VillageSimulationScheduler.isChunkLoaded(level, tread)
+                        || !isStairFacing(level.getBlockState(tread), Direction.EAST)
+                        || !level.getBlockState(tread.above()).isAir()) return false;
+            }
+            BlockPos turn = base.offset(3, 4 + offsetY, 2);
+            BlockPos opening = base.offset(3, 4 + offsetY, 1);
+            BlockPos upperLanding = base.offset(3, 5 + offsetY, 3);
+            if (!VillageSimulationScheduler.isChunkLoaded(level, turn)
+                    || !VillageSimulationScheduler.isChunkLoaded(level, upperLanding)
+                    || !isStairFacing(level.getBlockState(turn), Direction.SOUTH)
+                    || !level.getBlockState(turn.above()).isAir()
+                    || !level.getBlockState(opening).isAir()
+                    || !level.getBlockState(opening.above()).isAir()
+                    || !level.getBlockState(upperLanding).isAir()
+                    || !level.getBlockState(upperLanding.above()).isAir()
+                    || !level.getBlockState(upperLanding.below()).isFaceSturdy(
+                            level, upperLanding.below(), Direction.UP)) return false;
+        }
+        return true;
+    }
+
+    static boolean templateInteriorCell(BlockPos base, BlockPos pos, int floors) {
+        int x = pos.getX() - base.getX();
+        int y = pos.getY() - base.getY();
+        int z = pos.getZ() - base.getZ();
+        if (x < 1 || x > 3 || z < 1 || z > 3) return false;
+        return y >= 1 && y <= 3 || y >= 5 && y <= 7
+                || floors == 3 && y >= 9 && y <= 11;
+    }
+
+    private static boolean isStairFacing(BlockState state, Direction direction) {
+        return state.getBlock() instanceof StairBlock
+                && state.hasProperty(HorizontalDirectionalBlock.FACING)
+                && state.getValue(HorizontalDirectionalBlock.FACING) == direction;
+    }
+
     private static boolean revalidateBuilding(ServerLevel level, VillageSavedData.BuildingRecord building) {
         int beds = 0;
         int containers = 0;
@@ -185,7 +237,21 @@ public final class VillageBuildingService {
 
         BlockPos min = building.min();
         BlockPos max = building.max();
+        boolean twoStoryTemplate = building.villageBuilt()
+                && ("house_2story_5x5".equals(building.templateId())
+                    || "house_3story_5x5".equals(building.templateId()));
+        boolean secondStoryAccessible = twoStoryTemplate
+                && connectedUpperStories(level, min, 1);
+        boolean thirdStoryAccessible = secondStoryAccessible
+                && "house_3story_5x5".equals(building.templateId())
+                && connectedUpperStories(level, min, 2);
         for (BlockPos pos : BlockPos.betweenClosed(min, max)) {
+            // A 5x13x5 three-storey shell exceeds the default 256-probe
+            // budget before reaching its third floor. Its recognized vanilla
+            // beds and safe standing places all belong to the small bounded
+            // 3x3 interiors, not the outer roof/wall block volume.
+            if (twoStoryTemplate && !templateInteriorCell(min, pos,
+                    "house_3story_5x5".equals(building.templateId()) ? 3 : 2)) continue;
             if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) return false;
 
             BlockState state = level.getBlockState(pos);
@@ -196,7 +262,22 @@ public final class VillageBuildingService {
             if (usableAnchor && state.getBlock() instanceof BedBlock
                     && state.hasProperty(BedBlock.PART)
                     && state.getValue(BedBlock.PART) == BedPart.FOOT) {
-                beds++;
+                Direction facing = state.getValue(BedBlock.FACING);
+                BlockState head = level.getBlockState(pos.relative(facing));
+                // A detached Bed foot is never housing capacity. For new
+                // multistorey village shells, count only physically connected
+                // and reachable upper rooms, not any bed in a cuboid.
+                boolean wholeBed = head.getBlock() == state.getBlock()
+                        && head.hasProperty(BedBlock.PART)
+                        && head.getValue(BedBlock.PART) == BedPart.HEAD
+                        && head.getValue(BedBlock.FACING) == facing;
+                boolean routeValid = !twoStoryTemplate
+                        || (pos.getY() < min.getY() + 5
+                            || pos.getY() < min.getY() + 9 && secondStoryAccessible
+                            || thirdStoryAccessible)
+                        && VillageBuildingAdoptionService.hasAdjacentStandingSpace(
+                                level, pos, min, max);
+                if (wholeBed && routeValid) beds++;
             }
             if (state.is(BlockTags.DOORS)) doors++;
             if (usableAnchor && level.getBlockEntity(pos) instanceof Container) {

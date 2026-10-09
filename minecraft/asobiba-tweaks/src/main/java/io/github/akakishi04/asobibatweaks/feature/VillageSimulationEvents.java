@@ -1238,8 +1238,10 @@ public final class VillageSimulationEvents {
                     .setValue(BedBlock.PART, BedPart.FOOT)
                     .setValue(HorizontalDirectionalBlock.FACING, Direction.SOUTH);
             BlockState extraGroundHead = extraGroundFoot.setValue(BedBlock.PART, BedPart.HEAD);
-            steps.add(new BuildStep(base.offset(1, 1, 2), extraGroundFoot, null));
-            steps.add(new BuildStep(base.offset(1, 1, 3), extraGroundHead, null));
+            int extraGroundX = "house_2story_5x5".equals(project.templateId())
+                    || "house_3story_5x5".equals(project.templateId()) ? 3 : 1;
+            steps.add(new BuildStep(base.offset(extraGroundX, 1, 2), extraGroundFoot, null));
+            steps.add(new BuildStep(base.offset(extraGroundX, 1, 3), extraGroundHead, null));
         }
 
         if (Boolean.parseBoolean(project.parameter("outpost"))) {
@@ -1264,7 +1266,7 @@ public final class VillageSimulationEvents {
             // Replace the single-story roof layer with a second floor and add an upper shell/roof.
             steps.removeIf(step -> step.pos.getY() == base.getY() + 4);
             for (int x = 0; x < 5; x++) for (int z = 0; z < 5; z++) {
-                if (x == 3 && z == 1) continue; // stair opening
+                if (x == 3 && (z == 1 || z == 2)) continue; // stair flight and landing
                 steps.add(new BuildStep(base.offset(x, 4, z), plank, plankItem));
             }
             for (int y = 5; y <= 7; y++) {
@@ -1279,30 +1281,38 @@ public final class VillageSimulationEvents {
             }
             // Simple internal stair spine; material cost remains real plank-equivalent.
             Block stair = stairsForPlank(plankBlock);
-            BlockState stairState = stair.defaultBlockState();
+            BlockState stairState = stair.defaultBlockState()
+                    .setValue(HorizontalDirectionalBlock.FACING, Direction.EAST);
+            BlockState landingStair = stair.defaultBlockState()
+                    .setValue(HorizontalDirectionalBlock.FACING, Direction.SOUTH);
             steps.add(new BuildStep(base.offset(1, 1, 1), stairState, stair.asItem()));
             steps.add(new BuildStep(base.offset(2, 2, 1), stairState, stair.asItem()));
             steps.add(new BuildStep(base.offset(3, 3, 1), stairState, stair.asItem()));
+            steps.add(new BuildStep(base.offset(3, 4, 2), landingStair, stair.asItem()));
 
             BlockState upperBedFoot = Blocks.WHITE_BED.defaultBlockState()
                     .setValue(BedBlock.PART, BedPart.FOOT)
                     .setValue(HorizontalDirectionalBlock.FACING, Direction.SOUTH);
             BlockState upperBedHead = upperBedFoot.setValue(BedBlock.PART, BedPart.HEAD);
-            steps.add(new BuildStep(base.offset(2, 5, 2), upperBedFoot, null));
-            steps.add(new BuildStep(base.offset(2, 5, 3), upperBedHead, null));
+            steps.add(new BuildStep(base.offset(1, 5, 2), upperBedFoot, null));
+            steps.add(new BuildStep(base.offset(1, 5, 3), upperBedHead, null));
 
-            BlockState extraUpperBedFoot = Blocks.WHITE_BED.defaultBlockState()
-                    .setValue(BedBlock.PART, BedPart.FOOT)
-                    .setValue(HorizontalDirectionalBlock.FACING, Direction.SOUTH);
-            BlockState extraUpperBedHead = extraUpperBedFoot.setValue(BedBlock.PART, BedPart.HEAD);
-            steps.add(new BuildStep(base.offset(3, 5, 2), extraUpperBedFoot, null));
-            steps.add(new BuildStep(base.offset(3, 5, 3), extraUpperBedHead, null));
+            // One upper bed remains when a third-storey stair flight consumes
+            // the otherwise available upper-floor furnishing space.
+            if (!"house_3story_5x5".equals(project.templateId())) {
+                BlockState extraUpperBedFoot = Blocks.WHITE_BED.defaultBlockState()
+                        .setValue(BedBlock.PART, BedPart.FOOT)
+                        .setValue(HorizontalDirectionalBlock.FACING, Direction.WEST);
+                BlockState extraUpperBedHead = extraUpperBedFoot.setValue(BedBlock.PART, BedPart.HEAD);
+                steps.add(new BuildStep(base.offset(2, 5, 1), extraUpperBedFoot, null));
+                steps.add(new BuildStep(base.offset(1, 5, 1), extraUpperBedHead, null));
+            }
 
             if ("house_3story_5x5".equals(project.templateId())) {
                 // Turn the second-story roof into a third-story floor with a stair opening.
                 steps.removeIf(step -> step.pos.getY() == base.getY() + 8);
                 for (int x = 0; x < 5; x++) for (int z = 0; z < 5; z++) {
-                    if (x == 3 && z == 1) continue;
+                    if (x == 3 && (z == 1 || z == 2)) continue;
                     steps.add(new BuildStep(base.offset(x, 8, z), plank, plankItem));
                 }
                 for (int y = 9; y <= 11; y++) {
@@ -1321,20 +1331,21 @@ public final class VillageSimulationEvents {
                 steps.add(new BuildStep(base.offset(1, 5, 1), stairState, stair.asItem()));
                 steps.add(new BuildStep(base.offset(2, 6, 1), stairState, stair.asItem()));
                 steps.add(new BuildStep(base.offset(3, 7, 1), stairState, stair.asItem()));
+                steps.add(new BuildStep(base.offset(3, 8, 2), landingStair, stair.asItem()));
 
                 BlockState thirdBedFoot = Blocks.WHITE_BED.defaultBlockState()
                         .setValue(BedBlock.PART, BedPart.FOOT)
                         .setValue(HorizontalDirectionalBlock.FACING, Direction.SOUTH);
                 BlockState thirdBedHead = thirdBedFoot.setValue(BedBlock.PART, BedPart.HEAD);
-                steps.add(new BuildStep(base.offset(2, 9, 2), thirdBedFoot, null));
-                steps.add(new BuildStep(base.offset(2, 9, 3), thirdBedHead, null));
+                steps.add(new BuildStep(base.offset(1, 9, 2), thirdBedFoot, null));
+                steps.add(new BuildStep(base.offset(1, 9, 3), thirdBedHead, null));
 
                 BlockState extraThirdBedFoot = Blocks.WHITE_BED.defaultBlockState()
                         .setValue(BedBlock.PART, BedPart.FOOT)
-                        .setValue(HorizontalDirectionalBlock.FACING, Direction.SOUTH);
+                        .setValue(HorizontalDirectionalBlock.FACING, Direction.WEST);
                 BlockState extraThirdBedHead = extraThirdBedFoot.setValue(BedBlock.PART, BedPart.HEAD);
-                steps.add(new BuildStep(base.offset(3, 9, 2), extraThirdBedFoot, null));
-                steps.add(new BuildStep(base.offset(3, 9, 3), extraThirdBedHead, null));
+                steps.add(new BuildStep(base.offset(2, 9, 1), extraThirdBedFoot, null));
+                steps.add(new BuildStep(base.offset(1, 9, 1), extraThirdBedHead, null));
             }
         }
         return steps;
