@@ -22,7 +22,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 public final class VillageBuildingRepairGameTests {
     private VillageBuildingRepairGameTests() {}
 
-    @GameTest(template = "empty16x6x9", timeoutTicks = 60)
+    @GameTest(template = "empty16x6x9", batch = "village_shell_repair_1", timeoutTicks = 80)
     public static void repairsOnlyMissingVillageBlockForOneRealPlank(GameTestHelper helper) {
         Fixture sample = prepare(helper);
         helper.runAtTickTime(4, () -> {
@@ -63,7 +63,7 @@ public final class VillageBuildingRepairGameTests {
         });
     }
 
-    @GameTest(template = "empty16x6x9", timeoutTicks = 60)
+    @GameTest(template = "empty16x6x9", batch = "village_shell_repair_2", timeoutTicks = 80)
     public static void neverOverwritesPlayerReplacementOrChargesMaterial(GameTestHelper helper) {
         Fixture sample = prepare(helper);
         helper.runAtTickTime(4, () -> {

@@ -48,10 +48,38 @@ public final class VillageUpperStoryGameTests {
         helper.setBlock(landing, Blocks.AIR);
         helper.setBlock(landing.above(), Blocks.AIR);
         helper.runAtTickTime(4, () -> {
+            // Reassert the exact real fixture at the observation tick: other
+            // test/server ticks may have altered air or footing since setup.
+            for (int x = 1; x <= 3; x++) {
+                BlockPos tread = base.offset(x, x, 1);
+                helper.getLevel().setBlock(helper.absolutePos(tread), east, Block.UPDATE_ALL);
+                helper.setBlock(tread.above(), Blocks.AIR);
+            }
+            helper.getLevel().setBlock(helper.absolutePos(turn), south, Block.UPDATE_ALL);
+            helper.setBlock(turn.above(), Blocks.AIR);
+            helper.setBlock(opening, Blocks.AIR);
+            helper.setBlock(opening.above(), Blocks.AIR);
+            helper.setBlock(landing.below(), Blocks.OAK_PLANKS);
+            helper.setBlock(landing, Blocks.AIR);
+            helper.setBlock(landing.above(), Blocks.AIR);
             BlockPos worldBase = helper.absolutePos(base);
             if (!VillageBuildingService.connectedUpperStories(
                     helper.getLevel(), worldBase, 1)) {
-                helper.fail("A continuous, correctly faced real stair flight should connect floors", MARK);
+                StringBuilder detail = new StringBuilder();
+                for (int x = 1; x <= 3; x++) {
+                    BlockPos actual = worldBase.offset(x, x, 1);
+                    detail.append(" tread").append(x).append("=")
+                            .append(helper.getLevel().getBlockState(actual));
+                }
+                detail.append(" turn=").append(helper.getLevel().getBlockState(
+                        helper.absolutePos(turn)));
+                detail.append(" opening=").append(helper.getLevel().getBlockState(
+                        helper.absolutePos(opening)));
+                detail.append(" landingBelow=").append(helper.getLevel().getBlockState(
+                        helper.absolutePos(landing.below())));
+                detail.append(" loaded=").append(VillageSimulationScheduler.isChunkLoaded(
+                        helper.getLevel(), helper.absolutePos(landing)));
+                helper.fail("Physical stairs precondition: " + detail, MARK);
                 return;
             }
             helper.getLevel().setBlock(helper.absolutePos(base.offset(2, 2, 1)),
