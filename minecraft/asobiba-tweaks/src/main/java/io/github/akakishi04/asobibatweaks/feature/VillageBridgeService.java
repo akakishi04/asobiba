@@ -266,12 +266,25 @@ public final class VillageBridgeService {
                 reachedWater = true;
             } else {
                 if (reachedWater) passedWater = true;
-                if (!naturalBank(level.getBlockState(surface))
-                        && !level.getBlockState(surface).is(Blocks.DIRT_PATH)
-                        && !level.getBlockState(surface).is(Blocks.STONE_BRICKS))
-                    return false;
                 if (Math.abs(y - crossing.waterY()) > 1) return false;
-                if (!clearHeadroom(level, surface, 2)) return false;
+                for (int lane = 0; lane < crossing.width(); lane++) {
+                    BlockPos other = side(surface, dir,
+                            laneOffset(crossing.width(), lane));
+                    if (!VillageSimulationScheduler.isChunkLoaded(level, other)
+                            || !VillageSimulationScheduler.tryConsumeBlockProbe(level))
+                        return false;
+                    int laneY = level.getHeight(
+                            Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                            other.getX(), other.getZ()) - 1;
+                    if (Math.abs(laneY - y) > 1) return false;
+                    BlockPos ground = withY(other, laneY);
+                    BlockState groundState = level.getBlockState(ground);
+                    if (!naturalBank(groundState)
+                            && !groundState.is(Blocks.DIRT_PATH)
+                            && !groundState.is(Blocks.STONE_BRICKS))
+                        return false;
+                    if (!clearHeadroom(level, ground, 2)) return false;
+                }
             }
             if (previousY != Integer.MIN_VALUE
                     && Math.abs(y - previousY) > 1) return false;
