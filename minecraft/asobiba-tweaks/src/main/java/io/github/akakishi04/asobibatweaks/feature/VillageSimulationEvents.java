@@ -278,7 +278,9 @@ public final class VillageSimulationEvents {
             return;
         }
 
-        boolean housingNeed = beds <= population + 1;
+        VillageHousingPlanner.Demand housingDemand =
+                VillageHousingPlanner.assess(level, data, villageId.get(), population, beds);
+        boolean housingNeed = housingDemand.build();
         boolean storageNeed = stores < Math.max(2, (population + 3) / 4);
 
         // Restore a small number of genuine missing shell blocks in existing
@@ -359,7 +361,7 @@ public final class VillageSimulationEvents {
 
         VillageSavedData.ProjectRecord project = data.createProject(
                 villageId.get(), "building",
-                housingNeed ? 80 : storageNeed ? 70
+                housingNeed ? housingDemand.acute() ? 90 : 75 : storageNeed ? 70
                         : craftHallNeed || !specialist.isBlank() ? 65 : 40, site);
         project.setTemplateId(templateId);
         project.setVariantSeed(villager.getUUID().getLeastSignificantBits() ^ site.asLong());
@@ -1020,6 +1022,14 @@ public final class VillageSimulationEvents {
         VillagerSimData.setCarpentrySkill(villager, Math.min(100, skill + skillGain));
 
         registerCompletedProject(villager, level, project);
+        if (project.templateId().startsWith("house_")
+                && !Boolean.parseBoolean(project.parameter("outpost"))
+                && !Boolean.parseBoolean(project.parameter("colony"))) {
+            // Prevent speculative detached construction immediately after a
+            // finished real house, except for genuinely acute shortages.
+            VillageHousingPlanner.recordFinishedHouse(
+                    level, data, project.villageId());
+        }
 
         BlockPos anchor = project.anchor() != null ? project.anchor() : villager.blockPosition();
         if (AsobibaTweaksConfig.VILLAGE_ROADS_ENABLED.getAsBoolean()) {
