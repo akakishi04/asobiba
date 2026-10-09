@@ -289,6 +289,11 @@ public final class VillageSimulationEvents {
             villager.getPersistentData().putLong(NEXT_BUILD, now + 2400L);
             return;
         }
+        if (housingNeed && VillageHouseReuseService.tryPlan(
+                villager, level, villageId.get())) {
+            villager.getPersistentData().putLong(NEXT_BUILD, now + 2400L);
+            return;
+        }
 
         // Reuse a safe, publicly usable player-adopted structure before
         // spending a full new-building budget. Only completed workstation
@@ -446,6 +451,10 @@ public final class VillageSimulationEvents {
         }
         if (VillageBuildingRepairService.TEMPLATE.equals(project.templateId())) {
             VillageBuildingRepairService.advance(villager, level, project);
+            return;
+        }
+        if (VillageHouseReuseService.TEMPLATE.equals(project.templateId())) {
+            VillageHouseReuseService.advance(villager, level, project);
             return;
         }
 
