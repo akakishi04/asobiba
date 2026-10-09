@@ -121,5 +121,8 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT45 | upperFloorRequiresPhysicalOrientedStairsAndSafeLanding | A real four-tread staircase requires the correct physical orientation, safe landing support and open stairwell; a turned or blocked tread denies upper-floor recognition |
 | GT46 | multistoryBlueprintKeepsUpperLandingFreeOfBeds | New 2-/3-storey village house plans allocate physically distinct roof openings, stairs and safely placed beds, with no landing occupied by bedroom furniture |
 | GT47 | threeStoryRevalidationFitsDefaultBoundedProbeBudget | 2-story and 3-story built-house semantic scans use 54 and 81 interior cells, not the 325-cell 3-story shell that exceeds the default 256-probe budget |
+| GT48 | alreadyPresentFoundationAdvancesWithoutPayingAgain | An exact structural block already present when construction resumes advances the durable cursor and releases only the corresponding bookkeeping reservation without any material debit |
+| GT49 | completedTwoHalfBedReconcilesExactlyOneUnpaidCursor | A matching real two-block Bed assembled before its project cursor advanced is acknowledged once, without consuming another three wool and three planks |
+| GT50 | brokenBedHalfNeverApprovesFreeCompletedBed | A partially missing or player-obstructed bed head cannot be mistaken for completed usable furniture or allow the work cursor and reservations to advance |
 
 These tests are **not** a full acceptance of G01-G22: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.

@@ -482,6 +482,21 @@ public final class VillageSimulationEvents {
             return;
         }
 
+        // A completed physical step may have been saved before its ProjectRecord
+        // cursor. Reconcile the exact expected world state BEFORE withdrawing
+        // another real material from the Carpenter or village warehouse.
+        if (reconcileCompletedBuildingStep(level, project, plan)) return;
+
+        // Never replace existing player-modified solid blocks just because they
+        // share the same base Block (e.g. an EAST stair rotated to NORTH).
+        BlockState targetBefore = level.getBlockState(step.pos);
+        if (!targetBefore.canBeReplaced()) {
+            project.setPausedReason("building target occupied or state modified");
+            project.setPhase("paused");
+            VillageSavedData.get(level).touch();
+            return;
+        }
+
         boolean bedFoot = step.state.getBlock() instanceof BedBlock
                 && step.state.hasProperty(BedBlock.PART)
                 && step.state.getValue(BedBlock.PART) == BedPart.FOOT;
@@ -515,7 +530,7 @@ public final class VillageSimulationEvents {
         }
 
         BlockState existing = level.getBlockState(step.pos);
-        if (!existing.canBeReplaced() && !existing.is(step.state.getBlock())) {
+        if (!existing.canBeReplaced() && !existing.equals(step.state)) {
             project.setPausedReason("site changed");
             project.setPhase("paused");
             VillageSavedData.get(level).touch();
@@ -552,7 +567,20 @@ public final class VillageSimulationEvents {
                     CARPENTER_CARGO_SLOTS, step.cost, 1)) {
                 return;
             }
-            level.setBlock(step.pos, step.state, Block.UPDATE_ALL);
+            if (!level.setBlock(step.pos, step.state, Block.UPDATE_ALL)) {
+                // The inventory debit happened above, but nothing was built.
+                // Refund that SAME physical material into the worker's saved
+                // cargo or as a real dropped item when cargo has no room.
+                if (step.cost != null) {
+                    ItemStack refund = VillagerSimData.insertWorkCargo(
+                            villager, level.registryAccess(),
+                            new ItemStack(step.cost), CARPENTER_CARGO_SLOTS);
+                    if (!refund.isEmpty()) villager.spawnAtLocation(refund);
+                }
+                project.setPausedReason("placement rejected: material refunded");
+                VillageSavedData.get(level).touch();
+                return;
+            }
             project.setWorkCursor(stepIndex + 1);
             if (step.cost != null) {
                 decrementProjectReservation(project, VillageStorageService.itemKey(step.cost), 1);
@@ -562,6 +590,48 @@ public final class VillageSimulationEvents {
         project.setPausedReason("");
         project.setPhase(projectPhase(project));
         VillageSavedData.get(level).touch();
+    }
+
+    /**
+     * Restart-safe acknowledgement of an already completed physical project
+     * step. This must run before cargo acquisition. For beds, BOTH real halves
+     * with their full facing/part states must match the blueprint; a broken
+     * half-bed is not accepted as completed housing.
+     *
+     * Reconcile the outstanding *bookkeeping* reservations only. Nothing is
+     * added to, taken from or fabricated in physical inventories.
+     */
+    static boolean reconcileCompletedBuildingStep(
+            ServerLevel level, VillageSavedData.ProjectRecord project,
+            List<BuildStep> plan) {
+        int cursor = project.workCursor();
+        if (cursor < 0 || cursor >= plan.size()) return false;
+        BuildStep step = plan.get(cursor);
+        if (!VillageSimulationScheduler.isChunkLoaded(level, step.pos)
+                || !level.getBlockState(step.pos).equals(step.state)) return false;
+
+        boolean bedFoot = step.state.getBlock() instanceof BedBlock
+                && step.state.hasProperty(BedBlock.PART)
+                && step.state.getValue(BedBlock.PART) == BedPart.FOOT;
+        int advance = 1;
+        if (bedFoot) {
+            Direction facing = step.state.getValue(HorizontalDirectionalBlock.FACING);
+            BlockPos headPos = step.pos.relative(facing);
+            BlockState expectedHead = step.state.setValue(BedBlock.PART, BedPart.HEAD);
+            if (!VillageSimulationScheduler.isChunkLoaded(level, headPos)
+                    || !level.getBlockState(headPos).equals(expectedHead)) return false;
+            advance = 2;
+            decrementProjectReservation(project, "tag:minecraft:wool", 3);
+            decrementProjectReservation(project, "tag:minecraft:planks", 3);
+        } else if (step.cost != null) {
+            decrementProjectReservation(project,
+                    VillageStorageService.itemKey(step.cost), 1);
+        }
+        project.setWorkCursor(Math.min(plan.size(), cursor + advance));
+        project.setPausedReason("");
+        project.setPhase(projectPhase(project));
+        VillageSavedData.get(level).touch();
+        return true;
     }
 
     private static void initializeProjectReservations(
