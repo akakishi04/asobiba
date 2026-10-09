@@ -315,7 +315,15 @@ public final class VillageBridgeService {
 
         BlockState old = level.getBlockState(step.position());
         if (old.is(step.state().getBlock())) {
-            // A correctly preserved already-placed block needs no second debit.
+            // Existing water piers count as already complete only if they
+            // genuinely remain waterlogged with a real source fluid.
+            if (step.waterlogged() && (!old.hasProperty(
+                    BlockStateProperties.WATERLOGGED)
+                    || !old.getValue(BlockStateProperties.WATERLOGGED)
+                    || !sourceWater(level, step.position()))) {
+                pause(data, project, "existing pier not waterlogged");
+                return;
+            }
             advanceCursor(data, level, project, plan, null);
             return;
         }
@@ -384,9 +392,33 @@ public final class VillageBridgeService {
                                VillageSavedData.ProjectRecord project, List<Step> plan) {
         for (Step step : plan) {
             if (!VillageSimulationScheduler.isChunkLoaded(level, step.position())
-                    || !level.getBlockState(step.position()).is(step.state().getBlock())) {
+                    || !level.getBlockState(step.position()).is(step.state().getBlock())
+                    || step.waterlogged() && (!level.getBlockState(step.position())
+                            .hasProperty(BlockStateProperties.WATERLOGGED)
+                            || !level.getBlockState(step.position())
+                                    .getValue(BlockStateProperties.WATERLOGGED)
+                            || !sourceWater(level, step.position()))) {
                 pause(data, project, "physical bridge incomplete");
                 return;
+            }
+        }
+        Direction face = direction(project.parameter(FACING));
+        BlockPos first = BlockPos.of(Long.parseLong(project.parameter(SOURCE)));
+        int waterY = number(project.parameter(WATER_Y), Integer.MIN_VALUE);
+        int span = number(project.parameter(SPAN), 0);
+        int width = number(project.parameter(WIDTH), 0);
+        if (face == null) {
+            pause(data, project, "bridge facing missing");
+            return;
+        }
+        for (int i = 0; i < span; i++) {
+            for (int lane = 0; lane < width; lane++) {
+                BlockPos actual = withY(side(first.relative(face, i), face,
+                        laneOffset(width, lane)), waterY);
+                if (!sourceWater(level, actual)) {
+                    pause(data, project, "boat channel under bridge changed");
+                    return;
+                }
             }
         }
         project.clearReservations();
