@@ -676,6 +676,30 @@ public final class VillageSimulationEvents {
 
         int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
         BlockPos surface = new BlockPos(x, y - 1, z);
+        if (centerCursor > 0) {
+            RoadPoint previous = roadPointAt(roadNodes, centerCursor - 1);
+            BlockPos previousColumn = new BlockPos(
+                    previous.pos().getX(), level.getMinBuildHeight(),
+                    previous.pos().getZ());
+            if (!VillageSimulationScheduler.isChunkLoaded(level, previousColumn)
+                    || !VillageSimulationScheduler.tryConsumeBlockProbe(level)) {
+                project.setPausedReason("previous road grade unobserved");
+                data.touch();
+                return;
+            }
+            int previousY = level.getHeight(
+                    Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                    previous.pos().getX(), previous.pos().getZ()) - 1;
+            if (Math.abs(surface.getY() - previousY) > 1) {
+                // An unsupported two-plus-block step is not passable to
+                // ordinary villagers. Never fake a road merely by replacing
+                // natural cliff or player-built staircase geometry.
+                project.setPausedReason("unsafe road grade; reroute or stairs required");
+                project.setPhase("paused");
+                data.touch();
+                return;
+            }
+        }
         if (villager.distanceToSqr(surface.getCenter()) > 7.0D * 7.0D) {
             project.setPausedReason("worker travelling");
             project.setPhase("roadwork");
