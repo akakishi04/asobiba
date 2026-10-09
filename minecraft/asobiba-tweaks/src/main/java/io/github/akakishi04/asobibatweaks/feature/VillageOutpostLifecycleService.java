@@ -427,7 +427,10 @@ public final class VillageOutpostLifecycleService {
         boolean needsOutputHaul = localOutputCount(data, site) >= 16;
         boolean needsFoodSupply = localFoodCount(data, site) < foodTarget(site);
         boolean needsFarmSupply = needsFarmPlantingSupply(data, site);
-        if (!needsOutputHaul && !needsFoodSupply && !needsFarmSupply) return;
+        boolean needsRiverFreight = VillageRiverPorterService.hasPendingDockDelivery(
+                level, data, village, site);
+        if (!needsOutputHaul && !needsFoodSupply
+                && !needsFarmSupply && !needsRiverFreight) return;
 
         List<Villager> residents = level.getEntitiesOfClass(
                 Villager.class,
@@ -450,7 +453,9 @@ public final class VillageOutpostLifecycleService {
                     VillagerSimData.setOutpostSiteId(v, site.id());
                     VillagerSimData.setOutpostHaulMode(v,
                             needsFoodSupply ? "supply_pickup"
-                                    : needsFarmSupply ? "farm_supply_pickup" : "output_pickup");
+                                    : needsFarmSupply ? "farm_supply_pickup"
+                                    : needsOutputHaul ? "output_pickup"
+                                    : "river_dock_travel");
                 });
     }
 
@@ -473,6 +478,9 @@ public final class VillageOutpostLifecycleService {
                 mode = "farm_supply_pickup";
             } else if (localOutputCount(data, site) >= 16) {
                 mode = "output_pickup";
+            } else if (VillageRiverPorterService.hasPendingDockDelivery(
+                    level, data, village, site)) {
+                mode = "river_dock_travel";
             } else {
                 VillagerSimData.clearOutpostSiteId(villager);
                 return true;
@@ -481,6 +489,17 @@ public final class VillageOutpostLifecycleService {
         }
 
         switch (mode) {
+            case "river_dock_travel" -> {
+                BlockPos destination = center(site);
+                if (villager.blockPosition().distManhattan(destination) > 20) {
+                    moveTowardLoaded(villager, level, destination, 0.8D);
+                    return true;
+                }
+                // At the remote site, the dedicated river Porter handler
+                // can take a real dock receipt and start the physical pickup.
+                VillagerSimData.setOutpostHaulMode(villager, "");
+                return true;
+            }
             case "supply_pickup" -> {
                 VillageStorageService.LocatedContainer core =
                         nearestCoreFoodStorage(level, data, village, site);
