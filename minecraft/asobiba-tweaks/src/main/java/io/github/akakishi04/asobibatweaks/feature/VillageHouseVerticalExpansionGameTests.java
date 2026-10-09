@@ -83,12 +83,23 @@ public final class VillageHouseVerticalExpansionGameTests {
     public static void placedUpperWallReconcilesWithoutSecondItemDebit(GameTestHelper helper) {
         Fixture f = setup(helper);
         helper.runAtTickTime(4, () -> {
-            if (!VillageHouseVerticalExpansionService.tryPlan(
-                    f.builder(), f.level(), f.villageId())) {
-                helper.fail("Could not schedule legitimate house extension", MARK);
-                return;
-            }
-            var p = active(f);
+            // GT51 separately validates the autonomous planner. This case
+            // isolates the paid worker step from planner tick contention in
+            // a shared GameTestServer with many simulated villages.
+            var original = f.village().projectIds().stream()
+                    .map(f.data()::project).flatMap(java.util.Optional::stream)
+                    .filter(candidate -> "house_5x5".equals(candidate.templateId())
+                            && "complete".equals(candidate.phase()))
+                    .findFirst().orElseThrow();
+            var p = f.data().createProject(
+                    f.villageId(), "building", 86, f.base());
+            p.setTemplateId(VillageHouseVerticalExpansionService.TEMPLATE);
+            p.setParameter("expand_building", f.house().id().toString());
+            p.setParameter("expand_original", original.id().toString());
+            p.setParameter("expand_plank", "oak");
+            p.setPhase("upper_shell");
+            p.setWorkCursor(0);
+            f.data().touch();
             var work = VillageHouseVerticalExpansionService.steps(p);
             VillageHouseVerticalExpansionService.Step first = work.getFirst();
             // First withdraw a REAL plank while standing at the registered
