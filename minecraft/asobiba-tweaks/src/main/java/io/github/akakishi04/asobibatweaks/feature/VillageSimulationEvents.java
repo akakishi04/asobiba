@@ -587,7 +587,25 @@ public final class VillageSimulationEvents {
     private static void buildOneRoadProjectStep(Villager villager, ServerLevel level,
                                                 VillageSavedData.ProjectRecord project) {
         if (!isWorkTime(level)) return;
-        if ("route_planning".equals(project.phase())) return;
+        if (VillageBridgeService.TEMPLATE.equals(project.templateId())) {
+            VillageBridgeService.advance(villager, level, project);
+            return;
+        }
+        if ("route_planning".equals(project.phase())) {
+            // Search requests are short-lived, but the saved project must
+            // survive failed/unloaded planning and automatically retry after
+            // chunks naturally become loaded.
+            try {
+                java.util.UUID routeId = java.util.UUID.fromString(
+                        project.parameter("route_id"));
+                enqueueRoadGeometry(level, routeId, project.id());
+            } catch (IllegalArgumentException ignored) {
+                project.setPausedReason("invalid route identifier");
+                VillageSavedData.get(level).touch();
+            }
+            return;
+        }
+        if ("waiting_for_bridge".equals(project.phase())) return;
         BlockPos from = project.site();
         BlockPos to = project.anchor();
         if (to == null) {
@@ -671,17 +689,14 @@ public final class VillageSimulationEvents {
         String targetQuality = roadTargetQuality(project, route);
 
         if (level.getFluidState(surface).is(FluidTags.WATER)) {
-            if ("stone".equals(targetQuality)) {
-                if (!placeRoadMaterial(villager, level, project, surface,
-                        Items.COBBLESTONE, Blocks.COBBLESTONE, "missing bridge stone")) return;
-                project.setPhase("bridge_stone_deck");
-            } else {
-                Block plank = plankFromName(project.parameter("plank"));
-                Item plankItem = plank.asItem();
-                if (!placeRoadMaterial(villager, level, project, surface,
-                        plankItem, plank, "missing bridge planks")) return;
-                project.setPhase("bridge_deck");
-            }
+            // Never pave directly into river water, which would silently
+            // destroy the source and produce an unwalkable, unapproved span.
+            // An accepted 2..12 block crossing must first be constructed
+            // as a separate raised, physically supported Bridge Project.
+            project.setPhase("paused");
+            project.setPausedReason("unsupported water crossing; reroute/bridge required");
+            data.touch();
+            return;
         } else if ("stone".equals(targetQuality)) {
             if (state.is(Blocks.COBBLESTONE) || state.is(Blocks.STONE)
                     || state.is(Blocks.STONE_BRICKS)) {
@@ -932,7 +947,16 @@ public final class VillageSimulationEvents {
                 villager, level.registryAccess(), CARPENTER_CARGO_SLOTS, item, 1)) {
             return false;
         }
-        level.setBlock(surface, block.defaultBlockState(), Block.UPDATE_ALL);
+        if (!level.setBlock(surface, block.defaultBlockState(), Block.UPDATE_ALL)) {
+            // A canceled placement must not silently destroy a real item.
+            ItemStack excess = VillagerSimData.insertWorkCargo(
+                    villager, level.registryAccess(), new ItemStack(item),
+                    CARPENTER_CARGO_SLOTS);
+            if (!excess.isEmpty()) villager.spawnAtLocation(excess);
+            project.setPausedReason("road placement rejected; material refunded");
+            VillageSavedData.get(level).touch();
+            return false;
+        }
         return true;
     }
 
@@ -2488,27 +2512,41 @@ public final class VillageSimulationEvents {
 
         java.util.UUID routeId = route.id();
         java.util.UUID projectId = road.id();
-        VillageSimulationScheduler.enqueueRouteSearch(
-                level,
-                "road_geometry:" + routeId,
-                () -> {
-                    VillageSavedData latest = VillageSavedData.get(level);
-                    VillageSavedData.RouteRecord plannedRoute = latest.route(routeId).orElse(null);
-                    VillageSavedData.ProjectRecord plannedProject = latest.project(projectId).orElse(null);
-                    if (plannedRoute == null || plannedProject == null
-                            || "complete".equals(plannedProject.phase())
-                            || "cancelled".equals(plannedProject.phase())) {
-                        return;
-                    }
+        enqueueRoadGeometry(level, routeId, projectId);
+    }
 
-                    List<BlockPos> waypoints =
-                            VillageRoadPlanner.planLoaded(level, plannedRoute.from(), plannedRoute.to());
-                    latest.setRouteWaypoints(routeId, waypoints);
-                    plannedProject.setPhase("planned");
-                    plannedProject.setPausedReason("");
-                    latest.touch();
-                }
-        );
+    private static void enqueueRoadGeometry(
+            ServerLevel level, java.util.UUID routeId, java.util.UUID projectId) {
+        VillageSimulationScheduler.enqueueRouteSearch(
+                level, "road_geometry:" + routeId,
+                () -> refreshRoadGeometry(level, routeId, projectId));
+    }
+
+    private static void refreshRoadGeometry(
+            ServerLevel level, java.util.UUID routeId, java.util.UUID projectId) {
+        VillageSavedData data = VillageSavedData.get(level);
+        VillageSavedData.RouteRecord route = data.route(routeId).orElse(null);
+        VillageSavedData.ProjectRecord project = data.project(projectId).orElse(null);
+        if (route == null || project == null
+                || !"route_planning".equals(project.phase())
+                || !route.villageId().equals(project.villageId())) return;
+        List<BlockPos> nodes = VillageRoadPlanner.planLoaded(
+                level, route.from(), route.to());
+        if (nodes.size() < 2) {
+            // Keep the durable request pending instead of inventing a
+            // straight unverified crossing. The Carpenter enqueues retries
+            // on the bounded route-search queue.
+            project.setPausedReason("terrain path unavailable; awaiting loaded survey");
+            data.touch();
+            return;
+        }
+        data.setRouteWaypoints(route.id(), nodes);
+
+        if (!VillageBridgeService.queueBridge(level, data, route, project, nodes)) {
+            project.setPhase("planned");
+            project.setPausedReason("");
+        }
+        data.touch();
     }
 
     private static int countBlocks(ServerLevel level, BlockPos center, int radius, java.util.function.Predicate<BlockState> predicate) {
