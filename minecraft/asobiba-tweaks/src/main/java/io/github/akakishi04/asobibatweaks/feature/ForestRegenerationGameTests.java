@@ -21,13 +21,18 @@ public final class ForestRegenerationGameTests {
         helper.runAtTickTime(4, () -> {
             var level = helper.getLevel();
             BlockPos plant = helper.absolutePos(CENTER);
-            // Availability can be deferred if the shared server probe budget
-            // was already consumed by another GameTest in this same tick.
-            // The pure surface decision must remain deterministic regardless.
-            if (ForestRegenerationEvents.isMaintainedSurface(level.getBlockState(plant))
-                    || ForestRegenerationEvents.isMaintainedSurface(
-                            level.getBlockState(plant.below()))) {
-                helper.fail("Undisturbed dirt/air was marked as player-maintained", CENTER);
+            // Reset the candidate at the exact assertion tick: another
+            // GameTest or ambient world activity can mutate the physical
+            // GameTest fixture after its initial placement.
+            helper.setBlock(CENTER.below(), Blocks.DIRT);
+            helper.setBlock(CENTER, Blocks.AIR);
+            var air = level.getBlockState(plant);
+            var dirt = level.getBlockState(plant.below());
+            if (!air.isAir() || !dirt.is(Blocks.DIRT)
+                    || ForestRegenerationEvents.isMaintainedSurface(air)
+                    || ForestRegenerationEvents.isMaintainedSurface(dirt)) {
+                helper.fail("Natural candidate precondition failed: plant=" + air
+                        + ", ground=" + dirt, CENTER);
                 return;
             }
             helper.setBlock(CENTER.offset(1, -1, 0), Blocks.FARMLAND);
