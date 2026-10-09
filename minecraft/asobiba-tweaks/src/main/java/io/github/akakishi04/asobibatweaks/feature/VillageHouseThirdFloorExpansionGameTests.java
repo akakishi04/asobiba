@@ -242,6 +242,15 @@ public final class VillageHouseThirdFloorExpansionGameTests {
     private static Fixture setup(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         BlockPos base = helper.absolutePos(new BlockPos(5, 1, 2));
+        // The blank NBT template holds a size/palette, but does not paste
+        // AIR over every underlying server-world block. Explicitly clear the
+        // complete test-only house volume BEFORE reconstructing its physical
+        // blueprint. Otherwise natural stone can invisibly obstruct the
+        // ground-floor standing cells while upper beds remain accessible.
+        for (int x = 0; x < 5; x++) for (int z = 0; z < 5; z++)
+            for (int y = 0; y <= 12; y++)
+                level.setBlock(base.offset(x, y, z),
+                        Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
         var data = VillageSavedData.get(level);
         var village = data.createVillage(base, level.getGameTime());
         var original = data.createProject(village.id(), "building", 75, base);
@@ -278,7 +287,12 @@ public final class VillageHouseThirdFloorExpansionGameTests {
         house.setTemplateId("house_2story_5x5");
         house.setValidationState("valid");
         house.setValidatedCapacity(4);
-        var storePos = base.offset(3, 1, 1);
+        // Keep the material Barrel OUTSIDE the completed house. Placing it
+        // at (3,1,1) blocked the only standing cell beside a real ground bed,
+        // erroneously removing valid housing capacity from the fixture.
+        var storePos = base.offset(5, 1, 1);
+        level.setBlock(storePos.below(), Blocks.COBBLESTONE.defaultBlockState(),
+                Block.UPDATE_ALL);
         level.setBlock(storePos, Blocks.BARREL.defaultBlockState(), Block.UPDATE_ALL);
         var savedStore = data.createStorage(village.id(), storePos, "construction");
         savedStore.setValidationState("valid");
