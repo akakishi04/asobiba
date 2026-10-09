@@ -112,8 +112,8 @@ public final class VillageRiverPorterGameTests {
                 || !(world.level().getBlockEntity(remote) instanceof Container remoteContainer))
             throw new IllegalStateException("Physical test warehouse Barrel is absent");
         return new Warehouses(coreContainer, remoteContainer, core, remote,
-                helper.absolutePos(new BlockPos(0, 2, 5)),
-                helper.absolutePos(new BlockPos(15, 2, 3)), outpost.id());
+                helper.absolutePos(new BlockPos(1, 2, 5)),
+                helper.absolutePos(new BlockPos(14, 2, 3)), outpost.id());
     }
 
     private static Villager spawnPorter(ServerLevel level, UUID villageId, BlockPos at) {
