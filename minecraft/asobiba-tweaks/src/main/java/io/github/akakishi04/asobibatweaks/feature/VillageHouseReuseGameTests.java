@@ -3,7 +3,7 @@ package io.github.akakishi04.asobibatweaks.feature;
 import io.github.akakishi04.asobibatweaks.AsobibaTweaks;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.ChunkPos;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
