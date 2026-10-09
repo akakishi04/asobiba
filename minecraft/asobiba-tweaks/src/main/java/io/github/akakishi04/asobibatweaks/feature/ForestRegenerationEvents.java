@@ -91,27 +91,32 @@ public final class ForestRegenerationEvents {
                     if (!VillageSimulationScheduler.tryConsumeBlockProbe(level))
                         return false; // exhausted shared background budget
                     BlockState state = level.getBlockState(plant.offset(dx, dy, dz));
-                    if (state.is(BlockTags.PLANKS)
-                            || state.is(BlockTags.FENCES)
-                            || state.is(BlockTags.DOORS)
-                            || state.is(Blocks.COBBLESTONE)
-                            || state.is(Blocks.STONE_BRICKS)
-                            || state.is(Blocks.DIRT_PATH)
-                            || state.is(Blocks.FARMLAND)
-                            || state.is(Blocks.CRAFTING_TABLE)
-                            || state.is(Blocks.CHEST)
-                            || state.is(Blocks.BARREL)
-                            || state.is(Blocks.FURNACE)
-                            || state.is(Blocks.TORCH)
-                            || state.is(Blocks.LANTERN)
-                            || state.is(Blocks.CAMPFIRE)
-                            || state.is(Blocks.RAIL)
-                            || state.is(Blocks.GLASS)
-                            || state.is(Blocks.GLASS_PANE)) return false;
+                    if (isMaintainedSurface(state)) return false;
                 }
             }
         }
         return true;
+    }
+
+    /** Pure maintained-surface classification, independent of scheduling budgets. */
+    static boolean isMaintainedSurface(BlockState state) {
+        return state.is(BlockTags.PLANKS)
+                || state.is(BlockTags.FENCES)
+                || state.is(BlockTags.DOORS)
+                || state.is(Blocks.COBBLESTONE)
+                || state.is(Blocks.STONE_BRICKS)
+                || state.is(Blocks.DIRT_PATH)
+                || state.is(Blocks.FARMLAND)
+                || state.is(Blocks.CRAFTING_TABLE)
+                || state.is(Blocks.CHEST)
+                || state.is(Blocks.BARREL)
+                || state.is(Blocks.FURNACE)
+                || state.is(Blocks.TORCH)
+                || state.is(Blocks.LANTERN)
+                || state.is(Blocks.CAMPFIRE)
+                || state.is(Blocks.RAIL)
+                || state.is(Blocks.GLASS)
+                || state.is(Blocks.GLASS_PANE);
     }
 
     private static Block nearbyTreeSapling(ServerLevel level, BlockPos center, ServerPlayer player) {
