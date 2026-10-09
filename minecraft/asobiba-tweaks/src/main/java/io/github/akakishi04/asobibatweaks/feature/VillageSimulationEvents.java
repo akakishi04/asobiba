@@ -281,6 +281,13 @@ public final class VillageSimulationEvents {
         boolean housingNeed = beds <= population + 1;
         boolean storageNeed = stores < Math.max(2, (population + 3) / 4);
 
+        // Restore a small number of genuine missing shell blocks in existing
+        // village-owned buildings before building another detached house.
+        if (VillageBuildingRepairService.tryPlan(villager, level, villageId.get())) {
+            villager.getPersistentData().putLong(NEXT_BUILD, now + 2400L);
+            return;
+        }
+
         // Reuse a safe, publicly usable player-adopted structure before
         // spending a full new-building budget. Only completed workstation
         // items in real recognized storage can initiate such a project.
@@ -425,6 +432,10 @@ public final class VillageSimulationEvents {
         }
         if (VillageRiverDockService.TEMPLATE.equals(project.templateId())) {
             VillageRiverDockService.advance(villager, level, project);
+            return;
+        }
+        if (VillageBuildingRepairService.TEMPLATE.equals(project.templateId())) {
+            VillageBuildingRepairService.advance(villager, level, project);
             return;
         }
 
@@ -1017,7 +1028,7 @@ public final class VillageSimulationEvents {
         };
     }
 
-    private static List<BuildStep> projectPlan(VillageSavedData.ProjectRecord project) {
+    static List<BuildStep> projectPlan(VillageSavedData.ProjectRecord project) {
         if ("storage_5x5".equals(project.templateId())) return storagePlan(project);
         if (VillageCraftHallPlanner.TEMPLATE.equals(project.templateId()))
             return craftHallPlan(project);
@@ -2565,7 +2576,7 @@ public final class VillageSimulationEvents {
         );
     }
 
-    private record BuildStep(BlockPos pos, BlockState state, Item cost) {}
+    static record BuildStep(BlockPos pos, BlockState state, Item cost) {}
 
     private static final class Vec3Away {
         static void moveAway(Villager villager, BlockPos danger) {
