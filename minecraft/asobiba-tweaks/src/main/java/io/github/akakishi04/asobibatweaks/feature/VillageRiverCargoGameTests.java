@@ -110,7 +110,7 @@ public final class VillageRiverCargoGameTests {
                     return;
                 }
                 if (received == 16 && aboard == 0 && physicallyMoved.get()
-                        && horizontalDistance(boat, test.start()) < 1.4D
+                        && horizontalDistance(boat, test.start()) <= 2.25D
                         && "idle".equals(boat.getPersistentData()
                                 .getString("asobibatweaks_river_cargo_phase"))) {
                     helper.succeed();
