@@ -239,15 +239,17 @@ public final class VillageHouseThirdFloorExpansionGameTests {
      * The original BuildingRecord must remain pending, then revalidate on
      * later server ticks without any synthetic beds or force-loaded chunks.
      */
-    @GameTest(template = "empty16x14x9", timeoutTicks = 105)
+    @GameTest(template = "empty16x14x9", timeoutTicks = 105,
+            batch = "housing_validation_budget")
     public static void blockProbeExhaustionSchedulesFiniteHousingRetry(GameTestHelper helper) {
         Fixture f = setup(helper);
         f.house().setValidationState("unknown");
         f.house().setValidatedCapacity(0);
         int before = VillageSimulationScheduler.snapshot(f.level()).validation();
         for (int i = 0; i < 2048
-                && VillageSimulationScheduler.tryConsumeBlockProbe(f.level()); i++) {
-            // Exhaust precisely the configured physical block probe budget.
+                && VillageSimulationScheduler.tryConsumeBuildingValidationProbe(f.level()); i++) {
+            // Force the authoritative building probe pool to be exhausted.
+            // Ordinary ecology/background work now uses a separate counter.
         }
         VillageBuildingService.revalidateChunk(f.level(), new ChunkPos(f.base()));
         if (!"unknown".equals(f.house().validationState())

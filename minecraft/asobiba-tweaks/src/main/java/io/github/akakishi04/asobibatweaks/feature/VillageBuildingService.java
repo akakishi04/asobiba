@@ -274,7 +274,7 @@ public final class VillageBuildingService {
             // 3x3 interiors, not the outer roof/wall block volume.
             if (twoStoryTemplate && !templateInteriorCell(min, pos,
                     "house_3story_5x5".equals(building.templateId()) ? 3 : 2)) continue;
-            if (!VillageSimulationScheduler.tryConsumeBlockProbe(level)) return false;
+            if (!VillageSimulationScheduler.tryConsumeBuildingValidationProbe(level)) return false;
 
             BlockState state = level.getBlockState(pos);
             boolean usableAnchor = building.villageBuilt()

@@ -133,6 +133,6 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT57 | playerEditedThirdFloorCannotTriggerDemolition | Player blocks in the upper expansion volume veto all physical demolition and material withdrawal |
 | GT58 | secondStoreyBedDemolishesOnceAndDropsRealItem | One obstructing second-storey Bed is physically demolished once by vanilla, producing exactly one real recoverable item even after replay |
 | GT59 | completeThirdFloorMaintainsOriginalIdAndFiveRealBeds | Real connected two-flight stairs, third-floor rooms, existing house identity, bounded revalidation and five actually supported sleeping spaces survive SavedData roundtrip |
-| GT60 | blockProbeExhaustionSchedulesFiniteHousingRetry | A real, originally registered multistorey home remains unknown when its block-probe budget is exhausted, then automatically revalidates on a later loaded server tick with its true physical bed count and unchanged building ID |
+| GT60 | blockProbeExhaustionSchedulesFiniteHousingRetry | A real multistorey home deliberately exhausts the dedicated, finite building-validation probe lane and stays unknown until a later loaded tick, then revalidates its actual bed count without changing its BuildingRecord ID |
 
 These tests are **not** a full acceptance of G01-G22: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.
