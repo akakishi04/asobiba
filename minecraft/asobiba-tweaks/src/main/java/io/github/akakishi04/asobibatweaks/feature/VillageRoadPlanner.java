@@ -18,8 +18,9 @@ import net.minecraft.world.level.levelgen.Heightmap;
  * Bounded road geometry planner.
  *
  * <p>The search is intentionally coarse and only reads already-loaded chunks. If the complete
- * bounded corridor is not loaded, callers receive a conservative endpoint-only route and physical
- * construction still obeys chunk guards. The search prefers existing roads, flat ground and gentle
+ * bounded corridor is not loaded, callers receive no route. They MUST retry once the
+ * required chunks become naturally loaded instead of constructing an unchecked straight-line
+ * replacement route. The search prefers existing roads, flat ground and gentle
  * slopes, while penalizing water and steep terrain enough that short bridges can win over large
  * detours but long crossings usually do not.</p>
  */
@@ -40,7 +41,7 @@ public final class VillageRoadPlanner {
         BlockPos areaMin = new BlockPos(minX, level.getMinBuildHeight(), minZ);
         BlockPos areaMax = new BlockPos(maxX, level.getMinBuildHeight(), maxZ);
         if (!VillageSimulationScheduler.isAreaLoaded(level, areaMin, areaMax)) {
-            return List.of(from.immutable(), to.immutable());
+            return List.of();
         }
 
         int targetGx = (int)Math.round((to.getX() - from.getX()) / (double)GRID);
@@ -111,7 +112,7 @@ public final class VillageRoadPlanner {
             }
         }
 
-        if (reached == null) return List.of(from.immutable(), to.immutable());
+        if (reached == null) return List.of();
 
         List<Cell> cells = new ArrayList<>();
         for (Cell cursor = reached; cursor != null; cursor = previous.get(cursor)) {
@@ -120,7 +121,7 @@ public final class VillageRoadPlanner {
         }
         Collections.reverse(cells);
         if (cells.isEmpty() || !cells.get(0).equals(start)) {
-            return List.of(from.immutable(), to.immutable());
+            return List.of();
         }
 
         return compress(from, to, cells);
