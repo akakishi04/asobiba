@@ -26,6 +26,11 @@ public final class VillageCarpenterCraftingService {
     public static boolean isCraftedFixture(Item fixture, Block chosenPlank) {
         return fixture == Items.BARREL || fixture == Items.COMPOSTER
                 || fixture == Items.SMITHING_TABLE || fixture == Items.STONECUTTER
+                || fixture == Items.LECTERN || fixture == Items.BLAST_FURNACE
+                || fixture == Items.CARTOGRAPHY_TABLE || fixture == Items.BREWING_STAND
+                || fixture == Items.LOOM || fixture == Items.FLETCHING_TABLE
+                || fixture == Items.SMOKER || fixture == Items.CAULDRON
+                || fixture == Items.GRINDSTONE
                 || fixture == AsobibaRegistries.CARPENTER_WORKBENCH.get().asItem()
                 || fixture == VillageSimulationEvents.stairsForPlank(chosenPlank).asItem();
     }
@@ -81,6 +86,92 @@ public final class VillageCarpenterCraftingService {
                     new Ingredient(Items.STONE, 3));
         }
 
+        // Remaining vanilla job-site fixtures. The Carpenter must physically
+        // withdraw every exact ingredient; assemble commits once, and only
+        // when the complete product fits in its persistent eight-slot cargo.
+        if (fixture == Items.LOOM) {
+            if (!VillageSimulationEvents.ensureCargoItem(
+                    carpenter, level, Items.STRING, 2, capacity)
+                    || !VillageSimulationEvents.ensureCargoItem(
+                            carpenter, level, plank, 2, capacity)) return false;
+            return assemble(carpenter, level, capacity, new ItemStack(Items.LOOM),
+                    new Ingredient(Items.STRING, 2), new Ingredient(plank, 2));
+        }
+        if (fixture == Items.FLETCHING_TABLE) {
+            if (!VillageSimulationEvents.ensureCargoItem(
+                    carpenter, level, Items.FLINT, 2, capacity)
+                    || !VillageSimulationEvents.ensureCargoItem(
+                            carpenter, level, plank, 4, capacity)) return false;
+            return assemble(carpenter, level, capacity,
+                    new ItemStack(Items.FLETCHING_TABLE),
+                    new Ingredient(Items.FLINT, 2), new Ingredient(plank, 4));
+        }
+        if (fixture == Items.CARTOGRAPHY_TABLE) {
+            if (!VillageSimulationEvents.ensureCargoItem(
+                    carpenter, level, Items.PAPER, 2, capacity)
+                    || !VillageSimulationEvents.ensureCargoItem(
+                            carpenter, level, plank, 4, capacity)) return false;
+            return assemble(carpenter, level, capacity,
+                    new ItemStack(Items.CARTOGRAPHY_TABLE),
+                    new Ingredient(Items.PAPER, 2), new Ingredient(plank, 4));
+        }
+        if (fixture == Items.CAULDRON) {
+            if (!VillageSimulationEvents.ensureCargoItem(
+                    carpenter, level, Items.IRON_INGOT, 7, capacity)) return false;
+            return assemble(carpenter, level, capacity, new ItemStack(Items.CAULDRON),
+                    new Ingredient(Items.IRON_INGOT, 7));
+        }
+        if (fixture == Items.BREWING_STAND) {
+            if (!VillageSimulationEvents.ensureCargoItem(
+                    carpenter, level, Items.BLAZE_ROD, 1, capacity)
+                    || !VillageSimulationEvents.ensureCargoItem(
+                            carpenter, level, Items.COBBLESTONE, 3, capacity)) return false;
+            return assemble(carpenter, level, capacity,
+                    new ItemStack(Items.BREWING_STAND),
+                    new Ingredient(Items.BLAZE_ROD, 1),
+                    new Ingredient(Items.COBBLESTONE, 3));
+        }
+        if (fixture == Items.BLAST_FURNACE) {
+            if (!VillageSimulationEvents.ensureCargoItem(
+                    carpenter, level, Items.FURNACE, 1, capacity)
+                    || !VillageSimulationEvents.ensureCargoItem(
+                            carpenter, level, Items.IRON_INGOT, 5, capacity)
+                    || !VillageSimulationEvents.ensureCargoItem(
+                            carpenter, level, Items.SMOOTH_STONE, 3, capacity)) return false;
+            return assemble(carpenter, level, capacity,
+                    new ItemStack(Items.BLAST_FURNACE),
+                    new Ingredient(Items.FURNACE, 1),
+                    new Ingredient(Items.IRON_INGOT, 5),
+                    new Ingredient(Items.SMOOTH_STONE, 3));
+        }
+        if (fixture == Items.SMOKER) {
+            if (!VillageSimulationEvents.ensureCargoItem(
+                    carpenter, level, Items.FURNACE, 1, capacity)
+                    || !VillageSimulationEvents.ensureCargoMatching(
+                            carpenter, level, stack -> stack.is(ItemTags.LOGS),
+                            4, capacity)) return false;
+            return assemble(carpenter, level, capacity, new ItemStack(Items.SMOKER),
+                    new Ingredient(Items.FURNACE, 1), new Ingredient(null, 4));
+        }
+        if (fixture == Items.GRINDSTONE) {
+            if (!ensureSlabs(carpenter, level, Items.STONE, Items.STONE_SLAB, 1, capacity)
+                    || !VillageSimulationEvents.ensureCargoItem(
+                            carpenter, level, Items.STICK, 2, capacity)
+                    || !VillageSimulationEvents.ensureCargoItem(
+                            carpenter, level, plank, 2, capacity)) return false;
+            return assemble(carpenter, level, capacity,
+                    new ItemStack(Items.GRINDSTONE),
+                    new Ingredient(Items.STONE_SLAB, 1),
+                    new Ingredient(Items.STICK, 2), new Ingredient(plank, 2));
+        }
+        if (fixture == Items.LECTERN) {
+            if (!ensureSlabs(carpenter, level, plank, slab, 4, capacity)
+                    || !ensureBookshelf(carpenter, level, plank, capacity)) return false;
+            return assemble(carpenter, level, capacity,
+                    new ItemStack(Items.LECTERN),
+                    new Ingredient(slab, 4), new Ingredient(Items.BOOKSHELF, 1));
+        }
+
         if (fixture == stair) {
             if (!VillageSimulationEvents.ensureCargoItem(
                     carpenter, level, plank, 6, capacity)) return false;
@@ -107,6 +198,32 @@ public final class VillageCarpenterCraftingService {
         }
 
         return false;
+    }
+
+    private static boolean ensureBookshelf(
+            Villager carpenter, ServerLevel level, Item plank, int capacity) {
+        if (VillagerSimData.workCargoCount(carpenter,
+                level.registryAccess(), capacity, Items.BOOKSHELF) > 0) return true;
+        if (VillageSimulationEvents.ensureCargoItem(
+                carpenter, level, Items.BOOKSHELF, 1, capacity)) return true;
+
+        int books = VillagerSimData.workCargoCount(
+                carpenter, level.registryAccess(), capacity, Items.BOOK);
+        if (books < 3 && !VillageSimulationEvents.ensureCargoItem(
+                carpenter, level, Items.BOOK, 3, capacity)) {
+            if (!VillageSimulationEvents.ensureCargoItem(
+                    carpenter, level, Items.PAPER, 9, capacity)
+                    || !VillageSimulationEvents.ensureCargoItem(
+                            carpenter, level, Items.LEATHER, 3, capacity)
+                    || !assemble(carpenter, level, capacity, new ItemStack(Items.BOOK, 3),
+                            new Ingredient(Items.PAPER, 9),
+                            new Ingredient(Items.LEATHER, 3))) return false;
+        }
+
+        if (!VillageSimulationEvents.ensureCargoItem(
+                carpenter, level, plank, 6, capacity)) return false;
+        return assemble(carpenter, level, capacity, new ItemStack(Items.BOOKSHELF),
+                new Ingredient(Items.BOOK, 3), new Ingredient(plank, 6));
     }
 
     private static boolean ensureSlabs(
