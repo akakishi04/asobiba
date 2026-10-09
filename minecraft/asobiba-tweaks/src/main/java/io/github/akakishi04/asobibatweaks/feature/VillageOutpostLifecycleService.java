@@ -97,6 +97,11 @@ public final class VillageOutpostLifecycleService {
         }
 
         if ("porter".equals(VillagerSimData.duty(villager))) {
+            // Do not commandeer an in-progress Outpost delivery. River
+            // first/last-mile transfers start only for an otherwise idle
+            // Porter; the source/destination and cargo remain persistent.
+            if (VillageRiverPorterService.handlePorter(villager, level, site.id()))
+                return true;
             return handleOutpostPorter(villager, level, data, village, site);
         }
 
