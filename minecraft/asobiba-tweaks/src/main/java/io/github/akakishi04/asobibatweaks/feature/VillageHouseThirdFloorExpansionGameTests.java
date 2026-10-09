@@ -67,19 +67,25 @@ public final class VillageHouseThirdFloorExpansionGameTests {
         Fixture f = setup(helper);
         BlockPos blocker = f.base().offset(0, 10, 1);
         f.level().setBlock(blocker, Blocks.OBSIDIAN.defaultBlockState(), Block.UPDATE_ALL);
-        helper.runAtTickTime(4, () -> {
-            if (VillageHouseThirdFloorExpansionService.tryPlan(
-                        f.builder(), f.level(), f.villageId())
-                    || !f.data().activeProjectsForVillage(f.villageId()).isEmpty()
-                    || !f.level().getBlockState(blocker).is(Blocks.OBSIDIAN)
-                    || count(f.storage(), Items.OAK_PLANKS) != 128
-                    || f.level().getBlockState(f.base().offset(2, 5, 1))
-                        .getBlock() != Blocks.WHITE_BED) {
-                helper.fail("Player modification must veto third floor before touching furniture", MARK);
-                return;
-            }
-            helper.succeed();
-        });
+        // Check at the setup tick: unrelated worker AI may move real cargo
+        // in the shared GameTestServer after the preflight was already done.
+        int before = count(f.storage(), Items.OAK_PLANKS);
+        boolean planned = VillageHouseThirdFloorExpansionService.tryPlan(
+                f.builder(), f.level(), f.villageId());
+        int after = count(f.storage(), Items.OAK_PLANKS);
+        if (planned || !f.data().activeProjectsForVillage(f.villageId()).isEmpty()
+                || !f.level().getBlockState(blocker).is(Blocks.OBSIDIAN)
+                || before != after
+                || f.level().getBlockState(f.base().offset(2, 5, 1))
+                    .getBlock() != Blocks.WHITE_BED) {
+            helper.fail("Edited upper space: planned=" + planned
+                    + ", projects=" + f.data().activeProjectsForVillage(f.villageId()).size()
+                    + ", block=" + f.level().getBlockState(blocker)
+                    + ", plankBefore=" + before + ", plankAfter=" + after
+                    + ", bed=" + f.level().getBlockState(f.base().offset(2, 5, 1)), MARK);
+            return;
+        }
+        helper.succeed();
     }
 
     @GameTest(template = "empty16x14x9", timeoutTicks = 80)
@@ -101,6 +107,10 @@ public final class VillageHouseThirdFloorExpansionGameTests {
         }
         final int oldCursor = salvageIndex;
         var foot = steps.get(salvageIndex).pos();
+        int beforeDrops = f.level().getEntitiesOfClass(ItemEntity.class,
+                new AABB(foot).inflate(3.0D),
+                x -> x.isAlive() && x.getItem().is(Items.WHITE_BED))
+                .stream().mapToInt(e -> e.getItem().getCount()).sum();
         f.builder().setPos(foot.getX() + 0.5D, foot.getY() + 1, foot.getZ() + 0.5D);
         project.setWorkCursor(oldCursor);
         VillageHouseThirdFloorExpansionService.advance(f.builder(), f.level(), project);
@@ -121,9 +131,11 @@ public final class VillageHouseThirdFloorExpansionGameTests {
                     new AABB(foot).inflate(3.0D),
                     x -> x.isAlive() && x.getItem().is(Items.WHITE_BED));
             int units = drops.stream().mapToInt(e -> e.getItem().getCount()).sum();
-            if (units != 1) {
-                helper.fail("Original bedroom must create exactly one real recovered Bed, got "
-                        + units, MARK);
+            if (units - beforeDrops != 1) {
+                String detail = drops.stream().map(e -> e.getItem().getCount()
+                        + "@" + e.blockPosition()).toList().toString();
+                helper.fail("One physical recovered Bed expected; before=" + beforeDrops
+                        + ", after=" + units + ", drops=" + detail, MARK);
                 return;
             }
             helper.succeed();
@@ -177,7 +189,14 @@ public final class VillageHouseThirdFloorExpansionGameTests {
                     || home.validatedCapacity() != 5
                     || !home.max().equals(f.base().offset(4, 12, 4))
                     || loaded.village(f.villageId()).orElseThrow().buildingIds().size() != 1) {
-                helper.fail("Upper bed count, SavedData house bounds or identity was lost", MARK);
+                helper.fail("Upper housing invalid: home=" + (home == null ? "null"
+                        : home.validationState() + "/capacity=" + home.validatedCapacity()
+                        + "/template=" + home.templateId() + "/max=" + home.max())
+                        + ", expected=" + f.base().offset(4, 12, 4)
+                        + ", count=" + loaded.village(f.villageId())
+                            .orElseThrow().buildingIds().size()
+                        + ", stairs=" + VillageBuildingService.connectedUpperStories(
+                            f.level(), f.base(), 2), MARK);
                 return;
             }
             helper.succeed();
