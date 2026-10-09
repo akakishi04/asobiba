@@ -83,7 +83,10 @@ public final class VillageHouseVerticalExpansionGameTests {
     @GameTest(template = "empty16x14x9", timeoutTicks = 70)
     public static void placedUpperWallReconcilesWithoutSecondItemDebit(GameTestHelper helper) {
         Fixture f = setup(helper);
-        helper.runAtTickTime(4, () -> {
+        // Execute this focused transaction before the next GameTestServer
+        // entity tick. Shared village AI can otherwise pick up supplies from
+        // this fixture between its creation and a delayed assertion.
+        {
             // GT51 separately validates the autonomous planner. This case
             // isolates the paid worker step from planner tick contention in
             // a shared GameTestServer with many simulated villages.
@@ -135,7 +138,7 @@ public final class VillageHouseVerticalExpansionGameTests {
                 return;
             }
             helper.succeed();
-        });
+        }
     }
 
     @GameTest(template = "empty16x14x9", timeoutTicks = 160)
