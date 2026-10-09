@@ -40,7 +40,10 @@ public final class VillageRiverCargoService {
     private static final String CARGO_ITEM = "asobibatweaks_river_cargo_item";
     private static final int MAX_SHIPMENT = 16;
     private static final double MOVE_SPEED = 0.16D;
-    private static final double MOOR_RADIUS_SQUARED = 1.3D * 1.3D;
+    // Real vanilla boat hulls can drift while damping velocity near a dock.
+    // A slightly wider berth radius avoids permanent stranding a boat that
+    // has genuinely reached its water-side landing, without teleportation.
+    private static final double MOOR_RADIUS_SQUARED = 2.25D * 2.25D;
 
     public VillageRiverCargoService() {}
 
