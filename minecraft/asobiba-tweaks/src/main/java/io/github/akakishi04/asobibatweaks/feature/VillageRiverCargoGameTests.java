@@ -79,9 +79,19 @@ public final class VillageRiverCargoGameTests {
                 // the ACTUAL vanilla ChestBoat.tick() only if the server did
                 // not update it during this GameTest tick; do not teleport
                 // or bypass collisions, buoyancy or vanilla inventory logic.
-                if (boat.tickCount <= previousVanillaTick.get()) boat.tick();
+                boolean naturallyTicked = boat.tickCount > previousVanillaTick.get();
+                if (!naturallyTicked) boat.tick();
                 previousVanillaTick.set(boat.tickCount);
-                VillageRiverCargoService.tickCarrier(boat, test.level());
+                // When the feature defaults ON, NeoForge already ran the
+                // production boat event for naturally ticked entities. Do
+                // not run the same state machine twice in one game tick.
+                // Direct vanilla ticks need an explicit controller callback
+                // because a standalone boat.tick() emits no Post event.
+                if (!naturallyTicked
+                        || !io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig
+                                .VILLAGE_RIVER_CARGO_ENABLED.getAsBoolean()) {
+                    VillageRiverCargoService.tickCarrier(boat, test.level());
+                }
                 if (horizontalDistance(boat, test.start()) > 3.0D) physicallyMoved.set(true);
                 int source = count(test.source(), Items.COBBLESTONE);
                 int aboard = count(boat, Items.COBBLESTONE);
