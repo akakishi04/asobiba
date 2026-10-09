@@ -31,6 +31,9 @@ public final class VillageCarpenterCraftingService {
                 || fixture == Items.LOOM || fixture == Items.FLETCHING_TABLE
                 || fixture == Items.SMOKER || fixture == Items.CAULDRON
                 || fixture == Items.GRINDSTONE
+                || fixture == Items.COBBLESTONE_WALL
+                || fixture == Items.COBBLESTONE_STAIRS
+                || fixture == VillageBridgeService.fenceForPlank(chosenPlank).asItem()
                 || fixture == AsobibaRegistries.CARPENTER_WORKBENCH.get().asItem()
                 || fixture == VillageSimulationEvents.stairsForPlank(chosenPlank).asItem();
     }
@@ -170,6 +173,40 @@ public final class VillageCarpenterCraftingService {
             return assemble(carpenter, level, capacity,
                     new ItemStack(Items.LECTERN),
                     new Ingredient(slab, 4), new Ingredient(Items.BOOKSHELF, 1));
+        }
+
+        if (fixture == Items.COBBLESTONE_WALL) {
+            if (!VillageSimulationEvents.ensureCargoItem(
+                    carpenter, level, Items.COBBLESTONE, 6, capacity)) return false;
+            // Vanilla cobblestone wall: six blocks -> six real walls.
+            return assemble(carpenter, level, capacity,
+                    new ItemStack(Items.COBBLESTONE_WALL, 6),
+                    new Ingredient(Items.COBBLESTONE, 6));
+        }
+        if (fixture == Items.COBBLESTONE_STAIRS) {
+            if (!VillageSimulationEvents.ensureCargoItem(
+                    carpenter, level, Items.COBBLESTONE, 6, capacity)) return false;
+            return assemble(carpenter, level, capacity,
+                    new ItemStack(Items.COBBLESTONE_STAIRS, 4),
+                    new Ingredient(Items.COBBLESTONE, 6));
+        }
+        if (fixture == VillageBridgeService.fenceForPlank(chosenPlank).asItem()) {
+            if (VillagerSimData.workCargoCount(carpenter,
+                    level.registryAccess(), capacity, Items.STICK) < 2
+                    && !VillageSimulationEvents.ensureCargoItem(
+                            carpenter, level, Items.STICK, 2, capacity)) {
+                if (!VillageSimulationEvents.ensureCargoItem(
+                        carpenter, level, plank, 2, capacity)
+                        || !assemble(carpenter, level, capacity,
+                                new ItemStack(Items.STICK, 4),
+                                new Ingredient(plank, 2))) return false;
+            }
+            if (!VillageSimulationEvents.ensureCargoItem(
+                    carpenter, level, plank, 4, capacity)) return false;
+            return assemble(carpenter, level, capacity,
+                    new ItemStack(fixture, 3),
+                    new Ingredient(plank, 4),
+                    new Ingredient(Items.STICK, 2));
         }
 
         if (fixture == stair) {
