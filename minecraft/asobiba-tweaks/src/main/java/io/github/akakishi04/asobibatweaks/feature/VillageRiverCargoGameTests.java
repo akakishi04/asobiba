@@ -147,7 +147,16 @@ public final class VillageRiverCargoGameTests {
                             + ", toDistance=" + horizontalDistance(boat, test.end())
                             + ", cargoManifest=" + boat.getPersistentData()
                                     .getString("asobibatweaks_river_cargo_item")
-                            + ", dockReceipt=" + test.route().dockReceipts(true),
+                            + ", dockReceipt=" + test.route().dockReceipts(true)
+                            + ", dockSites=" + test.data()
+                                    .workSitesForVillage(test.route().villageId()).stream()
+                                    .filter(s -> "river_dock".equals(s.type()))
+                                    .map(s -> s.state() + ":" + s.purpose()).toList()
+                            + ", physicalBarrel=" + test.level().getBlockState(
+                                    test.end().offset(3, 1, -1)).is(Blocks.BARREL)
+                            + ", registeredStorage=" + test.data().storageAt(
+                                    test.route().villageId(),
+                                    test.end().offset(3, 1, -1)).isPresent(),
                             TEST_MARKER);
                 }
             });
