@@ -301,6 +301,13 @@ public final class VillageSimulationEvents {
             villager.getPersistentData().putLong(NEXT_BUILD, now + 2400L);
             return;
         }
+        // With a Master Carpenter, grow a safe village-owned two-storey
+        // home to three storeys before consuming more settlement land.
+        if (housingNeed && VillageHouseThirdFloorExpansionService.tryPlan(
+                villager, level, villageId.get())) {
+            villager.getPersistentData().putLong(NEXT_BUILD, now + 2400L);
+            return;
+        }
 
         // Reuse a safe, publicly usable player-adopted structure before
         // spending a full new-building budget. Only completed workstation
@@ -466,6 +473,10 @@ public final class VillageSimulationEvents {
         }
         if (VillageHouseVerticalExpansionService.TEMPLATE.equals(project.templateId())) {
             VillageHouseVerticalExpansionService.advance(villager, level, project);
+            return;
+        }
+        if (VillageHouseThirdFloorExpansionService.TEMPLATE.equals(project.templateId())) {
+            VillageHouseThirdFloorExpansionService.advance(villager, level, project);
             return;
         }
 

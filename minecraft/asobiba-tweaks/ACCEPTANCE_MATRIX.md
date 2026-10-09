@@ -129,5 +129,9 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT53 | placedUpperWallReconcilesWithoutSecondItemDebit | Actual Carpenter cargo and Barrel withdraw one plank for a new wall, but repeated cursor reconciliation never spends it twice |
 | GT54 | physicallyCompleteSecondStoreyRetainsBuildingIdAndCountsBeds | A complete real stairwell, roof and two upper beds expand original bounds without a duplicate record; 3 real beds remain valid after saved-world roundtrip |
 | GT55 | liveExpansionExcludesConflictingHouseRepairs | A live stairwell opening never triggers competing Carpenter shell repair or second-bed furnishings, and a pending repair blocks duplicate expansion; original supplies remain untouched |
+| GT56 | skilledOriginalSecondFloorSchedulesPersistentThirdFloor | Master builder selects an actually complete village-owned two-storey house and preserves its original BuildingRecord and project reference on SavedData reload |
+| GT57 | playerEditedThirdFloorCannotTriggerDemolition | Player blocks in the upper expansion volume veto all physical demolition and material withdrawal |
+| GT58 | secondStoreyBedDemolishesOnceAndDropsRealItem | One obstructing second-storey Bed is physically demolished once by vanilla, producing exactly one real recoverable item even after replay |
+| GT59 | completeThirdFloorMaintainsOriginalIdAndFiveRealBeds | Real connected two-flight stairs, third-floor rooms, existing house identity, bounded revalidation and five actually supported sleeping spaces survive SavedData roundtrip |
 
 These tests are **not** a full acceptance of G01-G22: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.

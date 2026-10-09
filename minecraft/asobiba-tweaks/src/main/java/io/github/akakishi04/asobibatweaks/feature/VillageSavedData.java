@@ -278,6 +278,25 @@ public final class VillageSavedData extends SavedData {
         return true;
     }
 
+    /** Final physical upgrade reuses the existing village-owned house identity. */
+    public boolean upgradeVillageHouseThirdFloor(UUID buildingId) {
+        BuildingRecord home = buildings.get(buildingId);
+        if (home == null || !home.villageBuilt
+                || !"residential".equals(home.classification)) return false;
+        BlockPos base = home.min;
+        if ("house_3story_5x5".equals(home.templateId)
+                && home.max.equals(base.offset(4, 12, 4))) return true;
+        if (!"house_2story_5x5".equals(home.templateId)
+                || !home.max.equals(base.offset(4, 8, 4))) return false;
+        home.max = base.offset(4, 12, 4);
+        home.templateId = "house_3story_5x5";
+        home.validationState = "unknown";
+        home.validatedCapacity = 0;
+        rebuildChunkIndex();
+        setDirty();
+        return true;
+    }
+
     public StorageRecord createStorage(UUID villageId, BlockPos pos, String category) {
         requireVillage(villageId);
         UUID id = nextId(storages);
