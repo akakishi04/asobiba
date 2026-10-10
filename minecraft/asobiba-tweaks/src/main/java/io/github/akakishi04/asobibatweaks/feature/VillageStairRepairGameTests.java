@@ -118,7 +118,7 @@ public final class VillageStairRepairGameTests {
             }
             var repair = active(f);
             // Near the actual ground-floor Barrel but far from the upper tread.
-            f.builder().setPos(f.base().getX() + 3.5D,
+            f.builder().setPos(f.base().getX() + 5.5D,
                     f.base().getY() - 1.0D, f.base().getZ() + 1.5D);
             VillageStairRepairService.advance(f.builder(), f.level(), repair);
             if (repair.workCursor() != 0
@@ -140,7 +140,7 @@ public final class VillageStairRepairGameTests {
             }
             helper.runAtTickTime(32, () -> {
                 VillageBuildingService.revalidateChunk(f.level(), new ChunkPos(f.base()));
-                if (f.home().validatedCapacity() != 5
+                if (f.home().validatedCapacity() != 4
                         || !"valid".equals(f.home().validationState())) {
                     helper.fail("Five real upper/lower beds were not revalidated", MARK);
                     return;
@@ -157,6 +157,7 @@ public final class VillageStairRepairGameTests {
         var village = data.createVillage(base, level.getGameTime());
         var source = data.createProject(village.id(), "building", 75, base);
         source.setTemplateId(floors == 3 ? "house_3story_5x5" : "house_2story_5x5");
+        source.setParameter("circulation_version", "2");
         source.setParameter("plank", "oak");
         source.setParameter("lead_skill", "100");
         source.setParameter("outpost", "false");
@@ -183,8 +184,10 @@ public final class VillageStairRepairGameTests {
         home.setTemplateId(source.templateId());
         home.setClassification("residential");
         home.setValidationState("valid");
-        home.setValidatedCapacity(floors == 3 ? 5 : 4);
-        BlockPos stock = base.offset(3, 1, 1);
+        home.setValidatedCapacity(floors == 3 ? 4 : 3);
+        BlockPos stock = base.offset(5, 1, 0);
+        level.setBlock(stock.below(), Blocks.COBBLESTONE.defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(base.offset(5, 0, 1), Blocks.COBBLESTONE.defaultBlockState(), Block.UPDATE_ALL);
         level.setBlock(stock, Blocks.BARREL.defaultBlockState(), Block.UPDATE_ALL);
         var stored = data.createStorage(village.id(), stock, "construction");
         stored.setValidationState("valid");
@@ -195,8 +198,8 @@ public final class VillageStairRepairGameTests {
         VillageStorageService.reconcileVillage(village.id(), level);
         Villager worker = EntityType.VILLAGER.create(level);
         if (worker == null) throw new IllegalStateException("Stair repair builder factory failed");
-        worker.setPos(base.getX() + 2.5D, base.getY() + 2.0D,
-                base.getZ() + 0.5D);
+        worker.setPos(base.getX() + 5.5D, base.getY() + 1.0D,
+                base.getZ() + 1.5D);
         worker.setNoAi(true);
         if (!level.addFreshEntity(worker)) throw new IllegalStateException("Carpenter spawn failed");
         VillagerSimData.setVillageId(worker, village.id());

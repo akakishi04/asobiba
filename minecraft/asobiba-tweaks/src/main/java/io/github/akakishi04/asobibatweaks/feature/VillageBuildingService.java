@@ -1,6 +1,7 @@
 package io.github.akakishi04.asobibatweaks.feature;
 
 import java.util.HashSet;
+import java.util.ArrayDeque;
 import java.util.Set;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
@@ -215,7 +216,8 @@ public final class VillageBuildingService {
                 BlockPos tread = base.offset(x, x + offsetY, 1);
                 if (!VillageSimulationScheduler.isChunkLoaded(level, tread)
                         || !isStairFacing(level.getBlockState(tread), Direction.EAST)
-                        || !level.getBlockState(tread.above()).isAir()) return false;
+                        || !level.getBlockState(tread.above()).isAir()
+                        || !level.getBlockState(tread.above(2)).isAir()) return false;
             }
             BlockPos turn = base.offset(3, 4 + offsetY, 2);
             BlockPos opening = base.offset(3, 4 + offsetY, 1);
@@ -224,6 +226,7 @@ public final class VillageBuildingService {
                     || !VillageSimulationScheduler.isChunkLoaded(level, upperLanding)
                     || !isStairFacing(level.getBlockState(turn), Direction.SOUTH)
                     || !level.getBlockState(turn.above()).isAir()
+                    || !level.getBlockState(turn.above(2)).isAir()
                     || !level.getBlockState(opening).isAir()
                     || !level.getBlockState(opening.above()).isAir()
                     || !level.getBlockState(upperLanding).isAir()
@@ -273,6 +276,70 @@ public final class VillageBuildingService {
         return true;
     }
 
+    /**
+     * Eleven fixed standing positions (two doors plus 3x3 interior), not a global NPC
+     * path search. This bounded template geometry complements the existing
+     * budgeted semantic scan and preserves its 81-probe three-storey budget.
+     */
+    static Set<Long> reachableTemplateGround(ServerLevel level, BlockPos base) {
+        Set<Long> visited = new HashSet<>();
+        Set<Long> reachable = new HashSet<>();
+        ArrayDeque<BlockPos> queue = new ArrayDeque<>();
+        // Original single-storey/workshop front access, plus the physically
+        // open v2 multi-storey east entrance that bypasses low stair headroom.
+        for (BlockPos entrance : new BlockPos[]{base.offset(2, 1, 0), base.offset(4, 1, 1)}) {
+            if (safeTemplateStanding(level, entrance)) queue.add(entrance);
+        }
+        while (!queue.isEmpty() && visited.size() < 11) {
+            BlockPos pos = queue.removeFirst();
+            if (!visited.add(pos.asLong()) || !safeTemplateStanding(level, pos)) continue;
+            reachable.add(pos.asLong());
+            for (Direction direction : Direction.Plane.HORIZONTAL) {
+                BlockPos next = pos.relative(direction);
+                int x = next.getX() - base.getX();
+                int z = next.getZ() - base.getZ();
+                if (x >= 1 && x <= 3 && z >= 1 && z <= 3
+                        && !visited.contains(next.asLong())) queue.addLast(next);
+            }
+        }
+        reachable.remove(base.offset(2, 1, 0).asLong());
+        reachable.remove(base.offset(4, 1, 1).asLong());
+        return Set.copyOf(reachable);
+    }
+
+    private static boolean safeTemplateStanding(ServerLevel level, BlockPos pos) {
+        if (!VillageSimulationScheduler.isChunkLoaded(level, pos)) return false;
+        BlockState feet = level.getBlockState(pos);
+        BlockState head = level.getBlockState(pos.above());
+        BlockState floor = level.getBlockState(pos.below());
+        return (feet.isAir() || feet.is(BlockTags.WOODEN_DOORS))
+                && (head.isAir() || head.is(BlockTags.WOODEN_DOORS))
+                && level.getFluidState(pos).isEmpty() && level.getFluidState(pos.above()).isEmpty()
+                && floor.isFaceSturdy(level, pos.below(), Direction.UP)
+                && !floor.is(net.minecraft.world.level.block.Blocks.MAGMA_BLOCK)
+                && !floor.is(net.minecraft.world.level.block.Blocks.CAMPFIRE)
+                && !floor.is(net.minecraft.world.level.block.Blocks.SOUL_CAMPFIRE);
+    }
+
+    private static boolean knownGroundTemplate(VillageSavedData.BuildingRecord building) {
+        String template = building.templateId();
+        return building.villageBuilt()
+                && building.max().getX() == building.min().getX() + 4
+                && building.max().getZ() == building.min().getZ() + 4
+                && ("house_5x5".equals(template) || "house_gabled_5x5".equals(template)
+                    || "house_2story_5x5".equals(template) || "house_3story_5x5".equals(template)
+                    || "storage_5x5".equals(template) || VillageCraftHallPlanner.TEMPLATE.equals(template)
+                    || VillageSpecialistWorkshopService.isSpecialistTemplate(template));
+    }
+
+    private static boolean adjacentToReachable(ServerLevel level, BlockPos anchor, Set<Long> reachable) {
+        for (Direction direction : Direction.Plane.HORIZONTAL) {
+            BlockPos standing = anchor.relative(direction);
+            if (reachable.contains(standing.asLong()) && !level.canSeeSky(standing)) return true;
+        }
+        return false;
+    }
+
     private static boolean revalidateBuilding(ServerLevel level, VillageSavedData.BuildingRecord building) {
         int beds = 0;
         int containers = 0;
@@ -283,11 +350,14 @@ public final class VillageBuildingService {
 
         BlockPos min = building.min();
         BlockPos max = building.max();
+        Set<Long> groundAccess = knownGroundTemplate(building)
+                ? reachableTemplateGround(level, min) : null;
         boolean twoStoryTemplate = building.villageBuilt()
                 && ("house_2story_5x5".equals(building.templateId())
                     || "house_3story_5x5".equals(building.templateId()));
         boolean secondStoryAccessible = twoStoryTemplate
-                && connectedUpperStories(level, min, 1);
+                && connectedUpperStories(level, min, 1)
+                && (groundAccess == null || adjacentToReachable(level, min.offset(1, 1, 1), groundAccess));
         boolean thirdStoryAccessible = secondStoryAccessible
                 && "house_3story_5x5".equals(building.templateId())
                 && connectedUpperStories(level, min, 2);
@@ -304,6 +374,10 @@ public final class VillageBuildingService {
             boolean usableAnchor = building.villageBuilt()
                     || VillageBuildingAdoptionService.hasAdjacentStandingSpace(
                             level, pos, min, max);
+            if (groundAccess != null) {
+                usableAnchor &= !groundAccess.isEmpty()
+                        && (pos.getY() != min.getY() + 1 || adjacentToReachable(level, pos, groundAccess));
+            }
 
             if (usableAnchor && state.getBlock() instanceof BedBlock
                     && state.hasProperty(BedBlock.PART)
@@ -391,6 +465,12 @@ public final class VillageBuildingService {
             valid &= usableInteriorCells > 0;
         }
 
+        // An intact shell and surviving anchors behind a blocked public
+        // entrance no longer manufacture usable housing/work/storage capacity.
+        if (groundAccess != null && groundAccess.isEmpty()) {
+            valid = false;
+            building.setValidatedCapacity(0);
+        }
         building.setValidationState(valid ? "valid" : "invalid");
         building.setLastValidatedGameTime(level.getGameTime());
 

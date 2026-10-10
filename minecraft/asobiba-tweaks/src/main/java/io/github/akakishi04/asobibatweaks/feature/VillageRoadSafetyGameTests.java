@@ -15,7 +15,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 public final class VillageRoadSafetyGameTests {
     private VillageRoadSafetyGameTests() {}
 
-    @GameTest(template = "empty3x3x3", batch = "village_road_safety")
+    @GameTest(skyAccess = true, template = "empty3x3x3", batch = "village_road_safety")
     public static void unloadedRoadCorridorNeverBecomesStraightFallback(
             GameTestHelper helper) {
         BlockPos from = helper.absolutePos(new BlockPos(1, 1, 1));
@@ -37,7 +37,7 @@ public final class VillageRoadSafetyGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty16x6x9", batch = "village_road_safety")
+    @GameTest(skyAccess = true, template = "empty16x6x9", batch = "village_road_safety")
     public static void materialDetoursAndProtectedBankCanVetoBridge(GameTestHelper helper) {
         for (int x = 0; x < 16; x++) for (int z = 0; z < 9; z++) {
             helper.setBlock(new BlockPos(x, 0, z), Blocks.STONE);

@@ -106,6 +106,9 @@ public final class VillageStorageService {
         bootstrapLegacyIfNeeded(villager, level);
 
         for (LocatedContainer located : containers(villageId.get(), level)) {
+            if (!VillagerSimData.hasWorkCargo(villager, level.registryAccess(), 16)
+                    && "none".equals(VillagerSimData.emergencyDuty(villager))
+                    && !ordinaryDestination(villager, level, villageId.get(), located.record.pos())) continue;
             double distance = villager.distanceToSqr(located.record.pos().getCenter());
             if (distance < bestDistance) {
                 bestDistance = distance;
@@ -129,6 +132,7 @@ public final class VillageStorageService {
         LocatedContainer best = null;
         double bestDistance = Double.MAX_VALUE;
         for (LocatedContainer located : containers(villageId.get(), level)) {
+            if (!ordinaryDestination(villager, level, villageId.get(), located.record.pos())) continue;
             boolean matches = false;
             Container container = located.container();
             for (int slot = 0; slot < container.getContainerSize(); slot++) {
@@ -147,6 +151,14 @@ public final class VillageStorageService {
             }
         }
         return Optional.ofNullable(best);
+    }
+
+    private static boolean ordinaryDestination(Villager worker, ServerLevel level, UUID villageId, BlockPos pos) {
+        // Assigned satellite workers have explicit remote provenance. Freight and paid cargo
+        // recovery use the unfiltered indexed facade/physical local-access view and explicit recovery exception above.
+        if (VillagerSimData.outpostSiteId(worker).isPresent()) return true;
+        return VillageSavedData.get(level).village(villageId)
+                .filter(village -> VillageActivityBoundary.contains(village, pos)).isPresent();
     }
 
     public static void reconcileVillage(Villager villager, ServerLevel level) {

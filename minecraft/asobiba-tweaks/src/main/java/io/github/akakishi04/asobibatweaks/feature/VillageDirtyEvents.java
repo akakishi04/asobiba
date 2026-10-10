@@ -19,6 +19,11 @@ public final class VillageDirtyEvents {
     @SubscribeEvent
     public void onBlockPlaced(BlockEvent.EntityPlaceEvent event) {
         if (!(event.getLevel() instanceof ServerLevel level)) return;
+        if (event.getEntity() instanceof Player) {
+            VillageConstructionAccessService.playerEdited(level, event.getPos());
+            VillageBedRepairService.playerEdited(level, event.getPos());
+            VillageResourceSiteService.playerPlaced(level, event.getPos());
+        }
         enqueueChunkInvalidation(level, new ChunkPos(event.getPos()), "place");
 
         if (event.getEntity() instanceof Player) {
@@ -34,6 +39,9 @@ public final class VillageDirtyEvents {
     @SubscribeEvent
     public void onBlockBroken(BlockEvent.BreakEvent event) {
         if (!(event.getLevel() instanceof ServerLevel level)) return;
+        VillageSavedData.get(level).setPlayerResourceBlock(event.getPos(), false);
+        VillageConstructionAccessService.playerEdited(level, event.getPos());
+        VillageBedRepairService.playerEdited(level, event.getPos());
         enqueueChunkInvalidation(level, new ChunkPos(event.getPos()), "break");
     }
 

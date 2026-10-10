@@ -100,10 +100,10 @@ public final class CurseMasteryEvents {
 
     @SubscribeEvent
     public void onEquipChanged(LivingEquipmentChangeEvent event) {
-        if (!(event.getEntity() instanceof ServerPlayer player)
-                || event.getTo().isEmpty()) return;
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
 
-        CurseLegacySavedData.get(player.serverLevel()).applyLegacy(player, event.getTo());
+        if (!event.getTo().isEmpty())
+            CurseLegacySavedData.get(player.serverLevel()).applyLegacy(player, event.getTo());
 
         // NeoForge's equipment change event is not cancellable. Only reclaim
         // an item we can physically locate in this player's own inventory.

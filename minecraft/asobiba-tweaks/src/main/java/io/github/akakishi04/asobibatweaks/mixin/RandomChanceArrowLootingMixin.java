@@ -2,6 +2,8 @@ package io.github.akakishi04.asobibatweaks.mixin;
 
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import io.github.akakishi04.asobibatweaks.feature.ArrowLootingSupport;
+import io.github.akakishi04.asobibatweaks.feature.LootingMasteryService;
+import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.storage.loot.LootContext;
 import net.minecraft.world.level.storage.loot.predicates.LootItemRandomChanceWithEnchantedBonusCondition;
 import org.spongepowered.asm.mixin.Mixin;
@@ -22,4 +24,12 @@ public abstract class RandomChanceArrowLootingMixin {
                 vanilla, condition.enchantment(), context
         );
     }
+    @ModifyExpressionValue(method = "test(Lnet/minecraft/world/level/storage/loot/LootContext;)Z",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/util/RandomSource;nextFloat()F"))
+    private float asobibatweaks$bigGameRareChance(float roll, LootContext context) {
+        var condition = (LootItemRandomChanceWithEnchantedBonusCondition)(Object)this;
+        return condition.enchantment().is(Enchantments.LOOTING)
+                ? LootingMasteryService.rareRoll(roll, context) : roll;
+    }
+
 }

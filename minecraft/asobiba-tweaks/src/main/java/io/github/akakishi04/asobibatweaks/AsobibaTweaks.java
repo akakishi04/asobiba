@@ -9,6 +9,8 @@ import io.github.akakishi04.asobibatweaks.feature.EnchantmentTweaksEvents;
 import io.github.akakishi04.asobibatweaks.feature.EnchantedArrowImpactEvents;
 import io.github.akakishi04.asobibatweaks.feature.EmbeddedArrowRecoveryEvents;
 import io.github.akakishi04.asobibatweaks.feature.LoyaltyArrowEvents;
+import io.github.akakishi04.asobibatweaks.feature.LoyaltyTridentMasteryEvents;
+import io.github.akakishi04.asobibatweaks.feature.FeatherFallingMasteryEvents;
 import io.github.akakishi04.asobibatweaks.feature.LauncherReloadMasteryEvents;
 import io.github.akakishi04.asobibatweaks.feature.VolleyMasteryEvents;
 import io.github.akakishi04.asobibatweaks.feature.FishingMasteryEvents;
@@ -70,6 +72,7 @@ public final class AsobibaTweaks {
         modBus.addListener(QuiverNetworking::registerPayloads);
         modBus.addListener(FletchingCopyNetworking::registerPayloads);
         modBus.addListener(FrostWalkerToggleNetworking::registerPayloads);
+        modBus.addListener(MaceMasteryEvents::registerPayloads);
         container.registerConfig(ModConfig.Type.COMMON, AsobibaTweaksConfig.SPEC);
         NeoForge.EVENT_BUS.register(new GrowingItemsEvents());
         NeoForge.EVENT_BUS.register(new GiantOrganismEvents());
@@ -78,6 +81,8 @@ public final class AsobibaTweaks {
         NeoForge.EVENT_BUS.register(new EnchantedArrowImpactEvents());
         NeoForge.EVENT_BUS.register(new EmbeddedArrowRecoveryEvents());
         NeoForge.EVENT_BUS.register(new LoyaltyArrowEvents());
+        NeoForge.EVENT_BUS.register(new LoyaltyTridentMasteryEvents());
+        NeoForge.EVENT_BUS.register(new FeatherFallingMasteryEvents());
         NeoForge.EVENT_BUS.register(new ChannelingMasteryEvents());
         NeoForge.EVENT_BUS.register(new UnbreakingMasteryEvents());
         NeoForge.EVENT_BUS.register(new QuiverAmmoEvents());

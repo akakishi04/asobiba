@@ -3,6 +3,20 @@
 Target: Minecraft 1.21.1, NeoForge 21.1.219, Java 21.
 Branch: `feat/minecraft-mods-bootstrap`; PR #3.
 
+## Current evidence (2026-10-10 integration checkpoint)
+
+| Evidence | Result and limit |
+|---|---|
+| Published code | Baseline `6d0426f` contains V91 recipient-warehouse replacement. The larger local integration is uncommitted at this checkpoint; no final published hash/CI result is claimed. |
+| Latest completed local GameTestServer | `asobiba-local-gametest-round7.log`: **all 224 required tests passed in 17.99 s; BUILD SUCCESSFUL in 40 s**. This verifies compilation and the required local server suite for that snapshot. |
+| Identical-source repeat/full build | `asobiba-final-repeat-build.log`: **224/224 required tests passed in 17.40 s; BUILD SUCCESSFUL in 34 s**. AsobibaTweaks JAR built at `build/libs/asobibatweaks-0.1.0.jar` (1.3 MiB). |
+| Resolved earlier failures | Round7 verifies the native Wind-impulse comparison, immediate physical-cover checks independent of delayed sky light, and the live `WORLD_SURFACE` river-height fix. No required test failed in this run. |
+| Implementation closure | All bounded accepted integration scopes and their registered regression tests passed round7, including final resource planning and all eleven boundary/history scenarios. Changes after this snapshot require fresh verification. |
+| Data Logger | Unchanged and excluded from feature scope. Separate local `data-logger-final-build.log`: BUILD SUCCESSFUL. |
+| Final integration gate | Both local builds and identical-source required-suite repeat passed. Dedicated-server smoke and CI for the exact published integration hash remain pending. Local PASS alone does not satisfy publication/conditional merge or human gameplay gates. |
+
+Historical test totals below describe their own snapshots only. Source method/class names are authoritative for newer coverage; no new GT sequence numbers are invented.
+
 **Definitions**
 
 - **CI PASS**: both Gradle builds complete, a headless NeoForge
@@ -39,9 +53,9 @@ Branch: `feat/minecraft-mods-bootstrap`; PR #3.
 | G18 | Refugee/outpost/merger lifecycle | Stable Village IDs, correct destination caps, return and abandonment hysteresis | Needs gameplay test |
 | G19 | Continental worldgen and rivers | Determinism for seed, visually sane lakes/rivers/deltas, no accidental chunk loads | Needs gameplay test |
 | G20 | Multiplayer + world save/reload | No per-tick unbounded work, duplication, dropped inventories, corrupted SaveData | Needs gameplay test |
-| G23 | Housing pressure and safe reuse | Recognized usable homes drive construction; reserve, cooldown, chronic homeless people and food stability change priority; existing village-owned home can gain a real, paid second Bed without modifying player blocks; no bogus extra building capacity | Partial: GT28–GT31 automated; in-place second-floor/roof expansion, sleeping AI and multiplayer still pending |
-| G22 | Road/bridge terrain safety | No generated road from unloaded/unreachable terrain; actual cost comparison prefers cheap detours; 2-12-block bridges pay all physical materials, protect player structures, preserve source water and do not strand villagers on unwalkable grades | Partial: GT23-GT27 automated; long-running villagers, extreme terrain and multiplayer still pending |
-| G21 | River dock and ChestBoat freight | Real material purchase, no water-source deletion, physically validated water route, real boat inventory conservation, pause/resume after unload and save/reload, passenger takeover, blocked route, full destination and no duplicate carriers | Partial: GT09-GT17 server tests registered; full restart/client/multiplayer and real long-distance Porter navigation pending (cargo ON by default; still experimental) |
+| G21 | River dock and ChestBoat freight | Real material purchase, no water-source deletion, physically validated water route, real boat inventory conservation, pause/resume after unload and save/reload, passenger takeover, blocked route, full destination and no duplicate carriers | Partial: paid cargo/Porter, reserve/category, recovery/receipt and carrier lifecycle cases passed in round7; actual process/chunk restart, client/multiplayer and long-distance navigation pending. Cargo remains ON by default |
+| G22 | Road/bridge terrain safety | No generated road from unloaded/unreachable terrain; cost comparison prefers cheap detours; paid 2–12-column cardinal/45-degree water spans and short founded ravines protect player blocks/source water and provide supported connected decks | Partial: legacy safety plus multi-crossing and `VillageSpanBridgeGameTests` passed round7; real long-running villagers, varied terrain and multiplayer pending. Unsupported angles/long spans/deep or unequal banks remain conservative exclusions |
+| G23 | Housing pressure, repair and usable expansion | Real usable housing drives demand; paid second-bed reuse and owner-linked 1→2→3 expansion preserve identity; v2 ordinary homes have three/four supported beds with reachable entry/stairs; bedding/shell repair and migration preserve materials/player edits | Partial: demand, expansion, bedding, access, all eight circulation cases and composite shell repair passed round7. Actual sleeping, autonomous vertical navigation, process restart/crash boundaries and multiplayer remain pending |
 
 ## Focused priorities
 
@@ -52,9 +66,12 @@ These can silently lose or duplicate real items, XP, villagers or world blocks.
 actual in-game samples.
 
 **Gameplay harness needed**: controlled GameTests and a repeatable long-run
-dedicated-server simulation. Thirty-one required NeoForge GameTests passed CI run 37896419540, but the rest of the player,
-projectile, village, save/reload and multiplayer scenarios still require
-real in-game testing. CI must not be used to label the project feature-complete.
+dedicated-server simulation. The historical 31-test CI run 37896419540 is an
+earlier milestone, not the current suite result. Use the current evidence above.
+Player input, native projectile firing/pickup, real restart/unload, lived-night
+villager behavior, sustained multiplayer and modpack/performance still require
+their own scenarios. Neither implementation coverage nor a headless CI pass
+alone establishes release readiness.
 
 ## Downloadable CI deliverables
 
@@ -68,9 +85,9 @@ In GitHub Actions, open the successful run and download the named artifact
 from the Artifacts section. Do not install a `-sources.jar`.
 
 
-## Automated GameTests (required server suite)
+## Automated GameTests (stable legacy references)
 
-The required tests run on a real NeoForge GameTestServer. Existing small-world cases use `asobibatweaks:empty3x3x3`; GT11-GT14 build a real 16x6x9 source-water river fixture with actual Barrel block entities, real ChestBoat entities and durable VillageSavedData:
+The required tests run on a real NeoForge GameTestServer. GT01–GT84 are retained reference labels, not a count of the current suite. Existing small-world cases use `asobibatweaks:empty3x3x3`; GT11–GT14 build a real 16x6x9 source-water river fixture with actual Barrel block entities, real ChestBoat entities and durable VillageSavedData. The later unnumbered class/method coverage is listed after this table:
 
 | ID | Test | Property |
 |---|---|---|
@@ -132,7 +149,7 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT56 | skilledOriginalSecondFloorSchedulesPersistentThirdFloor | Master builder selects an actually complete village-owned two-storey house and preserves its original BuildingRecord and project reference on SavedData reload |
 | GT57 | playerEditedThirdFloorCannotTriggerDemolition | Player blocks in the upper expansion volume veto all physical demolition and material withdrawal |
 | GT58 | secondStoreyBedDemolishesOnceAndDropsRealItem | One obstructing second-storey Bed is physically demolished once by vanilla, producing exactly one real recoverable item even after replay |
-| GT59 | completeThirdFloorMaintainsOriginalIdAndFiveRealBeds | Real connected two-flight stairs, third-floor rooms, existing house identity, bounded revalidation and five actually supported sleeping spaces survive SavedData roundtrip |
+| GT59 | completeThirdFloorMaintainsOriginalIdAndFourRealBeds | Version-2 real connected two-flight stairs, third-floor rooms, existing house identity, bounded revalidation and four actually supported sleeping spaces survive SavedData roundtrip; supersedes the former inaccessible five-bed expectation |
 | GT60 | blockProbeExhaustionSchedulesFiniteHousingRetry | A real multistorey home deliberately exhausts the dedicated, finite building-validation probe lane and stays unknown until a later loaded tick, then revalidates its actual bed count without changing its BuildingRecord ID |
 | GT61 | expandedUpperRoofUsesOneRealRepairPlankAndRespectsPlayerEdit | A real completed three-storey expansion provides its owner-linked roof blueprint for physical repair; one plank costs one authentic item, player Glass remains untouched and the original BuildingRecord ID is preserved |
 | GT62 | nonVanillaLikeBlockEntitiesProtectPlayerLand | A genuine Hopper BlockEntity (not in the old explicit protected-block list) proves loaded machines and modded containers can veto natural saplings without chunk generation or virtual inventory |
@@ -152,8 +169,6 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT76 | foreignWarehouseNeverReceivesOriginFreight | A nearby fully loaded but foreign-village Barrel must not receive paid return goods; all 16 real units remain in the Porter's persisted cargo |
 | GT77 | carpenterPaysOnePlankBeforeTravelingToDistantRoof | A distant real roof repair preloads exactly one physical plank from recognized ground-level Barrel into persistent Carpenter cargo, then consumes only that item when reaching the actual roof; no duplication or phantom material |
 | GT78 | finishedSecondBedIsCarriedBeforeLongHouseWalk | A genuine one-story home physically receives its second Bed from remote registered storage only after the worker first carries its real unstackable item; no warehouse↔home oscillation or repeated payment |
-
-
 | GT79 | destroyedReceiverReroutesExactNamedCargoAfterReload | Destroyed destination selects a recognized same-village spare without remote insertion; the separate parcel destination and exact named cargo survive entity NBT while the shared route endpoint remains unchanged |
 | GT80 | fullReceiverUsesOnlyItsOwnRegisteredSpare | Full receiver routes the physically paid parcel to real recipient-owned spare storage, never a closer foreign warehouse |
 | GT81 | foreignOrInvalidReceiverNeverAcceptsHeldFreight | Foreign-village and unvalidated replacement containers remain untouched; a full receiver retains all actual cargo and records no false traffic |
@@ -161,4 +176,50 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT83 | partialReceiptReroutesOnlyRemainingPhysicalCargo | A partial four-item receipt followed by a replacement deposits only the remaining twelve real items, with exactly sixteen total traffic and no duplicate replay |
 | GT84 | removedReplacementIsRevalidatedBeforeDelivery | A selected spare destroyed before arrival is revalidated and triggers a real return, preserves the replacement player block, and creates no phantom delivery |
 
-These tests are **not** a full acceptance of G01-G22: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.
+## New integration coverage by source class
+
+“Passed in round7” means those scenarios ran in the completed 224-test snapshot, in which all required tests passed. It does not verify later edits to those classes or production code. Class names intentionally replace invented GT numbers.
+
+| Source class / methods | Property established or targeted | Evidence |
+|---|---|---|
+| `AsobibaTemplateFormatTests.allFixtureDimensionsSurviveMinecraftNbtLoading` | Real Minecraft structure loading accepts fixture dimensions as the required NBT list type | Passed in round7 |
+| `VillageBedRepairGameTests` | One physical Bed per restored pair; original/expanded/reuse provenance; blocked entry/player edits; real partial-payment persistence and revocation; no stock/orphan-half free placement | Passed in round7; no crash-atomicity claim |
+| `VillageCompositeShellRepairGameTests` | Owner-linked lower/upper shell composition; finite batches for larger damage; foreign ancestry veto; immutable legacy repair-index meaning | Passed in round7, including circulation-aware schema/manifest integration; identical-source repeat also passed |
+| `VillageGroundAccessGameTests` | Entrance-reachable sheltered interactions, dangerous/unsupported-floor veto, east entry and full stair headroom governing real capacity | Passed in round7; full NPC navigation not established |
+| `VillageCirculationVersionGameTests` | Native v2 three/four-bed geometry plus absent-version legacy plan/cursor NBT preservation | Passed in round7 |
+| `VillageConstructionAccessGameTests` | Actual ramp material payment/recovery, occupied-support retention, same-state player-edit ownership revocation and blocked-footprint veto | Passed in round7; controlled actions do not prove autonomous construction travel |
+| `VillageHouseCirculationGameTests` | Legacy bed salvage, unrelated drop preservation, player-edit veto, cursor replay, same-ID retrofit, v2 no-op verification, adopted exclusion and lost-paid-bed replay safety | All eight cases passed in round7 |
+| `VillageHouseCirculationGameTests.legacyShellRepairKeepsVerifiedDoorwayAndHeadroomOpen` | Repair the real damaged shell without rebuilding intentional v2 circulation openings | Passed in round7 |
+| `VillageBridgeGameTests.twoPaidCrossingsResumeSavedRouteWithoutDuplicateBills`, `unsafeSecondCrossingKeepsPaidFirstAndSurveyPending`, `legacyCompletedSlotResumesOnceAndChangedRoutePauses`, `missingChunkContinuationNeverInventsSurveyedRoad` | Saved multi-crossing continuation, no duplicate payment, unsafe/unknown terrain pause and preservation of completed crossings | Passed in round7 |
+| `VillageSpanBridgeGameTests` | Paid 45-degree connected water geometry in both directions; short dry-ravine physical foundations; foundation-change pause and player-bank veto | Passed in round7 |
+| `VillageRiverFreightSafetyGameTests` | Real warehouse/category demand, exact-item reservations, late pickup rechecks, unknown/absent stores and exact named paid cargo | Passed in round7; unknown-store fixtures are not actual chunk reloads |
+| `VillageRiverHaulRecoveryGameTests` | Closed-route physical return, only actual restored receipts, original ownership through NBT/migration and unpaid-ticket cancellation | Passed in round7 |
+| `VillageRiverCarrierLifecycleGameTests` | Actual destroyed boat produces only vanilla paid drops; no free replacement carrier; unloaded-removal reason retains route ownership | Passed in round7; simulated removal reason is not a complete chunk lifecycle |
+| `VillageProjectReservationGameTests` | Actual/paused item/tag project bills affect price and V90/V91 export/pickup while preserving physical stock, paid cargo and demographics; unknown/oversized demand fails closed | Passed in round7 |
+| `EfficiencyMasteryGameTests` | Hardness-qualified scaling, real per-tool mining rhythm/expiry and partial unsuitable-speed recovery without invalid harvest permission | Passed in round7 |
+| `FeatherFallingMasteryGameTests` | Strongest copy per branch, mastery cap, post-vanilla fall mitigation, actual prevented-impact domain and real input acceleration without gravity changes | Passed in round7 |
+| `AsobibaArmorBranchTests` | Distinct equipped branches coexist; duplicate branches apply once at strongest mastery; one-time extinguishing; no refund for swapped/unrelated boot damage | Passed in round7 |
+| `EnchantmentLootMasteryGameTests` | Native common/rare roll modifications; Fortune variance applies to actual bonus, preserves crop baseline and excludes ineligible raw blocks | Passed in round7 |
+| `FrostWalkerExtensionGameTests` | Directional ice preserves waterlogged/player/flowing water, schedules normal melting and never loads remote terrain | Passed in round7 |
+| `EnchantedArrowDomainGameTests` | Arrow-only damage/flight/return effects cannot claim native tridents, including stale arrow return markers | Passed in round7 |
+| `EnchantedArrowFlameGameTests` | Actual Flame-ammo projectile lights a vanilla campfire; extinguished state remains extinguished through entity NBT/rejoin | Passed in round7 |
+| `LoyaltyTridentMasteryGameTests` | Bounded distinct native return motion, owner/pickup/paid-item retention and one growth credit through NBT | Passed in round7; handler/motion tests do not prove naturally thrown full flight/pickup |
+| `ArrowAmmoMasteryGameTests` | Relevant history belongs to the paid recoverable ammo stack, survives native save/pickup and does not replay or ignore target/config gates | Passed in round7 |
+| `CombatRecoveryMasteryGameTests` | Whole-event Unbreaking reserve; actual attack recovery; genuine two-target sweep; native Wind launch and real strongest-only aerial input | All five cases passed in round7, including native launch comparison with independent wind-pressure contribution |
+| `NativeEffectMasteryGameTests` | Native Fire Aspect/Bane durations, actual Breach armor reduction, nonduplicating Binding reclaim and native Punch impulse/source handling | All six cases passed in round7 |
+| `ContinentalRiverGenerationGameTests` | Five seeded production-model checks: nonshrinking accumulated width, downhill shared grades, receiving sink lakes, order-independent seam samples and no hanging-water carve permission | Passed in round7; these tests do not place a generated river into real chunks |
+| `VillageResourceSiteGameTests` | Fixed Forestry/Quarry/Fishing assignment/bounds, physical demand/saplings, quarry depth/fluids/player protection, persistence, missing/unknown sites and exhausted/undersized budgets | All twelve cases passed in round7; identical-source repeat/full build also passed |
+| `VillageActivityBoundaryGameTests` / `VillageHistoryMaintenanceGameTests` | Connected bounded growth and invalid-anchor retirement; active clocks/NBT; safe indexed ephemeral compaction, retained physical/referenced ownership, terminal reservation release and traffic decay without consuming receipts | All five boundary and six history cases passed in round7 |
+| `MobBuildingUseGameTests` | Actual furniture/cover/occupancy, essential AI ownership, reachable navigation, path preferences and hard probe/loaded-world bounds | All nine cases passed in round7, including physical cover immediately after roof edits |
+| `ContinentalRiverPhysicalGameTests.seededCarvingCreatesNavigableSeamsAndARealTerminalLake` | Production carving into actual chunks; physical seam/order continuity, navigable water and receiving lake | Passed in round7; not a general new-world visual/modpack acceptance |
+| `ContinentalRiverPhysicalGameTests.loweredTerrainAndNativeChunkGuardsPreventPhysicalDamage` | Actual lowered terrain plus native existing-chunk/structure/reference guards | Passed in round7 after production switched from stale `WORLD_SURFACE_WG` to live `WORLD_SURFACE` |
+
+## Explicit limits and remaining gameplay evidence
+
+- **G01–G23 remain scenario gates.** Passing a narrower automated transaction/model test does not make the full corresponding gameplay scenario PASS.
+- **Persistence:** entity/SavedData NBT roundtrips and cursor-replay checks do not prove actual process restart, interrupted disk writes, real chunk unload/reload or crash-atomic two-half Bed transactions.
+- **Physical AI:** scripted movement/placement and bounded geometry checks do not prove that villagers complete long routes, build upper floors autonomously or sleep successfully across live nights.
+- **Client/multiplayer:** UI gestures, native projectile launch/collision/pickup, Wind/Feather input synchronization and simultaneous player edits need real-client/multiplayer verification.
+- **World generation:** model determinism is narrower than physical channel continuity, shore appearance and useful boat navigation. Structure/reference guards and exceptional low terrain intentionally remain possible interruptions.
+- **Compatibility/performance:** sustained multiplayer, actual modpack POIs/loot/terrain hooks and long-lived history budgets need their own measured runs.
+- **Intentional scope:** all 41 selectable enchantment families have code; Mending is branchless and Flame's third slot is deliberately open. Additional ammo-domain specializations, pack animals, portage and unrestricted bridge geometry are not missing initial-release implementations.

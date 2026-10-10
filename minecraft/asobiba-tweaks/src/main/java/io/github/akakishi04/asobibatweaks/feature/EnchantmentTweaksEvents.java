@@ -134,7 +134,6 @@ public final class EnchantmentTweaksEvents {
     private static final String LOOTING_HERD_TYPE = "asobibatweaks_looting_herd_type";
     private static final String LOOTING_HERD_TIME = "asobibatweaks_looting_herd_time";
     private static final String LOOTING_HERD_STREAK = "asobibatweaks_looting_herd_streak";
-    private static final String SOUL_SPEED_PREV_DAMAGE = "asobibatweaks_soul_speed_prev_damage";
     private static final String SOUL_SPEED_ACTIVE_SPEED = "asobibatweaks_soul_speed_active_speed";
     private static final String SOUL_SPEED_LINGER_UNTIL = "asobibatweaks_soul_speed_linger_until";
     private static final String RIPTIDE_SPIN_ACTIVE = "asobibatweaks_riptide_spin_active";
@@ -148,7 +147,7 @@ public final class EnchantmentTweaksEvents {
             return;
         }
 
-        BranchRef swiftSneak = armorBranch(player, SWIFT_SNEAK);
+        BranchRef swiftSneak = armorBranch(player, SWIFT_SNEAK, 0);
         if (swiftSneak == null || swiftSneak.branch() != 0) return;
 
         String path = event.getVanillaEvent().unwrapKey()
@@ -190,8 +189,7 @@ public final class EnchantmentTweaksEvents {
             applyHerdHunter(event, player, strength);
         } else if (looting.branch() == 1) {
             applyStripping(event, player, strength, enchantmentLevel(weapon, LOOTING));
-        } else if (looting.branch() == 2) {
-            applyBigGameHunter(event, player, strength);
+
         }
     }
 
@@ -204,7 +202,6 @@ public final class EnchantmentTweaksEvents {
         gain(player, tool, 1);
 
         if (AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()) {
-            applyFortuneBranch(event, tool, player);
             markAquaSuccessfulWork(player, 30L, 5L);
         }
     }
@@ -310,29 +307,6 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
-    public void onPunchProjectileHurt(LivingIncomingDamageEvent event) {
-        if (!(event.getSource().getEntity() instanceof ServerPlayer player)
-                || event.getSource().getDirectEntity() == player
-                || player.level().isClientSide()
-                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
-                || event.getAmount() <= 0.0F) {
-            return;
-        }
-
-        ItemStack weapon = event.getSource().getWeaponItem();
-        if (weapon == null || weapon.isEmpty()) return;
-
-        BranchRef punch = branch(weapon, PUNCH);
-        if (punch == null) return;
-
-        double strength = branchScale(punch.mastery(), 0.0D, 1.0D);
-        var data = event.getEntity().getPersistentData();
-        data.putInt(PUNCH_BRANCH, punch.branch());
-        data.putInt(PUNCH_STRENGTH, (int)Math.round(strength * 1000.0D));
-        data.putLong(PUNCH_UNTIL, player.level().getGameTime() + 2L);
-    }
-
-    @SubscribeEvent
     public void onKnockbackWeaponHurt(LivingIncomingDamageEvent event) {
         if (!(event.getSource().getEntity() instanceof ServerPlayer player)
                 || event.getSource().getDirectEntity() != player
@@ -368,7 +342,7 @@ public final class EnchantmentTweaksEvents {
             return;
         }
 
-        BranchRef thorns = armorBranch(player, THORNS);
+        BranchRef thorns = armorBranch(player, THORNS, 2);
         if (thorns == null || thorns.branch() != 2) return;
 
         var persistent = player.getPersistentData();
@@ -438,55 +412,6 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
-    public void onFireAspectHurt(LivingIncomingDamageEvent event) {
-        if (!(event.getSource().getEntity() instanceof ServerPlayer player)
-                || event.getSource().getDirectEntity() != player
-                || event.getSource().is(DamageTypes.THORNS)
-                || player.getPersistentData().getBoolean(SMITE_ECHO_ACTIVE)
-                || player.level().isClientSide()
-                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
-                || event.getAmount() <= 0.0F) {
-            return;
-        }
-
-        ItemStack weapon = player.getMainHandItem();
-        BranchRef fireAspect = branch(weapon, FIRE_ASPECT);
-        if (fireAspect == null) return;
-
-        int level = enchantmentLevel(weapon, FIRE_ASPECT);
-        if (level <= 0) return;
-
-        double strength = branchScale(fireAspect.mastery(), 0.0D, 1.0D);
-        int baseBurnTicks = 80 * level;
-        long now = player.level().getGameTime();
-
-        if (fireAspect.branch() == 0) {
-            double extension = 0.25D + 0.50D * strength;
-            int desired = (int)Math.round(baseBurnTicks * (1.0D + extension));
-            event.getEntity().setRemainingFireTicks(
-                    Math.max(event.getEntity().getRemainingFireTicks(), desired)
-            );
-        } else if (fireAspect.branch() == 1) {
-            int duration = Math.max(20, (int)Math.round(baseBurnTicks * 0.60D));
-            event.getEntity().setRemainingFireTicks(duration);
-            var data = event.getEntity().getPersistentData();
-            data.putLong(FIRE_ASPECT_FLASH_UNTIL, now + duration);
-            data.putInt(
-                    FIRE_ASPECT_FLASH_MULTIPLIER,
-                    (int)Math.round((1.20D + 0.40D * strength) * 1000.0D)
-            );
-        } else if (fireAspect.branch() == 2) {
-            int duration = Math.max(baseBurnTicks, event.getEntity().getRemainingFireTicks());
-            var data = event.getEntity().getPersistentData();
-            data.putLong(FIRE_ASPECT_CAUTERIZE_UNTIL, now + duration);
-            data.putInt(
-                    FIRE_ASPECT_CAUTERIZE_REDUCTION,
-                    (int)Math.round((0.10D + 0.20D * strength) * 1000.0D)
-            );
-        }
-    }
-
-    @SubscribeEvent
     public void onBaneHurt(LivingIncomingDamageEvent event) {
         if (!(event.getSource().getEntity() instanceof ServerPlayer player)
                 || event.getSource().getDirectEntity() != player
@@ -506,16 +431,7 @@ public final class EnchantmentTweaksEvents {
 
         double strength = branchScale(bane.mastery(), 0.0D, 1.0D);
 
-        if (bane.branch() == 0) {
-            int estimatedVanillaSlow = 20 + 10 * level;
-            int duration = estimatedVanillaSlow
-                    + (int)Math.round(estimatedVanillaSlow * (0.25D + 0.75D * strength));
-            event.getEntity().addEffect(new MobEffectInstance(
-                    MobEffects.MOVEMENT_SLOWDOWN,
-                    Math.max(1, duration),
-                    3
-            ));
-        } else if (bane.branch() == 1) {
+        if (bane.branch() == 1) {
             int nearby = Math.min(3, player.level().getEntitiesOfClass(
                     LivingEntity.class,
                     event.getEntity().getBoundingBox().inflate(6.0D),
@@ -647,8 +563,7 @@ public final class EnchantmentTweaksEvents {
         if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()) return;
 
         if (event.getEntity() instanceof ServerPlayer player && player.isUnderWater()) {
-            BranchRef aqua = armorBranch(player, AQUA_AFFINITY);
-            if (aqua != null) {
+            for (BranchRef aqua : armorBranches(player, AQUA_AFFINITY)) {
                 double strength = branchScale(aqua.mastery(), 0.0D, 1.0D);
                 if (aqua.branch() == 0 && !player.onGround()) {
                     double removedPenalty = 0.25D + 0.75D * strength;
@@ -663,22 +578,17 @@ public final class EnchantmentTweaksEvents {
             }
         }
 
-        ItemStack stack = event.getEntity().getMainHandItem();
-        for (Holder<Enchantment> enchantment : EnchantmentMasteryData.enchantments(stack).keySet()) {
-            if (!"minecraft:efficiency".equals(EnchantmentMasteryData.id(enchantment))) continue;
-            int mastery = EnchantmentMasteryData.getMastery(stack, enchantment);
-            if (mastery < BRANCH_THRESHOLD) return;
-            int branch = EnchantmentMasteryData.getBranch(stack, enchantment);
-            if (branch < 0) return;
-            float factor = switch (branch) {
-                case 0 -> 1.05F;
-                case 1 -> 1.10F;
-                case 2 -> 1.075F;
-                default -> 1.0F;
-            };
-            event.setNewSpeed(event.getNewSpeed() * factor);
-            return;
-        }
+        event.getPosition().ifPresent(pos -> event.setNewSpeed(EfficiencyMasteryService.speed(
+                event.getEntity().getMainHandItem(), event.getState(), event.getEntity().level(),
+                pos, event.getNewSpeed(), event.getEntity().level().getGameTime())));
+    }
+
+    @SubscribeEvent
+    public void onEfficiencyBlockDrops(BlockDropsEvent event) {
+        if (!(event.getBreaker() instanceof ServerPlayer player)
+                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()) return;
+        EfficiencyMasteryService.recordBreak(event.getTool(), event.getState(), player.level(),
+                event.getPos(), player.level().getGameTime());
     }
 
     @SubscribeEvent
@@ -725,7 +635,7 @@ public final class EnchantmentTweaksEvents {
     }
 
     @SubscribeEvent
-    public void onBreachDamage(LivingDamageEvent.Pre event) {
+    public void onBreachDamage(LivingIncomingDamageEvent event) {
         if (!(event.getSource().getEntity() instanceof ServerPlayer player)
                 || event.getSource().getDirectEntity() != player
                 || event.getSource().is(DamageTypes.THORNS)
@@ -733,7 +643,7 @@ public final class EnchantmentTweaksEvents {
                 || player.getPersistentData().getBoolean(THORNS_RELEASE_ACTIVE)
                 || player.level().isClientSide()
                 || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
-                || event.getNewDamage() <= 0.0F) {
+                || event.getAmount() <= 0.0F) {
             return;
         }
 
@@ -745,7 +655,8 @@ public final class EnchantmentTweaksEvents {
         if (breach.branch() == 0) {
             if (event.getEntity().getArmorValue() >= 10) {
                 double extraRemainingDamage = 0.05D + 0.10D * strength;
-                event.setNewDamage((float)(event.getNewDamage() * (1.0D + extraRemainingDamage)));
+                event.addReductionModifier(net.neoforged.neoforge.common.damagesource.DamageContainer.Reduction.ARMOR,
+                        (container, reduction) -> (float)(reduction * (1.0D - extraRemainingDamage)));
             }
             return;
         }
@@ -762,7 +673,8 @@ public final class EnchantmentTweaksEvents {
                         0.15D,
                         Math.max(0.0D, targetData.getInt(BREACH_FRACTURE_BONUS) / 1000.0D)
                 );
-                event.setNewDamage((float)(event.getNewDamage() * (1.0D + bonus)));
+                event.addReductionModifier(net.neoforged.neoforge.common.damagesource.DamageContainer.Reduction.ARMOR,
+                        (container, reduction) -> (float)(reduction * (1.0D - bonus)));
             }
 
             long duration = Math.round(40.0D + 40.0D * strength);
@@ -783,28 +695,28 @@ public final class EnchantmentTweaksEvents {
         // Branches 0/1 specialize an actual vanilla Thorns retaliation event.
         if (event.getSource().is(DamageTypes.THORNS)
                 && event.getSource().getEntity() instanceof ServerPlayer wearer) {
-            BranchRef thorns = armorBranch(wearer, THORNS);
-            if (thorns == null) return;
+            for (BranchRef thorns : armorBranches(wearer, THORNS)) {
 
-            double strength = branchScale(thorns.mastery(), 0.0D, 1.0D);
-            if (thorns.branch() == 0) {
-                event.setNewDamage((float)(event.getNewDamage() * (1.15D + 0.25D * strength)));
-            } else if (thorns.branch() == 1) {
-                event.setNewDamage(event.getNewDamage() * 0.70F);
+                double strength = branchScale(thorns.mastery(), 0.0D, 1.0D);
+                if (thorns.branch() == 0) {
+                    event.setNewDamage((float)(event.getNewDamage() * (1.15D + 0.25D * strength)));
+                } else if (thorns.branch() == 1) {
+                    event.setNewDamage(event.getNewDamage() * 0.70F);
 
-                int duration = (int)Math.round(20.0D + 30.0D * strength);
-                int amplifier = strength >= 0.67D ? 1 : 0;
-                event.getEntity().addEffect(new MobEffectInstance(
-                        MobEffects.MOVEMENT_SLOWDOWN,
-                        Math.max(1, duration),
-                        amplifier
-                ));
+                    int duration = (int)Math.round(20.0D + 30.0D * strength);
+                    int amplifier = strength >= 0.67D ? 1 : 0;
+                    event.getEntity().addEffect(new MobEffectInstance(
+                            MobEffects.MOVEMENT_SLOWDOWN,
+                            Math.max(1, duration),
+                            amplifier
+                    ));
 
-                var away = event.getEntity().position().subtract(wearer.position());
-                double horizontal = Math.sqrt(away.x * away.x + away.z * away.z);
-                if (horizontal > 1.0E-4D) {
-                    double push = 0.12D + 0.10D * strength;
-                    event.getEntity().push(away.x / horizontal * push, 0.08D, away.z / horizontal * push);
+                    var away = event.getEntity().position().subtract(wearer.position());
+                    double horizontal = Math.sqrt(away.x * away.x + away.z * away.z);
+                    if (horizontal > 1.0E-4D) {
+                        double push = 0.12D + 0.10D * strength;
+                        event.getEntity().push(away.x / horizontal * push, 0.08D, away.z / horizontal * push);
+                    }
                 }
             }
             return;
@@ -814,7 +726,7 @@ public final class EnchantmentTweaksEvents {
         if (event.getEntity() instanceof ServerPlayer wearer
                 && !event.getSource().is(DamageTypes.THORNS)
                 && !wearer.getPersistentData().getBoolean(THORNS_RELEASE_ACTIVE)) {
-            BranchRef thorns = armorBranch(wearer, THORNS);
+            BranchRef thorns = armorBranch(wearer, THORNS, 2);
             if (thorns == null || thorns.branch() != 2) return;
 
             double strength = branchScale(thorns.mastery(), 0.0D, 1.0D);
@@ -840,50 +752,49 @@ public final class EnchantmentTweaksEvents {
             return;
         }
 
-        BranchRef blastProtection = armorBranch(player, BLAST_PROTECTION);
-        if (blastProtection == null) return;
+        for (BranchRef blastProtection : armorBranches(player, BLAST_PROTECTION)) {
+            double strength = branchScale(blastProtection.mastery(), 0.0D, 1.0D);
+            double reduction = 0.0D;
+            long now = player.level().getGameTime();
 
-        double strength = branchScale(blastProtection.mastery(), 0.0D, 1.0D);
-        double reduction = 0.0D;
-        long now = player.level().getGameTime();
-
-        if (blastProtection.branch() == 0) {
-            double knockbackReduction = 0.20D + 0.35D * strength;
-            player.getPersistentData().putLong(BLAST_ANCHOR_UNTIL, now + 2L);
-            player.getPersistentData().putInt(
-                    BLAST_ANCHOR_REDUCTION,
-                    (int)Math.round(knockbackReduction * 1000.0D)
-            );
-        } else if (blastProtection.branch() == 1) {
-            var sourcePos = event.getSource().getSourcePosition();
-            if (sourcePos != null) {
-                double distance = sourcePos.distanceTo(player.position());
-                if (distance <= 6.0D) {
-                    double distanceRamp = distance <= 3.0D
-                            ? 1.0D
-                            : Math.max(0.0D, (6.0D - distance) / 3.0D);
-                    double maxReduction = 0.05D + 0.15D * strength;
-                    reduction = maxReduction * distanceRamp;
+            if (blastProtection.branch() == 0) {
+                double knockbackReduction = 0.20D + 0.35D * strength;
+                player.getPersistentData().putLong(BLAST_ANCHOR_UNTIL, now + 2L);
+                player.getPersistentData().putInt(
+                        BLAST_ANCHOR_REDUCTION,
+                        (int)Math.round(knockbackReduction * 1000.0D)
+                );
+            } else if (blastProtection.branch() == 1) {
+                var sourcePos = event.getSource().getSourcePosition();
+                if (sourcePos != null) {
+                    double distance = sourcePos.distanceTo(player.position());
+                    if (distance <= 6.0D) {
+                        double distanceRamp = distance <= 3.0D
+                                ? 1.0D
+                                : Math.max(0.0D, (6.0D - distance) / 3.0D);
+                        double maxReduction = 0.05D + 0.15D * strength;
+                        reduction = maxReduction * distanceRamp;
+                    }
                 }
+            } else if (blastProtection.branch() == 2) {
+                var persistent = player.getPersistentData();
+                long last = persistent.getLong(BLAST_LAST_DAMAGE);
+                int previous = persistent.getInt(BLAST_CHAIN_COUNT);
+                if (!persistent.contains(BLAST_LAST_DAMAGE) || now - last > 100L) previous = 0;
+
+                if (previous > 0 && now - last <= 80L) {
+                    double perPriorBlast = 0.05D + 0.07D * strength;
+                    reduction = Math.min(3, previous) * perPriorBlast;
+                }
+
+                int next = now - last <= 80L ? Math.min(3, previous + 1) : 1;
+                persistent.putLong(BLAST_LAST_DAMAGE, now);
+                persistent.putInt(BLAST_CHAIN_COUNT, next);
             }
-        } else if (blastProtection.branch() == 2) {
-            var persistent = player.getPersistentData();
-            long last = persistent.getLong(BLAST_LAST_DAMAGE);
-            int previous = persistent.getInt(BLAST_CHAIN_COUNT);
-            if (!persistent.contains(BLAST_LAST_DAMAGE) || now - last > 100L) previous = 0;
 
-            if (previous > 0 && now - last <= 80L) {
-                double perPriorBlast = 0.05D + 0.07D * strength;
-                reduction = Math.min(3, previous) * perPriorBlast;
+            if (reduction > 0.0D) {
+                event.setNewDamage((float)(event.getNewDamage() * Math.max(0.0D, 1.0D - reduction)));
             }
-
-            int next = now - last <= 80L ? Math.min(3, previous + 1) : 1;
-            persistent.putLong(BLAST_LAST_DAMAGE, now);
-            persistent.putInt(BLAST_CHAIN_COUNT, next);
-        }
-
-        if (reduction > 0.0D) {
-            event.setNewDamage((float)(event.getNewDamage() * Math.max(0.0D, 1.0D - reduction)));
         }
     }
 
@@ -898,7 +809,7 @@ public final class EnchantmentTweaksEvents {
             return;
         }
 
-        BranchRef fireProtection = armorBranch(player, FIRE_PROTECTION);
+        BranchRef fireProtection = armorBranch(player, FIRE_PROTECTION, 1);
         if (fireProtection == null || fireProtection.branch() != 1) return;
 
         var persistent = player.getPersistentData();
@@ -928,33 +839,32 @@ public final class EnchantmentTweaksEvents {
             return;
         }
 
-        BranchRef protection = armorBranch(player, PROTECTION);
-        if (protection == null) return;
+        for (BranchRef protection : armorBranches(player, PROTECTION)) {
+            double strength = branchScale(protection.mastery(), 0.0D, 1.0D);
+            double reduction = 0.0D;
 
-        double strength = branchScale(protection.mastery(), 0.0D, 1.0D);
-        double reduction = 0.0D;
-
-        if (protection.branch() == 0) {
-            reduction = 0.03D + 0.05D * strength;
-        } else if (protection.branch() == 1) {
-            long now = player.level().getGameTime();
-            var persistent = player.getPersistentData();
-            boolean armed = !persistent.contains(PROTECTION_LAST_DAMAGE)
-                    || now - persistent.getLong(PROTECTION_LAST_DAMAGE) >= 160L;
-            persistent.putLong(PROTECTION_LAST_DAMAGE, now);
-            if (armed) reduction = 0.10D + 0.15D * strength;
-        } else if (protection.branch() == 2) {
-            float maxHealth = Math.max(1.0F, player.getMaxHealth());
-            double healthRatio = player.getHealth() / (double)maxHealth;
-            if (healthRatio < 0.40D) {
-                double healthRamp = Math.min(1.0D, Math.max(0.0D, (0.40D - healthRatio) / 0.30D));
-                double maxReduction = 0.05D + 0.15D * strength;
-                reduction = maxReduction * healthRamp;
+            if (protection.branch() == 0) {
+                reduction = 0.03D + 0.05D * strength;
+            } else if (protection.branch() == 1) {
+                long now = player.level().getGameTime();
+                var persistent = player.getPersistentData();
+                boolean armed = !persistent.contains(PROTECTION_LAST_DAMAGE)
+                        || now - persistent.getLong(PROTECTION_LAST_DAMAGE) >= 160L;
+                persistent.putLong(PROTECTION_LAST_DAMAGE, now);
+                if (armed) reduction = 0.10D + 0.15D * strength;
+            } else if (protection.branch() == 2) {
+                float maxHealth = Math.max(1.0F, player.getMaxHealth());
+                double healthRatio = player.getHealth() / (double)maxHealth;
+                if (healthRatio < 0.40D) {
+                    double healthRamp = Math.min(1.0D, Math.max(0.0D, (0.40D - healthRatio) / 0.30D));
+                    double maxReduction = 0.05D + 0.15D * strength;
+                    reduction = maxReduction * healthRamp;
+                }
             }
-        }
 
-        if (reduction > 0.0D) {
-            event.setNewDamage((float)(event.getNewDamage() * Math.max(0.0D, 1.0D - reduction)));
+            if (reduction > 0.0D) {
+                event.setNewDamage((float)(event.getNewDamage() * Math.max(0.0D, 1.0D - reduction)));
+            }
         }
     }
 
@@ -969,79 +879,51 @@ public final class EnchantmentTweaksEvents {
             return;
         }
 
-        BranchRef protection = armorBranch(player, PROJECTILE_PROTECTION);
-        if (protection == null) return;
+        for (BranchRef protection : armorBranches(player, PROJECTILE_PROTECTION)) {
+            double strength = branchScale(protection.mastery(), 0.0D, 1.0D);
+            double reduction = 0.0D;
 
-        double strength = branchScale(protection.mastery(), 0.0D, 1.0D);
-        double reduction = 0.0D;
-
-        if (protection.branch() == 0) {
-            var sourcePos = event.getSource().getSourcePosition();
-            if (sourcePos != null) {
-                var toSource = sourcePos.subtract(player.getEyePosition());
-                if (toSource.lengthSqr() > 1.0E-6D) {
-                    double dot = player.getLookAngle().dot(toSource.normalize());
-                    if (dot >= 0.5D) reduction = 0.08D + 0.12D * strength;
-                }
-            }
-        } else if (protection.branch() == 1) {
-            var attacker = event.getSource().getEntity();
-            if (attacker != null) {
-                double distance = attacker.distanceTo(player);
-                if (distance >= 16.0D) {
-                    double distanceRamp = Math.min(1.0D, (distance - 16.0D) / 32.0D);
-                    double maxReduction = 0.10D + 0.15D * strength;
-                    reduction = maxReduction * distanceRamp;
-                }
-            }
-        } else if (protection.branch() == 2) {
-            long now = player.level().getGameTime();
-            var persistent = player.getPersistentData();
-            long last = persistent.getLong(PROJECTILE_LAST_DAMAGE);
-            int previousHits = persistent.getInt(PROJECTILE_BARRAGE_COUNT);
-
-            if (!persistent.contains(PROJECTILE_LAST_DAMAGE) || now - last > 80L) {
-                previousHits = 0;
-            }
-
-            if (previousHits > 0 && now - last <= 60L) {
-                double perPriorHit = 0.03D + 0.04D * strength;
-                reduction = Math.min(3, previousHits) * perPriorHit;
-            }
-
-            int nextHits = now - last <= 60L ? Math.min(3, previousHits + 1) : 1;
-            persistent.putLong(PROJECTILE_LAST_DAMAGE, now);
-            persistent.putInt(PROJECTILE_BARRAGE_COUNT, nextHits);
-        }
-
-        if (reduction > 0.0D) {
-            event.setNewDamage((float)(event.getNewDamage() * Math.max(0.0D, 1.0D - reduction)));
-        }
-    }
-
-    @SubscribeEvent
-    public void onFall(LivingFallEvent event) {
-        if (!(event.getEntity() instanceof ServerPlayer player)
-                || !AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()) return;
-
-        for (ItemStack armor : player.getArmorSlots()) {
-            for (Holder<Enchantment> enchantment : EnchantmentMasteryData.enchantments(armor).keySet()) {
-                if (!"minecraft:feather_falling".equals(EnchantmentMasteryData.id(enchantment))) continue;
-                int mastery = EnchantmentMasteryData.getMastery(armor, enchantment);
-                if (mastery < BRANCH_THRESHOLD) continue;
-                int branch = EnchantmentMasteryData.getBranch(armor, enchantment);
-                if (branch < 0) continue;
-                if (branch == 0) {
-                    event.setDistance(event.getDistance() * 0.85F);
-                } else if (branch == 1 && event.getDistance() > 5.0F) {
-                    for (LivingEntity other : player.level().getEntitiesOfClass(
-                            LivingEntity.class, player.getBoundingBox().inflate(2.5D), e -> e != player)) {
-                        other.push(other.getX() - player.getX(), 0.18D, other.getZ() - player.getZ());
+            if (protection.branch() == 0) {
+                var sourcePos = event.getSource().getSourcePosition();
+                if (sourcePos != null) {
+                    var toSource = sourcePos.subtract(player.getEyePosition());
+                    if (toSource.lengthSqr() > 1.0E-6D) {
+                        double dot = player.getLookAngle().dot(toSource.normalize());
+                        if (dot >= 0.5D) reduction = 0.08D + 0.12D * strength;
                     }
-                } else if (branch == 2) {
-                    var motion = player.getDeltaMovement();
-                    player.setDeltaMovement(motion.x * 1.12D, motion.y, motion.z * 1.12D);
                 }
+            } else if (protection.branch() == 1) {
+                var attacker = event.getSource().getEntity();
+                if (attacker != null) {
+                    double distance = attacker.distanceTo(player);
+                    if (distance >= 16.0D) {
+                        double distanceRamp = Math.min(1.0D, (distance - 16.0D) / 32.0D);
+                        double maxReduction = 0.10D + 0.15D * strength;
+                        reduction = maxReduction * distanceRamp;
+                    }
+                }
+            } else if (protection.branch() == 2) {
+                long now = player.level().getGameTime();
+                var persistent = player.getPersistentData();
+                long last = persistent.getLong(PROJECTILE_LAST_DAMAGE);
+                int previousHits = persistent.getInt(PROJECTILE_BARRAGE_COUNT);
+
+                if (!persistent.contains(PROJECTILE_LAST_DAMAGE) || now - last > 80L) {
+                    previousHits = 0;
+                }
+
+                if (previousHits > 0 && now - last <= 60L) {
+                    double perPriorHit = 0.03D + 0.04D * strength;
+                    reduction = Math.min(3, previousHits) * perPriorHit;
+                }
+
+                int nextHits = now - last <= 60L ? Math.min(3, previousHits + 1) : 1;
+                persistent.putLong(PROJECTILE_LAST_DAMAGE, now);
+                persistent.putInt(PROJECTILE_BARRAGE_COUNT, nextHits);
+            }
+
+            if (reduction > 0.0D) {
+                event.setNewDamage((float)(event.getNewDamage() * Math.max(0.0D, 1.0D - reduction)));
             }
         }
     }
@@ -1083,51 +965,50 @@ public final class EnchantmentTweaksEvents {
             return;
         }
 
-        BranchRef depthStrider = armorBranch(player, DEPTH_STRIDER);
-        if (depthStrider == null) return;
+        for (BranchRef depthStrider : armorBranches(player, DEPTH_STRIDER)) {
+            double strength = branchScale(depthStrider.mastery(), 0.0D, 1.0D);
+            var motion = player.getDeltaMovement();
 
-        double strength = branchScale(depthStrider.mastery(), 0.0D, 1.0D);
-        var motion = player.getDeltaMovement();
+            if (depthStrider.branch() == 0) {
+                BlockPos pos = player.blockPosition();
+                var fluid = player.level().getFluidState(pos);
+                if (!fluid.is(net.minecraft.tags.FluidTags.WATER)) continue;
 
-        if (depthStrider.branch() == 0) {
-            BlockPos pos = player.blockPosition();
-            var fluid = player.level().getFluidState(pos);
-            if (!fluid.is(net.minecraft.tags.FluidTags.WATER)) return;
+                var flow = fluid.getFlow(player.level(), pos);
+                double horizontalFlow = Math.sqrt(flow.x * flow.x + flow.z * flow.z);
+                if (horizontalFlow <= 1.0E-5D) continue;
 
-            var flow = fluid.getFlow(player.level(), pos);
-            double horizontalFlow = Math.sqrt(flow.x * flow.x + flow.z * flow.z);
-            if (horizontalFlow <= 1.0E-5D) return;
+                double ux = flow.x / horizontalFlow;
+                double uz = flow.z / horizontalFlow;
+                double along = motion.x * ux + motion.z * uz;
+                if (along <= 0.0D) continue;
 
-            double ux = flow.x / horizontalFlow;
-            double uz = flow.z / horizontalFlow;
-            double along = motion.x * ux + motion.z * uz;
-            if (along <= 0.0D) return;
-
-            double bonus = 0.10D + 0.20D * strength;
-            double nx = motion.x + ux * along * bonus;
-            double nz = motion.z + uz * along * bonus;
-            double horizontal = Math.sqrt(nx * nx + nz * nz);
-            if (horizontal > 0.40D) {
-                double scale = 0.40D / horizontal;
-                nx *= scale;
-                nz *= scale;
+                double bonus = 0.10D + 0.20D * strength;
+                double nx = motion.x + ux * along * bonus;
+                double nz = motion.z + uz * along * bonus;
+                double horizontal = Math.sqrt(nx * nx + nz * nz);
+                if (horizontal > 0.40D) {
+                    double scale = 0.40D / horizontal;
+                    nx *= scale;
+                    nz *= scale;
+                }
+                player.setDeltaMovement(nx, motion.y, nz);
+            } else if (depthStrider.branch() == 1 && player.onGround()) {
+                double multiplier = 1.10D + 0.15D * strength;
+                double nx = motion.x * multiplier;
+                double nz = motion.z * multiplier;
+                double horizontal = Math.sqrt(nx * nx + nz * nz);
+                if (horizontal > 0.35D) {
+                    double scale = 0.35D / horizontal;
+                    nx *= scale;
+                    nz *= scale;
+                }
+                player.setDeltaMovement(nx, motion.y, nz);
+            } else if (depthStrider.branch() == 2 && Math.abs(motion.y) > 0.01D) {
+                double multiplier = 1.10D + 0.25D * strength;
+                double ny = Math.max(-0.35D, Math.min(0.35D, motion.y * multiplier));
+                player.setDeltaMovement(motion.x, ny, motion.z);
             }
-            player.setDeltaMovement(nx, motion.y, nz);
-        } else if (depthStrider.branch() == 1 && player.onGround()) {
-            double multiplier = 1.10D + 0.15D * strength;
-            double nx = motion.x * multiplier;
-            double nz = motion.z * multiplier;
-            double horizontal = Math.sqrt(nx * nx + nz * nz);
-            if (horizontal > 0.35D) {
-                double scale = 0.35D / horizontal;
-                nx *= scale;
-                nz *= scale;
-            }
-            player.setDeltaMovement(nx, motion.y, nz);
-        } else if (depthStrider.branch() == 2 && Math.abs(motion.y) > 0.01D) {
-            double multiplier = 1.10D + 0.25D * strength;
-            double ny = Math.max(-0.35D, Math.min(0.35D, motion.y * multiplier));
-            player.setDeltaMovement(motion.x, ny, motion.z);
         }
     }
 
@@ -1184,41 +1065,40 @@ public final class EnchantmentTweaksEvents {
             return;
         }
 
-        BranchRef swiftSneak = armorBranch(player, SWIFT_SNEAK);
-        if (swiftSneak == null) return;
+        for (BranchRef swiftSneak : armorBranches(player, SWIFT_SNEAK)) {
+            double strength = branchScale(swiftSneak.mastery(), 0.0D, 1.0D);
+            var motion = player.getDeltaMovement();
+            double horizontal = Math.sqrt(motion.x * motion.x + motion.z * motion.z);
+            if (horizontal <= 0.002D) continue;
 
-        double strength = branchScale(swiftSneak.mastery(), 0.0D, 1.0D);
-        var motion = player.getDeltaMovement();
-        double horizontal = Math.sqrt(motion.x * motion.x + motion.z * motion.z);
-        if (horizontal <= 0.002D) return;
-
-        if (swiftSneak.branch() == 1 && player.isUsingItem()) {
-            double slowdownRecovery = 0.10D + 0.25D * strength;
-            double multiplier = 1.0D + 4.0D * slowdownRecovery;
-            double nx = motion.x * multiplier;
-            double nz = motion.z * multiplier;
-            double nextHorizontal = Math.sqrt(nx * nx + nz * nz);
-            if (nextHorizontal > 0.22D) {
-                double scale = 0.22D / nextHorizontal;
-                nx *= scale;
-                nz *= scale;
+            if (swiftSneak.branch() == 1 && player.isUsingItem()) {
+                double slowdownRecovery = 0.10D + 0.25D * strength;
+                double multiplier = 1.0D + 4.0D * slowdownRecovery;
+                double nx = motion.x * multiplier;
+                double nz = motion.z * multiplier;
+                double nextHorizontal = Math.sqrt(nx * nx + nz * nz);
+                if (nextHorizontal > 0.22D) {
+                    double scale = 0.22D / nextHorizontal;
+                    nx *= scale;
+                    nz *= scale;
+                }
+                player.setDeltaMovement(nx, motion.y, nz);
+                continue;
             }
-            player.setDeltaMovement(nx, motion.y, nz);
-            return;
-        }
 
-        if (swiftSneak.branch() == 2 && player.onGround() && !player.isUsingItem()
-                && isSneakEdgeActive(player)) {
-            double multiplier = 1.10D + 0.20D * strength;
-            double nx = motion.x * multiplier;
-            double nz = motion.z * multiplier;
-            double nextHorizontal = Math.sqrt(nx * nx + nz * nz);
-            if (nextHorizontal > 0.18D) {
-                double scale = 0.18D / nextHorizontal;
-                nx *= scale;
-                nz *= scale;
+            if (swiftSneak.branch() == 2 && player.onGround() && !player.isUsingItem()
+                    && isSneakEdgeActive(player)) {
+                double multiplier = 1.10D + 0.20D * strength;
+                double nx = motion.x * multiplier;
+                double nz = motion.z * multiplier;
+                double nextHorizontal = Math.sqrt(nx * nx + nz * nz);
+                if (nextHorizontal > 0.18D) {
+                    double scale = 0.18D / nextHorizontal;
+                    nx *= scale;
+                    nz *= scale;
+                }
+                player.setDeltaMovement(nx, motion.y, nz);
             }
-            player.setDeltaMovement(nx, motion.y, nz);
         }
     }
 
@@ -1234,7 +1114,6 @@ public final class EnchantmentTweaksEvents {
         var persistent = player.getPersistentData();
         BranchRef soulSpeed = branch(boots, SOUL_SPEED);
         if (soulSpeed == null) {
-            persistent.remove(SOUL_SPEED_PREV_DAMAGE);
             persistent.remove(SOUL_SPEED_ACTIVE_SPEED);
             persistent.remove(SOUL_SPEED_LINGER_UNTIL);
             return;
@@ -1247,29 +1126,7 @@ public final class EnchantmentTweaksEvents {
         var motion = player.getDeltaMovement();
         double horizontalSpeed = Math.sqrt(motion.x * motion.x + motion.z * motion.z);
 
-        int currentDamage = boots.isDamageableItem() ? boots.getDamageValue() : 0;
-        if (soulSpeed.branch() == 0) {
-            if (persistent.contains(SOUL_SPEED_PREV_DAMAGE)) {
-                int previousDamage = persistent.getInt(SOUL_SPEED_PREV_DAMAGE);
-                int gained = Math.max(0, currentDamage - previousDamage);
-                if (validFooting && horizontalSpeed > 0.01D && player.hurtTime == 0 && gained > 0) {
-                    double preventionChance = 0.25D + 0.50D * strength;
-                    int prevented = 0;
-                    for (int i = 0; i < gained; i++) {
-                        if (player.getRandom().nextDouble() < preventionChance) prevented++;
-                    }
-                    if (prevented > 0) {
-                        boots.setDamageValue(Math.max(0, currentDamage - prevented));
-                        currentDamage = boots.getDamageValue();
-                    }
-                }
-            }
-            persistent.putInt(SOUL_SPEED_PREV_DAMAGE, currentDamage);
-            return;
-        }
-
-        persistent.putInt(SOUL_SPEED_PREV_DAMAGE, currentDamage);
-
+        // Soul-Sole Conservation is intercepted at the actual native wear effect.
         if (soulSpeed.branch() != 1) {
             persistent.remove(SOUL_SPEED_ACTIVE_SPEED);
             persistent.remove(SOUL_SPEED_LINGER_UNTIL);
@@ -1314,48 +1171,47 @@ public final class EnchantmentTweaksEvents {
             return;
         }
 
-        BranchRef aqua = armorBranch(player, AQUA_AFFINITY);
-        if (aqua == null) return;
+        for (BranchRef aqua : armorBranches(player, AQUA_AFFINITY)) {
+            var persistent = player.getPersistentData();
+            long now = player.level().getGameTime();
+            double strength = branchScale(aqua.mastery(), 0.0D, 1.0D);
+            var motion = player.getDeltaMovement();
 
-        var persistent = player.getPersistentData();
-        long now = player.level().getGameTime();
-        double strength = branchScale(aqua.mastery(), 0.0D, 1.0D);
-        var motion = player.getDeltaMovement();
-
-        if (aqua.branch() == 1
-                && persistent.contains(AQUA_CONSTRUCTION_UNTIL)
-                && now <= persistent.getLong(AQUA_CONSTRUCTION_UNTIL)) {
-            double disruptionRecovery = 0.15D + 0.25D * strength;
-            double multiplier = 1.0D + 0.25D * disruptionRecovery;
-            double nx = motion.x * multiplier;
-            double nz = motion.z * multiplier;
-            double horizontal = Math.sqrt(nx * nx + nz * nz);
-            if (horizontal > 0.35D) {
-                double scale = 0.35D / horizontal;
-                nx *= scale;
-                nz *= scale;
+            if (aqua.branch() == 1
+                    && persistent.contains(AQUA_CONSTRUCTION_UNTIL)
+                    && now <= persistent.getLong(AQUA_CONSTRUCTION_UNTIL)) {
+                double disruptionRecovery = 0.15D + 0.25D * strength;
+                double multiplier = 1.0D + 0.25D * disruptionRecovery;
+                double nx = motion.x * multiplier;
+                double nz = motion.z * multiplier;
+                double horizontal = Math.sqrt(nx * nx + nz * nz);
+                if (horizontal > 0.35D) {
+                    double scale = 0.35D / horizontal;
+                    nx *= scale;
+                    nz *= scale;
+                }
+                player.setDeltaMovement(nx, motion.y, nz);
+                continue;
             }
-            player.setDeltaMovement(nx, motion.y, nz);
-            return;
-        }
 
-        if (aqua.branch() == 2
-                && persistent.contains(AQUA_CURRENT_UNTIL)
-                && now <= persistent.getLong(AQUA_CURRENT_UNTIL)) {
-            BlockPos pos = player.blockPosition();
-            var fluid = player.level().getFluidState(pos);
-            if (!fluid.is(net.minecraft.tags.FluidTags.WATER)) return;
+            if (aqua.branch() == 2
+                    && persistent.contains(AQUA_CURRENT_UNTIL)
+                    && now <= persistent.getLong(AQUA_CURRENT_UNTIL)) {
+                BlockPos pos = player.blockPosition();
+                var fluid = player.level().getFluidState(pos);
+                if (!fluid.is(net.minecraft.tags.FluidTags.WATER)) continue;
 
-            var flow = fluid.getFlow(player.level(), pos);
-            double reduction = 0.20D + 0.40D * strength;
-            // Vanilla fluid acceleration is small; remove only the current-like component,
-            // not the player's own movement input.
-            double currentAcceleration = 0.014D;
-            player.setDeltaMovement(
-                    motion.x - flow.x * currentAcceleration * reduction,
-                    motion.y,
-                    motion.z - flow.z * currentAcceleration * reduction
-            );
+                var flow = fluid.getFlow(player.level(), pos);
+                double reduction = 0.20D + 0.40D * strength;
+                // Vanilla fluid acceleration is small; remove only the current-like component,
+                // not the player's own movement input.
+                double currentAcceleration = 0.014D;
+                player.setDeltaMovement(
+                        motion.x - flow.x * currentAcceleration * reduction,
+                        motion.y,
+                        motion.z - flow.z * currentAcceleration * reduction
+                );
+            }
         }
     }
 
@@ -1367,7 +1223,6 @@ public final class EnchantmentTweaksEvents {
             return;
         }
 
-        BranchRef fireProtection = armorBranch(player, FIRE_PROTECTION);
         var persistent = player.getPersistentData();
         int currentFireTicks = player.getRemainingFireTicks();
         long now = player.level().getGameTime();
@@ -1386,33 +1241,30 @@ public final class EnchantmentTweaksEvents {
             persistent.remove(FIRE_EXPOSURE_LAST);
         }
 
-        if (fireProtection == null) {
-            persistent.putInt(FIRE_PROTECTION_PREV_TICKS, currentFireTicks);
-            return;
-        }
+        for (BranchRef fireProtection : armorBranches(player, FIRE_PROTECTION)) {
+            double strength = branchScale(fireProtection.mastery(), 0.0D, 1.0D);
 
-        double strength = branchScale(fireProtection.mastery(), 0.0D, 1.0D);
-
-        if (fireProtection.branch() == 0) {
-            if (persistent.contains(FIRE_PROTECTION_PREV_TICKS)) {
-                int previous = persistent.getInt(FIRE_PROTECTION_PREV_TICKS);
-                if (currentFireTicks > previous + 1) {
-                    double reduction = 0.20D + 0.30D * strength;
-                    int reduced = Math.max(0, (int)Math.round(currentFireTicks * (1.0D - reduction)));
-                    player.setRemainingFireTicks(reduced);
-                    currentFireTicks = reduced;
+            if (fireProtection.branch() == 0) {
+                if (persistent.contains(FIRE_PROTECTION_PREV_TICKS)) {
+                    int previous = persistent.getInt(FIRE_PROTECTION_PREV_TICKS);
+                    if (currentFireTicks > previous + 1) {
+                        double reduction = 0.20D + 0.30D * strength;
+                        int reduced = Math.max(0, (int)Math.round(currentFireTicks * (1.0D - reduction)));
+                        player.setRemainingFireTicks(reduced);
+                        currentFireTicks = reduced;
+                    }
                 }
+            } else if (fireProtection.branch() == 2 && player.isInLava()) {
+                // Vanilla lava horizontal drag is ~0.5. Recovering 20%-60% of the lost
+                // velocity corresponds to multiplying the post-drag horizontal velocity by 1+r.
+                double impairmentRecovery = 0.20D + 0.40D * strength;
+                var motion = player.getDeltaMovement();
+                player.setDeltaMovement(
+                        motion.x * (1.0D + impairmentRecovery),
+                        motion.y,
+                        motion.z * (1.0D + impairmentRecovery)
+                );
             }
-        } else if (fireProtection.branch() == 2 && player.isInLava()) {
-            // Vanilla lava horizontal drag is ~0.5. Recovering 20%-60% of the lost
-            // velocity corresponds to multiplying the post-drag horizontal velocity by 1+r.
-            double impairmentRecovery = 0.20D + 0.40D * strength;
-            var motion = player.getDeltaMovement();
-            player.setDeltaMovement(
-                    motion.x * (1.0D + impairmentRecovery),
-                    motion.y,
-                    motion.z * (1.0D + impairmentRecovery)
-            );
         }
 
         persistent.putInt(FIRE_PROTECTION_PREV_TICKS, currentFireTicks);
@@ -1426,14 +1278,8 @@ public final class EnchantmentTweaksEvents {
             return;
         }
 
-        BranchRef respiration = armorBranch(player, RESPIRATION);
         var persistent = player.getPersistentData();
         int currentAir = player.getAirSupply();
-
-        if (respiration == null) {
-            persistent.putInt(RESPIRATION_PREV_AIR, currentAir);
-            return;
-        }
 
         if (!persistent.contains(RESPIRATION_PREV_AIR)) {
             persistent.putInt(RESPIRATION_PREV_AIR, currentAir);
@@ -1442,30 +1288,32 @@ public final class EnchantmentTweaksEvents {
 
         int previousAir = persistent.getInt(RESPIRATION_PREV_AIR);
         int adjustedAir = currentAir;
-        double strength = branchScale(respiration.mastery(), 0.0D, 1.0D);
+        for (BranchRef respiration : armorBranches(player, RESPIRATION)) {
+            double strength = branchScale(respiration.mastery(), 0.0D, 1.0D);
 
-        if (respiration.branch() == 0 && player.isUnderWater() && currentAir < previousAir) {
-            int lost = previousAir - currentAir;
-            double preserveChance = 0.10D + 0.20D * strength;
-            for (int i = 0; i < lost; i++) {
-                if (player.getRandom().nextDouble() < preserveChance) adjustedAir++;
-            }
-        } else if (respiration.branch() == 1 && player.isUnderWater() && currentAir < previousAir) {
-            var movement = player.getDeltaMovement();
-            boolean quiet = movement.horizontalDistanceSqr() < 0.0036D && Math.abs(movement.y) < 0.04D;
-            if (quiet) {
-                int lost = previousAir - currentAir;
-                double preserveChance = 0.25D + 0.45D * strength;
+            if (respiration.branch() == 0 && player.isUnderWater() && currentAir < previousAir) {
+                int lost = Math.max(0, previousAir - adjustedAir);
+                double preserveChance = 0.10D + 0.20D * strength;
                 for (int i = 0; i < lost; i++) {
                     if (player.getRandom().nextDouble() < preserveChance) adjustedAir++;
                 }
+            } else if (respiration.branch() == 1 && player.isUnderWater() && currentAir < previousAir) {
+                var movement = player.getDeltaMovement();
+                boolean quiet = !player.swinging && movement.horizontalDistanceSqr() < 0.0036D && Math.abs(movement.y) < 0.04D;
+                if (quiet) {
+                    int lost = Math.max(0, previousAir - adjustedAir);
+                    double preserveChance = 0.25D + 0.45D * strength;
+                    for (int i = 0; i < lost; i++) {
+                        if (player.getRandom().nextDouble() < preserveChance) adjustedAir++;
+                    }
+                }
+            } else if (respiration.branch() == 2 && !player.isUnderWater()
+                    && currentAir > previousAir && currentAir < player.getMaxAirSupply()) {
+                int vanillaRecovery = currentAir - previousAir;
+                double extraFraction = 0.25D + 0.75D * strength;
+                int extra = Math.max(1, (int)Math.round(vanillaRecovery * extraFraction));
+                adjustedAir = Math.min(player.getMaxAirSupply(), currentAir + extra);
             }
-        } else if (respiration.branch() == 2 && !player.isUnderWater()
-                && currentAir > previousAir && currentAir < player.getMaxAirSupply()) {
-            int vanillaRecovery = currentAir - previousAir;
-            double extraFraction = 0.25D + 0.75D * strength;
-            int extra = Math.max(1, (int)Math.round(vanillaRecovery * extraFraction));
-            adjustedAir = Math.min(player.getMaxAirSupply(), currentAir + extra);
         }
 
         if (adjustedAir != currentAir) player.setAirSupply(adjustedAir);
@@ -1489,7 +1337,7 @@ public final class EnchantmentTweaksEvents {
                 int mastery = EnchantmentMasteryData.getMastery(armor, enchantment);
 
                 if (curse && mastery >= 100 && armor.isDamaged()
-                        && player.getRandom().nextDouble() < Math.min(0.12D, mastery / 2500.0D)) {
+                        && player.getRandom().nextDouble() < Math.min(100, mastery) / 2500.0D) {
                     armor.setDamageValue(Math.max(0, armor.getDamageValue() - 1));
                     player.displayClientMessage(Component.literal(
                             armor.getHoverName().getString() + "'s curse grudgingly held it together."
@@ -1607,47 +1455,6 @@ public final class EnchantmentTweaksEvents {
         event.setStrength(strength);
         event.setRatioX(-event.getRatioX());
         event.setRatioZ(-event.getRatioZ());
-    }
-
-    @SubscribeEvent
-    public void onPunchKnockback(LivingKnockBackEvent event) {
-        var target = event.getEntity();
-        var data = target.getPersistentData();
-        if (!data.contains(PUNCH_UNTIL)) return;
-
-        long now = target.level().getGameTime();
-        if (now > data.getLong(PUNCH_UNTIL)) {
-            data.remove(PUNCH_BRANCH);
-            data.remove(PUNCH_STRENGTH);
-            data.remove(PUNCH_UNTIL);
-            return;
-        }
-
-        int branch = data.getInt(PUNCH_BRANCH);
-        double masteryStrength = Math.min(1.0D, Math.max(0.0D, data.getInt(PUNCH_STRENGTH) / 1000.0D));
-
-        data.remove(PUNCH_BRANCH);
-        data.remove(PUNCH_STRENGTH);
-        data.remove(PUNCH_UNTIL);
-
-        if (branch == 0) {
-            double multiplier = 1.15D + 0.25D * masteryStrength;
-            event.setStrength((float)(event.getStrength() * multiplier));
-        } else if (branch == 1) {
-            double conversion = 0.30D + 0.30D * masteryStrength;
-            float original = event.getStrength();
-            event.setStrength((float)(original * (1.0D - conversion)));
-            target.push(0.0D, original * conversion, 0.0D);
-        } else if (branch == 2) {
-            event.setStrength(event.getStrength() * 0.25F);
-            int duration = (int)Math.round(20.0D + 30.0D * masteryStrength);
-            int amplifier = masteryStrength >= 0.75D ? 2 : 1;
-            target.addEffect(new MobEffectInstance(
-                    MobEffects.MOVEMENT_SLOWDOWN,
-                    Math.max(1, duration),
-                    amplifier
-            ));
-        }
     }
 
     @SubscribeEvent
@@ -1805,7 +1612,7 @@ public final class EnchantmentTweaksEvents {
             if ("minecraft:unbreaking".equals(EnchantmentMasteryData.id(enchantment))
                     && mastery >= 100
                     && stack.isDamaged()
-                    && player.getRandom().nextDouble() < Math.min(0.08D, mastery / 5000.0D)) {
+                    && player.getRandom().nextDouble() < Math.min(100, mastery) / 5000.0D) {
                 stack.setDamageValue(Math.max(0, stack.getDamageValue() - 1));
             }
         }
@@ -1873,27 +1680,6 @@ public final class EnchantmentTweaksEvents {
                         equipped.copy()
                 ));
             }
-        }
-    }
-
-    private static void applyBigGameHunter(LivingDropsEvent event, ServerPlayer player, double strength) {
-        List<ItemEntity> rare = event.getDrops().stream()
-                .filter(drop -> isRareLoot(drop.getItem()))
-                .toList();
-
-        double rareBoost = 0.10D + 0.20D * strength;
-        if (!rare.isEmpty() && player.getRandom().nextDouble() < rareBoost) {
-            ItemEntity target = rare.get(player.getRandom().nextInt(rare.size()));
-            addOneDrop(event.getDrops(), event.getEntity(), target);
-        }
-
-        // We cannot safely reconstruct the victim's loot table here. Approximate the accepted
-        // 25% reduction of Looting's common-drop improvement by trimming at most one extra unit,
-        // and never reduce a stack below one.
-        ItemEntity ordinary = largestOrdinaryDrop(event);
-        if (ordinary != null && ordinary.getItem().getCount() >= 2
-                && player.getRandom().nextDouble() < 0.25D) {
-            ordinary.getItem().shrink(1);
         }
     }
 
@@ -1969,55 +1755,18 @@ public final class EnchantmentTweaksEvents {
                                                long constructionTicks,
                                                long currentTicks) {
         if (!player.isUnderWater()) return;
-        BranchRef aqua = armorBranch(player, AQUA_AFFINITY);
-        if (aqua == null) return;
-
-        long now = player.level().getGameTime();
-        if (aqua.branch() == 1) {
-            player.getPersistentData().putLong(
-                    AQUA_CONSTRUCTION_UNTIL,
-                    now + Math.max(1L, constructionTicks)
-            );
-        } else if (aqua.branch() == 2) {
-            player.getPersistentData().putLong(
-                    AQUA_CURRENT_UNTIL,
-                    now + Math.max(1L, currentTicks)
-            );
-        }
-    }
-
-    private static void applyFortuneBranch(BlockDropsEvent event, ItemStack tool, ServerPlayer player) {
-        BranchRef fortune = branch(tool, FORTUNE);
-        if (fortune == null || event.getDrops().isEmpty()) return;
-
-        String blockPath = BuiltInRegistries.BLOCK.getKey(event.getState().getBlock()).getPath();
-        double strength = branchScale(fortune.mastery(), 0.0D, 1.0D);
-
-        if (fortune.branch() == 0) {
-            if (!isOreFortuneTarget(blockPath)) return;
-            double chance = 0.10D + 0.15D * strength;
-            if (player.getRandom().nextDouble() < chance) addOneDrop(event);
-            return;
-        }
-
-        if (fortune.branch() == 1) {
-            if (!isHarvestFortuneTarget(blockPath)) return;
-            double chance = 0.10D + 0.15D * strength;
-            if (player.getRandom().nextDouble() < chance) addOneDrop(event);
-            return;
-        }
-
-        if (fortune.branch() == 2) {
-            double chance = 0.10D + 0.20D * strength;
-            if (player.getRandom().nextDouble() >= chance) return;
-
-            ItemEntity target = largestDrop(event);
-            if (target == null || target.getItem().getCount() < 2) return;
-
-            if (player.getRandom().nextBoolean()) {
-                addOneDrop(event, target);
-            } else {
-                target.getItem().shrink(1);
+        for (BranchRef aqua : armorBranches(player, AQUA_AFFINITY)) {
+            long now = player.level().getGameTime();
+            if (aqua.branch() == 1) {
+                player.getPersistentData().putLong(
+                        AQUA_CONSTRUCTION_UNTIL,
+                        now + Math.max(1L, constructionTicks)
+                );
+            } else if (aqua.branch() == 2) {
+                player.getPersistentData().putLong(
+                        AQUA_CURRENT_UNTIL,
+                        now + Math.max(1L, currentTicks)
+                );
             }
         }
     }
@@ -2063,14 +1812,29 @@ public final class EnchantmentTweaksEvents {
         return main.mastery() >= off.mastery() ? main : off;
     }
 
-    private static BranchRef armorBranch(ServerPlayer player, String enchantmentId) {
-        BranchRef best = null;
+    /** Distinct branches coexist; repeated copies of a branch use only their best mastery. */
+    private static List<BranchRef> armorBranches(ServerPlayer player, String enchantmentId) {
+        BranchRef[] strongest = new BranchRef[3];
         for (ItemStack armor : player.getArmorSlots()) {
             BranchRef candidate = branch(armor, enchantmentId);
-            if (candidate == null) continue;
-            if (best == null || candidate.mastery() > best.mastery()) best = candidate;
+            if (candidate == null || candidate.branch() >= strongest.length) continue;
+            BranchRef previous = strongest[candidate.branch()];
+            if (previous == null || candidate.mastery() > previous.mastery()) {
+                strongest[candidate.branch()] = candidate;
+            }
         }
-        return best;
+        List<BranchRef> result = new ArrayList<>(3);
+        for (BranchRef candidate : strongest) {
+            if (candidate != null) result.add(candidate);
+        }
+        return result;
+    }
+
+    private static BranchRef armorBranch(ServerPlayer player, String enchantmentId, int selected) {
+        for (BranchRef candidate : armorBranches(player, enchantmentId)) {
+            if (candidate.branch() == selected) return candidate;
+        }
+        return null;
     }
 
     private static double branchScale(int mastery, double min, double max) {
@@ -2328,7 +2092,7 @@ public final class EnchantmentTweaksEvents {
                 case 2 -> "Pursuing Return";
                 default -> "Unselected";
             };
-        } 
+        }
         if (POWER.equals(enchantmentId)) {
             return switch (branch) {
                 case 0 -> "Sniping";

@@ -36,6 +36,7 @@ public final class VillageHousingPlanner {
         for (UUID id : village.buildingIds()) {
             VillageSavedData.BuildingRecord building = data.building(id).orElse(null);
             if (building == null || !building.villageId().equals(villageId)
+                    || !VillageActivityBoundary.contains(village, building.min())
                     || !("residential".equals(building.classification())
                         || "mixed_use".equals(building.classification()))
                     || !"valid".equals(building.validationState())) continue;
@@ -48,8 +49,8 @@ public final class VillageHousingPlanner {
 
         List<Villager> residents = level.getEntitiesOfClass(
                 Villager.class,
-                new AABB(village.center()).inflate(48.0D, 32.0D, 48.0D),
-                v -> v.isAlive()
+                VillageActivityBoundary.searchBounds(village),
+                v -> v.isAlive() && VillageActivityBoundary.contains(village, v.blockPosition())
                         && VillagerSimData.villageId(v).filter(villageId::equals).isPresent());
         int loadedAdults = 0;
         int welfareSum = 0;

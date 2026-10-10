@@ -39,6 +39,7 @@ public final class VillagerSimData {
     private static final String MIGRATION_ID = "migration_id";
     private static final String DISPLACED_SINCE_ACTIVE = "displaced_since_active";
     private static final String OUTPOST_SITE_ID = "outpost_site_id";
+    private static final String WORK_SITE_ID = "work_site_id";
     private static final String OUTPOST_HAUL_MODE = "outpost_haul_mode";
     private static final String RIVER_HAUL = "river_porter_haul_v1";
     private static final String WORK_CARGO = "work_cargo";
@@ -257,6 +258,18 @@ public final class VillagerSimData {
         return readUuid(root(villager, false), OUTPOST_SITE_ID);
     }
 
+    public static Optional<UUID> workSiteId(Villager villager) {
+        return readUuid(root(villager, false), WORK_SITE_ID);
+    }
+
+    public static void setWorkSiteId(Villager villager, UUID siteId) {
+        putUuid(root(villager, true), WORK_SITE_ID, siteId);
+    }
+
+    public static void clearWorkSiteId(Villager villager) {
+        root(villager, true).remove(WORK_SITE_ID);
+    }
+
     public static void setOutpostSiteId(Villager villager, UUID siteId) {
         putUuid(root(villager, true), OUTPOST_SITE_ID, siteId);
     }
@@ -431,7 +444,13 @@ public final class VillagerSimData {
     /** An in-flight physical dock-to-warehouse (or inverse) transfer. */
     public record RiverHaul(UUID routeId, BlockPos source, BlockPos destination,
                             String itemId, int requested, boolean incoming,
-                            boolean receiptAtTo, String phase) {}
+                            boolean receiptAtTo, String phase, UUID originVillageId) {
+        public RiverHaul(UUID routeId, BlockPos source, BlockPos destination,
+                         String itemId, int requested, boolean incoming,
+                         boolean receiptAtTo, String phase) {
+            this(routeId, source, destination, itemId, requested, incoming, receiptAtTo, phase, null);
+        }
+    }
 
     public static Optional<RiverHaul> riverHaul(Villager villager) {
         CompoundTag root = root(villager, false);
@@ -443,14 +462,15 @@ public final class VillagerSimData {
         if (routeId == null || itemId.isBlank()
                 || !tag.contains("source", Tag.TAG_LONG)
                 || !tag.contains("destination", Tag.TAG_LONG)
-                || (!"pickup".equals(phase) && !"delivery".equals(phase))) {
+                || (!"pickup".equals(phase) && !"delivery".equals(phase) && !"recovery".equals(phase))) {
             return Optional.empty();
         }
         return Optional.of(new RiverHaul(routeId,
                 BlockPos.of(tag.getLong("source")),
                 BlockPos.of(tag.getLong("destination")),
                 itemId, Math.max(1, Math.min(64, tag.getInt("requested"))),
-                tag.getBoolean("incoming"), tag.getBoolean("receipt_at_to"), phase));
+                tag.getBoolean("incoming"), tag.getBoolean("receipt_at_to"), phase,
+                readUuid(tag, "origin_village").orElse(null)));
     }
 
     public static void setRiverHaul(Villager villager, RiverHaul haul) {
@@ -463,6 +483,9 @@ public final class VillagerSimData {
         tag.putBoolean("incoming", haul.incoming());
         tag.putBoolean("receipt_at_to", haul.receiptAtTo());
         tag.putString("phase", haul.phase());
+        UUID origin = haul.originVillageId() != null ? haul.originVillageId()
+                : villageId(villager).orElse(null);
+        if (origin != null) putUuid(tag, "origin_village", origin);
         root(villager, true).put(RIVER_HAUL, tag);
     }
 

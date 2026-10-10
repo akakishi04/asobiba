@@ -98,6 +98,7 @@ public final class VillageHouseVerticalExpansionGameTests {
             var p = f.data().createProject(
                     f.villageId(), "building", 86, f.base());
             p.setTemplateId(VillageHouseVerticalExpansionService.TEMPLATE);
+        p.setParameter("circulation_version", "2");
             p.setParameter("expand_building", f.house().id().toString());
             p.setParameter("expand_original", original.id().toString());
             p.setParameter("expand_plank", "oak");
@@ -178,7 +179,11 @@ public final class VillageHouseVerticalExpansionGameTests {
                 return;
             }
             p.setWorkCursor(plan.size());
-            VillageHouseVerticalExpansionService.advance(f.builder(), f.level(), p);
+            // The completed upper shell now executes a separate, physically
+            // paid circulation migration instead of silently rewriting the old
+            // ground bedroom. Each call performs one real bounded operation.
+            for (int i = 0; i < 32 && !"complete".equals(p.phase()); i++)
+                VillageHouseVerticalExpansionService.advance(f.builder(), f.level(), p);
             if (!"complete".equals(p.phase())
                     || f.village().buildingIds().size() != 1
                     || !f.house().max().equals(f.base().offset(4, 8, 4))
@@ -264,6 +269,7 @@ public final class VillageHouseVerticalExpansionGameTests {
                 .findFirst().orElseThrow();
         var p = f.data().createProject(f.villageId(), "building", 86, f.base());
         p.setTemplateId(VillageHouseVerticalExpansionService.TEMPLATE);
+        p.setParameter("circulation_version", "2");
         p.setParameter("expand_original", original.id().toString());
         p.setParameter("expand_building", f.house().id().toString());
         p.setParameter("expand_plank", "oak");
@@ -343,7 +349,9 @@ public final class VillageHouseVerticalExpansionGameTests {
         building.setValidationState("valid");
         building.setValidatedCapacity(1);
 
-        BlockPos stock = base.offset(3, 1, 1);
+        BlockPos stock = base.offset(5, 1, 0);
+        level.setBlock(stock.below(), Blocks.COBBLESTONE.defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(base.offset(5, 0, 1), Blocks.COBBLESTONE.defaultBlockState(), Block.UPDATE_ALL);
         level.setBlock(stock, Blocks.BARREL.defaultBlockState(), Block.UPDATE_ALL);
         var registered = data.createStorage(village.id(), stock, "construction");
         registered.setValidationState("valid");
@@ -352,12 +360,13 @@ public final class VillageHouseVerticalExpansionGameTests {
         inventory.setItem(0, new ItemStack(Items.OAK_PLANKS, 64));
         inventory.setItem(1, new ItemStack(Items.OAK_PLANKS, 64));
         inventory.setItem(2, new ItemStack(Items.OAK_STAIRS, 4));
-        inventory.setItem(3, new ItemStack(Items.WHITE_BED, 2));
+        inventory.setItem(3, new ItemStack(Items.WHITE_BED));
+        inventory.setItem(4, new ItemStack(Items.WHITE_BED));
 
         Villager builder = EntityType.VILLAGER.create(level);
         if (builder == null) throw new IllegalStateException("Villager entity factory failed");
-        builder.setPos(base.getX() + 2.5D, base.getY() + 2.0D,
-                base.getZ() + 0.5D);
+        builder.setPos(base.getX() + 5.5D, base.getY() + 1.0D,
+                base.getZ() + 1.5D);
         builder.setNoAi(true);
         if (!level.addFreshEntity(builder)) throw new IllegalStateException("Carpenter spawn failed");
         VillagerSimData.setVillageId(builder, village.id());

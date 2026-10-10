@@ -6,6 +6,7 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.projectile.AbstractArrow;
+import net.minecraft.world.item.ArrowItem;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.storage.loot.LootContext;
@@ -35,6 +36,8 @@ public final class ArrowLootingSupport {
         if (damage == null || !(damage.getDirectEntity() instanceof AbstractArrow arrow)) {
             return vanillaLevel;
         }
+
+        if (!(arrow.getPickupItemStackOrigin().getItem() instanceof ArrowItem)) return vanillaLevel;
 
         Entity attacker = context.getParamOrNull(LootContextParams.ATTACKING_ENTITY);
         if (!(attacker instanceof LivingEntity) || arrow.getOwner() != attacker) {

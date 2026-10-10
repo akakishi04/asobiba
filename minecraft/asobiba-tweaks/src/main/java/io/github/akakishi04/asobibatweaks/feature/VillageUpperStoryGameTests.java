@@ -36,12 +36,14 @@ public final class VillageUpperStoryGameTests {
             BlockPos step = base.offset(x, x, 1);
             helper.getLevel().setBlock(helper.absolutePos(step), east, Block.UPDATE_ALL);
             helper.setBlock(step.above(), Blocks.AIR);
+            helper.setBlock(step.above(2), Blocks.AIR);
         }
         BlockPos turn = base.offset(3, 4, 2);
         BlockPos opening = base.offset(3, 4, 1);
         BlockPos landing = base.offset(3, 5, 3);
         helper.getLevel().setBlock(helper.absolutePos(turn), south, Block.UPDATE_ALL);
         helper.setBlock(turn.above(), Blocks.AIR);
+        helper.setBlock(turn.above(2), Blocks.AIR);
         helper.setBlock(opening, Blocks.AIR);
         helper.setBlock(opening.above(), Blocks.AIR);
         helper.setBlock(landing.below(), Blocks.OAK_PLANKS);
@@ -54,9 +56,11 @@ public final class VillageUpperStoryGameTests {
                 BlockPos tread = base.offset(x, x, 1);
                 helper.getLevel().setBlock(helper.absolutePos(tread), east, Block.UPDATE_ALL);
                 helper.setBlock(tread.above(), Blocks.AIR);
+                helper.setBlock(tread.above(2), Blocks.AIR);
             }
             helper.getLevel().setBlock(helper.absolutePos(turn), south, Block.UPDATE_ALL);
             helper.setBlock(turn.above(), Blocks.AIR);
+        helper.setBlock(turn.above(2), Blocks.AIR);
             helper.setBlock(opening, Blocks.AIR);
             helper.setBlock(opening.above(), Blocks.AIR);
             helper.setBlock(landing.below(), Blocks.OAK_PLANKS);
@@ -134,13 +138,14 @@ public final class VillageUpperStoryGameTests {
             var project = data.createProject(village.id(), "building", 75,
                     helper.absolutePos(new BlockPos(1, 1, 1)));
             project.setTemplateId(template);
+            project.setParameter("circulation_version", "2");
             project.setParameter("plank", "oak");
             project.setParameter("outpost", "false");
             project.setParameter("lead_skill", "100");
             var plan = VillageSimulationEvents.projectPlan(project);
             var base = project.site();
             boolean multiThird = "house_3story_5x5".equals(template);
-            int expectedBeds = multiThird ? 5 : 4;
+            int expectedBeds = multiThird ? 4 : 3;
             long feet = plan.stream().filter(step ->
                     step.state().hasProperty(BedBlock.PART)
                             && step.state().getValue(BedBlock.PART) == BedPart.FOOT).count();
@@ -149,6 +154,7 @@ public final class VillageUpperStoryGameTests {
                         && step.state().is(Blocks.OAK_STAIRS))
                     || plan.stream().anyMatch(step -> step.pos().equals(base.offset(3, 5, 3))
                         && !step.state().isAir())
+                    || plan.stream().anyMatch(step -> step.pos().equals(base.offset(2, 4, 1)) && !step.state().isAir())
                     || multiThird && plan.stream().anyMatch(step ->
                         step.pos().equals(base.offset(3, 9, 3)) && !step.state().isAir())) {
                 helper.fail("Upper stairwell blocked or phantom bed/roof capacity in " + template,

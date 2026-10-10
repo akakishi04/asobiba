@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Collections;
 import java.util.Map;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
@@ -31,6 +33,8 @@ public final class VillageBuildingRepairService {
     private static final String BUILDING_ID = "repair_building_id";
     private static final String SOURCE_PROJECT = "repair_source_project";
     private static final String STEP_INDICES = "repair_blueprint_indices";
+    private static final String BLUEPRINT_VERSION = "repair_blueprint_version";
+    private static final String SOURCE_CHAIN = "repair_source_chain";
     private static final int MAX_BUILDINGS_EXAMINED = 24;
     private static final int MAX_HOLES = 12;
     private static final int MAX_REPAIR_STEPS = 256;
@@ -61,7 +65,9 @@ public final class VillageBuildingRepairService {
                     || !VillageSimulationScheduler.isAreaLoaded(
                             level, building.min(), building.max())
                     || data.activeProjectsForVillage(villageId).stream()
-                            .anyMatch(p -> (TEMPLATE.equals(p.templateId())
+                            .anyMatch(p -> (VillageHouseCirculationService.TEMPLATE.equals(p.templateId())
+                                        && building.id().toString().equals(p.parameter("circulation_home")))
+                                    || (TEMPLATE.equals(p.templateId())
                                         && building.id().toString().equals(
                                                 p.parameter(BUILDING_ID)))
                                     // Upper-storey builders deliberately remove
@@ -88,11 +94,13 @@ public final class VillageBuildingRepairService {
                     .orElse(null);
             if (original == null) continue;
 
-            List<VillageSimulationEvents.BuildStep> blueprint = repairBlueprint(original);
+            List<VillageSavedData.ProjectRecord> sources = shellSources(data, building, original);
+            List<VillageSimulationEvents.BuildStep> blueprint = compositeBlueprint(sources, true);
             if (blueprint.isEmpty() || blueprint.size() > MAX_REPAIR_STEPS) continue;
             List<Integer> missing = new ArrayList<>();
             Map<Item, Integer> supplies = new HashMap<>();
             int intactShell = 0;
+            int intactFoundation = 0;
             boolean budgetAvailable = true;
             for (int index = 0; index < blueprint.size(); index++) {
                 var step = blueprint.get(index);
@@ -105,17 +113,20 @@ public final class VillageBuildingRepairService {
                 BlockState current = level.getBlockState(step.pos());
                 if (current.is(step.state().getBlock())) {
                     intactShell++;
+                    if (step.pos().getY() == building.min().getY()) intactFoundation++;
                 } else if (current.isAir()
-                        && level.getFluidState(step.pos()).isEmpty()) {
+                        && level.getFluidState(step.pos()).isEmpty()
+                        && missing.size() < MAX_HOLES) {
+                    // Keep each persistent job small, but do not reject a
+                    // genuine house just because additional holes remain.
                     missing.add(index);
                     supplies.merge(step.cost(), 1, Integer::sum);
-                    if (missing.size() > MAX_HOLES) break;
                 }
                 // Different solid/placed blocks are deliberate external edits;
                 // never overwrite them and never bill them for repair.
             }
-            if (!budgetAvailable || intactShell < 20
-                    || missing.isEmpty() || missing.size() > MAX_HOLES) continue;
+            if (!budgetAvailable || (intactShell < 20 && intactFoundation < 4)
+                    || missing.isEmpty()) continue;
 
             VillageSavedData.ProjectRecord repair = data.createProject(
                     villageId, "building", 85, building.min());
@@ -124,6 +135,8 @@ public final class VillageBuildingRepairService {
             repair.setAnchor(building.min());
             repair.setParameter(BUILDING_ID, building.id().toString());
             repair.setParameter(SOURCE_PROJECT, original.id().toString());
+            repair.setParameter(BLUEPRINT_VERSION, "3");
+            repair.setParameter(SOURCE_CHAIN, sourceChain(sources, true));
             repair.setParameter(STEP_INDICES, missing.stream()
                     .map(String::valueOf).collect(java.util.stream.Collectors.joining(",")));
             repair.setWorkCursor(0);
@@ -163,7 +176,24 @@ public final class VillageBuildingRepairService {
         }
 
         List<Integer> indices = parseIndices(repair.parameter(STEP_INDICES));
-        List<VillageSimulationEvents.BuildStep> blueprint = repairBlueprint(original);
+        boolean finalCirculation = "3".equals(repair.parameter(BLUEPRINT_VERSION));
+        boolean composite = finalCirculation || "2".equals(repair.parameter(BLUEPRINT_VERSION));
+        List<VillageSavedData.ProjectRecord> sources = composite
+                ? shellSources(data, building, original) : List.of(original);
+        if (composite && (sources.isEmpty()
+                || !sourceChain(sources, finalCirculation).equals(repair.parameter(SOURCE_CHAIN)))) {
+            cancel(data, repair, "completed shell provenance changed");
+            return;
+        }
+        // An older saved index list is never reinterpreted after a completed
+        // circulation migration removed shell cells. Replan with a new version.
+        if (!finalCirculation && sources.stream().anyMatch(p -> "true".equals(p.parameter(VillageHouseCirculationService.VERIFIED)))) {
+            cancel(data, repair, "circulation changed; replan exact shell indices");
+            return;
+        }
+        // Existing saved jobs retain their original index interpretation.
+        List<VillageSimulationEvents.BuildStep> blueprint = composite
+                ? compositeBlueprint(sources, finalCirculation) : repairBlueprint(original);
         if (indices.isEmpty() || blueprint.size() > MAX_REPAIR_STEPS
                 || indices.stream().anyMatch(i -> i < 0 || i >= blueprint.size()
                         || !structural(blueprint.get(i))
@@ -267,7 +297,8 @@ public final class VillageBuildingRepairService {
             VillageSavedData.ProjectRecord project) {
         if (!"building".equals(project.type())
                 || !"complete".equals(project.phase())
-                || !project.site().equals(building.min())) return false;
+                || !project.site().equals(building.min())
+                || !project.villageId().equals(building.villageId())) return false;
         if (project.templateId().equals(building.templateId())
                 && supportedTemplate(project.templateId())) return true;
         if ("house_2story_5x5".equals(building.templateId())
@@ -277,6 +308,77 @@ public final class VillageBuildingRepairService {
                 && VillageHouseThirdFloorExpansionService.TEMPLATE.equals(project.templateId()))
             return building.id().toString().equals(project.parameter("third_building"));
         return false;
+    }
+
+    /** At most original + two owner-linked completed expansions, oldest first. */
+    private static List<VillageSavedData.ProjectRecord> shellSources(VillageSavedData data,
+            VillageSavedData.BuildingRecord building, VillageSavedData.ProjectRecord latest) {
+        List<VillageSavedData.ProjectRecord> result = new ArrayList<>();
+        VillageSavedData.ProjectRecord current = latest;
+        for (int depth = 0; depth < 3; depth++) {
+            if (current == null || !"building".equals(current.type())
+                    || !"complete".equals(current.phase())
+                    || !current.villageId().equals(building.villageId())
+                    || !current.site().equals(building.min())) return List.of();
+            result.add(current);
+            String parent;
+            boolean third = VillageHouseThirdFloorExpansionService.TEMPLATE.equals(current.templateId());
+            boolean second = VillageHouseVerticalExpansionService.TEMPLATE.equals(current.templateId());
+            if (!third && !second) {
+                if (!supportedTemplate(current.templateId())) return List.of();
+                Collections.reverse(result);
+                return List.copyOf(result);
+            }
+            if (!building.id().toString().equals(current.parameter(third ? "third_building" : "expand_building")))
+                return List.of();
+            parent = current.parameter(third ? "third_source" : "expand_original");
+            UUID parentId = parseUuid(parent);
+            current = parentId == null ? null : data.project(parentId).orElse(null);
+            if (current == null || second && !"house_5x5".equals(current.templateId())
+                    || third && !"house_2story_5x5".equals(current.templateId())
+                        && !VillageHouseVerticalExpansionService.TEMPLATE.equals(current.templateId())) return List.of();
+        }
+        return List.of();
+    }
+
+    private static String sourceChain(List<VillageSavedData.ProjectRecord> sources, boolean circulation) {
+        return sources.stream().map(p -> p.id().toString() + (circulation
+                ? ":" + p.parameter("circulation_version") + ":" + p.parameter(VillageHouseCirculationService.VERIFIED) : ""))
+                .collect(java.util.stream.Collectors.joining(","));
+    }
+
+    /** Replay the final structural meaning, not obsolete roofs or stair openings. */
+    private static List<VillageSimulationEvents.BuildStep> compositeBlueprint(
+            List<VillageSavedData.ProjectRecord> sources, boolean circulation) {
+        Map<BlockPos, VillageSimulationEvents.BuildStep> shell = new LinkedHashMap<>();
+        for (VillageSavedData.ProjectRecord source : sources) {
+            if (VillageHouseVerticalExpansionService.TEMPLATE.equals(source.templateId())) {
+                for (var step : VillageHouseVerticalExpansionService.steps(source)) {
+                    applyShellStep(shell, new VillageSimulationEvents.BuildStep(
+                            step.pos(), step.state(), step.material()));
+                }
+            } else if (VillageHouseThirdFloorExpansionService.TEMPLATE.equals(source.templateId())) {
+                for (var step : VillageHouseThirdFloorExpansionService.steps(source)) {
+                    applyShellStep(shell, new VillageSimulationEvents.BuildStep(
+                            step.pos(), step.state(), step.material()));
+                }
+            } else {
+                for (var step : VillageSimulationEvents.projectPlan(source)) applyShellStep(shell, step);
+            }
+            if (circulation) {
+                Map<BlockPos, BlockState> states = new LinkedHashMap<>();
+                shell.forEach((pos, step) -> states.put(pos, step.state()));
+                Map<BlockPos, BlockState> current = VillageHouseCirculationService.verifiedTarget(source, states);
+                shell.entrySet().removeIf(entry -> !entry.getValue().state().equals(current.get(entry.getKey())));
+            }
+        }
+        return List.copyOf(shell.values());
+    }
+
+    private static void applyShellStep(Map<BlockPos, VillageSimulationEvents.BuildStep> shell,
+                                      VillageSimulationEvents.BuildStep step) {
+        if (structural(step)) shell.put(step.pos(), step);
+        else shell.remove(step.pos()); // explicit removal, stair or furnishing supersedes old shell
     }
 
     /** Only actual PAID shell material steps, excluding demolished openings. */

@@ -116,6 +116,14 @@ public final class VillageSimulationScheduler {
         return true;
     }
 
+    /** Read-only admission check for a bounded, atomic resource safety preflight. */
+    public static boolean hasWorkerProbeAllowance(ServerLevel level, int required) {
+        LevelState state = state(level);
+        state.beginTick(level.getGameTime());
+        return required >= 0 && (long)state.workerProbes + required
+                <= AsobibaTweaksConfig.VILLAGE_WORKER_PROBES_PER_TICK.getAsInt();
+    }
+
     public static boolean tryConsumeEmergencyProbe(ServerLevel level) {
         LevelState state = state(level);
         state.beginTick(level.getGameTime());

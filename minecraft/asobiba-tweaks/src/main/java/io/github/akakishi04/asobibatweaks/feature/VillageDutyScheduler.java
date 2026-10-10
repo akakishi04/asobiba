@@ -127,6 +127,13 @@ public final class VillageDutyScheduler {
                 Items.ACACIA_PLANKS, Items.DARK_OAK_PLANKS, Items.MANGROVE_PLANKS, Items.CHERRY_PLANKS);
         int stone = count(village, Items.COBBLESTONE, Items.STONE, Items.ANDESITE, Items.DIORITE, Items.GRANITE);
 
+        // Existing unpaid project bills keep a small resource workforce available.
+        // This changes planning only; each harvest still checks real loaded containers.
+        var commitments = VillageResourceReservations.capture(data, village);
+        if (!commitments.complete()) return;
+        wood = commitments.freeCategory("wood", wood);
+        stone = commitments.freeCategory("stone", stone);
+
         int foresterTarget = wood < 64 ? 2 : wood < 192 ? 1 : 0;
         int quarryTarget = stone < 64 ? 2 : stone < 192 ? 1 : 0;
 

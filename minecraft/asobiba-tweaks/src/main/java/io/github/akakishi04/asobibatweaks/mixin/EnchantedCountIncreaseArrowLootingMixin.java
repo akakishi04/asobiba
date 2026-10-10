@@ -2,6 +2,8 @@ package io.github.akakishi04.asobibatweaks.mixin;
 
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import io.github.akakishi04.asobibatweaks.feature.ArrowLootingSupport;
+import io.github.akakishi04.asobibatweaks.feature.LootingMasteryService;
+import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.storage.loot.LootContext;
 import net.minecraft.world.level.storage.loot.functions.EnchantedCountIncreaseFunction;
@@ -23,4 +25,10 @@ public abstract class EnchantedCountIncreaseArrowLootingMixin {
                 context
         );
     }
+    @ModifyExpressionValue(method = "run", at = @At(value = "INVOKE", target = "Ljava/lang/Math;round(F)I"))
+    private int asobibatweaks$bigGameOnlyLootingBonus(int bonus, ItemStack stack, LootContext context) {
+        return ((LootingCountEnchantmentAccessor)(Object)this).asobibatweaks$getEnchantment().is(Enchantments.LOOTING)
+                ? LootingMasteryService.commonBonus(bonus, context) : bonus;
+    }
+
 }

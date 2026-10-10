@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "EntitySharedFlagAccessor",
+    "FeatherFallingAirControlMixin",
     "AbstractMinecartMixin",
     "AnvilMenuMixin",
     "PrimedTntMixin",
@@ -15,6 +16,8 @@
     "ArrowEnchantmentEligibilityMixin",
     "WorkBlockEnchantmentEligibilityMixin",
     "FurnaceFortuneMixin",
+    "FortuneBinomialAccessor",
+    "FortuneLootBonusMixin",
     "ArrowTableCompatibilityMixin",
     "ArrowAnvilCompatibilityMixin",
     "EnchantmentExtensionMixin",
@@ -33,15 +36,21 @@
     "ProjectileVolleyMasteryMixin",
     "FishingHookTimingAccessor",
     "FrostWalkerLocationMixin",
+    "SoulSpeedWearMixin",
     "FrostedIceLifetimeMixin",
     "SummonEntityEffectConductorMixin",
     "PlayerSweepingRangeMixin",
+    "WindBurstLaunchMixin",
     "AbstractArrowPierceAccessor",
     "MendingXpRateMixin",
     "ExperienceOrbMendingMixin",
     "LootingCountEnchantmentAccessor",
     "EnchantedCountIncreaseArrowLootingMixin",
-    "RandomChanceArrowLootingMixin"
+    "RandomChanceArrowLootingMixin",
+    "FireAspectNativeDurationMixin",
+    "BaneNativeDurationMixin",
+    "ArrowPunchMasteryMixin",
+    "LivingAttackRecoveryAccessor"
   ],
   "injectors": {
     "defaultRequire": 1

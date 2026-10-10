@@ -29,7 +29,7 @@ public final class VillageBridgeGameTests {
 
     private VillageBridgeGameTests() {}
 
-    @GameTest(template = "empty16x6x9", batch = "village_bridges")
+    @GameTest(skyAccess = true, template = "empty16x6x9", batch = "village_bridges")
     public static void physicalRaisedBridgeIsBuiltFromPaidStockAndPreservesWater(
             GameTestHelper helper) {
         Fixture test = prepare(helper);
@@ -78,7 +78,7 @@ public final class VillageBridgeGameTests {
             }
         }
         if (!"complete".equals(bridge.phase())
-                || !"roadwork".equals(test.parent().phase())
+                || !"bridge_survey".equals(test.parent().phase())
                 || !bridge.reservations().isEmpty()
                 || VillagerSimData.hasWorkCargo(test.worker(),
                         test.level().registryAccess(), 8)) {
@@ -123,7 +123,7 @@ public final class VillageBridgeGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty16x6x9", batch = "village_bridges")
+    @GameTest(skyAccess = true, template = "empty16x6x9", batch = "village_bridges")
     public static void obstructedBridgeNeverConsumesOrOverwritesPlayerBlock(
             GameTestHelper helper) {
         Fixture test = prepare(helper);
@@ -161,7 +161,7 @@ public final class VillageBridgeGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty16x6x9", batch = "village_bridges")
+    @GameTest(skyAccess = true, template = "empty16x6x9", batch = "village_bridges")
     public static void noBridgeForShortWaterOrObstructedBanks(
             GameTestHelper helper) {
         Fixture test = prepare(helper);
@@ -175,6 +175,199 @@ public final class VillageBridgeGameTests {
             return;
         }
         helper.succeed();
+    }
+
+    @GameTest(skyAccess = true, template = "empty16x6x9", batch = "village_bridges")
+    public static void twoPaidCrossingsResumeSavedRouteWithoutDuplicateBills(GameTestHelper helper) {
+        // Stagger shared server-probe budgets across fixtures in this batch.
+        helper.runAfterDelay(10L, () -> {
+            Fixture test = prepareTwoCrossings(helper);
+            var first = queue(test);
+            if (first == null || !buildPaid(test, first)) {
+                helper.fail("First crossing did not physically finish", MARKER);
+                return;
+            }
+            BlockPos firstDeck = helper.absolutePos(new BlockPos(3, 4, 3));
+            if (!VillageBridgeService.completedBridgeSurface(test.data(), test.parent(), firstDeck)
+                    || !test.parent().parameter("bridge_project_id").isBlank()
+                    || !"bridge_survey".equals(test.parent().phase())) {
+                helper.fail("Paid first bridge was not preserved/released for continuation", MARKER);
+                return;
+            }
+            int firstCursor = first.workCursor();
+            VillageBridgeService.advance(test.worker(), test.level(), first);
+            if (first.workCursor() != firstCursor
+                    || VillagerSimData.hasWorkCargo(test.worker(), test.level().registryAccess(), 8)) {
+                helper.fail("Completed crossing was charged or advanced again", MARKER);
+                return;
+            }
+
+            // The continuation cursor, selected route, and completed-bridge ledger
+            // all roundtrip through the real production SavedData codec.
+            VillageSavedData restored = VillageSavedData.load(test.data().save(
+                    new CompoundTag(), test.level().registryAccess()), test.level().registryAccess());
+            var savedParent = restored.project(test.parent().id()).orElseThrow();
+            var savedRoute = restored.route(test.route().id()).orElseThrow();
+            if (!"8".equals(savedParent.parameter("bridge_survey_offset"))
+                    || !savedRoute.waypoints().equals(test.route().waypoints())
+                    || !VillageBridgeService.queueBridge(test.level(), restored,
+                            savedRoute, savedParent, savedRoute.waypoints())) {
+                helper.fail("Saved continuation did not resume at the second crossing", MARKER);
+                return;
+            }
+            var savedSecond = restored.project(java.util.UUID.fromString(
+                    savedParent.parameter("bridge_project_id"))).orElseThrow();
+            if (!helper.absolutePos(new BlockPos(11, 1, 3)).equals(BlockPos.of(
+                    Long.parseLong(savedSecond.parameter("bridge_first_water"))))) {
+                helper.fail("Reload recreated the first crossing instead of the next one", MARKER);
+                return;
+            }
+            int projectCount = restored.projectsView().size();
+            if (VillageBridgeService.queueBridge(test.level(), restored, savedRoute,
+                    savedParent, savedRoute.waypoints())
+                    || projectCount != restored.projectsView().size()) {
+                helper.fail("Pending bridge was queued twice after reload", MARKER);
+                return;
+            }
+
+            var second = queue(test);
+            if (second == null || second.id().equals(first.id()) || !buildPaid(test, second)) {
+                helper.fail("Second paid crossing did not physically finish", MARKER);
+                return;
+            }
+            projectCount = test.data().projectsView().size();
+            VillageBridgeService.queueBridge(test.level(), test.data(), test.route(),
+                    test.parent(), test.route().waypoints());
+            VillageBridgeService.queueBridge(test.level(), test.data(), test.route(),
+                    test.parent(), test.route().waypoints());
+            if (!"roadwork".equals(test.parent().phase())
+                    || !"true".equals(test.parent().parameter("bridge_survey_done"))
+                    || projectCount != test.data().projectsView().size()
+                    || !test.level().getBlockState(firstDeck).is(Blocks.OAK_PLANKS)
+                    || !first.reservations().isEmpty() || !second.reservations().isEmpty()
+                    || VillagerSimData.hasWorkCargo(test.worker(), test.level().registryAccess(), 8)) {
+                helper.fail("Multiple crossings lost paid stock/geometry or queued duplicate work", MARKER);
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(skyAccess = true, template = "empty16x6x9", batch = "village_bridges")
+    public static void unsafeSecondCrossingKeepsPaidFirstAndSurveyPending(GameTestHelper helper) {
+        // Stagger shared server-probe budgets across fixtures in this batch.
+        helper.runAfterDelay(20L, () -> {
+            Fixture test = prepareTwoCrossings(helper);
+            var first = queue(test);
+            if (first == null || !buildPaid(test, first)) {
+                helper.fail("Cannot prepare paid first crossing", MARKER);
+                return;
+            }
+            BlockPos obstruction = helper.absolutePos(new BlockPos(10, 2, 3));
+            test.level().setBlock(obstruction, Blocks.OBSIDIAN.defaultBlockState(), 3);
+            int projectCount = test.data().projectsView().size();
+            if (queue(test) != null || !"bridge_survey".equals(test.parent().phase())
+                    || projectCount != test.data().projectsView().size()
+                    || !"complete".equals(first.phase())
+                    || !test.level().getBlockState(obstruction).is(Blocks.OBSIDIAN)
+                    || VillagerSimData.hasWorkCargo(test.worker(), test.level().registryAccess(), 8)) {
+                helper.fail("Unsafe next crossing was paved, charged, or replaced prior bridge", MARKER);
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(skyAccess = true, template = "empty16x6x9", batch = "village_bridges")
+    public static void legacyCompletedSlotResumesOnceAndChangedRoutePauses(GameTestHelper helper) {
+        // Stagger shared server-probe budgets across fixtures in this batch.
+        helper.runAfterDelay(30L, () -> {
+            Fixture test = prepareTwoCrossings(helper);
+            var bridge = queue(test);
+            if (bridge == null || !buildPaid(test, bridge)) {
+                helper.fail("Cannot prepare legacy completed crossing", MARKER);
+                return;
+            }
+            test.parent().setParameter("bridge_project_id", bridge.id().toString());
+            test.parent().setParameter("bridge_completed_ids", "");
+            test.parent().setPhase("roadwork");
+            if (!VillageBridgeService.resumeCompletedBridge(test.data(), test.parent())
+                    || VillageBridgeService.resumeCompletedBridge(test.data(), test.parent())
+                    || !bridge.id().toString().equals(test.parent().parameter("bridge_completed_ids"))) {
+                helper.fail("Legacy completed bridge slot was not released exactly once", MARKER);
+                return;
+            }
+            List<BlockPos> altered = List.of(test.route().from(), test.route().to().south());
+            int projects = test.data().projectsView().size();
+            if (VillageBridgeService.queueBridge(test.level(), test.data(), test.route(),
+                    test.parent(), altered)
+                    || !"bridge_survey".equals(test.parent().phase())
+                    || !test.parent().pausedReason().contains("route changed")
+                    || projects != test.data().projectsView().size()) {
+                helper.fail("Continuation silently replaced the already-selected paid route", MARKER);
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(skyAccess = true, template = "empty16x6x9", batch = "village_bridges")
+    public static void missingChunkContinuationNeverInventsSurveyedRoad(GameTestHelper helper) {
+        // Stagger shared server-probe budgets across fixtures in this batch.
+        helper.runAfterDelay(40L, () -> {
+            Fixture test = prepare(helper);
+            BlockPos absent = new BlockPos(29_999_000, 64, 29_999_000);
+            if (VillageSimulationScheduler.isChunkLoaded(test.level(), absent)) {
+                helper.fail("Missing-chunk fixture unexpectedly loaded", MARKER);
+                return;
+            }
+            List<BlockPos> nodes = List.of(absent, absent.east(15));
+            test.route().setWaypoints(nodes);
+            int projects = test.data().projectsView().size();
+            if (VillageBridgeService.queueBridge(test.level(), test.data(), test.route(),
+                    test.parent(), nodes)
+                    || !"bridge_survey".equals(test.parent().phase())
+                    || "true".equals(test.parent().parameter("bridge_survey_done"))
+                    || projects != test.data().projectsView().size()
+                    || VillageSimulationScheduler.isChunkLoaded(test.level(), absent)) {
+                helper.fail("Unknown continuation became a road/bridge or force-loaded a chunk", MARKER);
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    private static Fixture prepareTwoCrossings(GameTestHelper helper) {
+        Fixture test = prepare(helper);
+        for (int x = 0; x < 16; x++) {
+            for (int z = 2; z <= 5; z++) {
+                helper.setBlock(new BlockPos(x, 1, z),
+                        x == 3 || x == 4 || x == 11 || x == 12 ? Blocks.WATER : Blocks.STONE);
+            }
+        }
+        BlockPos from = helper.absolutePos(new BlockPos(0, 1, 3));
+        BlockPos to = helper.absolutePos(new BlockPos(15, 1, 3));
+        var route = test.data().createRoute(test.route().villageId(), "road", from, to);
+        route.setWidth(2);
+        route.setWaypoints(List.of(from, to));
+        test.parent().setParameter("route_id", route.id().toString());
+        test.parent().setAnchor(to);
+        return new Fixture(test.level(), test.data(), test.parent(), route, test.worker());
+    }
+
+    private static boolean buildPaid(Fixture test, VillageSavedData.ProjectRecord bridge) {
+        List<VillageBridgeService.Step> plan = VillageBridgeService.steps(bridge);
+        for (int i = 0; i < plan.size(); i++) {
+            var step = plan.get(i);
+            VillagerSimData.insertWorkCargo(test.worker(), test.level().registryAccess(),
+                    new ItemStack(step.material()), 8);
+            test.worker().setPos(step.position().getX() + 0.5D,
+                    step.position().getY() + 1.0D, step.position().getZ() + 0.5D);
+            VillageBridgeService.advance(test.worker(), test.level(), bridge);
+            if (bridge.workCursor() != i + 1) return false;
+        }
+        return "complete".equals(bridge.phase())
+                && !VillagerSimData.hasWorkCargo(test.worker(), test.level().registryAccess(), 8);
     }
 
     private static Fixture prepare(GameTestHelper helper) {
@@ -221,7 +414,8 @@ public final class VillageBridgeGameTests {
     }
 
     private static VillageSavedData.ProjectRecord queue(Fixture sample) {
-        var nodes = List.of(sample.route().from(), sample.route().to());
+        var nodes = sample.route().waypoints().size() >= 2 ? sample.route().waypoints()
+                : List.of(sample.route().from(), sample.route().to());
         boolean created = VillageBridgeService.queueBridge(
                 sample.level(), sample.data(), sample.route(), sample.parent(), nodes);
         if (!created) return null;

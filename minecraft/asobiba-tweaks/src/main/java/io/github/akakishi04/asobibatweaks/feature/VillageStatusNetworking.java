@@ -202,15 +202,20 @@ public final class VillageStatusNetworking {
     }
 
     private static List<String> buildProjects(VillageSavedData data, VillageSavedData.VillageRecord village) {
-        return data.activeProjectsForVillage(village.id()).stream()
-                .limit(5)
+        List<String> resourcePauses = data.workSitesForVillage(village.id()).stream()
+                .filter(site -> site.resourcePauseReason().startsWith("resource preflight requires"))
+                .limit(1).map(site -> site.type() + " - " + site.resourcePauseReason()).toList();
+        List<String> result = new ArrayList<>(data.activeProjectsForVillage(village.id()).stream()
+                .limit(5 - resourcePauses.size())
                 .map(project -> {
                     String name = project.templateId().isBlank() ? project.type() : project.templateId();
                     String text = name + " - " + project.phase();
                     if (!project.pausedReason().isBlank()) text += " - " + project.pausedReason();
                     return text;
                 })
-                .toList();
+                .toList());
+        result.addAll(resourcePauses);
+        return List.copyOf(result);
     }
 
     private static int count(VillageSavedData.VillageRecord village, Item... items) {

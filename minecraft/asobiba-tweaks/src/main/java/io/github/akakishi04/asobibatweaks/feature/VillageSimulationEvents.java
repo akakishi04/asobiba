@@ -121,6 +121,7 @@ public final class VillageSimulationEvents {
         // V1 persistence foundation: all loaded villagers, including children, receive the
         // namespaced persistent state and conservative stable Village-ID bootstrap.
         VillageIdentityBootstrap.ensure(villager, level);
+        VillageActivityBoundary.observe(villager, level);
 
         // Periodic reconciliation is limited to already-recognized StorageRecords; it never
         // scans arbitrary containers outside the V3 storage index.
@@ -147,6 +148,7 @@ public final class VillageSimulationEvents {
 
         VillageDutyScheduler.ensureFormalDuty(villager, level.getGameTime());
         String duty = VillagerSimData.duty(villager);
+        VillageResourceSiteService.requestPlan(villager, level);
 
         if ("carpenter".equals(duty)
                 && AsobibaTweaksConfig.VILLAGE_CARPENTER_ENABLED.getAsBoolean()
@@ -261,8 +263,13 @@ public final class VillageSimulationEvents {
         if (!isWorkTime(level)) return;
         if (!areaLoaded(level, villager.blockPosition(), 24, 5, 5)) return;
 
-        AABB villageArea = villager.getBoundingBox().inflate(28.0D);
-        int population = level.getEntitiesOfClass(Villager.class, villageArea).size();
+        var planningVillage = data.village(villageId.get()).orElse(null);
+        if (planningVillage == null) return;
+        AABB villageArea = VillageActivityBoundary.searchBounds(planningVillage);
+        int population = level.getEntitiesOfClass(Villager.class, villageArea,
+                resident -> resident.isAlive()
+                        && VillagerSimData.villageId(resident).filter(villageId.get()::equals).isPresent()
+                        && VillageActivityBoundary.contains(planningVillage, resident.blockPosition())).size();
         int beds = countBlocks(level, villager.blockPosition(), 24, state -> state.is(BlockTags.BEDS));
         int stores = data.storagesForVillage(villageId.get()).size();
         if (population < 4) {
@@ -283,6 +290,10 @@ public final class VillageSimulationEvents {
         boolean housingNeed = housingDemand.build();
         boolean storageNeed = stores < Math.max(2, (population + 3) / 4);
 
+        if (VillageHouseCirculationService.tryPlan(villager, level, villageId.get())) {
+            villager.getPersistentData().putLong(NEXT_BUILD, now + 2400L);
+            return;
+        }
         // Restore a small number of genuine missing shell blocks in existing
         // village-owned buildings before building another detached house.
         if (VillageBuildingRepairService.tryPlan(villager, level, villageId.get())) {
@@ -292,6 +303,10 @@ public final class VillageSimulationEvents {
         // A broken physical multi-storey staircase cannot serve upper
         // housing. Reuse and repair the original structure before new land.
         if (VillageStairRepairService.tryPlan(villager, level, villageId.get())) {
+            villager.getPersistentData().putLong(NEXT_BUILD, now + 2400L);
+            return;
+        }
+        if (VillageBedRepairService.tryPlan(villager, level, villageId.get())) {
             villager.getPersistentData().putLong(NEXT_BUILD, now + 2400L);
             return;
         }
@@ -389,6 +404,8 @@ public final class VillageSimulationEvents {
                 housingNeed ? housingDemand.acute() ? 90 : 75 : storageNeed ? 70
                         : craftHallNeed || !specialist.isBlank() ? 65 : 40, site);
         project.setTemplateId(templateId);
+        if (!outpost && !colony && ("house_2story_5x5".equals(templateId) || "house_3story_5x5".equals(templateId)))
+            project.setParameter("circulation_version", "2");
         project.setVariantSeed(villager.getUUID().getLeastSignificantBits() ^ site.asLong());
         project.setLeadCarpenterId(villager.getUUID());
         project.setAnchor(villager.blockPosition());
@@ -469,8 +486,16 @@ public final class VillageSimulationEvents {
             VillageRiverDockService.advance(villager, level, project);
             return;
         }
+        if (VillageBedRepairService.TEMPLATE.equals(project.templateId())) {
+            VillageBedRepairService.advance(villager, level, project);
+            return;
+        }
         if (VillageBuildingRepairService.TEMPLATE.equals(project.templateId())) {
             VillageBuildingRepairService.advance(villager, level, project);
+            return;
+        }
+        if (VillageHouseCirculationService.TEMPLATE.equals(project.templateId())) {
+            VillageHouseCirculationService.advance(villager, level, project);
             return;
         }
         if (VillageStairRepairService.TEMPLATE.equals(project.templateId())) {
@@ -556,7 +581,7 @@ public final class VillageSimulationEvents {
 
         if (villager.distanceToSqr(step.pos.getCenter()) > 7.0D * 7.0D) {
             project.setPausedReason("worker travelling");
-            villager.getNavigation().moveTo(step.pos.getX() + 0.5D, step.pos.getY(), step.pos.getZ() + 0.5D, 0.75D);
+            VillageConstructionAccessService.approach(villager, level, project, step.pos);
             VillageSavedData.get(level).touch();
             return;
         }
@@ -700,11 +725,14 @@ public final class VillageSimulationEvents {
     private static void buildOneRoadProjectStep(Villager villager, ServerLevel level,
                                                 VillageSavedData.ProjectRecord project) {
         if (!isWorkTime(level)) return;
-        if (VillageBridgeService.TEMPLATE.equals(project.templateId())) {
+        if (VillageBridgeService.TEMPLATE.equals(project.templateId())
+                || VillageSpanBridgeService.TEMPLATE.equals(project.templateId())) {
             VillageBridgeService.advance(villager, level, project);
             return;
         }
-        if ("route_planning".equals(project.phase())) {
+        VillageBridgeService.resumeCompletedBridge(VillageSavedData.get(level), project);
+        if ("route_planning".equals(project.phase())
+                || "bridge_survey".equals(project.phase())) {
             // Search requests are short-lived, but the saved project must
             // survive failed/unloaded planning and automatically retry after
             // chunks naturally become loaded.
@@ -825,7 +853,9 @@ public final class VillageSimulationEvents {
         BlockState state = level.getBlockState(surface);
         String targetQuality = roadTargetQuality(project, route);
 
-        if (level.getFluidState(surface).is(FluidTags.WATER)) {
+        if (VillageBridgeService.completedBridgeSurface(data, project, surface)) {
+            project.setPhase("roadwork");
+        } else if (level.getFluidState(surface).is(FluidTags.WATER)) {
             // Never pave directly into river water, which would silently
             // destroy the source and produce an unwalkable, unapproved span.
             // An accepted 2..12 block crossing must first be constructed
@@ -1119,6 +1149,8 @@ public final class VillageSimulationEvents {
     private static void completeBuildingProject(Villager villager, ServerLevel level,
                                                 VillageSavedData.ProjectRecord project,
                                                 List<BuildStep> plan) {
+        if (!VillageHouseCirculationService.ensure(villager, level, project)) return;
+        if (!VillageConstructionAccessService.cleanup(villager, level, project)) return;
         project.setPhase("complete");
         project.setPausedReason("");
         VillageSavedData data = VillageSavedData.get(level);
@@ -1450,7 +1482,34 @@ public final class VillageSimulationEvents {
                 steps.add(new BuildStep(base.offset(1, 9, 1), extraThirdBedHead, null));
             }
         }
+        if (multiStory && "2".equals(project.parameter("circulation_version"))) {
+            // A versioned new plan, never a reinterpretation of an old saved
+            // work cursor. One ground bedroom leaves real circulation from
+            // the east entrance to the first stair and the bed interaction face.
+            steps.removeIf(s -> s.state().is(Blocks.WHITE_BED)
+                    || s.pos().equals(base.offset(4, 1, 1))
+                    || s.pos().equals(base.offset(4, 2, 1))
+                    || s.pos().equals(base.offset(2, 4, 1))
+                    || "house_3story_5x5".equals(project.templateId())
+                        && s.pos().equals(base.offset(2, 8, 1)));
+            addCirculationBed(steps, base.offset(1, 1, 3), Direction.EAST);
+            if ("house_3story_5x5".equals(project.templateId())) {
+                addCirculationBed(steps, base.offset(2, 5, 3), Direction.WEST);
+                addCirculationBed(steps, base.offset(1, 9, 2), Direction.NORTH);
+                addCirculationBed(steps, base.offset(2, 9, 3), Direction.WEST);
+            } else {
+                addCirculationBed(steps, base.offset(1, 5, 2), Direction.NORTH);
+                addCirculationBed(steps, base.offset(2, 5, 3), Direction.WEST);
+            }
+        }
         return steps;
+    }
+
+    private static void addCirculationBed(List<BuildStep> steps, BlockPos foot, Direction facing) {
+        BlockState state = Blocks.WHITE_BED.defaultBlockState().setValue(BedBlock.PART, BedPart.FOOT)
+                .setValue(BedBlock.FACING, facing);
+        steps.add(new BuildStep(foot, state, null));
+        steps.add(new BuildStep(foot.relative(facing), state.setValue(BedBlock.PART, BedPart.HEAD), null));
     }
 
     private static int parseInt(String value, int fallback) {
@@ -1859,6 +1918,10 @@ public final class VillageSimulationEvents {
             if (!VillageSimulationScheduler.isAreaLoaded(
                     level, base.offset(0, -1, 0), base.offset(4, maxY, 4))) continue;
 
+            if (!outpost && !colony) {
+                var owner = VillagerSimData.villageId(villager).flatMap(VillageSavedData.get(level)::village).orElse(null);
+                if (!VillageActivityBoundary.containsFootprint(owner, base, base.offset(4, maxY, 4))) continue;
+            }
             if (isBuildSiteClear(level, base, maxY)) return base;
         }
         return null;
@@ -1905,144 +1968,26 @@ public final class VillageSimulationEvents {
             depositWorkCargo(villager, level, WORKER_CARGO_SLOTS);
             return;
         }
-
-        BlockPos center = villager.blockPosition();
-        if (center.getY() < 0 || !areaLoaded(level, center, 11, 5, 5)) return;
-
-        for (int attempt = 0; attempt < 32; attempt++) {
-            if (!VillageSimulationScheduler.tryConsumeWorkerProbe(level)) return;
-            BlockPos pos = center.offset(
-                    villager.getRandom().nextInt(17) - 8,
-                    villager.getRandom().nextInt(7) - 3,
-                    villager.getRandom().nextInt(17) - 8
-            );
-            if (pos.getY() < 0) continue;
-
-            BlockState state = level.getBlockState(pos);
-            if (!state.is(Blocks.STONE) && !state.is(Blocks.ANDESITE) && !state.is(Blocks.DIORITE) && !state.is(Blocks.GRANITE)) continue;
-            if (!hasExposedFace(level, pos) || nearProtectedBuildingBlock(level, pos)) continue;
-
-            ItemStack mined = new ItemStack(Items.COBBLESTONE);
-            if (!VillagerSimData.canInsertWorkCargo(villager, level.registryAccess(), mined, WORKER_CARGO_SLOTS)) {
-                depositWorkCargo(villager, level, WORKER_CARGO_SLOTS);
-                return;
-            }
-            if (villager.distanceToSqr(pos.getCenter()) > 2.25D) {
-                villager.getNavigation().moveTo(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D, 0.65D);
-                return;
-            }
-
-            level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
-            VillagerSimData.insertWorkCargo(villager, level.registryAccess(), mined, WORKER_CARGO_SLOTS);
-            return;
-        }
+        VillageResourceSiteService.gather(villager, level, "quarry");
     }
 
     private static void tickForester(Villager villager, ServerLevel level) {
         if (!isWorkTime(level) || level.getGameTime() % 240 != Math.floorMod(villager.getId(), 240)) return;
-        if (VillagerSimData.hasWorkCargo(villager, level.registryAccess(), WORKER_CARGO_SLOTS)) {
+        if (VillagerSimData.workCargoCountMatching(villager, level.registryAccess(), WORKER_CARGO_SLOTS,
+                stack -> !stack.is(ItemTags.SAPLINGS)) > 0) {
             depositWorkCargo(villager, level, WORKER_CARGO_SLOTS);
             return;
         }
-
-        BlockPos center = villager.blockPosition();
-        if (!areaLoaded(level, center, 13, 4, 7)) return;
-
-        for (int attempt = 0; attempt < 32; attempt++) {
-            if (!VillageSimulationScheduler.tryConsumeWorkerProbe(level)) return;
-            BlockPos pos = center.offset(
-                    villager.getRandom().nextInt(21) - 10,
-                    villager.getRandom().nextInt(8) - 2,
-                    villager.getRandom().nextInt(21) - 10
-            );
-            BlockState state = level.getBlockState(pos);
-            if (!state.is(BlockTags.LOGS) || !treeLooksNatural(level, pos)) continue;
-
-            ItemStack log = new ItemStack(state.getBlock().asItem());
-            if (log.isEmpty()) continue;
-            if (!VillagerSimData.canInsertWorkCargo(villager, level.registryAccess(), log, WORKER_CARGO_SLOTS)) {
-                depositWorkCargo(villager, level, WORKER_CARGO_SLOTS);
-                return;
-            }
-            if (villager.distanceToSqr(pos.getCenter()) > 2.25D) {
-                villager.getNavigation().moveTo(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D, 0.7D);
-                return;
-            }
-
-            level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
-            VillagerSimData.insertWorkCargo(villager, level.registryAccess(), log, WORKER_CARGO_SLOTS);
-
-            if (level.getBlockState(pos.below()).is(BlockTags.DIRT)
-                    && level.getBlockState(pos).isAir()) {
-                Block sapling = saplingFor(state.getBlock());
-                if (sapling != null) level.setBlock(pos, sapling.defaultBlockState(), Block.UPDATE_ALL);
-            }
-            return;
-        }
+        VillageResourceSiteService.gather(villager, level, "forestry");
     }
 
     private static void tickFisher(Villager villager, ServerLevel level) {
         if (!isWorkTime(level) || level.getGameTime() % 360 != Math.floorMod(villager.getId(), 360)) return;
-
-        var siteId = VillagerSimData.outpostSiteId(villager);
-        if (siteId.isEmpty()) return;
-
-        VillageSavedData data = VillageSavedData.get(level);
-        VillageSavedData.WorkSiteRecord site = data.workSite(siteId.get()).orElse(null);
-        if (site == null || !"outpost".equals(site.type()) || !"active".equals(site.state())
-                || !"fishing".equals(site.purpose())) {
-            return;
-        }
-
         if (VillagerSimData.hasWorkCargo(villager, level.registryAccess(), WORKER_CARGO_SLOTS)) {
             depositWorkCargo(villager, level, WORKER_CARGO_SLOTS);
             return;
         }
-
-        BlockPos center = workSiteCenter(site);
-        BlockPos water = null;
-        for (int attempt = 0; attempt < 40 && water == null; attempt++) {
-            if (!VillageSimulationScheduler.tryConsumeWorkerProbe(level)) return;
-
-            int x = center.getX() + villager.getRandom().nextInt(25) - 12;
-            int z = center.getZ() + villager.getRandom().nextInt(25) - 12;
-            BlockPos column = new BlockPos(x, level.getMinBuildHeight(), z);
-            if (!VillageSimulationScheduler.isChunkLoaded(level, column)) continue;
-
-            int surfaceY = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
-            for (int dy = -3; dy <= 1; dy++) {
-                BlockPos probe = new BlockPos(
-                        x,
-                        Math.max(level.getMinBuildHeight(), surfaceY + dy),
-                        z
-                );
-                if (level.getFluidState(probe).is(FluidTags.WATER)) {
-                    water = probe;
-                    break;
-                }
-            }
-        }
-        if (water == null) return;
-
-        if (villager.distanceToSqr(water.getCenter()) > 25.0D) {
-            villager.getNavigation().moveTo(
-                    water.getX() + 0.5D, water.getY() + 1.0D, water.getZ() + 0.5D, 0.66D);
-            return;
-        }
-
-        // Common fish only: outpost fishing is a bounded food/logistics source, not a treasure generator.
-        if (villager.getRandom().nextInt(3) != 0) return;
-        Item catchItem = villager.getRandom().nextInt(5) == 0 ? Items.SALMON : Items.COD;
-        ItemStack caught = new ItemStack(catchItem);
-        if (!VillagerSimData.canInsertWorkCargo(
-                villager, level.registryAccess(), caught, WORKER_CARGO_SLOTS)) {
-            depositWorkCargo(villager, level, WORKER_CARGO_SLOTS);
-            return;
-        }
-
-        VillagerSimData.insertWorkCargo(villager, level.registryAccess(), caught, WORKER_CARGO_SLOTS);
-        site.setLastUsedGameTime(level.getGameTime());
-        data.touch();
+        VillageResourceSiteService.gather(villager, level, "fishing");
     }
 
     private static void tickShepherd(Villager villager, ServerLevel level) {
@@ -2532,11 +2477,12 @@ public final class VillageSimulationEvents {
                 ? (level.getBlockState(base.offset(1, 1, 2)).is(Blocks.SMITHING_TABLE) ? 1 : 0)
                         + (level.getBlockState(base.offset(3, 1, 2)).is(Blocks.STONECUTTER) ? 1 : 0)
                 : 0;
+        boolean verifiedCirculation = "true".equals(project.parameter("circulation_verified_v2"));
         building.setValidatedCapacity(storage ? 0
                 : specialist ? specialistCapacity
                 : craftHall ? craftCapacity
-                : threeStory ? 6
-                : twoStory ? 4
+                : threeStory ? verifiedCirculation ? 4 : 0
+                : twoStory ? verifiedCirculation ? 3 : 0
                 : gabled ? 2
                 : outpost ? 2 : 1);
         // Do not advertise an apparently complete craft hall as a valid
@@ -2544,7 +2490,10 @@ public final class VillageSimulationEvents {
         // removed either of its physical stations.
         building.setValidationState(
                 craftHall && craftCapacity < 2 || specialist && specialistCapacity < 1
-                        ? "invalid" : "valid");
+                        ? "invalid" : (twoStory || threeStory) && !verifiedCirculation ? "unknown" : "valid");
+        if ((twoStory || threeStory) && !verifiedCirculation)
+            VillageSimulationScheduler.enqueueValidation(level, "new_multistory:" + building.id(),
+                    () -> VillageBuildingService.revalidateChunk(level, new ChunkPos(base)));
         building.setLastValidatedGameTime(level.getGameTime());
 
         String plank = project.parameter("plank");
@@ -2693,8 +2642,15 @@ public final class VillageSimulationEvents {
         VillageSavedData.RouteRecord route = data.route(routeId).orElse(null);
         VillageSavedData.ProjectRecord project = data.project(projectId).orElse(null);
         if (route == null || project == null
-                || !"route_planning".equals(project.phase())
+                || !("route_planning".equals(project.phase())
+                    || "bridge_survey".equals(project.phase()))
                 || !route.villageId().equals(project.villageId())) return;
+        if ("bridge_survey".equals(project.phase())) {
+            // Resume saved selected geometry; never rerun A* across a paid
+            // bridge or replace the route merely to find its next crossing.
+            VillageBridgeService.queueBridge(level, data, route, project, route.waypoints());
+            return;
+        }
         List<BlockPos> nodes = VillageRoadPlanner.planLoaded(
                 level, route.from(), route.to());
         if (nodes.size() < 2) {
@@ -2729,12 +2685,10 @@ public final class VillageSimulationEvents {
                 ? nodes : List.of(route.from(), route.to());
         data.setRouteWaypoints(route.id(), selected);
 
-        boolean queued = direct != null
-                ? VillageBridgeService.queueValidatedBridge(
-                        level, data, route, project, direct)
-                : VillageBridgeService.queueBridge(
-                        level, data, route, project, selected);
-        if (!queued) {
+        boolean queued = VillageBridgeService.queueBridge(
+                level, data, route, project, selected);
+        if (!queued && !"bridge_survey".equals(project.phase())
+                && !"roadwork".equals(project.phase())) {
             project.setPhase("planned");
             project.setPausedReason("");
         }
@@ -2749,51 +2703,6 @@ public final class VillageSimulationEvents {
             if (predicate.test(level.getBlockState(pos)) && ++count >= 64) break;
         }
         return count;
-    }
-
-    private static boolean hasExposedFace(ServerLevel level, BlockPos pos) {
-        if (!VillageSimulationScheduler.isAreaLoaded(level, pos.offset(-1, -1, -1), pos.offset(1, 1, 1))) return false;
-        for (Direction direction : Direction.values()) {
-            if (!VillageSimulationScheduler.tryConsumeWorkerProbe(level)) return false;
-            if (level.getBlockState(pos.relative(direction)).isAir()) return true;
-        }
-        return false;
-    }
-
-    private static boolean nearProtectedBuildingBlock(ServerLevel level, BlockPos pos) {
-        if (!VillageSimulationScheduler.isAreaLoaded(level, pos.offset(-3, -2, -3), pos.offset(3, 3, 3))) return true;
-        for (BlockPos p : BlockPos.betweenClosed(pos.offset(-3, -2, -3), pos.offset(3, 3, 3))) {
-            if (!VillageSimulationScheduler.tryConsumeWorkerProbe(level)) return true;
-            BlockState state = level.getBlockState(p);
-            if (state.is(BlockTags.BEDS) || state.is(Blocks.CHEST) || state.is(Blocks.BARREL)
-                    || state.is(AsobibaRegistries.CARPENTER_WORKBENCH.get())) return true;
-        }
-        return false;
-    }
-
-    private static boolean treeLooksNatural(ServerLevel level, BlockPos pos) {
-        if (!VillageSimulationScheduler.isAreaLoaded(level, pos.offset(-3, 0, -3), pos.offset(3, 5, 3))) return false;
-        boolean leaves = false;
-        for (BlockPos p : BlockPos.betweenClosed(pos.offset(-3, 0, -3), pos.offset(3, 5, 3))) {
-            if (!VillageSimulationScheduler.tryConsumeWorkerProbe(level)) return false;
-            if (level.getBlockState(p).is(BlockTags.LEAVES)) {
-                leaves = true;
-                break;
-            }
-        }
-        return leaves && !nearProtectedBuildingBlock(level, pos);
-    }
-
-    private static Block saplingFor(Block log) {
-        if (log == Blocks.SPRUCE_LOG) return Blocks.SPRUCE_SAPLING;
-        if (log == Blocks.BIRCH_LOG) return Blocks.BIRCH_SAPLING;
-        if (log == Blocks.JUNGLE_LOG) return Blocks.JUNGLE_SAPLING;
-        if (log == Blocks.ACACIA_LOG) return Blocks.ACACIA_SAPLING;
-        if (log == Blocks.DARK_OAK_LOG) return Blocks.DARK_OAK_SAPLING;
-        if (log == Blocks.MANGROVE_LOG) return Blocks.MANGROVE_PROPAGULE;
-        if (log == Blocks.CHERRY_LOG) return Blocks.CHERRY_SAPLING;
-        if (log == Blocks.OAK_LOG) return Blocks.OAK_SAPLING;
-        return null;
     }
 
     private static boolean areaLoaded(ServerLevel level, BlockPos center, int horizontal, int down, int up) {

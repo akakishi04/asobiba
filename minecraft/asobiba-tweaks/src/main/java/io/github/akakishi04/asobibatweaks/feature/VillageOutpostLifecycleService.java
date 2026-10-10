@@ -105,6 +105,12 @@ public final class VillageOutpostLifecycleService {
             return handleOutpostPorter(villager, level, data, village, site);
         }
 
+        // A planner-approved resource footprint supersedes the old center-only travel radius.
+        // Harvesting itself still verifies the parent, demand, footprint and physical access.
+        String resourceType = VillageResourceSiteService.typeForDuty(VillagerSimData.duty(villager));
+        if (!resourceType.isEmpty()
+                && VillageResourceSiteService.assignedSite(villager, level, resourceType) != null) return false;
+
         BlockPos center = center(site);
         if (villager.blockPosition().distManhattan(center) > 20) {
             moveTowardLoaded(villager, level, center, 0.80D);

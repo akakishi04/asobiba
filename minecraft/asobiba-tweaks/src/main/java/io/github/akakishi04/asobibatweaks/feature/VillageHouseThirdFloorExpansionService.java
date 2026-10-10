@@ -80,6 +80,9 @@ public final class VillageHouseThirdFloorExpansionService {
             VillageSavedData.ProjectRecord project = data.createProject(
                     villageId, "building", 87, home.min());
             project.setTemplateId(TEMPLATE);
+            project.setParameter("circulation_version", "2");
+            project.setParameter("third_source_circulation",
+                    originalUpperBedPresent(level, home.min(), true) ? "2" : "1");
             project.setLeadCarpenterId(carpenter.getUUID());
             project.setAnchor(home.min());
             project.setParameter(BUILDING, home.id().toString());
@@ -129,14 +132,15 @@ public final class VillageHouseThirdFloorExpansionService {
         }
         if (!level.getBlockState(base.offset(2, 6, 1)).isAir()
                 || !level.getBlockState(base.offset(3, 7, 1)).isAir()) return false;
-        return originalUpperBedPresent(level, base)
+        return (originalUpperBedPresent(level, base, false) || originalUpperBedPresent(level, base, true))
                 && level.getBlockState(base.offset(1, 5, 2)).is(Blocks.WHITE_BED);
     }
 
-    private static boolean originalUpperBedPresent(ServerLevel level, BlockPos base) {
-        BlockState foot = bedFoot(Direction.WEST);
-        return level.getBlockState(base.offset(2, 5, 1)).equals(foot)
-                && level.getBlockState(base.offset(1, 5, 1))
+    private static boolean originalUpperBedPresent(ServerLevel level, BlockPos base, boolean v2) {
+        BlockState foot = bedFoot(v2 ? Direction.NORTH : Direction.WEST);
+        BlockPos position = base.offset(v2 ? 1 : 2, 5, v2 ? 2 : 1);
+        return level.getBlockState(position).equals(foot)
+                && level.getBlockState(position.relative(foot.getValue(BedBlock.FACING)))
                     .equals(foot.setValue(BedBlock.PART, BedPart.HEAD));
     }
 
@@ -166,7 +170,7 @@ public final class VillageHouseThirdFloorExpansionService {
         }
         List<Step> plan = steps(project);
         if (project.workCursor() >= plan.size()) {
-            finish(level, data, project, home);
+            finish(carpenter, level, data, project, home);
             return;
         }
 
@@ -183,7 +187,7 @@ public final class VillageHouseThirdFloorExpansionService {
                 return;
             }
         } else if (step.kind() == SALVAGE_BED) {
-            if (!originalUpperBedPresent(level, base)) {
+            if (!originalUpperBedPresent(level, base, "2".equals(project.parameter("third_source_circulation")))) {
                 pause(data, project, "second bedroom changed; refuse demolition");
                 return;
             }
@@ -225,9 +229,7 @@ public final class VillageHouseThirdFloorExpansionService {
         }
 
         if (carpenter.distanceToSqr(step.pos().getCenter()) > 8.0D * 8.0D) {
-            carpenter.getNavigation().moveTo(step.pos().getX() + 0.5D,
-                    step.pos().getY(), step.pos().getZ() + 0.5D, 0.75D);
-            pause(data, project, "Carpenter carrying expansion materials");
+            VillageConstructionAccessService.approach(carpenter, level, project, step.pos());
             return;
         }
 
@@ -318,14 +320,15 @@ public final class VillageHouseThirdFloorExpansionService {
         advanceCursor(data, project, step);
     }
 
-    private static void finish(ServerLevel level, VillageSavedData data,
+    private static void finish(Villager carpenter, ServerLevel level, VillageSavedData data,
                                VillageSavedData.ProjectRecord project,
                                VillageSavedData.BuildingRecord home) {
-        if (!allComplete(level, project)
-                || !VillageBuildingService.connectedUpperStories(level, project.site(), 2)) {
+        if (!VillageHouseCirculationService.ensure(carpenter, level, project)) return;
+        if (!VillageBuildingService.connectedUpperStories(level, project.site(), 2)) {
             pause(data, project, "third-story physical rooms not navigable");
             return;
         }
+        if (!VillageConstructionAccessService.cleanup(carpenter, level, project)) return;
         if (!data.upgradeVillageHouseThirdFloor(home.id())) {
             pause(data, project, "original house bounds no longer convertible");
             return;
@@ -379,7 +382,8 @@ public final class VillageHouseThirdFloorExpansionService {
     private static boolean salvaged(ServerLevel level,
                                     VillageSavedData.ProjectRecord project) {
         BlockPos base = project.site();
-        BlockState foot = level.getBlockState(base.offset(2, 5, 1));
+        boolean sourceV2 = "2".equals(project.parameter("third_source_circulation"));
+        BlockState foot = level.getBlockState(base.offset(sourceV2 ? 1 : 2, 5, sourceV2 ? 2 : 1));
         BlockState head = level.getBlockState(base.offset(1, 5, 1));
         Block expected = VillageSimulationEvents.stairsForPlank(
             VillageBridgeService.plank(project.parameter(WOOD)));
@@ -430,7 +434,8 @@ public final class VillageHouseThirdFloorExpansionService {
         // Physically deconstruct ONE obstructing, already-owned upper bed
         // before putting the next flight in its place. Vanilla supplies its
         // actual dropped White Bed item; no phantom inventory credit.
-        result.add(new Step(base.offset(2, 5, 1),
+        boolean sourceV2 = "2".equals(project.parameter("third_source_circulation"));
+        result.add(new Step(base.offset(sourceV2 ? 1 : 2, 5, sourceV2 ? 2 : 1),
                 Blocks.AIR.defaultBlockState(), null, SALVAGE_BED));
         for (int x = 1; x <= 3; x++)
             result.add(new Step(base.offset(x, 4 + x, 1),
@@ -446,6 +451,12 @@ public final class VillageHouseThirdFloorExpansionService {
                 bedFoot(Direction.SOUTH), Items.WHITE_BED, PLACE_BED));
         result.add(new Step(base.offset(2, 9, 1),
                 bedFoot(Direction.WEST), Items.WHITE_BED, PLACE_BED));
+        if ("2".equals(project.parameter("circulation_version"))) {
+            result.removeIf(s -> s.kind() == PLACE_BED);
+            result.add(new Step(base.offset(2, 8, 1), Blocks.AIR.defaultBlockState(), null, REMOVE_ROOF));
+            result.add(new Step(base.offset(1, 9, 2), bedFoot(Direction.NORTH), Items.WHITE_BED, PLACE_BED));
+            result.add(new Step(base.offset(2, 9, 3), bedFoot(Direction.WEST), Items.WHITE_BED, PLACE_BED));
+        }
         return List.copyOf(result);
     }
 

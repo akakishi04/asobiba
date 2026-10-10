@@ -76,13 +76,13 @@ public final class VillageHouseThirdFloorExpansionGameTests {
         if (planned || !f.data().activeProjectsForVillage(f.villageId()).isEmpty()
                 || !f.level().getBlockState(blocker).is(Blocks.OBSIDIAN)
                 || before != after
-                || f.level().getBlockState(f.base().offset(2, 5, 1))
+                || f.level().getBlockState(f.base().offset(1, 5, 2))
                     .getBlock() != Blocks.WHITE_BED) {
             helper.fail("Edited upper space: planned=" + planned
                     + ", projects=" + f.data().activeProjectsForVillage(f.villageId()).size()
                     + ", block=" + f.level().getBlockState(blocker)
                     + ", plankBefore=" + before + ", plankAfter=" + after
-                    + ", bed=" + f.level().getBlockState(f.base().offset(2, 5, 1)), MARK);
+                    + ", bed=" + f.level().getBlockState(f.base().offset(1, 5, 2)), MARK);
             return;
         }
         helper.succeed();
@@ -145,7 +145,7 @@ public final class VillageHouseThirdFloorExpansionGameTests {
     }
 
     @GameTest(template = "empty16x14x9", timeoutTicks = 95, batch = "third_floor")
-    public static void completeThirdFloorMaintainsOriginalIdAndFiveRealBeds(GameTestHelper helper) {
+    public static void completeThirdFloorMaintainsOriginalIdAndFourRealBeds(GameTestHelper helper) {
         Fixture f = setup(helper);
         var project = project(f);
         List<VillageHouseThirdFloorExpansionService.Step> planned =
@@ -200,14 +200,13 @@ public final class VillageHouseThirdFloorExpansionGameTests {
                 return;
             }
             if (home == null || !"valid".equals(home.validationState())
-                    || home.validatedCapacity() != 5
+                    || home.validatedCapacity() != 4
                     || !home.max().equals(f.base().offset(4, 12, 4))
                     || loaded.village(f.villageId()).orElseThrow().buildingIds().size() != 1) {
                 StringBuilder rooms = new StringBuilder();
                 for (BlockPos local : List.of(
-                        new BlockPos(2, 1, 2), new BlockPos(3, 1, 2),
-                        new BlockPos(1, 5, 2), new BlockPos(1, 9, 2),
-                        new BlockPos(2, 9, 1))) {
+                        new BlockPos(1, 1, 3), new BlockPos(2, 5, 3),
+                        new BlockPos(1, 9, 2), new BlockPos(2, 9, 3))) {
                     BlockPos foot = f.base().offset(local);
                     var block = f.level().getBlockState(foot);
                     var direction = block.hasProperty(BedBlock.FACING)
@@ -260,7 +259,7 @@ public final class VillageHouseThirdFloorExpansionGameTests {
         }
         helper.runAtTickTime(85, () -> {
             if (!"valid".equals(f.house().validationState())
-                    || f.house().validatedCapacity() != 4
+                    || f.house().validatedCapacity() != 3
                     || !f.house().max().equals(f.base().offset(4, 8, 4))) {
                 helper.fail("A loaded two-storey house was stranded after background probe starvation: "
                         + f.house().validationState() + "/capacity="
@@ -471,6 +470,8 @@ public final class VillageHouseThirdFloorExpansionGameTests {
     private static VillageSavedData.ProjectRecord project(Fixture f) {
         var p = f.data().createProject(f.villageId(), "building", 87, f.base());
         p.setTemplateId(VillageHouseThirdFloorExpansionService.TEMPLATE);
+        p.setParameter("circulation_version", "2");
+        p.setParameter("third_source_circulation", "2");
         p.setParameter("third_building", f.house().id().toString());
         p.setParameter("third_source", f.original().id().toString());
         p.setParameter("third_plank", "oak");
@@ -502,6 +503,8 @@ public final class VillageHouseThirdFloorExpansionGameTests {
         var village = data.createVillage(base, level.getGameTime());
         var original = data.createProject(village.id(), "building", 75, base);
         original.setTemplateId("house_2story_5x5");
+        original.setParameter("circulation_version", "2");
+        original.setParameter("circulation_verified_v2", "true");
         original.setParameter("plank", "oak");
         original.setParameter("outpost", "false");
         original.setParameter("lead_skill", "100");
@@ -533,11 +536,12 @@ public final class VillageHouseThirdFloorExpansionGameTests {
         house.setClassification("residential");
         house.setTemplateId("house_2story_5x5");
         house.setValidationState("valid");
-        house.setValidatedCapacity(4);
+        house.setValidatedCapacity(3);
         // Keep the material Barrel OUTSIDE the completed house. Placing it
         // at (3,1,1) blocked the only standing cell beside a real ground bed,
         // erroneously removing valid housing capacity from the fixture.
-        var storePos = base.offset(5, 1, 1);
+        var storePos = base.offset(5, 1, 0);
+        level.setBlock(base.offset(5, 0, 1), Blocks.COBBLESTONE.defaultBlockState(), Block.UPDATE_ALL);
         level.setBlock(storePos.below(), Blocks.COBBLESTONE.defaultBlockState(),
                 Block.UPDATE_ALL);
         level.setBlock(storePos, Blocks.BARREL.defaultBlockState(), Block.UPDATE_ALL);
@@ -555,8 +559,8 @@ public final class VillageHouseThirdFloorExpansionGameTests {
 
         Villager worker = EntityType.VILLAGER.create(level);
         if (worker == null) throw new IllegalStateException("Third-storey worker factory failed");
-        worker.setPos(base.getX() + 2.5D, base.getY() + 2,
-                base.getZ() + 0.5D);
+        worker.setPos(base.getX() + 5.5D, base.getY() + 1,
+                base.getZ() + 1.5D);
         worker.setNoAi(true);
         if (!level.addFreshEntity(worker)) throw new IllegalStateException("Worker spawn failed");
         VillagerSimData.setVillageId(worker, village.id());

@@ -2,6 +2,9 @@ package io.github.akakishi04.asobibatweaks.feature;
 
 import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
+import net.minecraft.world.Container;
 import java.util.UUID;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
@@ -55,29 +58,34 @@ public final class VillageEconomyService {
         VillageSavedData.VillageRecord village = data.village(villageId).orElse(null);
         if (village == null) return;
 
+        // Unknown/unloaded or oversized snapshots retain the last verified price
+        // and demographic summary instead of masquerading as empty warehouses.
+        Map<String, Integer> physical = physicalStock(level, data, village);
+        var reservations = VillageResourceReservations.capture(data, village);
+        if (physical == null || !reservations.complete()) return;
         VillageStorageService.reconcileVillage(villageId, level);
         int previousPopulation = village.lastKnownPopulation();
         int population = Math.max(1, village.residentIds().size());
 
-        int food = count(village, Items.BREAD, Items.CARROT, Items.POTATO, Items.BEETROOT, Items.WHEAT);
-        int wood = count(village,
+        int food = count(physical, Items.BREAD, Items.CARROT, Items.POTATO, Items.BEETROOT, Items.WHEAT);
+        int wood = count(physical,
                 Items.OAK_LOG, Items.SPRUCE_LOG, Items.BIRCH_LOG, Items.JUNGLE_LOG, Items.ACACIA_LOG,
                 Items.DARK_OAK_LOG, Items.MANGROVE_LOG, Items.CHERRY_LOG,
                 Items.OAK_PLANKS, Items.SPRUCE_PLANKS, Items.BIRCH_PLANKS, Items.JUNGLE_PLANKS,
                 Items.ACACIA_PLANKS, Items.DARK_OAK_PLANKS, Items.MANGROVE_PLANKS, Items.CHERRY_PLANKS);
-        int stone = count(village, Items.COBBLESTONE, Items.STONE, Items.ANDESITE, Items.DIORITE,
+        int stone = count(physical, Items.COBBLESTONE, Items.STONE, Items.ANDESITE, Items.DIORITE,
                 Items.GRANITE, Items.STONE_BRICKS, Items.BRICKS);
-        int metal = count(village, Items.IRON_INGOT, Items.GOLD_INGOT, Items.COPPER_INGOT);
-        int farming = count(village, Items.WHEAT_SEEDS, Items.BEETROOT_SEEDS, Items.PUMPKIN_SEEDS,
+        int metal = count(physical, Items.IRON_INGOT, Items.GOLD_INGOT, Items.COPPER_INGOT);
+        int farming = count(physical, Items.WHEAT_SEEDS, Items.BEETROOT_SEEDS, Items.PUMPKIN_SEEDS,
                 Items.MELON_SEEDS, Items.BONE_MEAL);
-        int fishing = count(village, Items.COD, Items.SALMON, Items.TROPICAL_FISH, Items.PUFFERFISH);
+        int fishing = count(physical, Items.COD, Items.SALMON, Items.TROPICAL_FISH, Items.PUFFERFISH);
 
-        village.setMarketPermille("food", band(food, Math.max(24, population * 24)));
-        village.setMarketPermille("wood", band(wood, Math.max(96, population * 16)));
-        village.setMarketPermille("stone", band(stone, Math.max(96, population * 16)));
-        village.setMarketPermille("metal", band(metal, Math.max(24, population * 4)));
-        village.setMarketPermille("farming", band(farming, Math.max(32, population * 4)));
-        village.setMarketPermille("fishing", band(fishing, Math.max(24, population * 3)));
+        village.setMarketPermille("food", band(reservations.freeCategory("food", food), Math.max(24, population * 24)));
+        village.setMarketPermille("wood", band(reservations.freeCategory("wood", wood), Math.max(96, population * 16)));
+        village.setMarketPermille("stone", band(reservations.freeCategory("stone", stone), Math.max(96, population * 16)));
+        village.setMarketPermille("metal", band(reservations.freeCategory("metal", metal), Math.max(24, population * 4)));
+        village.setMarketPermille("farming", band(reservations.freeCategory("farming", farming), Math.max(32, population * 4)));
+        village.setMarketPermille("fishing", band(reservations.freeCategory("fishing", fishing), Math.max(24, population * 3)));
         village.setMarketPermille("luxury", 1000);
 
         int recordedHousing = 0;
@@ -265,7 +273,9 @@ public final class VillageEconomyService {
         List<Villager> villagers = level.getEntitiesOfClass(
                 Villager.class,
                 new net.minecraft.world.phys.AABB(center).inflate(128.0D, 64.0D, 128.0D),
-                v -> v.isAlive() && VillagerSimData.villageId(v).filter(villageId::equals).isPresent()
+                v -> v.isAlive() && VillageSavedData.get(level).village(villageId)
+                        .filter(owner -> VillageActivityBoundary.contains(owner, v.blockPosition())).isPresent()
+                        && VillagerSimData.villageId(v).filter(villageId::equals).isPresent()
         );
         if (villagers.isEmpty()) return 100;
 
@@ -286,7 +296,9 @@ public final class VillageEconomyService {
         List<Villager> villagers = level.getEntitiesOfClass(
                 Villager.class,
                 new net.minecraft.world.phys.AABB(center).inflate(128.0D, 64.0D, 128.0D),
-                v -> v.isAlive() && VillagerSimData.villageId(v).filter(villageId::equals).isPresent()
+                v -> v.isAlive() && VillageSavedData.get(level).village(villageId)
+                        .filter(owner -> VillageActivityBoundary.contains(owner, v.blockPosition())).isPresent()
+                        && VillagerSimData.villageId(v).filter(villageId::equals).isPresent()
         );
         if (villagers.isEmpty()) return 100;
         int total = 0;
@@ -294,9 +306,27 @@ public final class VillageEconomyService {
         return Mth.clamp(Math.round(total / (float)villagers.size()), 0, 100);
     }
 
-    private static int count(VillageSavedData.VillageRecord village, Item... items) {
+    private static Map<String, Integer> physicalStock(ServerLevel level,
+            VillageSavedData data, VillageSavedData.VillageRecord village) {
+        if (village.storageIds().size() > 32) return null;
+        Map<String, Integer> result = new HashMap<>();
+        for (UUID id : village.storageIds()) {
+            var store = data.storage(id).orElse(null);
+            if (store == null || !VillageSimulationScheduler.isChunkLoaded(level, store.pos())
+                    || !(level.getBlockEntity(store.pos()) instanceof Container container)
+                    || container.getContainerSize() > 128) return null;
+            for (int slot = 0; slot < container.getContainerSize(); slot++) {
+                ItemStack stack = container.getItem(slot);
+                if (!stack.isEmpty()) result.merge(VillageStorageService.itemKey(stack.getItem()),
+                        stack.getCount(), (a, b) -> (int)Math.min(Integer.MAX_VALUE, (long)a + b));
+            }
+        }
+        return result;
+    }
+
+    private static int count(Map<String, Integer> physical, Item... items) {
         int total = 0;
-        for (Item item : items) total += village.ledgerCount(VillageStorageService.itemKey(item));
+        for (Item item : items) total += physical.getOrDefault(VillageStorageService.itemKey(item), 0);
         return total;
     }
 }

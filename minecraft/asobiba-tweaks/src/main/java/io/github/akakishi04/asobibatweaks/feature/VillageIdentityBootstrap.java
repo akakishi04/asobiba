@@ -8,12 +8,11 @@ import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.phys.AABB;
 
 /**
- * Conservative V1 bootstrap from vanilla village membership into stable Asobiba village IDs.
+ * Conservative bootstrap from vanilla village membership into stable Asobiba village IDs.
  *
- * <p>This is intentionally not the final dynamic-boundary/merge algorithm. It only establishes
- * durable identity for loaded vanilla-village residents so later passes have stable records to
- * reconcile. Existing IDs are never cleared merely because a villager temporarily leaves a
- * vanilla village.</p>
+ * <p>Identity assignment uses the shared activity envelope; its recognized-anchor refresh is
+ * separately scheduled. Existing IDs are never cleared merely because a resident temporarily
+ * leaves the village or becomes unloaded.</p>
  */
 public final class VillageIdentityBootstrap {
     private static final double ADOPTION_RADIUS = 48.0D;
@@ -67,7 +66,8 @@ public final class VillageIdentityBootstrap {
                 .sorted(Comparator.comparingDouble(villager::distanceToSqr))
                 .map(VillagerSimData::villageId)
                 .flatMap(Optional::stream)
-                .filter(id -> data.village(id).isPresent())
+                .filter(id -> data.village(id).filter(village ->
+                        VillageActivityBoundary.contains(village, villager.blockPosition())).isPresent())
                 .findFirst();
 
         UUID id = nearby.orElseGet(() -> data.createVillage(villager.blockPosition(), level.getGameTime()).id());

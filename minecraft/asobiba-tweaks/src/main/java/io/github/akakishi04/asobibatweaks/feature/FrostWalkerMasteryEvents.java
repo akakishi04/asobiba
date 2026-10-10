@@ -111,14 +111,24 @@ public final class FrostWalkerMasteryEvents {
                             .add(-forward.z * lateral, 0.0D, forward.x * lateral);
                     BlockPos pos = new BlockPos((int)Math.round(point.x),
                             snapshot.center().getY(), (int)Math.round(point.z));
-                    if (!level.hasChunkAt(pos)
-                            || !level.getFluidState(pos).is(FluidTags.WATER)
-                            || !level.getBlockState(pos.above()).isAir()) continue;
-                    level.setBlockAndUpdate(pos, Blocks.FROSTED_ICE.defaultBlockState());
-                    extended++;
+                    if (extendSourceWater(level, pos)) extended++;
                 }
             }
         }
+    }
+
+    /** Never replace waterlogged player blocks, flowing water or occupied water. */
+    static boolean extendSourceWater(ServerLevel level, BlockPos pos) {
+        if (!level.hasChunkAt(pos) || !level.hasChunkAt(pos.above())
+                || !level.getBlockState(pos).is(Blocks.WATER)
+                || !level.getFluidState(pos).isSource()
+                || !level.getBlockState(pos.above()).isAir()) return false;
+        var ice = Blocks.FROSTED_ICE.defaultBlockState();
+        if (!level.isUnobstructed(ice, pos, net.minecraft.world.phys.shapes.CollisionContext.empty())
+                || !level.setBlockAndUpdate(pos, ice)) return false;
+        // Same initial60–120 tick melt scheduling as ordinary Frost Walker.
+        level.scheduleTick(pos, Blocks.FROSTED_ICE, 60 + level.getRandom().nextInt(61));
+        return true;
     }
 
     @SubscribeEvent

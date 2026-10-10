@@ -92,7 +92,8 @@ public final class VillageBuildingAdoptionService {
         VillageSavedData.VillageRecord best = null;
         int bestDistance = Integer.MAX_VALUE;
         for (VillageSavedData.VillageRecord village : data.villagesView().values()) {
-            if ("merged".equals(village.lifecycle()) || "abandoned".equals(village.lifecycle())) continue;
+            if ("merged".equals(village.lifecycle()) || "abandoned".equals(village.lifecycle())
+                    || !VillageActivityBoundary.contains(village, anchor)) continue;
 
             int distance = village.center().distManhattan(anchor);
             for (Long packed : village.districtCenters()) {

@@ -69,9 +69,13 @@ public final class UnbreakingMasteryEvents {
             if (elapsed >= interval) {
                 charges = Math.min(capacity, charges + (int)Math.min(capacity, elapsed / interval));
             }
-            int saved = Math.min(charges, cost);
-            cost -= saved;
-            state.putInt("reserve", charges - saved);
+            // A charge covers one complete loss event, regardless of its point cost.
+            // Vanilla-negated events do not spend a reserve charge.
+            if (cost > 0 && charges > 0) {
+                cost = 0;
+                charges--;
+            }
+            state.putInt("reserve", charges);
         } else if (selected.index() == 1) {
             // Consecutive uses ramp over ten events and expire after three seconds.
             int previousStreak = now - lastUse <= 60L ? state.getInt("streak") : 0;

@@ -86,6 +86,7 @@ public final class VillageHouseVerticalExpansionService {
             VillageSavedData.ProjectRecord project = data.createProject(
                     villageId, "building", 86, home.min());
             project.setTemplateId(TEMPLATE);
+            project.setParameter("circulation_version", "2");
             project.setAnchor(home.min());
             project.setLeadCarpenterId(carpenter.getUUID());
             project.setParameter(BUILDING, home.id().toString());
@@ -147,7 +148,7 @@ public final class VillageHouseVerticalExpansionService {
 
         List<Step> steps = steps(project);
         if (project.workCursor() >= steps.size()) {
-            finish(level, data, project, home);
+            finish(carpenter, level, data, project, home);
             return;
         }
         Step step = steps.get(project.workCursor());
@@ -201,10 +202,7 @@ public final class VillageHouseVerticalExpansionService {
         }
 
         if (carpenter.distanceToSqr(step.pos().getCenter()) > 8.0D * 8.0D) {
-            carpenter.getNavigation().moveTo(
-                    step.pos().getX() + 0.5D,
-                    step.pos().getY(), step.pos().getZ() + 0.5D, 0.75D);
-            pause(data, project, "carpenter travelling to expansion work");
+            VillageConstructionAccessService.approach(carpenter, level, project, step.pos());
             return;
         }
         if (step.remove()) {
@@ -289,15 +287,16 @@ public final class VillageHouseVerticalExpansionService {
         advanceCursor(data, project, step);
     }
 
-    private static void finish(ServerLevel level, VillageSavedData data,
+    private static void finish(Villager carpenter, ServerLevel level, VillageSavedData data,
                                VillageSavedData.ProjectRecord project,
                                VillageSavedData.BuildingRecord home) {
         BlockPos base = home.min();
-        if (!allComplete(level, project)
-                || !VillageBuildingService.connectedUpperStories(level, base, 1)) {
+        if (!VillageHouseCirculationService.ensure(carpenter, level, project)) return;
+        if (!VillageBuildingService.connectedUpperStories(level, base, 1)) {
             pause(data, project, "finished two-storey geometry not navigable");
             return;
         }
+        if (!VillageConstructionAccessService.cleanup(carpenter, level, project)) return;
         if (!data.upgradeVillageHouseSecondFloor(home.id())) {
             pause(data, project, "building identity/size changed before completion");
             return;
@@ -390,6 +389,13 @@ public final class VillageHouseVerticalExpansionService {
                 .setValue(HorizontalDirectionalBlock.FACING, Direction.WEST);
         list.add(new Step(base.offset(1, 5, 2), southFoot, Items.WHITE_BED, false, true));
         list.add(new Step(base.offset(2, 5, 1), westFoot, Items.WHITE_BED, false, true));
+        if ("2".equals(project.parameter("circulation_version"))) {
+            list.removeIf(Step::bed);
+            list.add(new Step(base.offset(2, 4, 1), Blocks.AIR.defaultBlockState(), null, true, false));
+            list.add(new Step(base.offset(1, 5, 2), southFoot.setValue(BedBlock.FACING, Direction.NORTH),
+                    Items.WHITE_BED, false, true));
+            list.add(new Step(base.offset(2, 5, 3), westFoot, Items.WHITE_BED, false, true));
+        }
         return List.copyOf(list);
     }
 

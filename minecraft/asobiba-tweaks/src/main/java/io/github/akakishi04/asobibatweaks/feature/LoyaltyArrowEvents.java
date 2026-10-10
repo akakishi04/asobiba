@@ -38,8 +38,9 @@ public final class LoyaltyArrowEvents {
             "asobibatweaks_loyalty_successful_pierce_hits";
 
     public static boolean isLoyaltyArrow(AbstractArrow arrow) {
-        return EnchantedArrowImpactEvents.level(
-                arrow.getPickupItemStackOrigin(), "minecraft:loyalty") > 0;
+        return arrow.getPickupItemStackOrigin().getItem() instanceof ArrowItem
+                && EnchantedArrowImpactEvents.level(
+                    arrow.getPickupItemStackOrigin(), "minecraft:loyalty") > 0;
     }
 
     @SubscribeEvent
@@ -160,6 +161,7 @@ public final class LoyaltyArrowEvents {
     public void onArrowPreTick(EntityTickEvent.Pre event) {
         if (!(event.getEntity() instanceof AbstractArrow arrow)
                 || !(arrow.level() instanceof ServerLevel server)) return;
+        if (!isLoyaltyArrow(arrow)) return;
         CompoundTag data = arrow.getPersistentData();
         if (!data.getBoolean(RETURN_ACTIVE)) return;
 
@@ -242,7 +244,7 @@ public final class LoyaltyArrowEvents {
      * solid terrain, bias the next steering target around that obstacle.
      * No chunk tickets are requested, and no distant terrain is sampled.
      */
-    private static Vec3 safeReturnDirection(AbstractArrow arrow, ServerLevel server,
+    static Vec3 safeReturnDirection(AbstractArrow arrow, ServerLevel server,
                                             Vec3 direction, int range) {
         Vec3 start = arrow.position();
         for (int dist = 1; dist <= Math.min(12, range); dist++) {

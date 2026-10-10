@@ -29,8 +29,8 @@ public final class VillageCraftHallPlanner {
         // villagers. This is a modest local public-works need, not a demand
         // inferred from unloaded or forgotten population.
         int workersMissingSites = level.getEntitiesOfClass(Villager.class,
-                new AABB(village.center()).inflate(48.0D, 32.0D, 48.0D),
-                v -> v.isAlive() && !v.isBaby()
+                VillageActivityBoundary.searchBounds(village),
+                v -> v.isAlive() && VillageActivityBoundary.contains(village, v.blockPosition()) && !v.isBaby()
                         && VillagerSimData.villageId(v).filter(villageId::equals).isPresent()
                         && !v.getBrain().hasMemoryValue(MemoryModuleType.JOB_SITE)
                         && (v.getVillagerData().getProfession() == VillagerProfession.TOOLSMITH

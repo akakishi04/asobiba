@@ -5,7 +5,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
-import net.minecraft.resources.ResourceLocation;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -68,6 +67,8 @@ public final class VillageInterSettlementFreightService {
         List<VillageStorageService.LocatedContainer> sources = stores(level, data, origin);
         if (sources.isEmpty()) return false;
         Map<String, Integer> originCategories = categoryInventory(sources);
+        var reservations = VillageResourceReservations.capture(data, origin);
+        if (!reservations.complete()) return false;
         List<VillageSavedData.VillageRecord> neighbors = data.villagesView().values().stream()
                 .filter(v -> !v.id().equals(originId) && "active".equals(v.lifecycle())
                         && v.center().distManhattan(origin.center()) <= MAX_VILLAGE_DISTANCE)
@@ -77,6 +78,10 @@ public final class VillageInterSettlementFreightService {
             List<VillageStorageService.LocatedContainer> targets = stores(level, data, neighbor);
             if (targets.isEmpty()) continue;
             Map<String, Integer> destinationCategories = categoryInventory(targets);
+            var destinationReservations = VillageResourceReservations.capture(data, neighbor);
+            if (!destinationReservations.complete()) continue;
+            destinationCategories.replaceAll((category, count) ->
+                    destinationReservations.freeCategory(category, count));
             for (VillageStorageService.LocatedContainer source : sources) {
                 BlockPos from = source.record().pos();
                 if (porter.distanceToSqr(from.getCenter()) > 24.0D * 24.0D) continue;
@@ -84,7 +89,7 @@ public final class VillageInterSettlementFreightService {
                     ItemStack offered = source.container().getItem(slot);
                     if (offered.isEmpty() || !VillageRiverCargoService.approved(offered)
                             || !categoryTradeEligible(origin, neighbor,
-                                    originCategories, destinationCategories, offered)) continue;
+                                    originCategories, destinationCategories, offered, reservations)) continue;
                     for (VillageStorageService.LocatedContainer target : targets) {
                         BlockPos to = target.record().pos();
                         if (from.distManhattan(to) > MAX_VILLAGE_DISTANCE
@@ -109,6 +114,7 @@ public final class VillageInterSettlementFreightService {
     private static List<VillageStorageService.LocatedContainer> stores(
             ServerLevel level, VillageSavedData data, VillageSavedData.VillageRecord village) {
         List<VillageStorageService.LocatedContainer> result = new ArrayList<>();
+        if (village.storageIds().size() > MAX_STORES) return List.of();
         // A partially unloaded local warehouse is UNKNOWN, not empty. Its
         // missing inventory must not produce an artificial import request.
         for (VillageSavedData.StorageRecord record : data.storagesForVillage(village.id())) {
@@ -119,6 +125,7 @@ public final class VillageInterSettlementFreightService {
                     || !(level.getBlockEntity(record.pos()) instanceof Container container)) {
                 return List.of();
             }
+            if (container.getContainerSize() > 128) return List.of();
             result.add(new VillageStorageService.LocatedContainer(record, container));
         }
         result.sort(Comparator.comparing(x -> x.record().id().toString()));
@@ -133,7 +140,7 @@ public final class VillageInterSettlementFreightService {
             for (int i = 0; i < located.container().getContainerSize(); i++) {
                 ItemStack stack = located.container().getItem(i);
                 if (stack.isEmpty()) continue;
-                String category = VillageEconomyService.category(stack.getItem());
+                String category = VillageResourceReservations.category(stack);
                 if (category != null) totals.merge(category, stack.getCount(),
                         (a, b) -> (int)Math.min(Integer.MAX_VALUE, (long)a + b));
             }
@@ -148,13 +155,23 @@ public final class VillageInterSettlementFreightService {
             Map<String, Integer> originStock,
             Map<String, Integer> destinationStock,
             ItemStack offered) {
+        return categoryTradeEligible(origin, destination, originStock, destinationStock,
+                offered, VillageResourceReservations.legacy(origin));
+    }
+
+    static boolean categoryTradeEligible(
+            VillageSavedData.VillageRecord origin,
+            VillageSavedData.VillageRecord destination,
+            Map<String, Integer> originStock, Map<String, Integer> destinationStock,
+            ItemStack offered, VillageResourceReservations.Snapshot reservations) {
+        if (!reservations.complete()) return false;
         if (offered == null || offered.isEmpty()
                 || !VillageRiverCargoService.approved(offered)) return false;
         String category = VillageEconomyService.category(offered.getItem());
         if (category == null || "luxury".equals(category)) return false;
 
         long free = (long)originStock.getOrDefault(category, 0)
-                - categoryReservations(origin, category);
+                - reservations.categoryCount(category);
         int reserve = categoryReserve(origin, category);
         int destinationNeed = categoryReserve(destination, category);
         // One complete paid parcel may leave only above the destination
@@ -177,28 +194,27 @@ public final class VillageInterSettlementFreightService {
         };
     }
 
-    private static long categoryReservations(
-            VillageSavedData.VillageRecord village, String category) {
-        long reserved = 0L;
-        for (Map.Entry<String, Integer> entry : village.reservedCounts().entrySet()) {
-            String key = entry.getKey();
-            String candidate = null;
-            if (key.startsWith("minecraft:") || key.startsWith("asobibatweaks:")) {
-                try {
-                    candidate = VillageEconomyService.category(
-                            BuiltInRegistries.ITEM.get(ResourceLocation.parse(key)));
-                } catch (IllegalArgumentException ignored) {
-                    // A malformed item reservation never authorizes shipment.
-                }
-            } else if ("wood".equals(category) && (key.contains("plank") || key.contains("log"))) {
-                candidate = "wood";
-            } else if ("stone".equals(category)
-                    && (key.contains("stone") || key.contains("cobble"))) {
-                candidate = "stone";
+    /** Direct tickets retain the established 32-piece floor, plus current project demand. */
+    private static boolean unreservedPickup(ServerLevel level, VillageSavedData data,
+            UUID originId, ItemStack sample, int quantity) {
+        var village = data.village(originId).orElse(null);
+        if (village == null) return false;
+        var reservations = VillageResourceReservations.capture(data, village);
+        if (!reservations.complete()) return false;
+        var sources = stores(level, data, village);
+        if (sources.isEmpty()) return false;
+        long exact = 0;
+        for (var source : sources) {
+            for (int slot = 0; slot < source.container().getContainerSize(); slot++) {
+                ItemStack stack = source.container().getItem(slot);
+                // Reserve by item identity, including differently named variants.
+                if (stack.is(sample.getItem())) exact += stack.getCount();
             }
-            if (category.equals(candidate)) reserved += Math.max(0, entry.getValue());
         }
-        return reserved;
+        String category = VillageResourceReservations.category(sample);
+        return exact - reservations.itemCount(sample) >= (long)quantity + 32
+                && reservations.freeCategory(category,
+                    categoryInventory(sources).getOrDefault(category, 0)) >= (long)quantity + 32;
     }
 
     private static VillageSavedData.RouteRecord findOrCreateRoute(
@@ -253,7 +269,8 @@ public final class VillageInterSettlementFreightService {
             ItemStack stack = source.getItem(slot);
             if (ItemStack.isSameItemSameComponents(stack, sample)) present += stack.getCount();
         }
-        if (present < quantity + 32) return false;
+        if (present < quantity + 32
+                || !unreservedPickup(level, data, fromVillage, sample, quantity)) return false;
 
         CompoundTag ticket = new CompoundTag();
         ticket.putUUID("route", routeId);
@@ -366,7 +383,8 @@ public final class VillageInterSettlementFreightService {
                 if (exemplar.isEmpty()) exemplar = stack.copyWithCount(1);
                 available += stack.getCount();
             }
-            if (available < remaining + 32 || exemplar.isEmpty()) {
+            if (available < remaining + 32 || exemplar.isEmpty()
+                    || !unreservedPickup(level, data, originId, exemplar, remaining)) {
                 // No physical stock was withdrawn: an obsolete unpaid ticket
                 // can be removed without changing real inventory.
                 porter.getPersistentData().remove(TICKET);
@@ -439,7 +457,7 @@ public final class VillageInterSettlementFreightService {
             UUID destinationId, BlockPos routeTarget, BlockPos currentTarget,
             ItemStack sample, int quantity) {
         VillageSavedData.VillageRecord village = data.village(destinationId).orElse(null);
-        if (village == null) return null;
+        if (village == null || village.storageIds().size() > 64) return null;
         List<VillageSavedData.StorageRecord> candidates = data.storagesForVillage(destinationId)
                 .stream().filter(r -> !r.pos().equals(currentTarget))
                 .sorted(Comparator
@@ -501,7 +519,7 @@ public final class VillageInterSettlementFreightService {
             // registered store in the SAME originating village, close to its
             // former source and within the bounded local warehouse district.
             VillageSavedData.VillageRecord village = data.village(originId).orElse(null);
-            if (village != null) {
+            if (village != null && village.storageIds().size() <= 64) {
                 List<VillageSavedData.StorageRecord> alternatives =
                         data.storagesForVillage(originId).stream()
                         .filter(r -> !r.pos().equals(sourcePos))

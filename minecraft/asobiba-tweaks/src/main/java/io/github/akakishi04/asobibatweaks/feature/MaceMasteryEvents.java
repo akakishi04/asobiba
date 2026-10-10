@@ -6,6 +6,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.MaceItem;
@@ -14,7 +15,10 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
-import net.neoforged.neoforge.event.tick.PlayerTickEvent;
+import net.neoforged.neoforge.event.level.ExplosionKnockbackEvent;
+import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.registration.NetworkRegistry;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 
 /**
  * Mace-only Density and Wind Burst mastery. Extra impact damage is derived
@@ -24,6 +28,46 @@ import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 public final class MaceMasteryEvents {
     private static final String CONTROL_UNTIL = "asobibatweaks_wind_aerial_control_until";
     private static final String CONTROL_STRENGTH = "asobibatweaks_wind_aerial_control_scale";
+    private record BurstScope(ServerPlayer player, LauncherReloadMasteryEvents.Branch branch) {}
+    private static final ThreadLocal<BurstScope> WIND_BURST = new ThreadLocal<>();
+
+    /** Scope only the registry's real Wind Burst post-attack effect, retaining native conditions. */
+    public static void withWindBurst(ServerPlayer player, ItemStack stack, Runnable nativeEffect) {
+        BurstScope previous = WIND_BURST.get();
+        var branch = mastery(stack, "minecraft:wind_burst");
+        if (branch == null) WIND_BURST.remove();
+        else WIND_BURST.set(new BurstScope(player, branch));
+        try { nativeEffect.run(); }
+        finally {
+            if (previous == null) WIND_BURST.remove();
+            else WIND_BURST.set(previous);
+        }
+    }
+
+    @SubscribeEvent
+    public void onWindBurstLaunch(ExplosionKnockbackEvent event) {
+        BurstScope scope = WIND_BURST.get();
+        if (scope == null || event.getAffectedEntity() != scope.player()) return;
+        Vec3 nativeImpulse = event.getKnockbackVelocity();
+        if (nativeImpulse.lengthSqr() <= 0.00000001D) return;
+        var b = scope.branch();
+        if (b.choice() == 0) {
+            event.setKnockbackVelocity(nativeImpulse.multiply(1.0D, 1.10D + 0.20D * b.progress(), 1.0D));
+        } else if (b.choice() == 2) {
+            // Scale only this launch, not pre-existing motion. The event's vector is
+            // used by both server motion and the original client explosion packet.
+            event.setKnockbackVelocity(nativeImpulse.scale(0.90D));
+            double strength = 0.25D + 0.45D * b.progress();
+            applyAerialControl(scope.player(), strength, 35);
+            // Real client physics needs this window, but mock/unnegotiated
+            // connections cannot receive custom payloads.
+            if (scope.player().connection != null && NetworkRegistry.hasChannel(
+                    scope.player().connection, WindAerialControlPayload.TYPE.id())) {
+                PacketDistributor.sendToPlayer(scope.player(), new WindAerialControlPayload((float)strength, 35));
+            }
+        }
+    }
+
     private static final ThreadLocal<Boolean> SHOCK_ACTIVE =
             ThreadLocal.withInitial(() -> false);
 
@@ -106,12 +150,7 @@ public final class MaceMasteryEvents {
         }
 
         double progress = wind.progress();
-        if (wind.choice() == 0) {
-            // Add a bounded part of the vanilla updraft after a valid smash.
-            double lift = 0.10D + 0.30D * progress;
-            attacker.push(0.0D, lift, 0.0D);
-            attacker.hurtMarked = true;
-        } else if (wind.choice() == 1) {
+        if (wind.choice() == 1) {
             double radius = 3.0D + 0.5D + 1.5D * progress;
             double bonusImpulse = 0.10D + 0.15D * progress;
             for (LivingEntity other : world.getEntitiesOfClass(
@@ -127,33 +166,39 @@ public final class MaceMasteryEvents {
                 other.push(impulse.x, 0.1D, impulse.z);
                 other.hurtMarked = true;
             }
-        } else if (wind.choice() == 2) {
-            CompoundTag data = attacker.getPersistentData();
-            data.putLong(CONTROL_UNTIL, world.getGameTime() + 35L);
-            data.putDouble(CONTROL_STRENGTH, 0.25D + 0.45D * progress);
+
         }
     }
 
-    @SubscribeEvent
-    public void onAerialSteering(PlayerTickEvent.Post event) {
-        if (!(event.getEntity() instanceof ServerPlayer player)
-                || player.onGround() || !player.isAlive()) return;
+    public static void registerPayloads(RegisterPayloadHandlersEvent event) {
+        event.registrar("1").playToClient(WindAerialControlPayload.TYPE,
+                WindAerialControlPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() ->
+                        applyAerialControl(context.player(), payload.strength(), payload.ticks())));
+    }
+
+    private static void applyAerialControl(Player player, double strength, int ticks) {
+        if (!Double.isFinite(strength)) return;
+        CompoundTag data = player.getPersistentData();
+        data.putLong(CONTROL_UNTIL, player.level().getGameTime() + Math.clamp(ticks, 0, 35));
+        data.putDouble(CONTROL_STRENGTH, Math.clamp(strength, 0.0D, 0.70D));
+    }
+
+    /** Strongest-only composition with Feather Falling: never multiply two control bonuses.
+     * This runs on both sides; the burst synchronizes a bounded window to its owner. */
+    public static float aerialInputSpeed(Player player, float vanilla, float featherAdjusted) {
+        if (!AsobibaTweaksConfig.ENCHANTMENT_BRANCHES_ENABLED.getAsBoolean()
+                || vanilla <= 0.0F || player.onGround() || !player.isAlive()
+                || player.isInWater() || player.isInLava() || player.onClimbable()
+                || player.isFallFlying() || player.isAutoSpinAttack() || player.isPassenger()
+                || player.getAbilities().flying || player.isSpectator()) return featherAdjusted;
         CompoundTag state = player.getPersistentData();
-        long deadline = state.getLong(CONTROL_UNTIL);
-        if (deadline <= player.level().getGameTime()) {
+        if (state.getLong(CONTROL_UNTIL) <= player.level().getGameTime()) {
             state.remove(CONTROL_UNTIL);
             state.remove(CONTROL_STRENGTH);
-            return;
+            return featherAdjusted;
         }
-        double strength = Math.min(0.70D, state.getDouble(CONTROL_STRENGTH));
-        Vec3 facing = player.getLookAngle().multiply(1.0D, 0.0D, 1.0D);
-        if (facing.lengthSqr() <= 0.0001D) return;
-        Vec3 current = player.getDeltaMovement();
-        Vec3 steer = facing.normalize().scale(0.018D * strength);
-        if (current.horizontalDistanceSqr() < 0.75D * 0.75D) {
-            player.setDeltaMovement(current.x + steer.x, current.y,
-                    current.z + steer.z);
-            player.hurtMarked = true;
-        }
+        double strength = Math.clamp(state.getDouble(CONTROL_STRENGTH), 0.0D, 0.70D);
+        return (float)Math.max(featherAdjusted, vanilla * (1.0D + strength));
     }
 }

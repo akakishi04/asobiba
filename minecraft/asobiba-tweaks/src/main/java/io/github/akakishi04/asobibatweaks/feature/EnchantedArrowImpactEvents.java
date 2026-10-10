@@ -20,6 +20,8 @@ import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.item.ArrowItem;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
@@ -41,6 +43,7 @@ public final class EnchantedArrowImpactEvents {
     private static final String PIERCING = "minecraft:piercing";
     private static final String PUNCH = "minecraft:punch";
     private static final String BREACH = "minecraft:breach";
+    private static final String FLAME_INITIALIZED = "asobibatweaks_ammo_flame_initialized";
 
     @SubscribeEvent
     public void onArrowJoined(EntityJoinLevelEvent event) {
@@ -49,6 +52,18 @@ public final class EnchantedArrowImpactEvents {
                 || !(event.getEntity() instanceof AbstractArrow arrow)) return;
 
         ItemStack ammo = arrow.getPickupItemStackOrigin();
+        if (!(ammo.getItem() instanceof ArrowItem)) return;
+        // Flame ammunition must be a real flaming projectile, so vanilla
+        // campfire/TNT interactions work even with an unenchanted launcher.
+        // Initialize once per physical projectile: unloading/rejoining must
+        // not rekindle an arrow that water or another effect extinguished.
+        if (!arrow.getPersistentData().getBoolean(FLAME_INITIALIZED)) {
+            arrow.getPersistentData().putBoolean(FLAME_INITIALIZED, true);
+            if (!event.loadedFromDisk() && level(ammo, FLAME) > 0) {
+                // Vanilla launch-side Flame ignites the projectile for 100s.
+                arrow.setRemainingFireTicks(Math.max(arrow.getRemainingFireTicks(), 2_000));
+            }
+        }
         int pierce = level(ammo, PIERCING);
         if (pierce > arrow.getPierceLevel()) {
             // Vanilla pierce level N means up to N+1 valid entity hits.
@@ -65,6 +80,7 @@ public final class EnchantedArrowImpactEvents {
                 || event.getAmount() <= 0.0F) return;
 
         ItemStack ammo = arrow.getPickupItemStackOrigin();
+        if (!(ammo.getItem() instanceof ArrowItem)) return;
         if (ammo.isEmpty()) return;
 
         double extra = 0.0D;
@@ -138,12 +154,14 @@ public final class EnchantedArrowImpactEvents {
                 || arrow.isNoPhysics()
                 || ((AbstractArrowPierceAccessor)arrow).asobibatweaks$isInGround()) return;
 
+        if (!(arrow.getPickupItemStackOrigin().getItem() instanceof ArrowItem)) return;
         int power = level(arrow.getPickupItemStackOrigin(), POWER);
         if (power <= 0) return;
 
         Vec3 motion = arrow.getDeltaMovement();
         if (motion.lengthSqr() < 1.0E-10D) return;
 
+        ArrowAmmoMasteryGrowth.credit(arrow, POWER);
         double reduction = 0.08D * Math.min(10, power);
         double originalDrag = 0.99D;
         double desiredDrag = originalDrag + (1.0D - originalDrag) * reduction;
@@ -170,6 +188,7 @@ public final class EnchantedArrowImpactEvents {
                 || !(arrow.level() instanceof ServerLevel server)) return;
 
         ItemStack ammo = arrow.getPickupItemStackOrigin();
+        if (!(ammo.getItem() instanceof ArrowItem)) return;
         if (ammo.isEmpty()) return;
         HitResult hitResult = event.getRayTraceResult();
         if (hitResult == null || hitResult.getType() == HitResult.Type.MISS) return;
@@ -177,6 +196,7 @@ public final class EnchantedArrowImpactEvents {
 
         int wind = Math.min(10, level(ammo, WIND_BURST));
         if (wind > 0) {
+            ArrowAmmoMasteryGrowth.credit(arrow, WIND_BURST);
             double radius = 2.5D + 0.25D * (wind - 1);
             double force = 1.0D + 0.10D * (wind - 1);
             AABB volume = new AABB(point, point).inflate(radius);
@@ -205,11 +225,23 @@ public final class EnchantedArrowImpactEvents {
             LightningBolt bolt = EntityType.LIGHTNING_BOLT.create(server);
             if (bolt != null) {
                 bolt.setPos(point.x, point.y, point.z);
-                server.addFreshEntity(bolt);
+                if (server.addFreshEntity(bolt)) ArrowAmmoMasteryGrowth.credit(arrow, CHANNELING);
             }
         }
     }
 
+
+    @SubscribeEvent
+    public void onAmmoMasteryHit(LivingDamageEvent.Post event) {
+        if (event.getNewDamage() > 0 && event.getSource().getDirectEntity() instanceof AbstractArrow arrow)
+            ArrowAmmoMasteryGrowth.hit(arrow, event.getEntity());
+    }
+
+    @SubscribeEvent(priority = net.neoforged.bus.api.EventPriority.LOWEST)
+    public void onAmmoMasteryKill(net.neoforged.neoforge.event.entity.living.LivingDeathEvent event) {
+        if (!event.isCanceled() && event.getSource().getDirectEntity() instanceof AbstractArrow arrow)
+            ArrowAmmoMasteryGrowth.credit(arrow, "minecraft:looting");
+    }
 
     /**
      * Only successful, health-damaging projectile hits apply ammo Punch.
@@ -224,13 +256,17 @@ public final class EnchantedArrowImpactEvents {
                 || arrow.level().isClientSide()) return;
 
         ItemStack ammo = arrow.getPickupItemStackOrigin();
+        if (!(ammo.getItem() instanceof ArrowItem)) return;
         int ammoPunch = Math.min(10, level(ammo, PUNCH));
         if (ammoPunch <= 0) return;
 
         ItemStack launcher = event.getSource().getWeaponItem();
-        int launcherPunch = launcher == null ? 0 : Math.min(10, level(launcher, PUNCH));
-
-        double difference = punchPower(ammoPunch) - punchPower(launcherPunch);
+        // Compare with the actual native launcher contribution, which is not
+        // subject to the ammo-only diminishing curve above Punch II.
+        double launcherPower = launcher == null ? 0.0D
+                : EnchantmentHelper.modifyKnockback((ServerLevel)arrow.level(), launcher,
+                        event.getEntity(), event.getSource(), 0.0F);
+        double difference = punchPower(ammoPunch) - launcherPower;
         if (difference <= 0.0D) return;
 
         Vec3 horizontal = arrow.getDeltaMovement().multiply(1.0D, 0.0D, 1.0D);
@@ -242,9 +278,9 @@ public final class EnchantedArrowImpactEvents {
         double impulse = difference * 0.6D * (1.0D - resistance);
         if (impulse <= 0.0D) return;
 
-        event.getEntity().push(direction.x * impulse,
-                Math.min(0.10D, impulse * 0.1D),
-                direction.z * impulse);
+        Vec3 adjusted = PunchMasteryService.impulse(arrow, event.getEntity(),
+                new Vec3(direction.x * impulse, Math.min(0.10D, impulse * 0.1D), direction.z * impulse));
+        event.getEntity().push(adjusted.x, adjusted.y, adjusted.z);
         event.getEntity().hurtMarked = true;
     }
 

@@ -11,6 +11,7 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.Container;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.vehicle.ChestBoat;
@@ -18,6 +19,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
 import net.neoforged.neoforge.event.tick.EntityTickEvent;
 import net.neoforged.neoforge.event.tick.LevelTickEvent;
 
@@ -81,6 +83,26 @@ public final class VillageRiverCargoService {
         // server GameTests without enabling the feature for other worlds.
         if (!enabled()) return;
         tickCarrier(boat, level);
+    }
+
+    /** Only an observed terminal removal can release an occupied route.
+     * Unloading, dimension transfer, or an absent UUID is not destruction.
+     * Vanilla owns physical cargo/boat drops; never synthesize a refund here.
+     */
+    @SubscribeEvent
+    public void onCarrierRemoved(EntityLeaveLevelEvent event) {
+        if (!(event.getEntity() instanceof ChestBoat boat)
+                || !(event.getLevel() instanceof ServerLevel level)) return;
+        Entity.RemovalReason reason = boat.getRemovalReason();
+        if (reason != Entity.RemovalReason.KILLED
+                && reason != Entity.RemovalReason.DISCARDED) return;
+        CompoundTag state = boat.getPersistentData();
+        if (!state.hasUUID(ROUTE)) return;
+        VillageSavedData data = VillageSavedData.get(level);
+        VillageSavedData.RouteRecord route = data.route(state.getUUID(ROUTE)).orElse(null);
+        if (route == null || !boat.getUUID().equals(route.carrierEntityId())) return;
+        route.setCarrierEntityId(null);
+        data.touch();
     }
 
     static void tickCarrier(ChestBoat boat, ServerLevel level) {

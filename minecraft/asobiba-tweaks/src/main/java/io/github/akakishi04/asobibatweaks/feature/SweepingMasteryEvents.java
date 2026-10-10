@@ -73,16 +73,20 @@ public final class SweepingMasteryEvents {
                     event.getAmount() * (1.0D + bonus)));
         }
 
-        // Battle Rhythm applies once to a following melee attack, not to
-        // the same sweep that earned the rhythm. No stacking across sweeps.
-        if (b != null && b.choice() == 2
-                && now < data.getLong(RHYTHM_UNTIL)
-                && data.getLong(SWEEP_STARTED) != now) {
-            double bonus = 0.05D + 0.10D * b.progress();
-            event.setAmount((float)Math.min(Float.MAX_VALUE,
-                    event.getAmount() * (1.0D + bonus)));
-            data.remove(RHYTHM_UNTIL);
-        }
+
+    }
+
+    /** Consume the earned rhythm only after the next attack's native cooldown reset.
+     * Advancing recovery never multiplies the attack that just landed. */
+    public static int consumeRecoveryTicks(Player player) {
+        if (!(player instanceof ServerPlayer)) return 0;
+        CompoundTag data = player.getPersistentData();
+        long until = data.getLong(RHYTHM_UNTIL);
+        data.remove(RHYTHM_UNTIL);
+        var b = branch(player.getMainHandItem());
+        if (until <= player.level().getGameTime() || b == null || b.choice() != 2) return 0;
+        return Math.max(0, Math.round(player.getCurrentItemAttackStrengthDelay()
+                * (float)(0.05D + 0.10D * b.progress())));
     }
 
     @SubscribeEvent
@@ -105,7 +109,7 @@ public final class SweepingMasteryEvents {
         long last = data.getLong(SWEEP_STARTED);
         long now = player.level().getGameTime();
         if (last < now && last > 0L) {
-            if (data.getInt(SWEEP_SECONDARIES) >= 2
+            if (data.getInt(SWEEP_SECONDARIES) >= 1
                     && branch(player.getMainHandItem()) instanceof
                     LauncherReloadMasteryEvents.Branch b
                     && b.choice() == 2) {

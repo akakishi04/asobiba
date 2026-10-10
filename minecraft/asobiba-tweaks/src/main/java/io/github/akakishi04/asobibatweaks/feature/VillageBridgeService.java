@@ -117,7 +117,10 @@ public final class VillageBridgeService {
         BlockPos start = first.relative(face.getOpposite(), 3);
         BlockPos end = last.relative(face, 3);
         if (!VillageSimulationScheduler.isAreaLoaded(level,
-                start.offset(-2, 0, -2), end.offset(2, 0, 2))) return null;
+                new BlockPos(Math.min(start.getX(), end.getX()) - 2, candidate.waterY(),
+                        Math.min(start.getZ(), end.getZ()) - 2),
+                new BlockPos(Math.max(start.getX(), end.getX()) + 2, candidate.waterY(),
+                        Math.max(start.getZ(), end.getZ()) + 2))) return null;
         int waterY = candidate.waterY();
 
         for (int i = 0; i < candidate.length(); i++) {
@@ -162,11 +165,127 @@ public final class VillageBridgeService {
             ServerLevel level, VillageSavedData data,
             VillageSavedData.RouteRecord route,
             VillageSavedData.ProjectRecord parent, List<BlockPos> routeNodes) {
-        if (route == null || parent == null || routeNodes.size() < 2
+        if (route == null || parent == null || routeNodes == null
+                || routeNodes.size() < 2 || routeNodes.size() > 128
                 || !parent.parameter("bridge_project_id").isBlank()) return false;
-        int width = Math.max(1, Math.min(3, route.width()));
-        Candidate candidate = findLoadedCrossing(level, routeNodes, width);
-        return queueValidatedBridge(level, data, route, parent, candidate);
+        if ("true".equals(parent.parameter("bridge_survey_done"))) return false;
+        String signature = routeNodes.stream().map(p -> Long.toString(p.asLong()))
+                .collect(java.util.stream.Collectors.joining(","));
+        String saved = parent.parameter("bridge_survey_route");
+        parent.setPhase("bridge_survey");
+        if (!saved.isBlank() && !saved.equals(signature)) {
+            pause(data, parent, "selected bridge route changed; review required");
+            return false;
+        }
+        long total = 0;
+        for (int n = 1; n < routeNodes.size(); n++) {
+            BlockPos a = routeNodes.get(n - 1), b = routeNodes.get(n);
+            total += Math.max(Math.abs(b.getX() - a.getX()),
+                    Math.abs(b.getZ() - a.getZ()));
+        }
+        if (total > 640) {
+            pause(data, parent, "route exceeds bounded bridge survey range");
+            return false;
+        }
+        parent.setParameter("bridge_survey_route", signature);
+        int segment = number(parent.parameter("bridge_survey_segment"), 1);
+        int offset = number(parent.parameter("bridge_survey_offset"), 0);
+        int run = number(parent.parameter("bridge_survey_run"), -1);
+        int runY = number(parent.parameter("bridge_survey_water_y"), 0);
+        int probes = 0;
+        while (segment < routeNodes.size()) {
+            BlockPos a = routeNodes.get(segment - 1), b = routeNodes.get(segment);
+            int dx = b.getX() - a.getX(), dz = b.getZ() - a.getZ();
+            int distance = Math.max(Math.abs(dx), Math.abs(dz));
+            boolean diagonal = dx != 0 && dz != 0;
+            if (distance == 0 || diagonal && Math.abs(dx) != Math.abs(dz)) {
+                // Non-45-degree diagonals remain unsupported. Roadwork still
+                // refuses water and unsafe grades; no shortcut is invented.
+                segment++;
+                offset = 0;
+                run = -1;
+                saveSurveyCursor(parent, segment, offset, run, runY);
+                continue;
+            }
+            Direction face = dx > 0 ? Direction.EAST : dx < 0 ? Direction.WEST
+                    : dz > 0 ? Direction.SOUTH : Direction.NORTH;
+            if (offset > distance) {
+                segment++;
+                offset = 0;
+                run = -1;
+                saveSurveyCursor(parent, segment, offset, run, runY);
+                continue;
+            }
+            int stepX = Integer.signum(dx), stepZ = Integer.signum(dz);
+            BlockPos column = a.offset(stepX * offset, 0, stepZ * offset);
+            if (probes++ >= MAX_SEGMENT
+                    || !VillageSimulationScheduler.isChunkLoaded(level, column)
+                    || !VillageSimulationScheduler.tryConsumeBlockProbe(level)) {
+                pause(data, parent, "bridge survey awaiting loaded terrain/budget");
+                return false;
+            }
+            int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                    column.getX(), column.getZ()) - 1;
+            if (sourceWater(level, withY(column, y))) {
+                if (run < 0) { run = offset; runY = y; }
+            } else if (run >= 0) {
+                int length = offset - run;
+                BlockPos first = withY(a.offset(stepX * run, 0, stepZ * run), runY);
+                Candidate candidate = new Candidate(first,
+                        face, length, runY, Math.max(1, Math.min(3, route.width())));
+                if (run < 3 || distance - offset < 2) {
+                    // Unknown, obstructed, too long, or otherwise unsupported
+                    // is a durable stop, not evidence of a dry route.
+                    pause(data, parent, "water crossing unsafe/unloaded; awaiting valid survey");
+                    return false;
+                }
+                boolean queued = diagonal
+                        ? VillageSpanBridgeService.queue(level, data, route, parent,
+                            new VillageSpanBridgeService.Geometry(first, stepX, stepZ,
+                                    length, 3, true))
+                        : queueValidatedBridge(level, data, route, parent, candidate);
+                if (queued) {
+                    saveSurveyCursor(parent, segment, offset + 3, -1, 0);
+                    data.touch();
+                    return true;
+                }
+                pause(data, parent, "water crossing unsafe/unloaded; awaiting valid survey");
+                return false;
+            } else {
+                int gapEnd = VillageSpanBridgeService.queueGapAt(level, data, route,
+                        parent, a, stepX, stepZ, offset, distance);
+                if (gapEnd < 0) {
+                    pause(data, parent, "gap crossing unsafe/unloaded; awaiting valid survey");
+                    return false;
+                }
+                if (gapEnd > 0) {
+                    saveSurveyCursor(parent, segment, gapEnd, -1, 0);
+                    data.touch();
+                    return true;
+                }
+            }
+            offset++;
+            saveSurveyCursor(parent, segment, offset, run, runY);
+            if (offset > distance && run >= 0) {
+                // Never lose a wet run at a corner/end and call it surveyed.
+                parent.setParameter("bridge_survey_offset", Integer.toString(distance));
+                pause(data, parent, "water crossing reaches route corner/end");
+                return false;
+            }
+        }
+        parent.setParameter("bridge_survey_done", "true");
+        parent.setPhase("roadwork");
+        parent.setPausedReason("");
+        data.touch();
+        return false;
+    }
+
+    private static void saveSurveyCursor(VillageSavedData.ProjectRecord parent,
+                                         int segment, int offset, int run, int waterY) {
+        parent.setParameter("bridge_survey_segment", Integer.toString(segment));
+        parent.setParameter("bridge_survey_offset", Integer.toString(offset));
+        parent.setParameter("bridge_survey_run", Integer.toString(run));
+        parent.setParameter("bridge_survey_water_y", Integer.toString(waterY));
     }
 
     static boolean queueValidatedBridge(
@@ -174,7 +293,8 @@ public final class VillageBridgeService {
             VillageSavedData.RouteRecord route,
             VillageSavedData.ProjectRecord parent, Candidate candidate) {
         if (route == null || parent == null || candidate == null
-                || !parent.parameter("bridge_project_id").isBlank()) return false;
+                || !parent.parameter("bridge_project_id").isBlank()
+                || validate(level, candidate) == null) return false;
         VillageSavedData.ProjectRecord bridge = data.createProject(
                 parent.villageId(), "road", 55,
                 candidate.firstWater().relative(candidate.facing().getOpposite(), 3));
@@ -295,10 +415,16 @@ public final class VillageBridgeService {
 
     static void advance(Villager worker, ServerLevel level,
                         VillageSavedData.ProjectRecord project) {
+        if ("complete".equals(project.phase()) || "cancelled".equals(project.phase())) return;
         VillageSavedData data = VillageSavedData.get(level);
         List<Step> plan = steps(project);
         if (plan.isEmpty()) {
             cancel(data, project, "bridge spec invalid");
+            return;
+        }
+        if (VillageSpanBridgeService.TEMPLATE.equals(project.templateId())
+                && !VillageSpanBridgeService.environmentIntact(level, project)) {
+            pause(data, project, "supported span foundations/channel changed or unloaded");
             return;
         }
         int index = project.workCursor();
@@ -402,22 +528,29 @@ public final class VillageBridgeService {
                 return;
             }
         }
-        Direction face = direction(project.parameter(FACING));
-        BlockPos first = BlockPos.of(Long.parseLong(project.parameter(SOURCE)));
-        int waterY = number(project.parameter(WATER_Y), Integer.MIN_VALUE);
-        int span = number(project.parameter(SPAN), 0);
-        int width = number(project.parameter(WIDTH), 0);
-        if (face == null) {
-            pause(data, project, "bridge facing missing");
-            return;
-        }
-        for (int i = 0; i < span; i++) {
-            for (int lane = 0; lane < width; lane++) {
-                BlockPos actual = withY(side(first.relative(face, i), face,
-                        laneOffset(width, lane)), waterY);
-                if (!sourceWater(level, actual)) {
-                    pause(data, project, "boat channel under bridge changed");
-                    return;
+        if (VillageSpanBridgeService.TEMPLATE.equals(project.templateId())) {
+            if (!VillageSpanBridgeService.environmentIntact(level, project)) {
+                pause(data, project, "supported span foundations/channel changed or unloaded");
+                return;
+            }
+        } else {
+            Direction face = direction(project.parameter(FACING));
+            BlockPos first = BlockPos.of(Long.parseLong(project.parameter(SOURCE)));
+            int waterY = number(project.parameter(WATER_Y), Integer.MIN_VALUE);
+            int span = number(project.parameter(SPAN), 0);
+            int width = number(project.parameter(WIDTH), 0);
+            if (face == null) {
+                pause(data, project, "bridge facing missing");
+                return;
+            }
+            for (int i = 0; i < span; i++) {
+                for (int lane = 0; lane < width; lane++) {
+                    BlockPos actual = withY(side(first.relative(face, i), face,
+                            laneOffset(width, lane)), waterY);
+                    if (!sourceWater(level, actual)) {
+                        pause(data, project, "boat channel under bridge changed");
+                        return;
+                    }
                 }
             }
         }
@@ -429,15 +562,60 @@ public final class VillageBridgeService {
             VillageSavedData.ProjectRecord parent = data.project(parentId).orElse(null);
             if (parent != null && "waiting_for_bridge".equals(parent.phase())
                     && project.id().toString().equals(parent.parameter("bridge_project_id"))) {
-                parent.setPhase("roadwork");
-                parent.setPausedReason("");
+                resumeCompletedBridge(data, parent);
             }
         }
         data.touch();
     }
 
+    /** Also upgrades old saves whose completed first bridge still owns the slot. */
+    static boolean resumeCompletedBridge(VillageSavedData data,
+                                          VillageSavedData.ProjectRecord parent) {
+        UUID id = parseId(parent.parameter("bridge_project_id"));
+        VillageSavedData.ProjectRecord bridge = id == null ? null : data.project(id).orElse(null);
+        if (bridge == null || !(TEMPLATE.equals(bridge.templateId())
+                    || VillageSpanBridgeService.TEMPLATE.equals(bridge.templateId()))
+                || !"complete".equals(bridge.phase())
+                || !parent.id().toString().equals(bridge.parameter(PARENT))) return false;
+        String completed = parent.parameter("bridge_completed_ids");
+        if (!List.of(completed.split(",")).contains(id.toString())) {
+            parent.setParameter("bridge_completed_ids", completed.isBlank()
+                    ? id.toString() : completed + "," + id);
+        }
+        parent.setParameter("bridge_project_id", "");
+        parent.setPhase("bridge_survey");
+        parent.setPausedReason("surveying next crossing on selected route");
+        data.touch();
+        return true;
+    }
+
+    /** Keep paid raised decks/stairs intact when the parent paves the route. */
+    static boolean completedBridgeSurface(VillageSavedData data,
+                                           VillageSavedData.ProjectRecord parent,
+                                           BlockPos surface) {
+        String ids = parent.parameter("bridge_completed_ids");
+        if (ids.isBlank()) return false;
+        int checked = 0;
+        for (String raw : ids.split(",")) {
+            if (++checked > 80) return false; // 640 route blocks / minimum crossing footprint
+            UUID id = parseId(raw);
+            VillageSavedData.ProjectRecord bridge = id == null ? null : data.project(id).orElse(null);
+            if (bridge == null || !"complete".equals(bridge.phase())
+                    || !parent.id().toString().equals(bridge.parameter(PARENT))) continue;
+            if (bridge.site().distManhattan(surface) > 2 * (MAX_SPAN + 6) + 8) continue;
+            for (Step step : steps(bridge)) {
+                if (step.position().equals(surface)
+                        && ("deck".equals(step.stage())
+                        || "approach_stairs".equals(step.stage()))) return true;
+            }
+        }
+        return false;
+    }
+
     /** Deterministic plan rebuilt only from the saved geometry and palette. */
     static List<Step> steps(VillageSavedData.ProjectRecord project) {
+        if (VillageSpanBridgeService.TEMPLATE.equals(project.templateId()))
+            return VillageSpanBridgeService.steps(project);
         if (!TEMPLATE.equals(project.templateId())) return List.of();
         Direction dir = direction(project.parameter(FACING));
         int count = number(project.parameter(SPAN), 0);
