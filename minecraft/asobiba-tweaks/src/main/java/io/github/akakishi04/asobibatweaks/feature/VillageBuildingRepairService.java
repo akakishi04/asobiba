@@ -75,7 +75,11 @@ public final class VillageBuildingRepairService {
                                     || (VillageHouseThirdFloorExpansionService.TEMPLATE.equals(
                                             p.templateId())
                                         && building.id().toString().equals(
-                                                p.parameter("third_building"))))) continue;
+                                                p.parameter("third_building")))
+                                    || (VillageStairRepairService.TEMPLATE.equals(
+                                            p.templateId())
+                                        && building.id().toString().equals(
+                                                p.parameter("stair_repair_home"))))) continue;
 
             VillageSavedData.ProjectRecord original = village.projectIds().stream()
                     .map(data::project).flatMap(java.util.Optional::stream)

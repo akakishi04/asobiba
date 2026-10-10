@@ -106,6 +106,8 @@ public final class VillageHouseThirdFloorExpansionService {
                     && house.equals(project.parameter("expand_building"))
                     || VillageBuildingRepairService.TEMPLATE.equals(project.templateId())
                     && house.equals(project.parameter("repair_building_id"))
+                    || VillageStairRepairService.TEMPLATE.equals(project.templateId())
+                    && house.equals(project.parameter("stair_repair_home"))
                     || VillageHouseReuseService.TEMPLATE.equals(project.templateId())
                     && house.equals(project.parameter("reuse_building"))) return true;
         }

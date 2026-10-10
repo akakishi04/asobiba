@@ -141,5 +141,8 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT65 | destroyedReceivingBarrelNeverStrandsPorterCargo | A loaded, player-destroyed destination Barrel causes actual paid goods to return to their source rather than trapping the worker or fabricating replacement items |
 | GT66 | realSpecialistEntryMakesRegisteredStationReachable | A genuine physically completed Armorer workshop with unobstructed public entrance and standing cell retains one physically usable Blast Furnace job site |
 | GT67 | blockedSpecialistPassageCannotCountAsWorkingPoi | A player Obsidian block in the real internal access corridor makes a still-present workstation inaccessible; removing obstruction physically restores job-site capacity |
+| GT68 | missingSecondStoreyStairCostsOneRealItemAndRestoresRoute | A genuine original two-storey stair hole is restored with the exact oriented StairBlock, one actual stored item debit, conserved house identity and SavedData/cursor replay safety |
+| GT69 | playerRotatedStairCannotBeOverwrittenEvenWithMissingNeighbor | A player-rotated neighboring stair vetoes an autonomous repair even when another original tread is missing; no items or player blocks are changed |
+| GT70 | threeStoreyRepairCarriesRealStairUpstairsAndRestoresBedAccess | A three-storey home's second stair flight requires real carried worker cargo before walking upstairs; the paid block restores connected stairs and actual upper-bed access |
 
 These tests are **not** a full acceptance of G01-G22: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.

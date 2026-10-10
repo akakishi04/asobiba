@@ -289,6 +289,12 @@ public final class VillageSimulationEvents {
             villager.getPersistentData().putLong(NEXT_BUILD, now + 2400L);
             return;
         }
+        // A broken physical multi-storey staircase cannot serve upper
+        // housing. Reuse and repair the original structure before new land.
+        if (VillageStairRepairService.tryPlan(villager, level, villageId.get())) {
+            villager.getPersistentData().putLong(NEXT_BUILD, now + 2400L);
+            return;
+        }
         if (housingNeed && VillageHouseReuseService.tryPlan(
                 villager, level, villageId.get())) {
             villager.getPersistentData().putLong(NEXT_BUILD, now + 2400L);
@@ -465,6 +471,10 @@ public final class VillageSimulationEvents {
         }
         if (VillageBuildingRepairService.TEMPLATE.equals(project.templateId())) {
             VillageBuildingRepairService.advance(villager, level, project);
+            return;
+        }
+        if (VillageStairRepairService.TEMPLATE.equals(project.templateId())) {
+            VillageStairRepairService.advance(villager, level, project);
             return;
         }
         if (VillageHouseReuseService.TEMPLATE.equals(project.templateId())) {
