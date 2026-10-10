@@ -60,6 +60,8 @@ import io.github.akakishi04.asobibatweaks.feature.RootedEnchantmentEvents;
 import io.github.akakishi04.asobibatweaks.feature.AfterimageDecoyRegistration;
 import io.github.akakishi04.asobibatweaks.feature.AfterimageDecoyEvents;
 import io.github.akakishi04.asobibatweaks.feature.AmbientOddityEvents;
+import io.github.akakishi04.asobibatweaks.feature.EndermanVoidGatheringEvents;
+import io.github.akakishi04.asobibatweaks.feature.VillagerArmorStandImitationEvents;
 import io.github.akakishi04.asobibatweaks.feature.NodGreetingEvents;
 import io.github.akakishi04.asobibatweaks.feature.NodGestureNetworking;
 import net.neoforged.bus.api.IEventBus;
@@ -121,6 +123,8 @@ public final class AsobibaTweaks {
         NeoForge.EVENT_BUS.register(new RootedEnchantmentEvents());
         NeoForge.EVENT_BUS.register(new AfterimageDecoyEvents());
         NeoForge.EVENT_BUS.register(new AmbientOddityEvents());
+        NeoForge.EVENT_BUS.register(new EndermanVoidGatheringEvents());
+        NeoForge.EVENT_BUS.register(new VillagerArmorStandImitationEvents());
         NeoForge.EVENT_BUS.register(new NodGreetingEvents());
         NeoForge.EVENT_BUS.register(new OceanAndDisplayEvents());
         NeoForge.EVENT_BUS.register(new NetherFishingEvents());

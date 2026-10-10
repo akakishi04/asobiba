@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "BellAmbientReplyMixin",
+    "EndermanVoidNavigationMixin",
     "EntitySharedFlagAccessor",
     "FeatherFallingAirControlMixin",
     "AbstractMinecartMixin",
@@ -59,6 +60,7 @@
   "client": [
     "VillagerNodModelMixin",
     "SnowGolemTiltModelMixin",
+    "CloudLineRenderMixin",
     "AtlasItemInHandRendererMixin"
   ]
 }

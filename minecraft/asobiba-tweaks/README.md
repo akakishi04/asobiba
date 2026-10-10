@@ -77,6 +77,9 @@ Already-loaded eligibility, priority AI, individual toggles, shared cooldowns an
 - **Giant crops**
 - **Rare mob gatherings**
 - **Enderman micro-building**
+- **Cloud line** — rare, differently sized square clouds drift in a neat row and gradually disperse. This is an independently configurable local sky cosmetic.
+- **Villager armor-stand imitation** — a passing idle villager briefly lines up beside a nearby armor stand, faces the same way, then returns to ordinary activity. Work and danger take priority.
+- **Endermen gazing into the void** — in the End, a rare small group walks short, verified solid routes to spaced positions inside an island rim, looks outward, and returns to ordinary behavior one by one. Combat and anger take priority; no teleporting, spawning or rewards.
 - **Parrot perches**
 - **Snow Golem head tilt** — very rarely, a calm nearby golem is already holding its head/pumpkin slightly askew when you look; looking away and back restores its normal pose. Client-only cosmetic, independently configurable.
 - **Rare armor-stand pose drift**
