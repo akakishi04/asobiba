@@ -246,7 +246,13 @@ public final class VillageHouseReuseService {
                 && level.getBlockState(entrance.above()).isAir()
                 && level.getBlockState(base.offset(2, 4, 2)).isSolidRender(
                         level, base.offset(2, 4, 2))
-                && !level.canSeeSky(base.offset(1, 1, 2))
+                // Sky light is propagated asynchronously after a real roof is built.
+                // This owner-linked 5x5 blueprint has a known roof plane: require
+                // actual cover over both new bed halves, including after player edits.
+                && level.getBlockState(base.offset(1, 4, 2)).isSolidRender(
+                        level, base.offset(1, 4, 2))
+                && level.getBlockState(base.offset(1, 4, 3)).isSolidRender(
+                        level, base.offset(1, 4, 3))
                 && level.getBlockState(base.offset(1, 2, 2)).isAir()
                 && level.getBlockState(base.offset(1, 2, 3)).isAir();
     }

@@ -56,6 +56,12 @@ import io.github.akakishi04.asobibatweaks.feature.VillageStatusEvents;
 import io.github.akakishi04.asobibatweaks.feature.VillageStatusNetworking;
 import io.github.akakishi04.asobibatweaks.feature.VillagerWelfareService;
 import io.github.akakishi04.asobibatweaks.feature.WorldOddityEvents;
+import io.github.akakishi04.asobibatweaks.feature.RootedEnchantmentEvents;
+import io.github.akakishi04.asobibatweaks.feature.AfterimageDecoyRegistration;
+import io.github.akakishi04.asobibatweaks.feature.AfterimageDecoyEvents;
+import io.github.akakishi04.asobibatweaks.feature.AmbientOddityEvents;
+import io.github.akakishi04.asobibatweaks.feature.NodGreetingEvents;
+import io.github.akakishi04.asobibatweaks.feature.NodGestureNetworking;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
@@ -68,11 +74,13 @@ public final class AsobibaTweaks {
 
     public AsobibaTweaks(IEventBus modBus, ModContainer container) {
         AsobibaRegistries.register(modBus);
+        AfterimageDecoyRegistration.register(modBus);
         modBus.addListener(VillageStatusNetworking::registerPayloads);
         modBus.addListener(QuiverNetworking::registerPayloads);
         modBus.addListener(FletchingCopyNetworking::registerPayloads);
         modBus.addListener(FrostWalkerToggleNetworking::registerPayloads);
         modBus.addListener(MaceMasteryEvents::registerPayloads);
+        modBus.addListener(NodGestureNetworking::registerPayloads);
         container.registerConfig(ModConfig.Type.COMMON, AsobibaTweaksConfig.SPEC);
         NeoForge.EVENT_BUS.register(new GrowingItemsEvents());
         NeoForge.EVENT_BUS.register(new GiantOrganismEvents());
@@ -110,6 +118,10 @@ public final class AsobibaTweaks {
         NeoForge.EVENT_BUS.register(new TransportTweaksEvents());
         NeoForge.EVENT_BUS.register(new PhysicsTransportEvents());
         NeoForge.EVENT_BUS.register(new WorldOddityEvents());
+        NeoForge.EVENT_BUS.register(new RootedEnchantmentEvents());
+        NeoForge.EVENT_BUS.register(new AfterimageDecoyEvents());
+        NeoForge.EVENT_BUS.register(new AmbientOddityEvents());
+        NeoForge.EVENT_BUS.register(new NodGreetingEvents());
         NeoForge.EVENT_BUS.register(new OceanAndDisplayEvents());
         NeoForge.EVENT_BUS.register(new NetherFishingEvents());
         NeoForge.EVENT_BUS.register(new VillageDutyScheduler());

@@ -1,9 +1,25 @@
 # AsobibaTweaks acceptance and release verification
 
+## Latest baseline and new independent-feature pass (2026-10-10)
+
+The historical 224-test integration below was subsequently published as `5a472c0` and merged to `main` in `e6f74bed`. [CI run 38040837678](https://github.com/akakishi04/asobiba/actions/runs/38040837678) passed both mod builds, all 224 required GameTests, and dedicated-server startup. Its older publication-pending wording is a preserved checkpoint, superseded by this result.
+
+The new pass starts from `3644c33` and covers Chicken Conspiracy, Rooted, Ominous/OE01–OE07, Afterimage Decoy and Nod. All bounded new runtime paths are implemented. Final required server suite and full build: **256/256 passed in 28.65 seconds; BUILD SUCCESSFUL in 58 seconds** (`new-backlog-gametest6-build.log`). Identical-source repeat/full build: **256/256 in 36.22 seconds; BUILD SUCCESSFUL in 57 seconds** (`new-backlog-final-repeat2-build.log`). This includes 31 new feature tests and one physical-roof regression; the existing composite repair test now deterministically exercises its unchanged retry bound. The unchanged Data Logger build also passed (59 seconds). Exact published-head CI and merge status are reported by the feature pull request; these local results do not replace that gate or real-client/multiplayer playtesting.
+
+
 Target: Minecraft 1.21.1, NeoForge 21.1.219, Java 21.
 Branch: `feat/minecraft-mods-bootstrap`; PR #3.
 
-## Current evidence (2026-10-10 integration checkpoint)
+## New independent-feature regression map
+
+- `IndependentEnchantmentGameTests`: real data registry/tag acquisition, equipment restrictions, single-level caps, and no invented mastery branches.
+- `RootedEnchantmentGameTests`: all four mature crops, exact real seed payment including offhand, unchanged drops/XP, wrong/missing seeds, immature/unusual plants, unsafe targets, real break/drop/place vetoes, replay, creative/config guards.
+- `AfterimageDecoyGameTests`: real sprint edge/departure, cooldown across logout, walking/teleport/flight/wrong-slot exclusion, bounded actual hostile targets, canceled target events, normal AI target retention and expiry, line-of-sight/allies/boss exclusions, no physical collision/drop/save, owner death and shutdown cleanup.
+- `AmbientSocialGameTests`: natural paths for each OE event, unchanged blocks/entities/velocity, shared-direction chickens and surrender to actual priority AI/player approach, capped Ominous and independent toggles, dense/unknown chunk budgets, ordinary nighttime bell observation, adult/child Nod eligibility and lifecycle.
+
+These tests run on the real NeoForge GameTestServer. Direct model-envelope or service tests do not establish visual client presentation; actual client rendering, multiplayer viewing and naturally encountered rarity remain separate manual gates.
+
+## Historical evidence (2026-10-10 224-test integration checkpoint)
 
 | Evidence | Result and limit |
 |---|---|

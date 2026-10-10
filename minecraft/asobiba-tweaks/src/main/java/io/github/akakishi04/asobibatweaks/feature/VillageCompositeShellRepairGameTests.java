@@ -35,9 +35,22 @@ public final class VillageCompositeShellRepairGameTests {
         int[] attempts = {0};
         Runnable[] retry = new Runnable[1];
         retry[0] = () -> {
+            if (attempts[0] == 0) {
+                // Deliberately require the normal next-tick retry, so this regression
+                // cannot pass merely because the first probe lane happened to be free.
+                int limit = io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig
+                        .VILLAGE_BACKGROUND_PROBES_PER_TICK.getAsInt();
+                for (int i = 0; i <= limit; i++) {
+                    if (!VillageSimulationScheduler.tryConsumeBlockProbe(helper.getLevel())) break;
+                }
+            }
             var repair = plan(f);
             if (repair == null && ++attempts[0] < 8) {
-                helper.runAfterDelay(2, retry[0]);
+                // GameTestInfo removes the current Runnable key after invoking it.
+                // Reusing that key deletes the newly scheduled retry; use a new key.
+                helper.runAfterDelay(2, new Runnable() {
+                    @Override public void run() { retry[0].run(); }
+                });
                 return;
             }
             if (repair == null || repair.reservations().getOrDefault("minecraft:oak_planks", 0) != 2

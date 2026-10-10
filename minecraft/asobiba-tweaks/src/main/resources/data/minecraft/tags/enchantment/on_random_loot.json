@@ -1,4 +1,10 @@
 {
   "replace": false,
-  "values": ["asobibatweaks:wind_pressure_resistance"]
+  "values": [
+    "asobibatweaks:wind_pressure_resistance",
+    "asobibatweaks:rooted",
+    "asobibatweaks:ominous",
+    "asobibatweaks:afterimage",
+    "asobibatweaks:nod"
+  ]
 }

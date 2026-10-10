@@ -30,11 +30,13 @@ public final class EnchantmentMasteryData {
     }
 
     public static int getMastery(ItemStack stack, Holder<Enchantment> enchantment) {
+        if (isIndependent(enchantment)) return 0;
         CompoundTag root = custom(stack);
         return root.getCompound(MASTERY).getInt(id(enchantment));
     }
 
     public static void addMastery(ItemStack stack, Holder<Enchantment> enchantment, int amount) {
+        if (isIndependent(enchantment)) return;
         CompoundTag root = custom(stack);
         CompoundTag values = root.getCompound(MASTERY);
         String key = id(enchantment);
@@ -44,16 +46,19 @@ public final class EnchantmentMasteryData {
     }
 
     public static int getBranch(ItemStack stack, Holder<Enchantment> enchantment) {
+        if (isIndependent(enchantment)) return -1;
         CompoundTag branches = custom(stack).getCompound(BRANCHES);
         String key = id(enchantment);
         return branches.contains(key) ? branches.getInt(key) : -1;
     }
 
     public static boolean hasBranch(ItemStack stack, Holder<Enchantment> enchantment) {
+        if (isIndependent(enchantment)) return false;
         return custom(stack).getCompound(BRANCHES).contains(id(enchantment));
     }
 
     public static int cycleBranch(ItemStack stack, Holder<Enchantment> enchantment) {
+        if (isIndependent(enchantment)) return -1;
         CompoundTag root = custom(stack);
         CompoundTag branches = root.getCompound(BRANCHES);
         String key = id(enchantment);
@@ -102,6 +107,10 @@ public final class EnchantmentMasteryData {
         root.remove(STORED_EXCLUSIVE);
         root.remove(STORED_EXCLUSIVE_LEVEL);
         setCustom(stack, root);
+    }
+
+    private static boolean isIndependent(Holder<Enchantment> enchantment) {
+        return enchantment.unwrapKey().map(NewEnchantments::isIndependent).orElse(false);
     }
 
     public static boolean isCurse(Holder<Enchantment> enchantment) {
