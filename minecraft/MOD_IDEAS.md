@@ -1789,11 +1789,55 @@ These two new enchants are **accepted implementation candidates**, separate from
 
 ### O01 — 不吉 / Ominous (Armor; planned)
 
-- While wearing enchanted armor, the player becomes modestly more likely to encounter **existing harmless ambient oddities** when their normal, safe trigger conditions are already satisfied.
-- This must not raise hostile spawns, inflict Bad Omen/status effects, force dangerous events, create item rewards or increase progression/loot chances. The enchant should feel strange, not punitive or farmable.
-- Respect each oddity's configuration toggle, normal cooldown, proximity rules and global performance/event limits. Never force-load chunks or invent an event solely because the armor is worn.
-- Multiple enchanted armor pieces must use a bounded, non-explosive composition rule; precise probabilities, event eligibility, acquisition and enchantment level cap remain to be designed.
+- While wearing enchanted armor, the player becomes modestly more likely to encounter **eligible harmless ambient oddities** whose conditions would also allow them naturally without the enchantment.
+- In addition to eligible existing features (such as separately enabled Chicken Conspiracy and Mob Gatherings), a new seven-event OE01-OE07 pool is accepted below. Nod is eligible only when the separate N20 Helmet enchantment and its greeting action are present.
+- The enchant does not create Bad Omen or negative status, raise hostile spawn rates, affect real rewards, produce items, trigger dangerous events, or alter player progress/loot.
+- Each event's ordinary config, cooldown, proximity, loaded-chunk and finite simulation/particle limits remain authoritative. Multiple O01 armor pieces must have bounded non-multiplicative effects; precise levels and acquisition remain to be designed.
+- N17's combat decoy is explicitly **not** an O01 target.
 - Status: **accepted for future implementation; no registry/runtime code or tests yet**.
+
+### O01 linked ambient oddities — accepted future event pool
+
+Each event must be independently able to occur at a very low natural rate **without O01 equipped**; O01 only modestly adjusts the eligible event roll after all normal constraints pass. Events have no rewards, loot, dangerous spawns, status effects, world edits or progress meters. Actual probability/cooldown tuning is deferred until implementation.
+
+Existing/future feature hooks (no forced dependency):
+- **鶏の密談 / Chicken Conspiracy:** 3+ naturally idle chickens may face the same direction until approached; the already accepted separate feature remains independently toggleable.
+- **N20 頷き / Nod:** the nod chance can be gently biased only if the player ALSO wears the separate N20 enchanted Helmet and makes its normal crouch greeting; O01 alone never grants the Nod enchantment.
+- **Mob Gatherings:** optional existing harmless Mob gatherings may receive a modest safe eligibility bias under their own configuration/rate limits.
+
+New tiny ambient event candidates, now accepted as **planned** (not implemented):
+- **OE01 鐘の返事 / Replying Bell:** after a normal village bell is rung near dusk or night, a faint bell reply sounds at a distance; do not ring a real Bell block or trigger villager alert/raid logic.
+- **OE02 誰もいない足音 / Unseen Footsteps:** in a quiet loaded cave or forest, a few soft delayed footstep sounds occur behind or beside the player. No invisible actor or physical entity is spawned.
+- **OE03 扉の向こうのノック / Empty Knock:** rarely play a quiet knock by a nearby closed wooden door. Do not open/close doors, alter redstone, or interact with player containers.
+- **OE04 消えた焚き火の煙 / Cold Ember:** an extinguished Campfire makes one short smoke wisp with particles only. It remains extinguished and does not change cooking/game states.
+- **OE05 おかしな視線 / Unusual Glance:** one or two otherwise idle passive animals briefly look toward the same empty spot. Panic, breeding, fleeing and priority AI always take precedence.
+- **OE06 逆向きの風 / Backward Breeze:** in eligible outdoor moments, a tiny local swirl of dust/leaves briefly appears contrary to surrounding movement. Cosmetic particles only; no physics or velocity change.
+- **OE07 名もなき和音 / Unclaimed Chord:** a faint brief note-like chord sounds in a quiet remote or underground location with no implied instrument, mob spawn or treasure.
+
+Rules shared by the planned O01 event pool:
+- Favor small, local, client-visible or audible oddities; each candidate has bounded player/area cooldowns, server-side eligibility, loaded-chunk limits and a total per-tick budget.
+- Respect disabled features and modded game conditions. An O01-wearing player must not alter real loot, economy, world generation, mob hostility, game ticks or player progression.
+- O01 never increases **N17 残像** decoy frequency/strength: that is a tactical combat effect, not harmless ambience.
+- Chance multipliers, maximum event frequency, event weights and armor stacking are unfinalized. Use a capped, non-multiplicative composition when implemented. Multiple wearers must not multiply the same local event indefinitely.
+- Status: these seven OE events and O01 integration links are accepted as future work. None has production event registrations, actual engine behavior or passed GameTests yet.
+
+### N17 — 残像 / Afterimage Decoy (Chestplate; planned)
+
+- After the enchanted wearer **starts a genuine sprint and moves away** from an eligible departure point, briefly leave a translucent visual afterimage at that point.
+- This must have a **real, short-lived server-authoritative decoy effect**: at most a small bounded number of nearby eligible ordinary hostile mobs may temporarily target the afterimage instead of the real player. This is not only an illusion shown to the wearer, and it never rewrites an enemy's durable aggression memory.
+- Initial tuning proposal, to validate in gameplay: about **1.5 seconds** of afterimage visibility and about **15 seconds** per-player cooldown, at most one active afterimage per wearer. Actual trigger distance/target radius and cooldown are adjustable later.
+- Exclude bosses, player-versus-player targeting, allies/tamed mobs, peaceful animals and entities with essential scripted priorities. Do not force retarget through walls/unknown chunks or change existing encounter spawns.
+- The decoy cannot deal damage, be farmed for XP/items/loot, take ordinary world-block ownership or persist as an orphaned active target across logoff/death/server restart. On expiry, involved mobs return to normal target selection.
+- Avoid creating a permanent copy of player identity/inventory. Choose a safe, lightweight temporary server-side target and client visual technique during implementation. An independent config toggle and standard enchantment registry/level decisions remain pending.
+- Status: **accepted future feature; not implemented or tested**. Tactical combat effects are deliberately excluded from O01 oddity bias.
+
+### N20 — 頷き / Nod (Helmet; planned)
+
+- While wearing this enchanted Helmet, the player can occasionally receive a small nod/head gesture from a nearby villager after facing them and crouching in a deliberate greeting.
+- This includes adult or baby villagers only when idle and safe. No forced trade screen, gossip/reputation changes, improved prices, tangible rewards, new profession, AI-job interruption or persistent village record.
+- Keep the action rare, visually readable, minimally invasive to vanilla movement/look control, cooldown-limited and separately configurable. The maximum enchantment level and acquisition remain undecided.
+- If O01 is independently equipped on other armor, it may modestly bias the ordinary **eligible** nod chance, but O01 never grants this action to players without N20.
+- Status: **accepted future feature; not implemented or tested**.
 
 ## Accepted enchantment-system tweaks
 

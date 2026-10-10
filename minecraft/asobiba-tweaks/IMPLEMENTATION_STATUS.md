@@ -60,6 +60,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Parrot Perches | `WorldOddityEvents` | Implemented |
 | Mob Gatherings | `WorldOddityEvents` | Implemented |
 | Chicken Conspiracy / 鶏の密談 | — | **Planned, not implemented:** rare synchronized facing among 3+ idle chickens; disperse when a player approaches. Ambient only, independently configurable; no GameTests yet; outside existing v0.1 closure scope. |
+| O01 ambient event pool OE01–OE07 | — | **Planned, not implemented:** Replying Bell, Unseen Footsteps, Empty Knock, Cold Ember, Unusual Glance, Backward Breeze, Unclaimed Chord. Naturally rare and harmless with or without O01; capped O01 eligibility bias requires separate event and perf guards. No runtime behavior or GameTests yet. |
 | Rare Armor Stand Pose Drift | `WorldOddityEvents` | Implemented |
 | Elytra Armor Stand Display | `ArmorStandElytraMixin` | Implemented; visual playtest required |
 | Auto-connected Map Walls | `OceanAndDisplayEvents` | Implemented |
@@ -71,7 +72,9 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Wind Pressure Resistance | datapack enchantment + `PhysicsTransportEvents` | Implemented |
 | Growing Enchantments | `EnchantmentTweaksEvents`, `EnchantmentMasteryData` | Implemented |
 | New enchantment L01 — 根付き / Rooted | — | **Planned, not implemented:** enchanted Hoe uses a real held seed/planting item to replant an eligible mature harvested crop in place; no free items. Levels/acquisition/mastery pending, no GameTests. Outside completed v0.1 baseline. |
-| New enchantment O01 — 不吉 / Ominous | — | **Planned, not implemented:** enchanted Armor slightly increases encounters with otherwise eligible harmless ambient oddities only; no dangerous effects or reward boost. Bounded stacking/tuning pending, no GameTests. Outside completed v0.1 baseline. |
+| New enchantment O01 — 不吉 / Ominous | — | **Planned, not implemented:** enchanted Armor slightly increases encounters with eligible harmless ambient oddities, including future OE01–OE07, Chicken Conspiracy and prerequisite-gated N20 Nod. No Bad Omen, dangerous effects, reward boost or N17 combat amplification. Bounded stacking/tuning pending; no GameTests. |
+| New enchantment N17 — 残像 / Afterimage Decoy | — | **Planned, not implemented:** sprint-departure translucent afterimage with temporary authoritative ordinary-hostile decoy targeting. Initial design ~1.5-second visual, ~15-second cooldown, bounded targets; no bosses, PvP, XP/loot or persistent phantom aggro. No GameTests. |
+| New enchantment N20 — 頷き / Nod | — | **Planned, not implemented:** enchanted Helmet allows rare greeting nods from safe idle villagers when faced and crouched to. No trades/reputation/rewards; optional capped O01 eligibility bias requires N20. No GameTests. |
 | Enchantment Branches | `EnchantmentTweaksEvents`, specialized `*MasteryEvents` / `*MasteryService`, native-effect mixins | **V92 integrated:** all 41 selectable-branch families have audited runtime paths; Mending is separately branchless, Flame has two branches by design. Native-domain semantics, mastery-100 cap, distinct armor-branch coexistence and paid ammo history are implemented. Included mastery scenarios passed round7, including native Wind launch; identical-source repeat also passed; real client/multiplayer acceptance remains open |
 | Curse Growth | `EnchantmentTweaksEvents` | Implemented |
 | Fortune / Silk Touch Switching | `EnchantmentTweaksEvents` | Implemented |

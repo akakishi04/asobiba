@@ -46,13 +46,16 @@ The bounded accepted implementation scopes are complete in the round7 local snap
 
 ## Accepted future small oddities (not yet implemented)
 
-- **Chicken Conspiracy / 鶏の密談 — PLANNED:** Occasionally, three or more nearby chickens stand briefly facing the same direction as if conspiring, then disperse naturally when a player approaches. Purely atmospheric and unrewarded. Implement with an independent config toggle, finite loaded-entity checks and no interference with essential chicken AI. See `../MOD_IDEAS.md` (World oddities) for the accepted behavior. This is a future feature pass, **not** a missing item in the already completed bounded v0.1 scope, and is not covered by the existing 224 GameTests.
+- **Chicken Conspiracy / 鶏の密談 — PLANNED:** Occasionally, three or more nearby chickens stand briefly facing the same direction as if conspiring, then disperse naturally when a player approaches. Purely atmospheric and unrewarded. Implement with an independent config toggle, finite loaded-entity checks and no interference with essential chicken AI. See `../MOD_IDEAS.md` (World oddities).
+- **O01 ambient event expansion — PLANNED:** Seven harmless new events, OE01 Replying Bell, OE02 Unseen Footsteps, OE03 Empty Knock, OE04 Cold Ember, OE05 Unusual Glance, OE06 Backward Breeze and OE07 Unclaimed Chord. Each may naturally happen very rarely even without O01; O01 only increases already-eligible occurrence within hard rate/loaded-chunk/AI constraints. Eligible Chicken Conspiracy, Mob Gatherings and N20 Nod may also be biased under their own independent prerequisites. No hazardous events, extra rewards, fake entities or world edits.
 
 ## Accepted future enchantments (not yet implemented)
 
-- **L01 — 根付き / Rooted (Hoe) — PLANNED:** On harvesting eligible mature crops with the enchanted hoe, replant in the safe vacated position by consuming a genuinely held matching seed/planting item. No item duplication, free replant or area harvesting. Exact candidate crops, levels and mastery interactions require implementation design.
-- **O01 — 不吉 / Ominous (Armor) — PLANNED:** Modestly bias existing **harmless ambient** oddity encounters while armor is worn, within event config/safety/budget limits; no extra loot, dangerous spawns, Bad Omen or forced world changes. Stacking across armor pieces and precise probabilities are to be designed.
-- Both are **adopted future scope, not implemented yet**. No enchantment registration, gameplay code or GameTests for them; neither is part of the 224-test v0.1 completion baseline. Authoritative descriptions: `../MOD_IDEAS.md`.
+- **L01 — 根付き / Rooted (Hoe) — PLANNED:** Harvest eligible mature crops and replant in the vacated safe cell using a genuinely owned matching seed. No duplication, free planting or area harvesting.
+- **O01 — 不吉 / Ominous (Armor) — PLANNED:** Slightly bias harmless eligible ambient encounters in the expanded OE01–OE07 pool and separately permitted oddities; never Bad Omen, dangerous/hostile events, increased loot or N17 combat behavior. Multi-piece scaling must be capped.
+- **N17 — 残像 / Afterimage Decoy (Chestplate) — PLANNED:** On a genuine sprint departure, briefly create a translucent afterimage that can draw the attention of a small bounded number of nearby ordinary hostile mobs. Proposed duration ~1.5 seconds, cooldown ~15 seconds; no bosses, PvP, dangerous permanent aggro modifications, free drops or persistent phantom target.
+- **N20 — 頷き / Nod (Helmet) — PLANNED:** Greet an idle villager by facing them and crouching; they may briefly nod. Purely social, including children, no reputation/trade benefits; O01 affects eligibility only when N20 is actually worn.
+- All four enchantments and the OE01–OE07 event family are **accepted future work, not implemented**. Enchantment registry, levels, effects, client/server sync, configuration and GameTests remain to be built. They are not part of the historical 224-test v0.1 closure. Detailed decisions and safety limits: `../MOD_IDEAS.md`.
 
 ## Working policy
 
