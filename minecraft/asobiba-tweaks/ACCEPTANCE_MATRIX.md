@@ -259,3 +259,14 @@ Final clean local regression: **280/280 required GameTests passed in 35.99 secon
 | Villager armor-stand imitation | `VillagerArmorStandImitationGameTests`: actual native brain walk/held facing/full duration, diagonal arrival, ordinary navigation after release, work/meeting/rest/emergency/hostile priority, new movement-goal ownership, replacement memories/paths, unsafe/oversized/busy rejection and lifecycle cleanup | Natural village encounter frequency, arbitrary armor-stand placements, modpack AI interactions and visual readability |
 
 These are quiet ambience features. Passing the physical server scenarios does not establish actual client rendering or broad modpack compatibility. Data Logger remains outside this feature scope.
+
+
+## Durable daily play timer (2026-10-10)
+
+Implemented on merged `834cefb7`. Eleven new required GameTests cover native rule defaults/ranges/persistence, payload codec and HUD state, ledger NBT roundtrip, an actual SavedData file write and fresh storage reload, transformed native pre-placement login rejection, and a real disconnect packet/channel closure that preserves another connection and the server. Offline rejection retries do not synchronously flush the ledger; settling an online duplicate still does.
+
+The standard `check` task also runs `DailyPlayTimeLedgerTest` (52 assertions) and `DailyPlayTimeHudStateTest` (58 assertions), alongside the unchanged 10,278 cloud-state assertions. Coverage includes real midnight splits, same-date rejoin, skipped dates, pause/offline exclusion, monotonic elapsed accounting, rollback, offset changes, bounded retained dates, duplicate sessions, stale HUD snapshots and connection lifecycle isolation.
+
+Full local regression results are recorded in the newest `IMPLEMENTATION_STATUS.md` section. Exact published-head CI is a separate gate recorded on the feature pull request.
+
+Manual checks remain open: create a world through the actual More → Game Rules screen; read the Japanese HUD at several GUI scales; pause/resume a real integrated graphics client; exercise a real remote client through cap rejection and the next real-calendar day; and restart an actual client/server process. Disk reload and transformed engine hooks are tested but are not a substitute for that complete client walkthrough. Abrupt crash/checkpoint loss and administrator changes are explicitly outside any tamper-resistance guarantee.

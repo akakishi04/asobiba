@@ -81,3 +81,17 @@ var verifyCloudLineState = tasks.register('verifyCloudLineState', JavaExec) {
     mainClass = 'io.github.akakishi04.asobibatweaks.feature.CloudLineStateTest'
 }
 tasks.named('check') { dependsOn verifyCloudLineState }
+
+var verifyDailyPlayTimeHudState = tasks.register('verifyDailyPlayTimeHudState', JavaExec) {
+    dependsOn tasks.named('cloudStateTestClasses')
+    classpath = sourceSets.cloudStateTest.runtimeClasspath
+    mainClass = 'io.github.akakishi04.asobibatweaks.feature.DailyPlayTimeHudStateTest'
+}
+tasks.named('check') { dependsOn verifyDailyPlayTimeHudState }
+
+var verifyDailyPlayTimeLedger = tasks.register('verifyDailyPlayTimeLedger', JavaExec) {
+    dependsOn tasks.named('cloudStateTestClasses')
+    classpath = sourceSets.cloudStateTest.runtimeClasspath
+    mainClass = 'io.github.akakishi04.asobibatweaks.feature.DailyPlayTimeLedgerTest'
+}
+tasks.named('check') { dependsOn verifyDailyPlayTimeLedger }

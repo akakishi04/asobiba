@@ -5,6 +5,9 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "BellAmbientReplyMixin",
+    "DailyPlayTimeServerMixin",
+    "DailyPlayTimeLoginMixin",
+    "GameRulesIntegerValueAccessor",
     "EndermanVoidNavigationMixin",
     "EntitySharedFlagAccessor",
     "FeatherFallingAirControlMixin",
