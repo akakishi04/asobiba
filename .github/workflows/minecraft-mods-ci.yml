@@ -1,0 +1,130 @@
+name: Minecraft Mods CI
+
+concurrency:
+  group: minecraft-mods-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    paths:
+      - "minecraft/**"
+      - ".github/workflows/minecraft-mods-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  asobiba-tweaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.2.1"
+      - name: Build Asobiba Tweaks
+        working-directory: minecraft/asobiba-tweaks
+        run: gradle build --stacktrace
+      - name: Execute required NeoForge GameTests
+        working-directory: minecraft/asobiba-tweaks
+        shell: bash
+        timeout-minutes: 6
+        run: |
+          # Keep all actual GameTest assertions strict. Retry only when the
+          # headless GameTestServer NEVER COMPLETED its test batch and hit the
+          # infrastructure wall-clock timeout (exit 124).
+          # Two 135-second attempts fit the old single 300-second bound.
+          set +e
+          timeout --signal=TERM 135s gradle runGameTestServer --stacktrace > gametest-server.log 2>&1
+          result=$?
+          set -e
+
+          if [ "$result" -eq 124 ] && ! grep -q "GAME TESTS COMPLETE" gametest-server.log; then
+            echo "GameTestServer made no completion progress; retrying once with a fresh CI-only test world."
+            mv gametest-server.log gametest-server-first-attempt.log
+            rm -rf run
+            set +e
+            timeout --signal=TERM 135s gradle runGameTestServer --stacktrace > gametest-server.log 2>&1
+            result=$?
+            set -e
+          fi
+
+          # Avoid printing hundreds of thousands of headless progress-bar
+          # repetitions into Actions output. Full logs remain downloadable.
+          grep -E 'tests are now running|Running test batch|LogTestReporter|GAME TESTS COMPLETE|required tests failed|BUILD (FAILED|SUCCESSFUL)|Failed with an exception' gametest-server.log | tail -n 100 || true
+          if [ "$result" -ne 0 ]; then
+            echo "GameTests failed or did not complete (exit status: $result)." >&2
+            grep -E 'error:|Exception|LogTestReporter|GAME TESTS COMPLETE|required tests failed|BUILD FAILED' gametest-server.log | tail -n 75 || true
+            exit "$result"
+          fi
+
+          echo "NeoForge required GameTests completed successfully."
+      - name: Smoke-start dedicated server
+        working-directory: minecraft/asobiba-tweaks
+        shell: bash
+        timeout-minutes: 3
+        run: |
+          mkdir -p run
+          printf 'eula=true\n' > run/eula.txt
+          printf 'online-mode=false\nserver-port=0\n' > run/server.properties
+
+          set +e
+          timeout --signal=TERM 90s gradle runServer --stacktrace > smoke-server.log 2>&1
+          status=$?
+          set -e
+
+          cat smoke-server.log
+
+          if grep -q "Done (" smoke-server.log; then
+            echo "Dedicated server reached ready state."
+            exit 0
+          fi
+
+          echo "Dedicated server never reached ready state (exit status: $status)." >&2
+          exit 1
+      - name: Upload GameTest server log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: asobiba-gametest-log
+          path: |
+            minecraft/asobiba-tweaks/gametest-server.log
+            minecraft/asobiba-tweaks/gametest-server-first-attempt.log
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Upload Asobiba Tweaks JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: asobiba-tweaks-minecraft-1.21.1
+          path: |
+            minecraft/asobiba-tweaks/build/libs/*.jar
+            !minecraft/asobiba-tweaks/build/libs/*-sources.jar
+            !minecraft/asobiba-tweaks/build/libs/*-javadoc.jar
+          if-no-files-found: error
+          retention-days: 30
+
+  minecraft-data-logger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.2.1"
+      - name: Build Minecraft Data Logger
+        working-directory: minecraft/minecraft-data-logger
+        run: gradle build --stacktrace
+      - name: Upload Minecraft Data Logger JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: minecraft-data-logger-minecraft-1.21.1
+          path: |
+            minecraft/minecraft-data-logger/build/libs/*.jar
+            !minecraft/minecraft-data-logger/build/libs/*-sources.jar
+            !minecraft/minecraft-data-logger/build/libs/*-javadoc.jar
+          if-no-files-found: error
+          retention-days: 30

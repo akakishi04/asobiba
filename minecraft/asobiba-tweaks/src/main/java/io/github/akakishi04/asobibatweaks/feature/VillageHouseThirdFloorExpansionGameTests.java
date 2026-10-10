@@ -1,0 +1,587 @@
+package io.github.akakishi04.asobibatweaks.feature;
+
+import io.github.akakishi04.asobibatweaks.AsobibaTweaks;
+import java.util.List;
+import java.util.UUID;
+import net.minecraft.core.BlockPos;
+import net.minecraft.gametest.framework.GameTest;
+import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.Container;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.BedBlock;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.AABB;
+import net.neoforged.neoforge.gametest.GameTestHolder;
+import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+
+/** Physical two-to-three-storey work, real demolition drops and ID durability. */
+@GameTestHolder(AsobibaTweaks.MOD_ID)
+@PrefixGameTestTemplate(false)
+public final class VillageHouseThirdFloorExpansionGameTests {
+    private static final BlockPos MARK = new BlockPos(8, 8, 4);
+
+    private VillageHouseThirdFloorExpansionGameTests() {}
+
+    @GameTest(template = "empty16x14x9", timeoutTicks = 65, batch = "third_floor")
+    public static void skilledOriginalSecondFloorSchedulesPersistentThirdFloor(
+            GameTestHelper helper) {
+        Fixture f = setup(helper);
+        helper.runAtTickTime(4, () -> {
+            if (!VillageHouseThirdFloorExpansionService.tryPlan(
+                    f.builder(), f.level(), f.villageId())) {
+                helper.fail("Master Carpenter with original two-storey home must plan third floor", MARK);
+                return;
+            }
+            var p = active(f);
+            if (p == null || p.workCursor() != 0
+                    || !f.house().id().toString().equals(p.parameter("third_building"))
+                    || p.reservations().getOrDefault("minecraft:oak_planks", 0) != 71
+                    || f.village().buildingIds().size() != 1) {
+                helper.fail("Third-floor project failed to preserve original house identity", MARK);
+                return;
+            }
+            var saved = f.data().save(new CompoundTag(), f.level().registryAccess());
+            var loaded = VillageSavedData.load(saved, f.level().registryAccess());
+            var original = loaded.building(f.house().id()).orElse(null);
+            var task = loaded.project(p.id()).orElse(null);
+            if (original == null || task == null
+                    || !"house_2story_5x5".equals(original.templateId())
+                    || !f.house().id().toString().equals(task.parameter("third_building"))) {
+                helper.fail("Third-floor plan or original building disappeared after world NBT", MARK);
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "empty16x14x9", timeoutTicks = 65, batch = "third_floor")
+    public static void playerEditedThirdFloorCannotTriggerDemolition(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        BlockPos blocker = f.base().offset(0, 10, 1);
+        f.level().setBlock(blocker, Blocks.OBSIDIAN.defaultBlockState(), Block.UPDATE_ALL);
+        // Check at the setup tick: unrelated worker AI may move real cargo
+        // in the shared GameTestServer after the preflight was already done.
+        int before = count(f.storage(), Items.OAK_PLANKS);
+        boolean planned = VillageHouseThirdFloorExpansionService.tryPlan(
+                f.builder(), f.level(), f.villageId());
+        int after = count(f.storage(), Items.OAK_PLANKS);
+        if (planned || !f.data().activeProjectsForVillage(f.villageId()).isEmpty()
+                || !f.level().getBlockState(blocker).is(Blocks.OBSIDIAN)
+                || before != after
+                || f.level().getBlockState(f.base().offset(1, 5, 2))
+                    .getBlock() != Blocks.WHITE_BED) {
+            helper.fail("Edited upper space: planned=" + planned
+                    + ", projects=" + f.data().activeProjectsForVillage(f.villageId()).size()
+                    + ", block=" + f.level().getBlockState(blocker)
+                    + ", plankBefore=" + before + ", plankAfter=" + after
+                    + ", bed=" + f.level().getBlockState(f.base().offset(1, 5, 2)), MARK);
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty16x14x9", timeoutTicks = 80, batch = "third_floor")
+    public static void secondStoreyBedDemolishesOnceAndDropsRealItem(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        var project = project(f);
+        List<VillageHouseThirdFloorExpansionService.Step> steps =
+                VillageHouseThirdFloorExpansionService.steps(project);
+        int salvageIndex = -1;
+        for (int i = 0; i < steps.size(); i++) {
+            if (steps.get(i).kind() == VillageHouseThirdFloorExpansionService.SALVAGE_BED) {
+                salvageIndex = i;
+                break;
+            }
+        }
+        if (salvageIndex < 0) {
+            helper.fail("No physical former-bedroom salvage task", MARK);
+            return;
+        }
+        final int oldCursor = salvageIndex;
+        var foot = steps.get(salvageIndex).pos();
+        int beforeDrops = f.level().getEntitiesOfClass(ItemEntity.class,
+                new AABB(foot).inflate(3.0D),
+                x -> x.isAlive() && x.getItem().is(Items.WHITE_BED)
+                        && Math.abs(x.getY() - (foot.getY() + 0.5D)) < 1.5D)
+                .stream().mapToInt(e -> e.getItem().getCount()).sum();
+        f.builder().setPos(foot.getX() + 0.5D, foot.getY() + 1, foot.getZ() + 0.5D);
+        project.setWorkCursor(oldCursor);
+        VillageHouseThirdFloorExpansionService.advance(f.builder(), f.level(), project);
+        if (project.workCursor() != oldCursor + 1
+                || !f.level().getBlockState(foot).isAir()
+                || f.level().getBlockState(f.base().offset(1, 5, 1)).is(Blocks.WHITE_BED)) {
+            helper.fail("Original complete second-floor bed was not physically demolished", MARK);
+            return;
+        }
+        project.setWorkCursor(oldCursor);
+        VillageHouseThirdFloorExpansionService.advance(f.builder(), f.level(), project);
+        if (project.workCursor() != oldCursor + 1) {
+            helper.fail("A removed bed cannot be charged or destroyed twice", MARK);
+            return;
+        }
+        helper.runAtTickTime(5, () -> {
+            List<ItemEntity> drops = f.level().getEntitiesOfClass(ItemEntity.class,
+                    new AABB(foot).inflate(3.0D),
+                    x -> x.isAlive() && x.getItem().is(Items.WHITE_BED)
+                        && Math.abs(x.getY() - (foot.getY() + 0.5D)) < 1.5D);
+            int units = drops.stream().mapToInt(e -> e.getItem().getCount()).sum();
+            if (units - beforeDrops != 1) {
+                String detail = drops.stream().map(e -> e.getItem().getCount()
+                        + "@" + e.blockPosition()).toList().toString();
+                helper.fail("One physical recovered Bed expected; before=" + beforeDrops
+                        + ", after=" + units + ", drops=" + detail, MARK);
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "empty16x14x9", timeoutTicks = 95, batch = "third_floor")
+    public static void completeThirdFloorMaintainsOriginalIdAndFourRealBeds(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        var project = project(f);
+        List<VillageHouseThirdFloorExpansionService.Step> planned =
+                VillageHouseThirdFloorExpansionService.steps(project);
+        for (var step : planned) {
+            if (step.kind() == VillageHouseThirdFloorExpansionService.SALVAGE_BED) {
+                // The full geometry fixture is not a material-transaction test;
+                // GT58 covers the genuine recovered item.
+                f.level().destroyBlock(step.pos(), false);
+            } else if (step.kind() == VillageHouseThirdFloorExpansionService.REMOVE_ROOF) {
+                f.level().setBlock(step.pos(), Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
+            } else if (step.kind() == VillageHouseThirdFloorExpansionService.PLACE_BED) {
+                f.level().setBlock(step.pos(), step.state(), Block.UPDATE_CLIENTS);
+                var head = step.state().setValue(
+                        BedBlock.PART, net.minecraft.world.level.block.state.properties.BedPart.HEAD);
+                f.level().setBlock(step.pos().relative(
+                        step.state().getValue(BedBlock.FACING)), head, Block.UPDATE_CLIENTS);
+            } else {
+                f.level().setBlock(step.pos(), step.state(), Block.UPDATE_CLIENTS);
+            }
+        }
+        if (!VillageHouseThirdFloorExpansionService.allComplete(f.level(), project)
+                || !VillageBuildingService.connectedUpperStories(f.level(), f.base(), 2)) {
+            helper.fail("Third-floor bedroom geometry and stairwell failed physical verification", MARK);
+            return;
+        }
+        project.setWorkCursor(planned.size());
+        VillageHouseThirdFloorExpansionService.advance(f.builder(), f.level(), project);
+        if (!"complete".equals(project.phase())
+                || f.village().buildingIds().size() != 1
+                || !f.house().max().equals(f.base().offset(4, 12, 4))
+                || !"house_3story_5x5".equals(f.house().templateId())) {
+            helper.fail("Full third floor did not safely upgrade original BuildingRecord", MARK);
+            return;
+        }
+        // In a crowded GameTestServer, unrelated validation and ecology jobs
+        // may exhaust the same bounded probe budget. Retry across distinct
+        // ticks rather than asserting the house is valid on one arbitrary tick.
+        helper.runAtTickTime(40, () -> validateExpandedHouseEventually(helper, f, 40));
+    }
+
+    private static void validateExpandedHouseEventually(
+            GameTestHelper helper, Fixture f, int tick) {
+        VillageBuildingService.revalidateChunk(
+                f.level(), new ChunkPos(f.base()));
+            var nbt = f.data().save(new CompoundTag(), f.level().registryAccess());
+            var loaded = VillageSavedData.load(nbt, f.level().registryAccess());
+            var home = loaded.building(f.house().id()).orElse(null);
+            if (home != null && "unknown".equals(home.validationState()) && tick < 80) {
+                helper.runAtTickTime(tick + 10,
+                        () -> validateExpandedHouseEventually(helper, f, tick + 10));
+                return;
+            }
+            if (home == null || !"valid".equals(home.validationState())
+                    || home.validatedCapacity() != 4
+                    || !home.max().equals(f.base().offset(4, 12, 4))
+                    || loaded.village(f.villageId()).orElseThrow().buildingIds().size() != 1) {
+                StringBuilder rooms = new StringBuilder();
+                for (BlockPos local : List.of(
+                        new BlockPos(1, 1, 3), new BlockPos(2, 5, 3),
+                        new BlockPos(1, 9, 2), new BlockPos(2, 9, 3))) {
+                    BlockPos foot = f.base().offset(local);
+                    var block = f.level().getBlockState(foot);
+                    var direction = block.hasProperty(BedBlock.FACING)
+                            ? block.getValue(BedBlock.FACING) : net.minecraft.core.Direction.NORTH;
+                    var head = f.level().getBlockState(foot.relative(direction));
+                    rooms.append(local).append("=").append(block)
+                            .append("/head=").append(head)
+                            .append("/standing=")
+                            .append(VillageBuildingAdoptionService.hasAdjacentStandingSpace(
+                                    f.level(), foot, f.base(), f.base().offset(4, 12, 4)))
+                            .append(";");
+                }
+                helper.fail("Upper housing invalid: rooms=" + rooms
+                        + ", home=" + (home == null ? "null"
+                        : home.validationState() + "/capacity=" + home.validatedCapacity()
+                        + "/template=" + home.templateId() + "/max=" + home.max())
+                        + ", expected=" + f.base().offset(4, 12, 4)
+                        + ", count=" + loaded.village(f.villageId())
+                            .orElseThrow().buildingIds().size()
+                        + ", stairs=" + VillageBuildingService.connectedUpperStories(
+                            f.level(), f.base(), 2), MARK);
+                return;
+            }
+            helper.succeed();
+    }
+
+    /**
+     * A busy server can exhaust this tick's shared background block probes.
+     * The original BuildingRecord must remain pending, then revalidate on
+     * later server ticks without any synthetic beds or force-loaded chunks.
+     */
+    @GameTest(template = "empty16x14x9", timeoutTicks = 105,
+            batch = "housing_validation_budget")
+    public static void blockProbeExhaustionSchedulesFiniteHousingRetry(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        f.house().setValidationState("unknown");
+        f.house().setValidatedCapacity(0);
+        int before = VillageSimulationScheduler.snapshot(f.level()).validation();
+        for (int i = 0; i < 2048
+                && VillageSimulationScheduler.tryConsumeBuildingValidationProbe(f.level()); i++) {
+            // Force the authoritative building probe pool to be exhausted.
+            // Ordinary ecology/background work now uses a separate counter.
+        }
+        VillageBuildingService.revalidateChunk(f.level(), new ChunkPos(f.base()));
+        if (!"unknown".equals(f.house().validationState())
+                || f.house().validatedCapacity() != 0
+                || VillageSimulationScheduler.snapshot(f.level()).validation() <= before) {
+            helper.fail("An exhausted validation budget must preserve unknown capacity and queue work", MARK);
+            return;
+        }
+        helper.runAtTickTime(85, () -> {
+            if (!"valid".equals(f.house().validationState())
+                    || f.house().validatedCapacity() != 3
+                    || !f.house().max().equals(f.base().offset(4, 8, 4))) {
+                helper.fail("A loaded two-storey house was stranded after background probe starvation: "
+                        + f.house().validationState() + "/capacity="
+                        + f.house().validatedCapacity(), MARK);
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    /**
+     * V86: a genuine previously expanded building has no original new-build
+     * three-storey ProjectRecord. Repair must use the completed, owner-linked
+     * expansion shell instead of forgetting it or reconstructing an old roof.
+     */
+    @GameTest(template = "empty16x14x9", timeoutTicks = 95,
+            batch = "expanded_shell_repair")
+    public static void expandedUpperRoofUsesOneRealRepairPlankAndRespectsPlayerEdit(
+            GameTestHelper helper) {
+        Fixture f = setup(helper);
+        var completedExtension = project(f);
+        List<VillageHouseThirdFloorExpansionService.Step> planned =
+                VillageHouseThirdFloorExpansionService.steps(completedExtension);
+        for (var step : planned) {
+            if (step.kind() == VillageHouseThirdFloorExpansionService.SALVAGE_BED) {
+                f.level().destroyBlock(step.pos(), false);
+            } else if (step.kind() == VillageHouseThirdFloorExpansionService.REMOVE_ROOF) {
+                f.level().setBlock(step.pos(), Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
+            } else if (step.kind() == VillageHouseThirdFloorExpansionService.PLACE_BED) {
+                f.level().setBlock(step.pos(), step.state(), Block.UPDATE_CLIENTS);
+                f.level().setBlock(step.pos().relative(
+                        step.state().getValue(BedBlock.FACING)),
+                        step.state().setValue(
+                                BedBlock.PART, net.minecraft.world.level.block.state.properties.BedPart.HEAD),
+                        Block.UPDATE_CLIENTS);
+            } else {
+                f.level().setBlock(step.pos(), step.state(), Block.UPDATE_CLIENTS);
+            }
+        }
+        completedExtension.setWorkCursor(planned.size());
+        completedExtension.setPhase("complete");
+        if (!VillageHouseThirdFloorExpansionService.allComplete(f.level(), completedExtension)
+                || !f.data().upgradeVillageHouseThirdFloor(f.house().id())) {
+            helper.fail("Expanded roof fixture could not preserve a genuine third-storey identity", MARK);
+            return;
+        }
+
+        BlockPos missing = f.base().offset(1, 12, 2);
+        BlockPos playerEdit = f.base().offset(2, 12, 2);
+        f.level().setBlock(missing, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
+        f.level().setBlock(playerEdit, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
+
+        // Plan before any worker debit; only actual missing planks are candidates.
+        if (!VillageBuildingRepairService.tryPlan(
+                f.builder(), f.level(), f.villageId())) {
+            helper.fail("Missing actual expanded roof cells did not produce a repair project", MARK);
+            return;
+        }
+        var repairs = f.data().activeProjectsForVillage(f.villageId()).stream()
+                .filter(p -> VillageBuildingRepairService.TEMPLATE.equals(p.templateId()))
+                .findFirst().orElse(null);
+        if (repairs == null || repairs.workCursor() != 0
+                || !completedExtension.id().toString().equals(
+                        repairs.parameter("repair_source_project"))
+                || repairs.reservations().getOrDefault("minecraft:oak_planks", 0) != 2) {
+            helper.fail("Repair must use genuine completed 3F expansion as its shell source", MARK);
+            return;
+        }
+
+        // Source one real physical unit from the Barrel, then physically carry it
+        // in the Carpenter's persistent eight-slot work inventory.
+        ItemStack withdrawn = f.storage().removeItem(0, 1);
+        if (!withdrawn.is(Items.OAK_PLANKS) || withdrawn.getCount() != 1
+                || !VillagerSimData.insertWorkCargo(
+                        f.builder(), f.level().registryAccess(), withdrawn, 8).isEmpty()) {
+            helper.fail("Expanded roof repair did not take one physical material", MARK);
+            return;
+        }
+        f.storage().setChanged();
+        f.builder().setPos(missing.getX() + 0.5D, missing.getY(), missing.getZ() + 0.5D);
+        VillageBuildingRepairService.advance(f.builder(), f.level(), repairs);
+        if (!f.level().getBlockState(missing).is(Blocks.OAK_PLANKS)
+                || repairs.workCursor() != 1
+                || VillagerSimData.hasWorkCargo(f.builder(), f.level().registryAccess(), 8)) {
+            helper.fail("Existing third-floor roof was not repaired by one paid plank", MARK);
+            return;
+        }
+
+        // The second hole is filled by a player; don't overwrite or charge.
+        f.level().setBlock(playerEdit, Blocks.GLASS.defaultBlockState(), Block.UPDATE_ALL);
+        VillageBuildingRepairService.advance(f.builder(), f.level(), repairs);
+        if (!"complete".equals(repairs.phase())
+                || !f.level().getBlockState(playerEdit).is(Blocks.GLASS)
+                || count(f.storage(), Items.OAK_PLANKS) != 127
+                || !f.house().max().equals(f.base().offset(4, 12, 4))
+                || f.village().buildingIds().size() != 1) {
+            helper.fail("Upper shell repair overwrote player block, overcharged or duplicated house", MARK);
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty16x14x9", timeoutTicks = 80,
+            batch = "third_story_supply_1")
+    public static void thirdFloorWallCargoLoadedBeforeRoofNavigation(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        var project = project(f);
+        var steps = VillageHouseThirdFloorExpansionService.steps(project);
+        int cursor = -1;
+        for (int i = 0; i < steps.size(); i++) {
+            if (steps.get(i).pos().equals(f.base().offset(0, 12, 4))) {
+                cursor = i;
+                break;
+            }
+        }
+        if (cursor < 0) {
+            helper.fail("No actual new third-floor roof step", MARK);
+            return;
+        }
+        final int at = cursor;
+        var target = steps.get(at).pos();
+        project.setWorkCursor(at);
+        f.builder().setPos(f.base().getX() + 3.5D,
+                f.base().getY() + 1.0D, f.base().getZ() + 1.5D);
+        helper.runAtTickTime(3, () -> {
+            VillageHouseThirdFloorExpansionService.advance(
+                    f.builder(), f.level(), project);
+            if (project.workCursor() != at || !f.level().getBlockState(target).isAir()
+                    || count(f.storage(), Items.OAK_PLANKS) != 127
+                    || VillagerSimData.workCargoCount(f.builder(),
+                            f.level().registryAccess(), 8, Items.OAK_PLANKS) != 1) {
+                helper.fail("Third-storey worker did not pre-pay one real roof plank", MARK);
+                return;
+            }
+            f.builder().setPos(target.getX() + 0.5D,
+                    target.getY(), target.getZ() + 0.5D);
+            VillageHouseThirdFloorExpansionService.advance(
+                    f.builder(), f.level(), project);
+            if (project.workCursor() != at + 1
+                    || !f.level().getBlockState(target).is(Blocks.OAK_PLANKS)
+                    || count(f.storage(), Items.OAK_PLANKS) != 127
+                    || VillagerSimData.hasWorkCargo(f.builder(),
+                            f.level().registryAccess(), 8)) {
+                helper.fail("Upstairs roof work duplicated a paid plank or never completed", MARK);
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "empty16x14x9", timeoutTicks = 80,
+            batch = "third_story_supply_2")
+    public static void thirdFloorBedCargoLoadedBeforeUpperBedroomNavigation(
+            GameTestHelper helper) {
+        Fixture f = setup(helper);
+        var project = project(f);
+        var steps = VillageHouseThirdFloorExpansionService.steps(project);
+        int cursor = -1;
+        for (int i = 0; i < steps.size(); i++) {
+            if (steps.get(i).kind() == VillageHouseThirdFloorExpansionService.PLACE_BED
+                    && steps.get(i).pos().equals(f.base().offset(1, 9, 2))) {
+                cursor = i;
+                break;
+            }
+        }
+        if (cursor < 0) {
+            helper.fail("No genuine third-floor two-half Bed step", MARK);
+            return;
+        }
+        final int at = cursor;
+        var foot = steps.get(at).pos();
+        var head = foot.relative(steps.get(at).state().getValue(BedBlock.FACING));
+        project.setWorkCursor(at);
+        f.builder().setPos(f.base().getX() + 3.5D,
+                f.base().getY() + 1.0D, f.base().getZ() + 1.5D);
+        helper.runAtTickTime(3, () -> {
+            VillageHouseThirdFloorExpansionService.advance(
+                    f.builder(), f.level(), project);
+            if (project.workCursor() != at || !f.level().getBlockState(foot).isAir()
+                    || count(f.storage(), Items.WHITE_BED) != 1
+                    || VillagerSimData.workCargoCount(f.builder(),
+                            f.level().registryAccess(), 8, Items.WHITE_BED) != 1) {
+                helper.fail("Carpenter attempted third-floor bed travel before carrying its item"
+                        + " [cursor=" + project.workCursor()
+                        + ", pause=" + project.pausedReason()
+                        + ", storedBeds=" + count(f.storage(), Items.WHITE_BED)
+                        + ", carriedBeds=" + VillagerSimData.workCargoCount(
+                            f.builder(), f.level().registryAccess(), 8, Items.WHITE_BED)
+                        + ", foot=" + f.level().getBlockState(foot) + "]", MARK);
+                return;
+            }
+            f.builder().setPos(foot.getX() + 0.5D, foot.getY(), foot.getZ() + 0.5D);
+            VillageHouseThirdFloorExpansionService.advance(
+                    f.builder(), f.level(), project);
+            if (project.workCursor() != at + 1
+                    || !f.level().getBlockState(foot).is(Blocks.WHITE_BED)
+                    || !f.level().getBlockState(head).is(Blocks.WHITE_BED)
+                    || count(f.storage(), Items.WHITE_BED) != 1
+                    || VillagerSimData.hasWorkCargo(f.builder(),
+                            f.level().registryAccess(), 8)) {
+                helper.fail("Real pre-carried Bed failed to occupy both physical upper-half blocks", MARK);
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    private static VillageSavedData.ProjectRecord project(Fixture f) {
+        var p = f.data().createProject(f.villageId(), "building", 87, f.base());
+        p.setTemplateId(VillageHouseThirdFloorExpansionService.TEMPLATE);
+        p.setParameter("circulation_version", "2");
+        p.setParameter("third_source_circulation", "2");
+        p.setParameter("third_building", f.house().id().toString());
+        p.setParameter("third_source", f.original().id().toString());
+        p.setParameter("third_plank", "oak");
+        p.setPhase("third_shell");
+        p.setWorkCursor(0);
+        f.data().touch();
+        return p;
+    }
+
+    private static VillageSavedData.ProjectRecord active(Fixture f) {
+        return f.data().activeProjectsForVillage(f.villageId()).stream()
+                .filter(p -> VillageHouseThirdFloorExpansionService.TEMPLATE.equals(p.templateId()))
+                .findFirst().orElse(null);
+    }
+
+    private static Fixture setup(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos base = helper.absolutePos(new BlockPos(5, 1, 2));
+        // The blank NBT template holds a size/palette, but does not paste
+        // AIR over every underlying server-world block. Explicitly clear the
+        // complete test-only house volume BEFORE reconstructing its physical
+        // blueprint. Otherwise natural stone can invisibly obstruct the
+        // ground-floor standing cells while upper beds remain accessible.
+        for (int x = 0; x < 5; x++) for (int z = 0; z < 5; z++)
+            for (int y = 0; y <= 12; y++)
+                level.setBlock(base.offset(x, y, z),
+                        Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
+        var data = VillageSavedData.get(level);
+        var village = data.createVillage(base, level.getGameTime());
+        var original = data.createProject(village.id(), "building", 75, base);
+        original.setTemplateId("house_2story_5x5");
+        original.setParameter("circulation_version", "2");
+        original.setParameter("circulation_verified_v2", "true");
+        original.setParameter("plank", "oak");
+        original.setParameter("outpost", "false");
+        original.setParameter("lead_skill", "100");
+        original.setVariantSeed(13L);
+        original.setPhase("complete");
+
+        List<VillageSimulationEvents.BuildStep> blueprint =
+                VillageSimulationEvents.projectPlan(original);
+        // The foundation and both physical floors precede beds, so place all
+        // supports first and actual two-half beds after the room is standing.
+        for (var step : blueprint) {
+            if (step.state().getBlock() instanceof BedBlock) continue;
+            if (!step.state().isAir())
+                level.setBlock(step.pos(), step.state(), Block.UPDATE_CLIENTS);
+        }
+        for (var step : blueprint) {
+            if (step.state().getBlock() instanceof BedBlock)
+                level.setBlock(step.pos(), step.state(), Block.UPDATE_CLIENTS);
+        }
+        level.updateNeighborsAt(base.offset(2, 1, 2), Blocks.WHITE_BED);
+        level.updateNeighborsAt(base.offset(1, 5, 2), Blocks.WHITE_BED);
+
+        for (int x = 0; x < 5; x++) for (int z = 0; z < 5; z++)
+            for (int y = 9; y <= 13; y++)
+                level.setBlock(base.offset(x, y, z),
+                        Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS);
+
+        var house = data.createBuilding(village.id(), base, base.offset(4, 8, 4), true);
+        house.setClassification("residential");
+        house.setTemplateId("house_2story_5x5");
+        house.setValidationState("valid");
+        house.setValidatedCapacity(3);
+        // Keep the material Barrel OUTSIDE the completed house. Placing it
+        // at (3,1,1) blocked the only standing cell beside a real ground bed,
+        // erroneously removing valid housing capacity from the fixture.
+        var storePos = base.offset(5, 1, 0);
+        level.setBlock(base.offset(5, 0, 1), Blocks.COBBLESTONE.defaultBlockState(), Block.UPDATE_ALL);
+        level.setBlock(storePos.below(), Blocks.COBBLESTONE.defaultBlockState(),
+                Block.UPDATE_ALL);
+        level.setBlock(storePos, Blocks.BARREL.defaultBlockState(), Block.UPDATE_ALL);
+        var savedStore = data.createStorage(village.id(), storePos, "construction");
+        savedStore.setValidationState("valid");
+        if (!(level.getBlockEntity(storePos) instanceof Container storage))
+            throw new IllegalStateException("Third-storey GameTest missing real Barrel");
+        storage.setItem(0, new ItemStack(Items.OAK_PLANKS, 64));
+        storage.setItem(1, new ItemStack(Items.OAK_PLANKS, 64));
+        storage.setItem(2, new ItemStack(Items.OAK_STAIRS, 4));
+        // Beds are unstackable in vanilla. A 2-Bed ItemStack is an invalid
+        // fixture and may be clamped before the real cargo transaction.
+        storage.setItem(3, new ItemStack(Items.WHITE_BED));
+        storage.setItem(4, new ItemStack(Items.WHITE_BED));
+
+        Villager worker = EntityType.VILLAGER.create(level);
+        if (worker == null) throw new IllegalStateException("Third-storey worker factory failed");
+        worker.setPos(base.getX() + 5.5D, base.getY() + 1,
+                base.getZ() + 1.5D);
+        worker.setNoAi(true);
+        if (!level.addFreshEntity(worker)) throw new IllegalStateException("Worker spawn failed");
+        VillagerSimData.setVillageId(worker, village.id());
+        VillagerSimData.setDuty(worker, "carpenter", level.getGameTime());
+        VillagerSimData.setCarpentrySkill(worker, 90);
+        VillageStorageService.reconcileVillage(village.id(), level);
+        return new Fixture(level, data, village, original, house, worker, storage, base);
+    }
+
+    private static int count(Container storage, net.minecraft.world.item.Item item) {
+        int total = 0;
+        for (int i = 0; i < storage.getContainerSize(); i++)
+            if (storage.getItem(i).is(item)) total += storage.getItem(i).getCount();
+        return total;
+    }
+
+    private record Fixture(ServerLevel level, VillageSavedData data,
+                           VillageSavedData.VillageRecord village,
+                           VillageSavedData.ProjectRecord original,
+                           VillageSavedData.BuildingRecord house,
+                           Villager builder, Container storage, BlockPos base) {
+        UUID villageId() { return village.id(); }
+    }
+}

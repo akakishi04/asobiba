@@ -1,0 +1,2077 @@
+package io.github.akakishi04.asobibatweaks.feature;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.datafix.DataFixTypes;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.saveddata.SavedData;
+
+/**
+ * Persistent village-simulation state.
+ *
+ * <p>The physical world remains authoritative. These records are durable identities,
+ * indexes, caches and planning state that later passes can reconcile against loaded chunks.</p>
+ */
+public final class VillageSavedData extends SavedData {
+    public static final int SCHEMA_VERSION = 12;
+
+    private static final String NAME = "asobibatweaks_villages";
+    private static final Factory<VillageSavedData> FACTORY =
+            new Factory<>(VillageSavedData::new, VillageSavedData::load, DataFixTypes.SAVED_DATA_RANDOM_SEQUENCES);
+
+    private final Map<UUID, VillageRecord> villages = new HashMap<>();
+    private final Map<UUID, BuildingRecord> buildings = new HashMap<>();
+    private final Map<UUID, StorageRecord> storages = new HashMap<>();
+    private final Map<UUID, WorkSiteRecord> workSites = new HashMap<>();
+    private final Map<UUID, RouteRecord> routes = new HashMap<>();
+    private final Map<UUID, ProjectRecord> projects = new HashMap<>();
+    private final Map<UUID, MigrationRecord> migrations = new HashMap<>();
+    private final Map<UUID, PublicRequestRecord> publicRequests = new HashMap<>();
+    // Derived reverse/local indexes keep active-village maintenance independent of remote history.
+    private final Map<UUID, Integer> projectReferenceCounts = new HashMap<>();
+    private final Map<UUID, Set<UUID>> requestsByVillage = new HashMap<>();
+    private final Map<UUID, Set<UUID>> migrationsByOrigin = new HashMap<>();
+    // Player-placed harvestable blocks remain ineligible even when visually natural.
+    private final Set<Long> playerResourceBlocks = new LinkedHashSet<>();
+
+    /**
+     * Derived runtime index. It is rebuilt from persistent records after load so a stale
+     * serialized index can never make physical records unreachable.
+     */
+    private final Map<Long, ChunkIndexEntry> chunkIndex = new HashMap<>();
+
+    public static VillageSavedData get(ServerLevel level) {
+        return level.getDataStorage().computeIfAbsent(FACTORY, NAME);
+    }
+
+    public Optional<VillageRecord> village(UUID id) {
+        return Optional.ofNullable(villages.get(id));
+    }
+
+    public Optional<BuildingRecord> building(UUID id) {
+        return Optional.ofNullable(buildings.get(id));
+    }
+
+    public Optional<StorageRecord> storage(UUID id) {
+        return Optional.ofNullable(storages.get(id));
+    }
+
+    public Optional<StorageRecord> storageAt(UUID villageId, BlockPos pos) {
+        VillageRecord village = villages.get(villageId);
+        if (village == null) return Optional.empty();
+        for (UUID storageId : village.storageIds) {
+            StorageRecord record = storages.get(storageId);
+            if (record != null && record.pos.equals(pos)) return Optional.of(record);
+        }
+        return Optional.empty();
+    }
+
+    public List<StorageRecord> storagesForVillage(UUID villageId) {
+        VillageRecord village = villages.get(villageId);
+        if (village == null) return List.of();
+        List<StorageRecord> result = new ArrayList<>();
+        for (UUID storageId : village.storageIds) {
+            StorageRecord record = storages.get(storageId);
+            if (record != null) result.add(record);
+        }
+        return Collections.unmodifiableList(result);
+    }
+
+    public Optional<WorkSiteRecord> workSite(UUID id) {
+        return Optional.ofNullable(workSites.get(id));
+    }
+
+    public boolean isPlayerResourceBlock(BlockPos pos) {
+        return playerResourceBlocks.contains(pos.asLong());
+    }
+
+    public void setPlayerResourceBlock(BlockPos pos, boolean protectedBlock) {
+        boolean changed = protectedBlock ? playerResourceBlocks.add(pos.asLong())
+                : playerResourceBlocks.remove(pos.asLong());
+        if (changed) setDirty();
+    }
+
+    public List<WorkSiteRecord> workSitesForVillage(UUID villageId) {
+        VillageRecord village = villages.get(villageId);
+        if (village == null) return List.of();
+        List<WorkSiteRecord> result = new ArrayList<>();
+        for (UUID id : village.workSiteIds) {
+            WorkSiteRecord record = workSites.get(id);
+            if (record != null) result.add(record);
+        }
+        return Collections.unmodifiableList(result);
+    }
+
+    public Optional<RouteRecord> route(UUID id) {
+        return Optional.ofNullable(routes.get(id));
+    }
+
+    public void setRouteWaypoints(UUID routeId, List<BlockPos> points) {
+        RouteRecord route = routes.get(routeId);
+        if (route == null) return;
+        for (ChunkIndexEntry entry : chunkIndex.values()) entry.routeIds.remove(routeId);
+        route.setWaypoints(points);
+        indexRoute(route);
+        setDirty();
+    }
+
+    public Optional<ProjectRecord> project(UUID id) {
+        return Optional.ofNullable(projects.get(id));
+    }
+
+    public Optional<MigrationRecord> migration(UUID id) {
+        return Optional.ofNullable(migrations.get(id));
+    }
+
+    public Optional<PublicRequestRecord> publicRequest(UUID id) {
+        return Optional.ofNullable(publicRequests.get(id));
+    }
+
+    public List<PublicRequestRecord> publicRequestsForVillage(UUID villageId) {
+        List<PublicRequestRecord> result = new ArrayList<>();
+        for (UUID id : requestsByVillage.getOrDefault(villageId, Set.of())) {
+            PublicRequestRecord request = publicRequests.get(id);
+            if (request == null) continue;
+            if (!"active".equals(request.state)) continue;
+            result.add(request);
+        }
+        result.sort(java.util.Comparator
+                .comparingInt((PublicRequestRecord request) -> request.urgencyRank()).reversed()
+                .thenComparingLong(PublicRequestRecord::createdGameTime)
+                .thenComparing(request -> request.id.toString()));
+        return Collections.unmodifiableList(result);
+    }
+
+    public PublicRequestRecord upsertPublicRequest(
+            UUID villageId,
+            String key,
+            String urgency,
+            String itemKey,
+            int requestedCount,
+            int remainingCount,
+            String reason,
+            String context,
+            UUID projectId,
+            long gameTime) {
+        requireVillage(villageId);
+        String safeKey = safeText(key, "generic");
+        for (UUID requestId : requestsByVillage.getOrDefault(villageId, Set.of())) {
+            PublicRequestRecord existing = publicRequests.get(requestId);
+            if (existing != null && villageId.equals(existing.villageId)
+                    && safeKey.equals(existing.key)
+                    && "active".equals(existing.state)) {
+                existing.urgency = safeText(urgency, "normal");
+                existing.itemKey = itemKey == null ? "" : itemKey;
+                existing.requestedCount = Math.max(0, requestedCount);
+                existing.remainingCount = Math.max(0, remainingCount);
+                existing.reason = reason == null ? "" : reason;
+                existing.context = context == null ? "" : context;
+                adjustProjectReference(existing.projectId, -1);
+                existing.projectId = projectId;
+                adjustProjectReference(projectId, 1);
+                existing.updatedGameTime = gameTime;
+                setDirty();
+                return existing;
+            }
+        }
+
+        UUID id = nextId(publicRequests);
+        PublicRequestRecord created = new PublicRequestRecord(id, villageId, safeKey);
+        created.urgency = safeText(urgency, "normal");
+        created.itemKey = itemKey == null ? "" : itemKey;
+        created.requestedCount = Math.max(0, requestedCount);
+        created.remainingCount = Math.max(0, remainingCount);
+        created.reason = reason == null ? "" : reason;
+        created.context = context == null ? "" : context;
+        created.projectId = projectId;
+        created.createdGameTime = gameTime;
+        created.updatedGameTime = gameTime;
+        publicRequests.put(id, created);
+        requestsByVillage.computeIfAbsent(villageId, ignored -> new LinkedHashSet<>()).add(id);
+        adjustProjectReference(projectId, 1);
+        setDirty();
+        return created;
+    }
+
+    public void closeInactivePublicRequests(UUID villageId, Set<String> activeKeys, long gameTime) {
+        boolean changed = false;
+        for (UUID id : requestsByVillage.getOrDefault(villageId, Set.of())) {
+            PublicRequestRecord request = publicRequests.get(id);
+            if (request == null || !"active".equals(request.state)) continue;
+            if (activeKeys.contains(request.key)) continue;
+            request.state = "resolved";
+            adjustProjectReference(request.projectId, -1);
+            request.remainingCount = 0;
+            request.updatedGameTime = gameTime;
+            changed = true;
+        }
+        if (changed) setDirty();
+    }
+
+    public Map<UUID, VillageRecord> villagesView() {
+        return Collections.unmodifiableMap(villages);
+    }
+
+    public Map<UUID, ProjectRecord> projectsView() {
+        return Collections.unmodifiableMap(projects);
+    }
+
+    public List<ProjectRecord> activeProjectsForVillage(UUID villageId) {
+        VillageRecord village = villages.get(villageId);
+        if (village == null) return List.of();
+        List<ProjectRecord> result = new ArrayList<>();
+        for (UUID projectId : village.projectIds) {
+            ProjectRecord record = projects.get(projectId);
+            if (record == null) continue;
+            if ("complete".equals(record.phase) || "cancelled".equals(record.phase)) continue;
+            result.add(record);
+        }
+        result.sort(java.util.Comparator
+                .comparingInt(ProjectRecord::priority).reversed()
+                .thenComparing(record -> record.id.toString()));
+        return Collections.unmodifiableList(result);
+    }
+
+    public Map<UUID, StorageRecord> storagesView() {
+        return Collections.unmodifiableMap(storages);
+    }
+
+    public VillageRecord createVillage(BlockPos center, long createdGameTime) {
+        return ensureVillage(nextId(villages), center, createdGameTime);
+    }
+
+    /**
+     * Creates a missing record with a caller-supplied stable ID, or returns the existing one.
+     * This is used by conservative bootstrap/recovery when a Villager already carries a
+     * persistent Village ID but the shared record has not yet been materialized.
+     */
+    public VillageRecord ensureVillage(UUID id, BlockPos center, long createdGameTime) {
+        VillageRecord existing = villages.get(id);
+        if (existing != null) return existing;
+
+        VillageRecord record = new VillageRecord(id, center.immutable(), createdGameTime);
+        villages.put(id, record);
+        setDirty();
+        return record;
+    }
+
+    public BuildingRecord createBuilding(UUID villageId, BlockPos min, BlockPos max, boolean villageBuilt) {
+        requireVillage(villageId);
+        UUID id = nextId(buildings);
+        BuildingRecord record = new BuildingRecord(id, villageId, normalizeMin(min, max), normalizeMax(min, max), villageBuilt);
+        buildings.put(id, record);
+        villages.get(villageId).buildingIds.add(id);
+        indexBuilding(record);
+        setDirty();
+        return record;
+    }
+
+    /**
+     * Atomically preserve the stable village house ID while enlarging its
+     * accepted physical envelope after a fully validated in-place expansion.
+     * Never fabricate a second BuildingRecord to represent the same house.
+     */
+    public boolean upgradeVillageHouseSecondFloor(UUID buildingId) {
+        BuildingRecord home = buildings.get(buildingId);
+        if (home == null || !home.villageBuilt
+                || !"residential".equals(home.classification)) return false;
+        BlockPos min = home.min;
+        if ("house_2story_5x5".equals(home.templateId)
+                && home.max.equals(min.offset(4, 8, 4))) return true;
+        if (!"house_5x5".equals(home.templateId)
+                || !home.max.equals(min.offset(4, 4, 4))) return false;
+        home.max = min.offset(4, 8, 4);
+        home.templateId = "house_2story_5x5";
+        home.validationState = "unknown";
+        home.validatedCapacity = 0; // physical capacity is rechecked after index mutation
+        rebuildChunkIndex();
+        setDirty();
+        return true;
+    }
+
+    /** Final physical upgrade reuses the existing village-owned house identity. */
+    public boolean upgradeVillageHouseThirdFloor(UUID buildingId) {
+        BuildingRecord home = buildings.get(buildingId);
+        if (home == null || !home.villageBuilt
+                || !"residential".equals(home.classification)) return false;
+        BlockPos base = home.min;
+        if ("house_3story_5x5".equals(home.templateId)
+                && home.max.equals(base.offset(4, 12, 4))) return true;
+        if (!"house_2story_5x5".equals(home.templateId)
+                || !home.max.equals(base.offset(4, 8, 4))) return false;
+        home.max = base.offset(4, 12, 4);
+        home.templateId = "house_3story_5x5";
+        home.validationState = "unknown";
+        home.validatedCapacity = 0;
+        rebuildChunkIndex();
+        setDirty();
+        return true;
+    }
+
+    public StorageRecord createStorage(UUID villageId, BlockPos pos, String category) {
+        requireVillage(villageId);
+        UUID id = nextId(storages);
+        StorageRecord record = new StorageRecord(id, villageId, pos.immutable(), safeText(category, "general"));
+        storages.put(id, record);
+        villages.get(villageId).storageIds.add(id);
+        indexOne(pos, entryFor(pos).storageIds, id);
+        setDirty();
+        return record;
+    }
+
+    public WorkSiteRecord createWorkSite(UUID villageId, String type, BlockPos min, BlockPos max) {
+        requireVillage(villageId);
+        UUID id = nextId(workSites);
+        WorkSiteRecord record = new WorkSiteRecord(id, villageId, safeText(type, "generic"),
+                normalizeMin(min, max), normalizeMax(min, max));
+        record.referenceOwner = this;
+        workSites.put(id, record);
+        villages.get(villageId).workSiteIds.add(id);
+        indexBounds(record.min, record.max, IndexKind.WORK_SITE, id);
+        setDirty();
+        return record;
+    }
+
+    public RouteRecord createRoute(UUID villageId, String type, BlockPos from, BlockPos to) {
+        requireVillage(villageId);
+        UUID id = nextId(routes);
+        RouteRecord record = new RouteRecord(id, villageId, safeText(type, "path"), from.immutable(), to.immutable());
+        routes.put(id, record);
+        villages.get(villageId).routeIds.add(id);
+        indexRoute(record);
+        setDirty();
+        return record;
+    }
+
+    public ProjectRecord createProject(UUID villageId, String type, int priority, BlockPos site) {
+        requireVillage(villageId);
+        UUID id = nextId(projects);
+        ProjectRecord record = new ProjectRecord(id, villageId, safeText(type, "generic"), priority, site.immutable());
+        record.referenceOwner = this;
+        projects.put(id, record);
+        villages.get(villageId).projectIds.add(id);
+        indexOne(site, entryFor(site).projectIds, id);
+        setDirty();
+        return record;
+    }
+
+    public MigrationRecord createMigration(UUID originVillageId, UUID destinationVillageId, List<UUID> members) {
+        requireVillage(originVillageId);
+        if (destinationVillageId != null) {
+            requireVillage(destinationVillageId);
+        }
+
+        UUID id = nextId(migrations);
+        MigrationRecord record = new MigrationRecord(id, originVillageId, destinationVillageId);
+        record.members.addAll(members);
+        migrations.put(id, record);
+        migrationsByOrigin.computeIfAbsent(originVillageId, ignored -> new LinkedHashSet<>()).add(id);
+        setDirty();
+        return record;
+    }
+
+    public boolean mergeVillageInto(UUID sourceVillageId, UUID targetVillageId) {
+        if (sourceVillageId == null || targetVillageId == null || sourceVillageId.equals(targetVillageId)) return false;
+        VillageRecord source = villages.get(sourceVillageId);
+        VillageRecord target = villages.get(targetVillageId);
+        if (source == null || target == null) return false;
+
+        // Seed legacy/global-only cultures into their original centers before the merge so
+        // the merged settlement can keep visibly different old districts.
+        if (target.districtBuildingCulture.isEmpty()) {
+            target.buildingCulture.forEach((key, value) ->
+                    target.districtBuildingCulture.put(
+                            VillageRecord.districtCultureKey(target.center.asLong(), key), value));
+        }
+
+        target.addDistrictCenter(source.center);
+        for (Long packed : source.districtCenters) target.districtCenters.add(packed);
+
+        if (source.districtBuildingCulture.isEmpty()) {
+            source.buildingCulture.forEach((key, value) ->
+                    target.districtBuildingCulture.merge(
+                            VillageRecord.districtCultureKey(source.center.asLong(), key),
+                            value,
+                            Integer::sum));
+        } else {
+            source.districtBuildingCulture.forEach((key, value) ->
+                    target.districtBuildingCulture.merge(key, value, Integer::sum));
+        }
+
+        // Village-wide culture still drifts together slowly, while district weights above
+        // preserve local identity after merge.
+        source.buildingCulture.forEach((key, value) ->
+                target.buildingCulture.merge(key, Math.max(1, value / 2), Integer::sum));
+
+        for (UUID id : new ArrayList<>(source.buildingIds)) {
+            BuildingRecord record = buildings.get(id);
+            if (record != null) {
+                record.villageId = targetVillageId;
+                target.buildingIds.add(id);
+            }
+        }
+        source.buildingIds.clear();
+
+        for (UUID id : new ArrayList<>(source.storageIds)) {
+            StorageRecord record = storages.get(id);
+            if (record != null) {
+                record.villageId = targetVillageId;
+                target.storageIds.add(id);
+            }
+        }
+        source.storageIds.clear();
+
+        for (UUID id : new ArrayList<>(source.workSiteIds)) {
+            WorkSiteRecord record = workSites.get(id);
+            if (record != null) {
+                record.villageId = targetVillageId;
+                target.workSiteIds.add(id);
+            }
+        }
+        source.workSiteIds.clear();
+
+        for (UUID id : new ArrayList<>(source.routeIds)) {
+            RouteRecord record = routes.get(id);
+            if (record != null) {
+                record.villageId = targetVillageId;
+                target.routeIds.add(id);
+            }
+        }
+        source.routeIds.clear();
+
+        for (UUID id : new ArrayList<>(source.projectIds)) {
+            ProjectRecord record = projects.get(id);
+            if (record != null) {
+                record.villageId = targetVillageId;
+                target.projectIds.add(id);
+            }
+        }
+        source.projectIds.clear();
+
+        for (UUID resident : new ArrayList<>(source.residentIds)) {
+            target.residentIds.add(resident);
+        }
+        source.residentIds.clear();
+
+        source.lifecycle = "merged";
+        source.mergedIntoVillageId = targetVillageId;
+        target.settlementViability = Math.max(target.settlementViability, source.settlementViability);
+        target.sustainablePopulation = Math.max(target.sustainablePopulation,
+                target.lastKnownPopulation + source.lastKnownPopulation);
+        source.mergeEvidenceDays.clear();
+        target.mergeEvidenceDays.remove(sourceVillageId.toString());
+
+        rebuildChunkIndex();
+        setDirty();
+        return true;
+    }
+
+    public boolean transferOutpostSite(UUID workSiteId, UUID targetVillageId) {
+        WorkSiteRecord site = workSites.get(workSiteId);
+        VillageRecord target = villages.get(targetVillageId);
+        if (site == null || target == null) return false;
+
+        UUID sourceVillageId = site.villageId;
+        if (sourceVillageId.equals(targetVillageId)) return true;
+        VillageRecord source = villages.get(sourceVillageId);
+        if (source == null) return false;
+
+        source.workSiteIds.remove(workSiteId);
+        target.workSiteIds.add(workSiteId);
+        site.villageId = targetVillageId;
+
+        BlockPos siteCenter = new BlockPos(
+                (site.min.getX() + site.max.getX()) / 2,
+                (site.min.getY() + site.max.getY()) / 2,
+                (site.min.getZ() + site.max.getZ()) / 2
+        );
+
+        for (BuildingRecord building : buildings.values()) {
+            if (!sourceVillageId.equals(building.villageId)) continue;
+            BlockPos buildingCenter = new BlockPos(
+                    (building.min.getX() + building.max.getX()) / 2,
+                    (building.min.getY() + building.max.getY()) / 2,
+                    (building.min.getZ() + building.max.getZ()) / 2
+            );
+            if (buildingCenter.distManhattan(siteCenter) > 48) continue;
+            source.buildingIds.remove(building.id);
+            target.buildingIds.add(building.id);
+            building.villageId = targetVillageId;
+        }
+
+        for (StorageRecord storage : storages.values()) {
+            if (!sourceVillageId.equals(storage.villageId)) continue;
+            if (storage.pos.distManhattan(siteCenter) > 48) continue;
+            source.storageIds.remove(storage.id);
+            target.storageIds.add(storage.id);
+            storage.villageId = targetVillageId;
+        }
+
+        setDirty();
+        return true;
+    }
+
+    private static boolean inside(BlockPos pos, BlockPos min, BlockPos max) {
+        return pos.getX() >= min.getX() && pos.getX() <= max.getX()
+                && pos.getY() >= min.getY() && pos.getY() <= max.getY()
+                && pos.getZ() >= min.getZ() && pos.getZ() <= max.getZ();
+    }
+
+    private static boolean boundsOverlap(BlockPos aMin, BlockPos aMax, BlockPos bMin, BlockPos bMax) {
+        return aMin.getX() <= bMax.getX() && aMax.getX() >= bMin.getX()
+                && aMin.getY() <= bMax.getY() && aMax.getY() >= bMin.getY()
+                && aMin.getZ() <= bMax.getZ() && aMax.getZ() >= bMin.getZ();
+    }
+
+    public void registerResident(UUID villageId, UUID villagerId) {
+        requireVillage(villageId);
+        VillageRecord target = villages.get(villageId);
+        if (target.residentIds.contains(villagerId)) return;
+
+        boolean changed = false;
+        for (VillageRecord village : villages.values()) {
+            if (!village.id.equals(villageId)) {
+                changed |= village.residentIds.remove(villagerId);
+            }
+        }
+        changed |= target.residentIds.add(villagerId);
+        if (changed) setDirty();
+    }
+
+    public void unregisterResident(UUID villageId, UUID villagerId) {
+        VillageRecord village = villages.get(villageId);
+        if (village != null && village.residentIds.remove(villagerId)) {
+            setDirty();
+        }
+    }
+
+    public void removeMigration(UUID migrationId) {
+        MigrationRecord removed = migrations.remove(migrationId);
+        if (removed != null) {
+            Set<UUID> local = migrationsByOrigin.get(removed.originVillageId);
+            if (local != null) local.remove(migrationId);
+            setDirty();
+        }
+    }
+
+    public Map<UUID, MigrationRecord> migrationsView() {
+        return Collections.unmodifiableMap(migrations);
+    }
+
+    /**
+     * Fixed-size ephemeral history only. Physical indexes, residents, carrier receipts,
+     * migrations with members and structural blueprint ancestry are never garbage-collected.
+     * Safe owners are positively observed loaded workers with no cargo or retained job state.
+     */
+    int compactTerminalHistory(UUID villageId, Set<UUID> safeOwners, int historyLimit) {
+        VillageRecord village = villages.get(villageId);
+        if (village == null) return 0;
+        int keep = Math.max(0, historyLimit);
+        List<ProjectRecord> eligible = new ArrayList<>();
+        // Oversized legacy catalogs fail closed for this category; unrelated requests can
+        // still compact. Ordinary upkeep prevents new ephemeral histories reaching this cap.
+        if (village.projectIds.size() <= VillageHistoryMaintenance.MAX_RECORDS_PER_PASS)
+        for (UUID id : village.projectIds) {
+            ProjectRecord project = projects.get(id);
+            if (project == null || !VillageHistoryMaintenance.isTerminal(project.phase)
+                    || project.parameters.size() > 256 || project.reservations.size() > 256) continue;
+            // Old saves can retain already-inert bills. Clear them without touching live bills.
+            project.reservations.clear();
+            if (projectReferenceCounts.containsKey(id) || !VillageHistoryMaintenance.isEphemeral(project)
+                    || project.leadCarpenterId != null && !safeOwners.contains(project.leadCarpenterId)
+                    || VillageHistoryMaintenance.retainsPhysicalOwnership(project)) continue;
+            eligible.add(project);
+        }
+        int removed = 0;
+        // projectIds is insertion ordered and survives save/reload: retain the newest results.
+        for (int i = 0; i < eligible.size() - keep; i++) {
+            ProjectRecord project = eligible.get(i);
+            projects.remove(project.id);
+            for (String value : project.parameters.values()) {
+                UUID reference = projectReference(value);
+                if (!project.id.equals(reference)) adjustProjectReference(reference, -1);
+            }
+            project.referenceOwner = null;
+            village.projectIds.remove(project.id);
+            ChunkIndexEntry index = chunkIndex.get(new ChunkPos(project.site).toLong());
+            if (index != null) index.projectIds.remove(project.id);
+            removed++;
+        }
+        Set<UUID> localRequests = requestsByVillage.getOrDefault(villageId, Set.of());
+        List<PublicRequestRecord> closedRequests = localRequests.size() > VillageHistoryMaintenance.MAX_RECORDS_PER_PASS
+                ? List.of() : localRequests.stream().map(publicRequests::get).filter(r -> r != null && !"active".equals(r.state))
+                .sorted(java.util.Comparator.comparingLong(PublicRequestRecord::updatedGameTime).reversed()
+                        .thenComparing(r -> r.id.toString())).toList();
+        for (int i = keep; i < closedRequests.size(); i++) {
+            publicRequests.remove(closedRequests.get(i).id);
+            requestsByVillage.get(villageId).remove(closedRequests.get(i).id);
+            removed++;
+        }
+        // Completed arrivals already remove themselves; only truly empty terminal leftovers qualify.
+        Set<UUID> localMigrations = migrationsByOrigin.getOrDefault(villageId, Set.of());
+        List<MigrationRecord> closedMigrations = localMigrations.size() > VillageHistoryMaintenance.MAX_RECORDS_PER_PASS
+                ? List.of() : localMigrations.stream().map(migrations::get).filter(m -> m != null && m.members.isEmpty()
+                        && VillageHistoryMaintenance.isTerminal(m.state))
+                .sorted(java.util.Comparator.comparingLong(MigrationRecord::updatedGameTime).reversed()).toList();
+        for (int i = keep; i < closedMigrations.size(); i++) {
+            removeMigration(closedMigrations.get(i).id);
+            removed++;
+        }
+        setDirty();
+        return removed;
+    }
+
+    private void adjustProjectReference(UUID id, int delta) {
+        if (id == null) return;
+        int next = projectReferenceCounts.getOrDefault(id, 0) + delta;
+        if (next <= 0) projectReferenceCounts.remove(id);
+        else projectReferenceCounts.put(id, next);
+    }
+
+    private void replaceProjectReference(String oldValue, String value, UUID self) {
+        UUID oldId = projectReference(oldValue), id = projectReference(value);
+        if (oldId != null && !oldId.equals(self)) adjustProjectReference(oldId, -1);
+        if (id != null && !id.equals(self)) adjustProjectReference(id, 1);
+    }
+
+    private void rebuildHistoryIndexes() {
+        projectReferenceCounts.clear(); requestsByVillage.clear(); migrationsByOrigin.clear();
+        for (ProjectRecord project : projects.values()) {
+            project.referenceOwner = this;
+            for (String value : project.parameters.values()) replaceProjectReference(null, value, project.id);
+        }
+        for (WorkSiteRecord site : workSites.values()) {
+            site.referenceOwner = this;
+            replaceProjectReference(null, site.purpose, null);
+        }
+        for (PublicRequestRecord request : publicRequests.values()) {
+            requestsByVillage.computeIfAbsent(request.villageId, ignored -> new LinkedHashSet<>()).add(request.id);
+            if ("active".equals(request.state)) adjustProjectReference(request.projectId, 1);
+        }
+        for (MigrationRecord migration : migrations.values()) {
+            migrationsByOrigin.computeIfAbsent(migration.originVillageId, ignored -> new LinkedHashSet<>()).add(migration.id);
+        }
+    }
+
+    private static UUID projectReference(String value) {
+        if (value == null || value.isBlank()) return null;
+        String candidate = value.startsWith("dock:") ? value.substring(5) : value;
+        try { return UUID.fromString(candidate); }
+        catch (IllegalArgumentException ignored) { return null; }
+    }
+
+    public ChunkIndexView recordsForChunk(ChunkPos chunk) {
+        ChunkIndexEntry entry = chunkIndex.get(chunk.toLong());
+        if (entry == null) {
+            return ChunkIndexView.EMPTY;
+        }
+        return entry.snapshot();
+    }
+
+    /**
+     * Marks indexed physical records in one chunk for lazy revalidation.
+     * The physical world remains authoritative; this only invalidates cached knowledge.
+     */
+    public boolean invalidateChunk(ChunkPos chunk) {
+        ChunkIndexEntry entry = chunkIndex.get(chunk.toLong());
+        if (entry == null) return false;
+
+        boolean changed = false;
+        for (UUID id : entry.buildingIds) {
+            BuildingRecord record = buildings.get(id);
+            if (record != null && !"dirty".equals(record.validationState)) {
+                record.validationState = "dirty";
+                changed = true;
+            }
+        }
+        for (UUID id : entry.storageIds) {
+            StorageRecord record = storages.get(id);
+            if (record != null && !"dirty".equals(record.validationState)) {
+                record.validationState = "dirty";
+                changed = true;
+            }
+        }
+
+        if (changed) setDirty();
+        return changed;
+    }
+
+    public void touch() {
+        setDirty();
+    }
+
+    public static VillageSavedData load(CompoundTag tag, HolderLookup.Provider registries) {
+        VillageSavedData data = new VillageSavedData();
+
+        int version = tag.contains("schema", Tag.TAG_INT) ? tag.getInt("schema") : 0;
+        if (version > SCHEMA_VERSION) {
+            // Forward-compatible best effort: known fields remain readable; physical world state
+            // stays authoritative and later validation can repair incomplete cached records.
+        }
+
+        loadRows(tag, "villages", row -> {
+            VillageRecord record = VillageRecord.load(row);
+            if (record != null) data.villages.put(record.id, record);
+        });
+        loadRows(tag, "buildings", row -> {
+            BuildingRecord record = BuildingRecord.load(row);
+            if (record != null) data.buildings.put(record.id, record);
+        });
+        loadRows(tag, "storages", row -> {
+            StorageRecord record = StorageRecord.load(row);
+            if (record != null) data.storages.put(record.id, record);
+        });
+        loadRows(tag, "work_sites", row -> {
+            WorkSiteRecord record = WorkSiteRecord.load(row);
+            if (record != null) data.workSites.put(record.id, record);
+        });
+        loadRows(tag, "routes", row -> {
+            RouteRecord record = RouteRecord.load(row);
+            if (record != null) data.routes.put(record.id, record);
+        });
+        loadRows(tag, "projects", row -> {
+            ProjectRecord record = ProjectRecord.load(row);
+            if (record != null) data.projects.put(record.id, record);
+        });
+        loadRows(tag, "migrations", row -> {
+            MigrationRecord record = MigrationRecord.load(row);
+            if (record != null) data.migrations.put(record.id, record);
+        });
+        loadRows(tag, "public_requests", row -> {
+            PublicRequestRecord record = PublicRequestRecord.load(row);
+            if (record != null) data.publicRequests.put(record.id, record);
+        });
+
+        for (long pos : tag.getLongArray("player_resource_blocks")) data.playerResourceBlocks.add(pos);
+        data.repairReferences();
+        data.rebuildChunkIndex();
+        data.rebuildHistoryIndexes();
+        return data;
+    }
+
+    @Override
+    public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
+        tag.putInt("schema", SCHEMA_VERSION);
+        tag.putLongArray("player_resource_blocks", playerResourceBlocks.stream().mapToLong(Long::longValue).toArray());
+        tag.put("villages", saveRows(villages.values().stream().map(VillageRecord::save).toList()));
+        tag.put("buildings", saveRows(buildings.values().stream().map(BuildingRecord::save).toList()));
+        tag.put("storages", saveRows(storages.values().stream().map(StorageRecord::save).toList()));
+        tag.put("work_sites", saveRows(workSites.values().stream().map(WorkSiteRecord::save).toList()));
+        tag.put("routes", saveRows(routes.values().stream().map(RouteRecord::save).toList()));
+        tag.put("projects", saveRows(projects.values().stream().map(ProjectRecord::save).toList()));
+        tag.put("migrations", saveRows(migrations.values().stream().map(MigrationRecord::save).toList()));
+        tag.put("public_requests", saveRows(publicRequests.values().stream().map(PublicRequestRecord::save).toList()));
+        return tag;
+    }
+
+    private void repairReferences() {
+        // Drop orphan child records first, then clean each VillageRecord's ID sets.
+        // Physical world state is never deleted by this cache repair.
+        buildings.values().removeIf(record -> !villages.containsKey(record.villageId));
+        storages.values().removeIf(record -> !villages.containsKey(record.villageId));
+        workSites.values().removeIf(record -> !villages.containsKey(record.villageId));
+        routes.values().removeIf(record -> !villages.containsKey(record.villageId));
+        projects.values().removeIf(record -> !villages.containsKey(record.villageId));
+        migrations.values().removeIf(record -> !villages.containsKey(record.originVillageId)
+                || (record.destinationVillageId != null && !villages.containsKey(record.destinationVillageId)));
+        publicRequests.values().removeIf(record -> !villages.containsKey(record.villageId));
+
+        for (VillageRecord village : villages.values()) {
+            village.buildingIds.removeIf(id -> !buildings.containsKey(id));
+            village.storageIds.removeIf(id -> !storages.containsKey(id));
+            village.workSiteIds.removeIf(id -> !workSites.containsKey(id));
+            village.routeIds.removeIf(id -> !routes.containsKey(id));
+            village.projectIds.removeIf(id -> !projects.containsKey(id));
+        }
+    }
+
+    private void rebuildChunkIndex() {
+        chunkIndex.clear();
+        for (BuildingRecord record : buildings.values()) indexBuilding(record);
+        for (StorageRecord record : storages.values()) indexOne(record.pos, entryFor(record.pos).storageIds, record.id);
+        for (WorkSiteRecord record : workSites.values()) indexBounds(record.min, record.max, IndexKind.WORK_SITE, record.id);
+        for (RouteRecord record : routes.values()) indexRoute(record);
+        for (ProjectRecord record : projects.values()) indexOne(record.site, entryFor(record.site).projectIds, record.id);
+    }
+
+    private void indexBuilding(BuildingRecord record) {
+        indexBounds(record.min, record.max, IndexKind.BUILDING, record.id);
+    }
+
+    private void indexRoute(RouteRecord record) {
+        List<BlockPos> points = record.waypoints();
+        if (points.size() < 2) points = List.of(record.from, record.to);
+        for (int i = 1; i < points.size(); i++) {
+            indexRouteSegment(record.id, points.get(i - 1), points.get(i));
+        }
+    }
+
+    private void indexRouteSegment(UUID routeId, BlockPos from, BlockPos to) {
+        int fromChunkX = from.getX() >> 4;
+        int fromChunkZ = from.getZ() >> 4;
+        int toChunkX = to.getX() >> 4;
+        int toChunkZ = to.getZ() >> 4;
+
+        int dx = toChunkX - fromChunkX;
+        int dz = toChunkZ - fromChunkZ;
+        int steps = Math.max(Math.abs(dx), Math.abs(dz));
+        if (steps <= 0) {
+            chunkIndex.computeIfAbsent(
+                    ChunkPos.asLong(fromChunkX, fromChunkZ),
+                    ignored -> new ChunkIndexEntry()).routeIds.add(routeId);
+            return;
+        }
+
+        for (int i = 0; i <= steps; i++) {
+            double t = i / (double)steps;
+            int chunkX = (int)Math.round(fromChunkX + dx * t);
+            int chunkZ = (int)Math.round(fromChunkZ + dz * t);
+            chunkIndex.computeIfAbsent(
+                    ChunkPos.asLong(chunkX, chunkZ),
+                    ignored -> new ChunkIndexEntry()).routeIds.add(routeId);
+        }
+    }
+
+    private void indexBounds(BlockPos min, BlockPos max, IndexKind kind, UUID id) {
+        int minChunkX = min.getX() >> 4;
+        int maxChunkX = max.getX() >> 4;
+        int minChunkZ = min.getZ() >> 4;
+        int maxChunkZ = max.getZ() >> 4;
+
+        for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
+                ChunkIndexEntry entry = chunkIndex.computeIfAbsent(ChunkPos.asLong(chunkX, chunkZ), ignored -> new ChunkIndexEntry());
+                if (kind == IndexKind.BUILDING) entry.buildingIds.add(id);
+                if (kind == IndexKind.WORK_SITE) entry.workSiteIds.add(id);
+            }
+        }
+    }
+
+    private ChunkIndexEntry entryFor(BlockPos pos) {
+        return chunkIndex.computeIfAbsent(new ChunkPos(pos).toLong(), ignored -> new ChunkIndexEntry());
+    }
+
+    private static void indexOne(BlockPos pos, Set<UUID> set, UUID id) {
+        set.add(id);
+    }
+
+    private void requireVillage(UUID id) {
+        if (!villages.containsKey(id)) {
+            throw new IllegalArgumentException("Unknown village id: " + id);
+        }
+    }
+
+    private static UUID nextId(Map<UUID, ?> existing) {
+        UUID id;
+        do {
+            id = UUID.randomUUID();
+        } while (existing.containsKey(id));
+        return id;
+    }
+
+    private static BlockPos normalizeMin(BlockPos a, BlockPos b) {
+        return new BlockPos(Math.min(a.getX(), b.getX()), Math.min(a.getY(), b.getY()), Math.min(a.getZ(), b.getZ()));
+    }
+
+    private static BlockPos normalizeMax(BlockPos a, BlockPos b) {
+        return new BlockPos(Math.max(a.getX(), b.getX()), Math.max(a.getY(), b.getY()), Math.max(a.getZ(), b.getZ()));
+    }
+
+    private static String safeText(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private static void putUuid(CompoundTag tag, String key, UUID value) {
+        if (value != null) tag.putString(key, value.toString());
+    }
+
+    private static UUID readUuid(CompoundTag tag, String key) {
+        if (!tag.contains(key, Tag.TAG_STRING)) return null;
+        String raw = tag.getString(key);
+        if (raw.isBlank()) return null;
+        try {
+            return UUID.fromString(raw);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private static Set<UUID> readUuidSet(CompoundTag tag, String key) {
+        Set<UUID> ids = new LinkedHashSet<>();
+        ListTag rows = tag.getList(key, Tag.TAG_COMPOUND);
+        for (int i = 0; i < rows.size(); i++) {
+            UUID id = readUuid(rows.getCompound(i), "id");
+            if (id != null) ids.add(id);
+        }
+        return ids;
+    }
+
+    private static ListTag writeUuidSet(Set<UUID> ids) {
+        ListTag rows = new ListTag();
+        for (UUID id : ids) {
+            CompoundTag row = new CompoundTag();
+            putUuid(row, "id", id);
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    private static ListTag writeIntMap(Map<String, Integer> values) {
+        ListTag rows = new ListTag();
+        for (var entry : values.entrySet()) {
+            if (entry.getKey() == null || entry.getKey().isBlank() || entry.getValue() == null || entry.getValue() <= 0) continue;
+            CompoundTag row = new CompoundTag();
+            row.putString("key", entry.getKey());
+            row.putInt("value", entry.getValue());
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    private static Map<String, Integer> readIntMap(CompoundTag tag, String key) {
+        Map<String, Integer> values = new HashMap<>();
+        ListTag rows = tag.getList(key, Tag.TAG_COMPOUND);
+        for (int i = 0; i < rows.size(); i++) {
+            CompoundTag row = rows.getCompound(i);
+            String itemKey = row.getString("key");
+            int value = row.getInt("value");
+            if (!itemKey.isBlank() && value > 0) values.put(itemKey, value);
+        }
+        return values;
+    }
+
+    private static void loadRows(CompoundTag tag, String key, java.util.function.Consumer<CompoundTag> consumer) {
+        ListTag rows = tag.getList(key, Tag.TAG_COMPOUND);
+        for (int i = 0; i < rows.size(); i++) consumer.accept(rows.getCompound(i));
+    }
+
+    private static ListTag saveRows(List<CompoundTag> rows) {
+        ListTag list = new ListTag();
+        list.addAll(rows);
+        return list;
+    }
+
+    private enum IndexKind {
+        BUILDING,
+        WORK_SITE
+    }
+
+    public static final class VillageRecord {
+        private final UUID id;
+        private BlockPos center;
+        private final long createdGameTime;
+        private BlockPos activityOrigin;
+        private final Set<Long> activityAnchors = new LinkedHashSet<>();
+        private long activeObservedTicks;
+        // Runtime-only: loading a save must not age a village by offline elapsed time.
+        private long lastActivityObservation = Long.MIN_VALUE;
+        private long nextBoundaryActiveTick;
+        private long nextMaintenanceActiveTick;
+        private long lastTrafficDecayActiveTick;
+        private UUID parentVillageId;
+        private UUID mergedIntoVillageId;
+        private String lifecycle = "active";
+        private final Set<UUID> residentIds = new LinkedHashSet<>();
+        private final Set<UUID> buildingIds = new LinkedHashSet<>();
+        private final Set<UUID> storageIds = new LinkedHashSet<>();
+        private final Set<UUID> workSiteIds = new LinkedHashSet<>();
+        private final Set<UUID> routeIds = new LinkedHashSet<>();
+        private final Set<UUID> projectIds = new LinkedHashSet<>();
+        private final Set<Long> districtCenters = new LinkedHashSet<>();
+        private final Map<String, Integer> mergeEvidenceDays = new HashMap<>();
+        private final Map<String, Integer> ledgerCounts = new HashMap<>();
+        private final Map<String, Integer> reservedCounts = new HashMap<>();
+        private final Map<String, Integer> buildingCulture = new HashMap<>();
+        private final Map<String, Integer> districtBuildingCulture = new HashMap<>();
+        private final Map<String, Integer> marketPermille = new HashMap<>();
+        private boolean storageBootstrapComplete;
+        private int sustainablePopulation;
+        private int settlementViability = 100;
+        private int lastKnownPopulation;
+        private long nextPlanningGameTime;
+        private long nextHousingExpansionGameTime;
+        private long nextMarketUpdateGameTime;
+        private long nextPublicWorksUpdateGameTime;
+        private long nextBirthGameTime;
+        private long recoveryGrowthUntil;
+        private long nextDemographicUpdateGameTime;
+        private long nextMigrationGameTime;
+        private long nextFissionGameTime;
+        private long nextRiverSurveyGameTime;
+        private String fireEmergencyState = "none";
+        private BlockPos fireCenter;
+        private long fireCandidateSinceGameTime;
+        private long fireLastSeenGameTime;
+        private int lowViability5DayBits;
+        private int collapse7DayBits;
+        private int overpopulation5DayBits;
+        private int demographicSamples;
+        private int stableViabilityDays;
+        private long lastValidatedGameTime;
+
+        private VillageRecord(UUID id, BlockPos center, long createdGameTime) {
+            this.id = id;
+            this.center = center;
+            this.activityOrigin = center;
+            this.createdGameTime = createdGameTime;
+            this.districtCenters.add(center.asLong());
+        }
+
+        public UUID id() { return id; }
+        public BlockPos center() { return center; }
+        public BlockPos activityOrigin() { return activityOrigin; }
+        public Set<Long> activityAnchors() { return Collections.unmodifiableSet(activityAnchors); }
+        public long activeObservedTicks() { return activeObservedTicks; }
+        public long nextBoundaryActiveTick() { return nextBoundaryActiveTick; }
+        public long nextMaintenanceActiveTick() { return nextMaintenanceActiveTick; }
+        public long lastTrafficDecayActiveTick() { return lastTrafficDecayActiveTick; }
+        public void setNextBoundaryActiveTick(long value) { nextBoundaryActiveTick = value; }
+        public void setNextMaintenanceActiveTick(long value) { nextMaintenanceActiveTick = value; }
+        public void setLastTrafficDecayActiveTick(long value) { lastTrafficDecayActiveTick = value; }
+        public void observeActive(long gameTime) {
+            if (lastActivityObservation == gameTime) return;
+            long elapsed = lastActivityObservation == Long.MIN_VALUE ? 1L
+                    : Math.max(0L, Math.min(40L, gameTime - lastActivityObservation));
+            activeObservedTicks = Math.min(Long.MAX_VALUE - 40L, activeObservedTicks) + elapsed;
+            lastActivityObservation = gameTime;
+        }
+        public void replaceActivityAnchors(java.util.Collection<BlockPos> positions) {
+            activityAnchors.clear();
+            for (BlockPos pos : positions) {
+                if (pos != null && activityAnchors.size() < VillageActivityBoundary.MAX_ANCHORS)
+                    activityAnchors.add(pos.asLong());
+            }
+        }
+        public String lifecycle() { return lifecycle; }
+        public long createdGameTime() { return createdGameTime; }
+        public UUID parentVillageId() { return parentVillageId; }
+        public UUID mergedIntoVillageId() { return mergedIntoVillageId; }
+        public Set<UUID> residentIds() { return Collections.unmodifiableSet(residentIds); }
+        public Set<UUID> buildingIds() { return Collections.unmodifiableSet(buildingIds); }
+        public Set<UUID> storageIds() { return Collections.unmodifiableSet(storageIds); }
+        public Set<UUID> workSiteIds() { return Collections.unmodifiableSet(workSiteIds); }
+        public Set<UUID> routeIds() { return Collections.unmodifiableSet(routeIds); }
+        public Set<UUID> projectIds() { return Collections.unmodifiableSet(projectIds); }
+        public Set<Long> districtCenters() { return Collections.unmodifiableSet(districtCenters); }
+        public Map<String, Integer> ledgerCounts() { return Collections.unmodifiableMap(ledgerCounts); }
+        public Map<String, Integer> reservedCounts() { return Collections.unmodifiableMap(reservedCounts); }
+        public Map<String, Integer> buildingCulture() { return Collections.unmodifiableMap(buildingCulture); }
+        public int cultureWeight(String key) { return Math.max(0, buildingCulture.getOrDefault(key, 0)); }
+        public Map<String, Integer> districtBuildingCulture() {
+            return Collections.unmodifiableMap(districtBuildingCulture);
+        }
+        public int districtCultureWeight(BlockPos pos, String key) {
+            if (pos == null || key == null || key.isBlank()) return 0;
+            long district = nearestDistrictCenterPacked(pos);
+            return Math.max(0, districtBuildingCulture.getOrDefault(districtCultureKey(district, key), 0));
+        }
+        public int districtCultureTotal(BlockPos pos, String prefix) {
+            if (pos == null) return 0;
+            long district = nearestDistrictCenterPacked(pos);
+            String districtPrefix = Long.toString(district) + "|";
+            int total = 0;
+            for (Map.Entry<String, Integer> entry : districtBuildingCulture.entrySet()) {
+                if (!entry.getKey().startsWith(districtPrefix)) continue;
+                String cultureKey = entry.getKey().substring(districtPrefix.length());
+                if (prefix == null || prefix.isBlank() || cultureKey.startsWith(prefix)) {
+                    total += Math.max(0, entry.getValue());
+                }
+            }
+            return total;
+        }
+        public Map<String, Integer> marketPermille() { return Collections.unmodifiableMap(marketPermille); }
+        public int marketPermille(String category) { return Math.max(100, marketPermille.getOrDefault(category, 1000)); }
+        public boolean storageBootstrapComplete() { return storageBootstrapComplete; }
+        public int sustainablePopulation() { return Math.max(0, sustainablePopulation); }
+        public int settlementViability() { return Math.max(0, Math.min(100, settlementViability)); }
+        public int lastKnownPopulation() { return Math.max(0, lastKnownPopulation); }
+        public long nextMarketUpdateGameTime() { return nextMarketUpdateGameTime; }
+        public long nextPublicWorksUpdateGameTime() { return nextPublicWorksUpdateGameTime; }
+        public long nextBirthGameTime() { return nextBirthGameTime; }
+        public long recoveryGrowthUntil() { return recoveryGrowthUntil; }
+        public long nextDemographicUpdateGameTime() { return nextDemographicUpdateGameTime; }
+        public long nextMigrationGameTime() { return nextMigrationGameTime; }
+        public long nextFissionGameTime() { return nextFissionGameTime; }
+        public long nextRiverSurveyGameTime() { return nextRiverSurveyGameTime; }
+        public String fireEmergencyState() { return fireEmergencyState; }
+        public BlockPos fireCenter() { return fireCenter; }
+        public long fireCandidateSinceGameTime() { return fireCandidateSinceGameTime; }
+        public long fireLastSeenGameTime() { return fireLastSeenGameTime; }
+        public int stableViabilityDays() { return Math.max(0, stableViabilityDays); }
+        public boolean migrationPressure3Of5() {
+            return Math.min(demographicSamples, 5) >= 3 && Integer.bitCount(lowViability5DayBits & 0x1F) >= 3;
+        }
+        public boolean overpopulationPressure3Of5() {
+            return Math.min(demographicSamples, 5) >= 3 && Integer.bitCount(overpopulation5DayBits & 0x1F) >= 3;
+        }
+        public boolean collapsePressure5Of7() {
+            return Math.min(demographicSamples, 7) >= 5 && Integer.bitCount(collapse7DayBits & 0x7F) >= 5;
+        }
+        public int ledgerCount(String itemKey) { return Math.max(0, ledgerCounts.getOrDefault(itemKey, 0)); }
+        public int reservedCount(String itemKey) { return Math.max(0, reservedCounts.getOrDefault(itemKey, 0)); }
+        public int availableCount(String itemKey) { return Math.max(0, ledgerCount(itemKey) - reservedCount(itemKey)); }
+        public long nextPlanningGameTime() { return nextPlanningGameTime; }
+        public long nextHousingExpansionGameTime() { return nextHousingExpansionGameTime; }
+        public long lastValidatedGameTime() { return lastValidatedGameTime; }
+
+        public void setCenter(BlockPos center) { this.center = center.immutable(); }
+        public void setParentVillageId(UUID value) { parentVillageId = value; }
+        public void setMergedIntoVillageId(UUID value) { mergedIntoVillageId = value; }
+        public void addDistrictCenter(BlockPos pos) {
+            if (pos != null) districtCenters.add(pos.asLong());
+        }
+        public int mergeEvidenceDays(UUID otherVillageId) {
+            return Math.max(0, mergeEvidenceDays.getOrDefault(otherVillageId.toString(), 0));
+        }
+        public void setMergeEvidenceDays(UUID otherVillageId, int days) {
+            if (otherVillageId == null) return;
+            if (days <= 0) mergeEvidenceDays.remove(otherVillageId.toString());
+            else mergeEvidenceDays.put(otherVillageId.toString(), Math.min(30, days));
+        }
+        public void setLifecycle(String lifecycle) { this.lifecycle = safeText(lifecycle, "active"); }
+        public void setStorageBootstrapComplete(boolean value) { this.storageBootstrapComplete = value; }
+
+        public void replaceLedger(Map<String, Integer> counts) {
+            ledgerCounts.clear();
+            counts.forEach((key, value) -> {
+                if (key != null && !key.isBlank() && value != null && value > 0) ledgerCounts.put(key, value);
+            });
+            reservedCounts.entrySet().removeIf(entry -> entry.getValue() <= 0 || !ledgerCounts.containsKey(entry.getKey()));
+        }
+
+        public boolean reserve(String itemKey, int count) {
+            if (itemKey == null || itemKey.isBlank() || count <= 0) return false;
+            if (availableCount(itemKey) < count) return false;
+            reservedCounts.merge(itemKey, count, Integer::sum);
+            return true;
+        }
+
+        public void releaseReservation(String itemKey, int count) {
+            if (itemKey == null || itemKey.isBlank() || count <= 0) return;
+            int next = reservedCounts.getOrDefault(itemKey, 0) - count;
+            if (next > 0) reservedCounts.put(itemKey, next);
+            else reservedCounts.remove(itemKey);
+        }
+
+        public void clearReservations() {
+            reservedCounts.clear();
+        }
+
+        public void recordBuildingCulture(String key, int weight) {
+            if (key == null || key.isBlank() || weight <= 0) return;
+            buildingCulture.merge(key, weight, Integer::sum);
+
+            // Keep weights bounded while preserving ratios closely enough for selection.
+            int max = buildingCulture.values().stream().mapToInt(Integer::intValue).max().orElse(0);
+            if (max > 10_000) {
+                buildingCulture.replaceAll((ignored, value) -> Math.max(1, value / 2));
+            }
+        }
+
+        public void recordDistrictBuildingCulture(BlockPos pos, String key, int weight) {
+            if (pos == null || key == null || key.isBlank() || weight <= 0) return;
+            long district = nearestDistrictCenterPacked(pos);
+            String fullKey = districtCultureKey(district, key);
+            districtBuildingCulture.merge(fullKey, weight, Integer::sum);
+
+            String prefix = Long.toString(district) + "|";
+            int max = 0;
+            for (Map.Entry<String, Integer> entry : districtBuildingCulture.entrySet()) {
+                if (entry.getKey().startsWith(prefix)) max = Math.max(max, entry.getValue());
+            }
+            if (max > 10_000) {
+                districtBuildingCulture.replaceAll((storedKey, value) ->
+                        storedKey.startsWith(prefix) ? Math.max(1, value / 2) : value);
+            }
+        }
+
+        private long nearestDistrictCenterPacked(BlockPos pos) {
+            long bestPacked = center.asLong();
+            long bestDistance = Long.MAX_VALUE;
+            for (long packed : districtCenters) {
+                BlockPos district = BlockPos.of(packed);
+                long dx = (long)district.getX() - pos.getX();
+                long dz = (long)district.getZ() - pos.getZ();
+                long distance = dx * dx + dz * dz;
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    bestPacked = packed;
+                }
+            }
+            return bestPacked;
+        }
+
+        private static String districtCultureKey(long packedCenter, String key) {
+            return Long.toString(packedCenter) + "|" + key;
+        }
+
+        public void setMarketPermille(String category, int value) {
+            if (category == null || category.isBlank()) return;
+            marketPermille.put(category, Math.max(100, Math.min(3000, value)));
+        }
+
+        public void setSustainablePopulation(int value) { sustainablePopulation = Math.max(0, value); }
+        public void setSettlementViability(int value) { settlementViability = Math.max(0, Math.min(100, value)); }
+        public void setLastKnownPopulation(int value) { lastKnownPopulation = Math.max(0, value); }
+        public void setNextMarketUpdateGameTime(long value) { nextMarketUpdateGameTime = value; }
+        public void setNextPublicWorksUpdateGameTime(long value) { nextPublicWorksUpdateGameTime = value; }
+        public void setNextBirthGameTime(long value) { nextBirthGameTime = value; }
+        public void setRecoveryGrowthUntil(long value) { recoveryGrowthUntil = value; }
+        public void setNextDemographicUpdateGameTime(long value) { nextDemographicUpdateGameTime = value; }
+        public void setNextMigrationGameTime(long value) { nextMigrationGameTime = value; }
+        public void setNextFissionGameTime(long value) { nextFissionGameTime = value; }
+        public void setNextRiverSurveyGameTime(long value) { nextRiverSurveyGameTime = value; }
+        public void setFireEmergencyState(String value) { fireEmergencyState = safeText(value, "none"); }
+        public void setFireCenter(BlockPos value) { fireCenter = value == null ? null : value.immutable(); }
+        public void setFireCandidateSinceGameTime(long value) { fireCandidateSinceGameTime = value; }
+        public void setFireLastSeenGameTime(long value) { fireLastSeenGameTime = value; }
+        public void clearFireEmergency() {
+            fireEmergencyState = "none";
+            fireCenter = null;
+            fireCandidateSinceGameTime = 0L;
+            fireLastSeenGameTime = 0L;
+        }
+
+        public void recordDemographicDay(boolean below40, boolean below25, boolean overpopulated, boolean stable60) {
+            lowViability5DayBits = ((lowViability5DayBits << 1) | (below40 ? 1 : 0)) & 0x1F;
+            collapse7DayBits = ((collapse7DayBits << 1) | (below25 ? 1 : 0)) & 0x7F;
+            overpopulation5DayBits = ((overpopulation5DayBits << 1) | (overpopulated ? 1 : 0)) & 0x1F;
+            demographicSamples = Math.min(7, demographicSamples + 1);
+            stableViabilityDays = stable60 ? Math.min(30, stableViabilityDays + 1) : 0;
+        }
+
+        public void setNextPlanningGameTime(long value) { this.nextPlanningGameTime = value; }
+        public void setNextHousingExpansionGameTime(long value) {
+            this.nextHousingExpansionGameTime = Math.max(0L, value);
+        }
+        public void setLastValidatedGameTime(long value) { this.lastValidatedGameTime = value; }
+
+        private CompoundTag save() {
+            CompoundTag tag = new CompoundTag();
+            putUuid(tag, "id", id);
+            tag.putLong("center", center.asLong());
+            tag.putLong("created", createdGameTime);
+            tag.putLong("activity_origin", activityOrigin.asLong());
+            tag.putLongArray("activity_anchors", activityAnchors.stream().mapToLong(Long::longValue).toArray());
+            tag.putLong("active_observed", activeObservedTicks);
+            tag.putLong("next_boundary_active", nextBoundaryActiveTick);
+            tag.putLong("next_maintenance_active", nextMaintenanceActiveTick);
+            tag.putLong("last_traffic_decay_active", lastTrafficDecayActiveTick);
+            putUuid(tag, "parent_village", parentVillageId);
+            putUuid(tag, "merged_into", mergedIntoVillageId);
+            tag.putString("lifecycle", lifecycle);
+            tag.put("residents", writeUuidSet(residentIds));
+            tag.put("buildings", writeUuidSet(buildingIds));
+            tag.put("storages", writeUuidSet(storageIds));
+            tag.put("work_sites", writeUuidSet(workSiteIds));
+            tag.put("routes", writeUuidSet(routeIds));
+            tag.put("projects", writeUuidSet(projectIds));
+            ListTag districtRows = new ListTag();
+            for (Long packed : districtCenters) {
+                CompoundTag row = new CompoundTag();
+                row.putLong("pos", packed);
+                districtRows.add(row);
+            }
+            tag.put("district_centers", districtRows);
+            tag.put("merge_evidence", writeIntMap(mergeEvidenceDays));
+            tag.put("ledger", writeIntMap(ledgerCounts));
+            tag.put("reserved", writeIntMap(reservedCounts));
+            tag.put("building_culture", writeIntMap(buildingCulture));
+            tag.put("district_building_culture", writeIntMap(districtBuildingCulture));
+            tag.put("market_permille", writeIntMap(marketPermille));
+            tag.putBoolean("storage_bootstrap_complete", storageBootstrapComplete);
+            tag.putInt("sustainable_population", sustainablePopulation);
+            tag.putInt("settlement_viability", settlementViability);
+            tag.putInt("last_population", lastKnownPopulation);
+            tag.putLong("next_planning", nextPlanningGameTime);
+            tag.putLong("next_housing_expansion", nextHousingExpansionGameTime);
+            tag.putLong("next_market_update", nextMarketUpdateGameTime);
+            tag.putLong("next_public_works_update", nextPublicWorksUpdateGameTime);
+            tag.putLong("next_birth", nextBirthGameTime);
+            tag.putLong("recovery_growth_until", recoveryGrowthUntil);
+            tag.putLong("next_demographic_update", nextDemographicUpdateGameTime);
+            tag.putLong("next_migration", nextMigrationGameTime);
+            tag.putLong("next_fission", nextFissionGameTime);
+            tag.putLong("next_river_survey", nextRiverSurveyGameTime);
+            tag.putString("fire_emergency_state", fireEmergencyState);
+            if (fireCenter != null) tag.putLong("fire_center", fireCenter.asLong());
+            tag.putLong("fire_candidate_since", fireCandidateSinceGameTime);
+            tag.putLong("fire_last_seen", fireLastSeenGameTime);
+            tag.putInt("low_viability_5d", lowViability5DayBits);
+            tag.putInt("collapse_7d", collapse7DayBits);
+            tag.putInt("overpopulation_5d", overpopulation5DayBits);
+            tag.putInt("demographic_samples", demographicSamples);
+            tag.putInt("stable_viability_days", stableViabilityDays);
+            tag.putLong("last_validated", lastValidatedGameTime);
+            return tag;
+        }
+
+        private static VillageRecord load(CompoundTag tag) {
+            UUID id = readUuid(tag, "id");
+            if (id == null || !tag.contains("center", Tag.TAG_LONG)) return null;
+
+            VillageRecord record = new VillageRecord(id, BlockPos.of(tag.getLong("center")), tag.getLong("created"));
+            record.activityOrigin = tag.contains("activity_origin", Tag.TAG_LONG)
+                    ? BlockPos.of(tag.getLong("activity_origin")) : record.center;
+            for (long packed : tag.getLongArray("activity_anchors")) {
+                if (record.activityAnchors.size() >= VillageActivityBoundary.MAX_ANCHORS) break;
+                if (VillageActivityBoundary.withinHorizontal(record.center, BlockPos.of(packed),
+                        VillageActivityBoundary.MAX_RADIUS)) record.activityAnchors.add(packed);
+            }
+            record.activeObservedTicks = Math.max(0L, tag.getLong("active_observed"));
+            record.nextBoundaryActiveTick = Math.max(0L, tag.getLong("next_boundary_active"));
+            record.nextMaintenanceActiveTick = Math.max(0L, tag.getLong("next_maintenance_active"));
+            record.lastTrafficDecayActiveTick = Math.max(0L, tag.getLong("last_traffic_decay_active"));
+            record.parentVillageId = readUuid(tag, "parent_village");
+            record.mergedIntoVillageId = readUuid(tag, "merged_into");
+            record.lifecycle = safeText(tag.getString("lifecycle"), "active");
+            record.residentIds.addAll(readUuidSet(tag, "residents"));
+            record.buildingIds.addAll(readUuidSet(tag, "buildings"));
+            record.storageIds.addAll(readUuidSet(tag, "storages"));
+            record.workSiteIds.addAll(readUuidSet(tag, "work_sites"));
+            record.routeIds.addAll(readUuidSet(tag, "routes"));
+            record.projectIds.addAll(readUuidSet(tag, "projects"));
+            ListTag districtRows = tag.getList("district_centers", Tag.TAG_COMPOUND);
+            for (int i = 0; i < districtRows.size(); i++) {
+                record.districtCenters.add(districtRows.getCompound(i).getLong("pos"));
+            }
+            record.mergeEvidenceDays.putAll(readIntMap(tag, "merge_evidence"));
+            record.ledgerCounts.putAll(readIntMap(tag, "ledger"));
+            record.reservedCounts.putAll(readIntMap(tag, "reserved"));
+            record.buildingCulture.putAll(readIntMap(tag, "building_culture"));
+            record.districtBuildingCulture.putAll(readIntMap(tag, "district_building_culture"));
+            record.marketPermille.putAll(readIntMap(tag, "market_permille"));
+            record.storageBootstrapComplete = tag.getBoolean("storage_bootstrap_complete");
+            record.sustainablePopulation = Math.max(0, tag.getInt("sustainable_population"));
+            record.settlementViability = tag.contains("settlement_viability", Tag.TAG_INT)
+                    ? Math.max(0, Math.min(100, tag.getInt("settlement_viability"))) : 100;
+            record.lastKnownPopulation = Math.max(0, tag.getInt("last_population"));
+            record.nextPlanningGameTime = tag.getLong("next_planning");
+            record.nextHousingExpansionGameTime = Math.max(0L,
+                    tag.getLong("next_housing_expansion"));
+            record.nextMarketUpdateGameTime = tag.getLong("next_market_update");
+            record.nextPublicWorksUpdateGameTime = tag.getLong("next_public_works_update");
+            record.nextBirthGameTime = tag.getLong("next_birth");
+            record.recoveryGrowthUntil = tag.getLong("recovery_growth_until");
+            record.nextDemographicUpdateGameTime = tag.getLong("next_demographic_update");
+            record.nextMigrationGameTime = tag.getLong("next_migration");
+            record.nextFissionGameTime = tag.getLong("next_fission");
+            record.nextRiverSurveyGameTime = tag.getLong("next_river_survey");
+            record.fireEmergencyState = safeText(tag.getString("fire_emergency_state"), "none");
+            if (tag.contains("fire_center", Tag.TAG_LONG)) record.fireCenter = BlockPos.of(tag.getLong("fire_center"));
+            record.fireCandidateSinceGameTime = tag.getLong("fire_candidate_since");
+            record.fireLastSeenGameTime = tag.getLong("fire_last_seen");
+            record.lowViability5DayBits = tag.getInt("low_viability_5d") & 0x1F;
+            record.collapse7DayBits = tag.getInt("collapse_7d") & 0x7F;
+            record.overpopulation5DayBits = tag.getInt("overpopulation_5d") & 0x1F;
+            record.demographicSamples = Math.max(0, Math.min(7, tag.getInt("demographic_samples")));
+            record.stableViabilityDays = Math.max(0, Math.min(30, tag.getInt("stable_viability_days")));
+            record.lastValidatedGameTime = tag.getLong("last_validated");
+            return record;
+        }
+    }
+
+    public static final class BuildingRecord {
+        private final UUID id;
+        private UUID villageId;
+        private final BlockPos min;
+        private BlockPos max;
+        private final boolean villageBuilt;
+        private String classification = "unassigned";
+        private String validationState = "unknown";
+        private int validatedCapacity;
+        private long lastValidatedGameTime;
+        private String templateId = "";
+
+        private BuildingRecord(UUID id, UUID villageId, BlockPos min, BlockPos max, boolean villageBuilt) {
+            this.id = id;
+            this.villageId = villageId;
+            this.min = min;
+            this.max = max;
+            this.villageBuilt = villageBuilt;
+        }
+
+        public UUID id() { return id; }
+        public UUID villageId() { return villageId; }
+        public BlockPos min() { return min; }
+        public BlockPos max() { return max; }
+        public boolean villageBuilt() { return villageBuilt; }
+        public String classification() { return classification; }
+        public String validationState() { return validationState; }
+        public int validatedCapacity() { return validatedCapacity; }
+        public long lastValidatedGameTime() { return lastValidatedGameTime; }
+        public String templateId() { return templateId; }
+
+        public void setClassification(String value) { classification = safeText(value, "unassigned"); }
+        public void setValidationState(String value) { validationState = safeText(value, "unknown"); }
+        public void setValidatedCapacity(int value) { validatedCapacity = Math.max(0, value); }
+        public void setLastValidatedGameTime(long value) { lastValidatedGameTime = value; }
+        public void setTemplateId(String value) { templateId = value == null ? "" : value; }
+
+        private CompoundTag save() {
+            CompoundTag tag = new CompoundTag();
+            putUuid(tag, "id", id);
+            putUuid(tag, "village", villageId);
+            tag.putLong("min", min.asLong());
+            tag.putLong("max", max.asLong());
+            tag.putBoolean("village_built", villageBuilt);
+            tag.putString("classification", classification);
+            tag.putString("validation", validationState);
+            tag.putInt("capacity", validatedCapacity);
+            tag.putLong("last_validated", lastValidatedGameTime);
+            tag.putString("template", templateId);
+            return tag;
+        }
+
+        private static BuildingRecord load(CompoundTag tag) {
+            UUID id = readUuid(tag, "id");
+            UUID villageId = readUuid(tag, "village");
+            if (id == null || villageId == null || !tag.contains("min", Tag.TAG_LONG) || !tag.contains("max", Tag.TAG_LONG)) return null;
+
+            BuildingRecord record = new BuildingRecord(id, villageId, BlockPos.of(tag.getLong("min")),
+                    BlockPos.of(tag.getLong("max")), tag.getBoolean("village_built"));
+            record.classification = safeText(tag.getString("classification"), "unassigned");
+            record.validationState = safeText(tag.getString("validation"), "unknown");
+            record.validatedCapacity = Math.max(0, tag.getInt("capacity"));
+            record.lastValidatedGameTime = tag.getLong("last_validated");
+            record.templateId = tag.getString("template");
+            return record;
+        }
+    }
+
+    public static final class StorageRecord {
+        private final UUID id;
+        private UUID villageId;
+        private final BlockPos pos;
+        private String category;
+        private String validationState = "unknown";
+        private final Map<String, Integer> cachedCounts = new HashMap<>();
+        private long lastValidatedGameTime;
+
+        private StorageRecord(UUID id, UUID villageId, BlockPos pos, String category) {
+            this.id = id;
+            this.villageId = villageId;
+            this.pos = pos;
+            this.category = category;
+        }
+
+        public UUID id() { return id; }
+        public UUID villageId() { return villageId; }
+        public BlockPos pos() { return pos; }
+        public String category() { return category; }
+        public String validationState() { return validationState; }
+        public Map<String, Integer> cachedCounts() { return Collections.unmodifiableMap(cachedCounts); }
+        public long lastValidatedGameTime() { return lastValidatedGameTime; }
+
+        public void setCategory(String value) { category = safeText(value, "general"); }
+        public void setValidationState(String value) { validationState = safeText(value, "unknown"); }
+
+        public void replaceCachedCounts(Map<String, Integer> counts) {
+            cachedCounts.clear();
+            counts.forEach((key, value) -> {
+                if (key != null && !key.isBlank() && value != null && value > 0) cachedCounts.put(key, value);
+            });
+        }
+
+        public void setLastValidatedGameTime(long value) { lastValidatedGameTime = value; }
+
+        private CompoundTag save() {
+            CompoundTag tag = new CompoundTag();
+            putUuid(tag, "id", id);
+            putUuid(tag, "village", villageId);
+            tag.putLong("pos", pos.asLong());
+            tag.putString("category", category);
+            tag.putString("validation", validationState);
+            tag.put("cached_counts", writeIntMap(cachedCounts));
+            tag.putLong("last_validated", lastValidatedGameTime);
+            return tag;
+        }
+
+        private static StorageRecord load(CompoundTag tag) {
+            UUID id = readUuid(tag, "id");
+            UUID villageId = readUuid(tag, "village");
+            if (id == null || villageId == null || !tag.contains("pos", Tag.TAG_LONG)) return null;
+
+            StorageRecord record = new StorageRecord(id, villageId, BlockPos.of(tag.getLong("pos")),
+                    safeText(tag.getString("category"), "general"));
+            record.validationState = safeText(tag.getString("validation"), "unknown");
+            record.cachedCounts.putAll(readIntMap(tag, "cached_counts"));
+            record.lastValidatedGameTime = tag.getLong("last_validated");
+            return record;
+        }
+    }
+
+    public static final class WorkSiteRecord {
+        private VillageSavedData referenceOwner;
+        private final UUID id;
+        private UUID villageId;
+        private String type;
+        private final BlockPos min;
+        private final BlockPos max;
+        private String state = "active";
+        private String purpose = "";
+        private boolean foundingPrepared;
+        private int idleDays;
+        private long createdGameTime;
+        private long lastUsedGameTime;
+        private long lastLifecycleGameTime;
+        private UUID parentWorkSiteId;
+        private int resourceCursor;
+        private long nextHarvestGameTime;
+        private String resourcePauseReason = "";
+
+        private WorkSiteRecord(UUID id, UUID villageId, String type, BlockPos min, BlockPos max) {
+            this.id = id;
+            this.villageId = villageId;
+            this.type = type;
+            this.min = min;
+            this.max = max;
+        }
+
+        public UUID id() { return id; }
+        public UUID villageId() { return villageId; }
+        public String type() { return type; }
+        public BlockPos min() { return min; }
+        public BlockPos max() { return max; }
+        public String state() { return state; }
+        public String purpose() { return purpose; }
+        public boolean foundingPrepared() { return foundingPrepared; }
+        public int idleDays() { return Math.max(0, idleDays); }
+        public long createdGameTime() { return createdGameTime; }
+        public long lastUsedGameTime() { return lastUsedGameTime; }
+        public long lastLifecycleGameTime() { return lastLifecycleGameTime; }
+        public UUID parentWorkSiteId() { return parentWorkSiteId; }
+        public int resourceCursor() { return Math.max(0, resourceCursor); }
+        public long nextHarvestGameTime() { return nextHarvestGameTime; }
+        public String resourcePauseReason() { return resourcePauseReason; }
+
+        public void setType(String value) { type = safeText(value, "generic"); }
+        public void setState(String value) { state = safeText(value, "active"); }
+        public void setPurpose(String value) {
+            if (referenceOwner != null) referenceOwner.replaceProjectReference(purpose, value, null);
+            purpose = value == null ? "" : value;
+        }
+        public void setFoundingPrepared(boolean value) { foundingPrepared = value; }
+        public void setIdleDays(int value) { idleDays = Math.max(0, value); }
+        public void setCreatedGameTime(long value) { createdGameTime = value; }
+        public void setLastUsedGameTime(long value) { lastUsedGameTime = value; }
+        public void setLastLifecycleGameTime(long value) { lastLifecycleGameTime = value; }
+        public void setParentWorkSiteId(UUID value) { parentWorkSiteId = value; }
+        public void setResourceCursor(int value) { resourceCursor = Math.max(0, value); }
+        public void setNextHarvestGameTime(long value) { nextHarvestGameTime = value; }
+        public void setResourcePauseReason(String value) { resourcePauseReason = value == null ? "" : value; }
+
+        private CompoundTag save() {
+            CompoundTag tag = new CompoundTag();
+            putUuid(tag, "id", id);
+            putUuid(tag, "village", villageId);
+            tag.putString("type", type);
+            tag.putLong("min", min.asLong());
+            tag.putLong("max", max.asLong());
+            tag.putString("state", state);
+            tag.putString("purpose", purpose);
+            tag.putBoolean("founding_prepared", foundingPrepared);
+            tag.putInt("idle_days", idleDays);
+            tag.putLong("created", createdGameTime);
+            tag.putLong("last_used", lastUsedGameTime);
+            tag.putLong("last_lifecycle", lastLifecycleGameTime);
+            putUuid(tag, "parent_work_site", parentWorkSiteId);
+            tag.putInt("resource_cursor", resourceCursor);
+            tag.putLong("next_harvest", nextHarvestGameTime);
+            tag.putString("resource_pause_reason", resourcePauseReason);
+            return tag;
+        }
+
+        private static WorkSiteRecord load(CompoundTag tag) {
+            UUID id = readUuid(tag, "id");
+            UUID villageId = readUuid(tag, "village");
+            if (id == null || villageId == null || !tag.contains("min", Tag.TAG_LONG) || !tag.contains("max", Tag.TAG_LONG)) return null;
+
+            WorkSiteRecord record = new WorkSiteRecord(id, villageId, safeText(tag.getString("type"), "generic"),
+                    BlockPos.of(tag.getLong("min")), BlockPos.of(tag.getLong("max")));
+            record.state = safeText(tag.getString("state"), "active");
+            record.purpose = tag.getString("purpose");
+            record.foundingPrepared = tag.getBoolean("founding_prepared");
+            record.idleDays = Math.max(0, tag.getInt("idle_days"));
+            record.createdGameTime = tag.getLong("created");
+            record.lastUsedGameTime = tag.getLong("last_used");
+            record.lastLifecycleGameTime = tag.getLong("last_lifecycle");
+            record.parentWorkSiteId = readUuid(tag, "parent_work_site");
+            record.resourceCursor = Math.max(0, tag.getInt("resource_cursor"));
+            record.nextHarvestGameTime = tag.getLong("next_harvest");
+            record.resourcePauseReason = tag.getString("resource_pause_reason");
+            return record;
+        }
+    }
+
+    public static final class RouteRecord {
+        private final UUID id;
+        private UUID villageId;
+        private String type;
+        private final BlockPos from;
+        private final BlockPos to;
+        private int trafficScore;
+        private String quality = "dirt";
+        private int width = 1;
+        private final List<Long> waypoints = new ArrayList<>();
+        // One durable real ChestBoat entity per waterway. Never assume an
+        // unloaded or missing entity means a free boat may be minted.
+        private UUID carrierEntityId;
+        // Counts are receipts for items PHYSICALLY unloaded from this
+        // route's actual carrier into either dock Barrel. These are not
+        // virtual stock; Porters may acknowledge only real withdrawals.
+        private final Map<String, Integer> deliveredAtFrom = new HashMap<>();
+        private final Map<String, Integer> deliveredAtTo = new HashMap<>();
+        private String state = "active";
+
+        private RouteRecord(UUID id, UUID villageId, String type, BlockPos from, BlockPos to) {
+            this.id = id;
+            this.villageId = villageId;
+            this.type = type;
+            this.from = from;
+            this.to = to;
+        }
+
+        public UUID id() { return id; }
+        public UUID villageId() { return villageId; }
+        public String type() { return type; }
+        public BlockPos from() { return from; }
+        public BlockPos to() { return to; }
+        public int trafficScore() { return trafficScore; }
+        public String quality() { return quality; }
+        public int width() { return Math.max(1, Math.min(3, width)); }
+        public List<BlockPos> waypoints() {
+            List<BlockPos> result = new ArrayList<>(waypoints.size());
+            for (long packed : waypoints) result.add(BlockPos.of(packed));
+            return Collections.unmodifiableList(result);
+        }
+        public String state() { return state; }
+        public UUID carrierEntityId() { return carrierEntityId; }
+        public Map<String, Integer> dockReceipts(boolean atTo) {
+            return Collections.unmodifiableMap(atTo ? deliveredAtTo : deliveredAtFrom);
+        }
+
+        public void recordDockDelivery(boolean atTo, String itemId, int count) {
+            if (itemId == null || itemId.isBlank() || count <= 0) return;
+            Map<String, Integer> receipts = atTo ? deliveredAtTo : deliveredAtFrom;
+            receipts.merge(itemId, count, (a, b) -> (int)Math.min(
+                    Integer.MAX_VALUE, (long)a + b));
+        }
+
+        public void acknowledgeDockDelivery(boolean atTo, String itemId, int count) {
+            if (itemId == null || count <= 0) return;
+            Map<String, Integer> receipts = atTo ? deliveredAtTo : deliveredAtFrom;
+            int left = receipts.getOrDefault(itemId, 0) - count;
+            if (left > 0) receipts.put(itemId, left);
+            else receipts.remove(itemId);
+        }
+
+        public void setCarrierEntityId(UUID value) { carrierEntityId = value; }
+        public void setType(String value) { type = safeText(value, "path"); }
+        public void setTrafficScore(int value) { trafficScore = Math.max(0, Math.min(10_000, value)); }
+        public void setQuality(String value) {
+            String normalized = safeText(value, "dirt");
+            quality = "stone".equals(normalized) || "gravel".equals(normalized) ? normalized : "dirt";
+        }
+        public void setWidth(int value) { width = Math.max(1, Math.min(3, value)); }
+        public void setWaypoints(List<BlockPos> points) {
+            waypoints.clear();
+            if (points == null || points.isEmpty()) return;
+            if (points.size() <= 128) {
+                for (BlockPos point : points) {
+                    if (point != null) waypoints.add(point.immutable().asLong());
+                }
+                return;
+            }
+
+            BlockPos first = points.get(0);
+            BlockPos last = points.get(points.size() - 1);
+            if (first != null) waypoints.add(first.immutable().asLong());
+            int stride = Math.max(1, (int)Math.ceil((points.size() - 2) / 126.0D));
+            for (int i = 1; i < points.size() - 1 && waypoints.size() < 127; i += stride) {
+                BlockPos point = points.get(i);
+                if (point != null) waypoints.add(point.immutable().asLong());
+            }
+            if (last != null) waypoints.add(last.immutable().asLong());
+        }
+        public void setState(String value) { state = safeText(value, "active"); }
+
+        private CompoundTag save() {
+            CompoundTag tag = new CompoundTag();
+            putUuid(tag, "id", id);
+            putUuid(tag, "village", villageId);
+            tag.putString("type", type);
+            tag.putLong("from", from.asLong());
+            tag.putLong("to", to.asLong());
+            tag.putInt("traffic", trafficScore);
+            tag.putString("quality", quality);
+            tag.putInt("width", width());
+            ListTag waypointRows = new ListTag();
+            for (long packed : waypoints) {
+                CompoundTag row = new CompoundTag();
+                row.putLong("pos", packed);
+                waypointRows.add(row);
+            }
+            tag.put("waypoints", waypointRows);
+            putUuid(tag, "carrier", carrierEntityId);
+            tag.put("dock_deliveries_from", writeIntMap(deliveredAtFrom));
+            tag.put("dock_deliveries_to", writeIntMap(deliveredAtTo));
+            tag.putString("state", state);
+            return tag;
+        }
+
+        private static RouteRecord load(CompoundTag tag) {
+            UUID id = readUuid(tag, "id");
+            UUID villageId = readUuid(tag, "village");
+            if (id == null || villageId == null || !tag.contains("from", Tag.TAG_LONG) || !tag.contains("to", Tag.TAG_LONG)) return null;
+
+            RouteRecord record = new RouteRecord(id, villageId, safeText(tag.getString("type"), "path"),
+                    BlockPos.of(tag.getLong("from")), BlockPos.of(tag.getLong("to")));
+            record.setTrafficScore(tag.getInt("traffic"));
+            record.setQuality(tag.contains("quality", Tag.TAG_STRING) ? tag.getString("quality") : "dirt");
+            record.setWidth(tag.contains("width", Tag.TAG_INT) ? tag.getInt("width") : 1);
+            ListTag waypointRows = tag.getList("waypoints", Tag.TAG_COMPOUND);
+            List<BlockPos> loadedWaypoints = new ArrayList<>();
+            for (int i = 0; i < waypointRows.size(); i++) {
+                CompoundTag row = waypointRows.getCompound(i);
+                if (row.contains("pos", Tag.TAG_LONG)) loadedWaypoints.add(BlockPos.of(row.getLong("pos")));
+            }
+            record.setWaypoints(loadedWaypoints);
+            record.carrierEntityId = readUuid(tag, "carrier");
+            record.deliveredAtFrom.putAll(readIntMap(tag, "dock_deliveries_from"));
+            record.deliveredAtTo.putAll(readIntMap(tag, "dock_deliveries_to"));
+            record.state = safeText(tag.getString("state"), "active");
+            return record;
+        }
+    }
+
+    public static final class ProjectRecord {
+        private VillageSavedData referenceOwner;
+        private final UUID id;
+        private UUID villageId;
+        private String type;
+        private int priority;
+        private final BlockPos site;
+        private String templateId = "";
+        private long variantSeed;
+        private String phase = "planned";
+        private int workCursor;
+        private String pausedReason = "";
+        private UUID leadCarpenterId;
+        private BlockPos anchor;
+        private final Map<String, String> parameters = new HashMap<>();
+        private final Map<String, Integer> reservations = new HashMap<>();
+
+        private ProjectRecord(UUID id, UUID villageId, String type, int priority, BlockPos site) {
+            this.id = id;
+            this.villageId = villageId;
+            this.type = type;
+            this.priority = priority;
+            this.site = site;
+        }
+
+        public UUID id() { return id; }
+        public UUID villageId() { return villageId; }
+        public String type() { return type; }
+        public int priority() { return priority; }
+        public BlockPos site() { return site; }
+        public String templateId() { return templateId; }
+        public long variantSeed() { return variantSeed; }
+        public String phase() { return phase; }
+        public int workCursor() { return workCursor; }
+        public String pausedReason() { return pausedReason; }
+        public UUID leadCarpenterId() { return leadCarpenterId; }
+        public BlockPos anchor() { return anchor; }
+        public Map<String, String> parameters() { return Collections.unmodifiableMap(parameters); }
+        public String parameter(String key) { return parameters.getOrDefault(key, ""); }
+        public Map<String, Integer> reservations() { return Collections.unmodifiableMap(reservations); }
+
+        public void setType(String value) { type = safeText(value, "generic"); }
+        public void setPriority(int value) { priority = value; }
+        public void setTemplateId(String value) { templateId = value == null ? "" : value; }
+        public void setVariantSeed(long value) { variantSeed = value; }
+        public void setPhase(String value) {
+            phase = safeText(value, "planned");
+            // Terminal bills can never lock real materials, even before scheduled compaction.
+            if ("complete".equals(phase) || "cancelled".equals(phase)) reservations.clear();
+        }
+        public void setWorkCursor(int value) { workCursor = Math.max(0, value); }
+        public void setPausedReason(String value) { pausedReason = value == null ? "" : value; }
+        public void setLeadCarpenterId(UUID value) { leadCarpenterId = value; }
+        public void setAnchor(BlockPos value) { anchor = value == null ? null : value.immutable(); }
+
+        public void setParameter(String key, String value) {
+            if (key == null || key.isBlank()) return;
+            if (referenceOwner != null) referenceOwner.replaceProjectReference(parameters.get(key), value, id);
+            if (value == null || value.isBlank()) parameters.remove(key);
+            else parameters.put(key, value);
+        }
+
+        public void setReservation(String itemKey, int count) {
+            if (itemKey == null || itemKey.isBlank() || count <= 0
+                    || "complete".equals(phase) || "cancelled".equals(phase)) reservations.remove(itemKey);
+            else reservations.put(itemKey, count);
+        }
+
+        public void clearReservations() {
+            reservations.clear();
+        }
+
+        private CompoundTag save() {
+            CompoundTag tag = new CompoundTag();
+            putUuid(tag, "id", id);
+            putUuid(tag, "village", villageId);
+            tag.putString("type", type);
+            tag.putInt("priority", priority);
+            tag.putLong("site", site.asLong());
+            tag.putString("template", templateId);
+            tag.putLong("variant_seed", variantSeed);
+            tag.putString("phase", phase);
+            tag.putInt("cursor", workCursor);
+            tag.putString("paused_reason", pausedReason);
+            putUuid(tag, "lead", leadCarpenterId);
+            if (anchor != null) tag.putLong("anchor", anchor.asLong());
+
+            ListTag parameterRows = new ListTag();
+            for (var entry : parameters.entrySet()) {
+                CompoundTag row = new CompoundTag();
+                row.putString("key", entry.getKey());
+                row.putString("value", entry.getValue());
+                parameterRows.add(row);
+            }
+            tag.put("parameters", parameterRows);
+
+            ListTag reservationRows = new ListTag();
+            for (var entry : reservations.entrySet()) {
+                CompoundTag row = new CompoundTag();
+                row.putString("item", entry.getKey());
+                row.putInt("count", entry.getValue());
+                reservationRows.add(row);
+            }
+            tag.put("reservations", reservationRows);
+            return tag;
+        }
+
+        private static ProjectRecord load(CompoundTag tag) {
+            UUID id = readUuid(tag, "id");
+            UUID villageId = readUuid(tag, "village");
+            if (id == null || villageId == null || !tag.contains("site", Tag.TAG_LONG)) return null;
+
+            ProjectRecord record = new ProjectRecord(id, villageId, safeText(tag.getString("type"), "generic"),
+                    tag.getInt("priority"), BlockPos.of(tag.getLong("site")));
+            record.templateId = tag.getString("template");
+            record.variantSeed = tag.getLong("variant_seed");
+            record.phase = safeText(tag.getString("phase"), "planned");
+            record.workCursor = Math.max(0, tag.getInt("cursor"));
+            record.pausedReason = tag.getString("paused_reason");
+            record.leadCarpenterId = readUuid(tag, "lead");
+            if (tag.contains("anchor", Tag.TAG_LONG)) record.anchor = BlockPos.of(tag.getLong("anchor"));
+
+            ListTag parameterRows = tag.getList("parameters", Tag.TAG_COMPOUND);
+            for (int i = 0; i < parameterRows.size(); i++) {
+                CompoundTag row = parameterRows.getCompound(i);
+                String key = row.getString("key");
+                String value = row.getString("value");
+                if (!key.isBlank() && !value.isBlank()) record.parameters.put(key, value);
+            }
+
+            ListTag reservationRows = tag.getList("reservations", Tag.TAG_COMPOUND);
+            for (int i = 0; i < reservationRows.size(); i++) {
+                CompoundTag row = reservationRows.getCompound(i);
+                String item = row.getString("item");
+                int count = row.getInt("count");
+                if (!item.isBlank() && count > 0) record.reservations.put(item, count);
+            }
+            if ("complete".equals(record.phase) || "cancelled".equals(record.phase)) record.reservations.clear();
+            return record;
+        }
+    }
+
+    public static final class PublicRequestRecord {
+        private final UUID id;
+        private final UUID villageId;
+        private final String key;
+        private String urgency = "normal";
+        private String itemKey = "";
+        private int requestedCount;
+        private int remainingCount;
+        private String reason = "";
+        private String context = "";
+        private UUID projectId;
+        private String state = "active";
+        private long createdGameTime;
+        private long updatedGameTime;
+
+        private PublicRequestRecord(UUID id, UUID villageId, String key) {
+            this.id = id;
+            this.villageId = villageId;
+            this.key = key;
+        }
+
+        public UUID id() { return id; }
+        public UUID villageId() { return villageId; }
+        public String key() { return key; }
+        public String urgency() { return urgency; }
+        public String itemKey() { return itemKey; }
+        public int requestedCount() { return requestedCount; }
+        public int remainingCount() { return remainingCount; }
+        public String reason() { return reason; }
+        public String context() { return context; }
+        public UUID projectId() { return projectId; }
+        public String state() { return state; }
+        public long createdGameTime() { return createdGameTime; }
+        public long updatedGameTime() { return updatedGameTime; }
+
+        public int urgencyRank() {
+            if ("emergency".equals(urgency)) return 3;
+            if ("high".equals(urgency)) return 2;
+            return 1;
+        }
+
+        private CompoundTag save() {
+            CompoundTag tag = new CompoundTag();
+            putUuid(tag, "id", id);
+            putUuid(tag, "village", villageId);
+            tag.putString("key", key);
+            tag.putString("urgency", urgency);
+            tag.putString("item_key", itemKey);
+            tag.putInt("requested", requestedCount);
+            tag.putInt("remaining", remainingCount);
+            tag.putString("reason", reason);
+            tag.putString("context", context);
+            putUuid(tag, "project", projectId);
+            tag.putString("state", state);
+            tag.putLong("created", createdGameTime);
+            tag.putLong("updated", updatedGameTime);
+            return tag;
+        }
+
+        private static PublicRequestRecord load(CompoundTag tag) {
+            UUID id = readUuid(tag, "id");
+            UUID villageId = readUuid(tag, "village");
+            String key = tag.getString("key");
+            if (id == null || villageId == null || key.isBlank()) return null;
+
+            PublicRequestRecord record = new PublicRequestRecord(id, villageId, key);
+            record.urgency = safeText(tag.getString("urgency"), "normal");
+            record.itemKey = tag.getString("item_key");
+            record.requestedCount = Math.max(0, tag.getInt("requested"));
+            record.remainingCount = Math.max(0, tag.getInt("remaining"));
+            record.reason = tag.getString("reason");
+            record.context = tag.getString("context");
+            record.projectId = readUuid(tag, "project");
+            record.state = safeText(tag.getString("state"), "active");
+            record.createdGameTime = tag.getLong("created");
+            record.updatedGameTime = tag.getLong("updated");
+            return record;
+        }
+    }
+
+    public static final class MigrationRecord {
+        private final UUID id;
+        private final UUID originVillageId;
+        private UUID destinationVillageId;
+        private final Set<UUID> members = new LinkedHashSet<>();
+        private String state = "planned";
+        private String kind = "planned";
+        private BlockPos target;
+        private long createdGameTime;
+        private long updatedGameTime;
+
+        private MigrationRecord(UUID id, UUID originVillageId, UUID destinationVillageId) {
+            this.id = id;
+            this.originVillageId = originVillageId;
+            this.destinationVillageId = destinationVillageId;
+        }
+
+        public UUID id() { return id; }
+        public UUID originVillageId() { return originVillageId; }
+        public UUID destinationVillageId() { return destinationVillageId; }
+        public Set<UUID> members() { return Collections.unmodifiableSet(members); }
+        public String state() { return state; }
+        public String kind() { return kind; }
+        public BlockPos target() { return target; }
+        public long createdGameTime() { return createdGameTime; }
+        public long updatedGameTime() { return updatedGameTime; }
+
+        public void setDestinationVillageId(UUID value) { destinationVillageId = value; }
+        public void addMember(UUID value) { members.add(value); }
+        public void removeMember(UUID value) { members.remove(value); }
+        public void setState(String value) { state = safeText(value, "planned"); }
+        public void setKind(String value) { kind = safeText(value, "planned"); }
+        public void setTarget(BlockPos value) { target = value == null ? null : value.immutable(); }
+        public void setCreatedGameTime(long value) { createdGameTime = value; }
+        public void setUpdatedGameTime(long value) { updatedGameTime = value; }
+
+        private CompoundTag save() {
+            CompoundTag tag = new CompoundTag();
+            putUuid(tag, "id", id);
+            putUuid(tag, "origin", originVillageId);
+            putUuid(tag, "destination", destinationVillageId);
+            tag.put("members", writeUuidSet(members));
+            tag.putString("state", state);
+            tag.putString("kind", kind);
+            if (target != null) tag.putLong("target", target.asLong());
+            tag.putLong("created", createdGameTime);
+            tag.putLong("updated", updatedGameTime);
+            return tag;
+        }
+
+        private static MigrationRecord load(CompoundTag tag) {
+            UUID id = readUuid(tag, "id");
+            UUID origin = readUuid(tag, "origin");
+            if (id == null || origin == null) return null;
+
+            MigrationRecord record = new MigrationRecord(id, origin, readUuid(tag, "destination"));
+            record.members.addAll(readUuidSet(tag, "members"));
+            record.state = safeText(tag.getString("state"), "planned");
+            record.kind = safeText(tag.getString("kind"), "planned");
+            if (tag.contains("target", Tag.TAG_LONG)) record.target = BlockPos.of(tag.getLong("target"));
+            record.createdGameTime = tag.getLong("created");
+            record.updatedGameTime = tag.getLong("updated");
+            return record;
+        }
+    }
+
+    private static final class ChunkIndexEntry {
+        private final Set<UUID> buildingIds = new LinkedHashSet<>();
+        private final Set<UUID> storageIds = new LinkedHashSet<>();
+        private final Set<UUID> workSiteIds = new LinkedHashSet<>();
+        private final Set<UUID> routeIds = new LinkedHashSet<>();
+        private final Set<UUID> projectIds = new LinkedHashSet<>();
+
+        private ChunkIndexView snapshot() {
+            return new ChunkIndexView(
+                    Set.copyOf(buildingIds),
+                    Set.copyOf(storageIds),
+                    Set.copyOf(workSiteIds),
+                    Set.copyOf(routeIds),
+                    Set.copyOf(projectIds)
+            );
+        }
+    }
+
+    public record ChunkIndexView(
+            Set<UUID> buildingIds,
+            Set<UUID> storageIds,
+            Set<UUID> workSiteIds,
+            Set<UUID> routeIds,
+            Set<UUID> projectIds
+    ) {
+        public static final ChunkIndexView EMPTY =
+                new ChunkIndexView(Set.of(), Set.of(), Set.of(), Set.of(), Set.of());
+    }
+}

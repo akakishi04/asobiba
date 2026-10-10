@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "pattern": [
+    "AFA",
+    "FBF",
+    "AFA"
+  ],
+  "key": {
+    "A": { "item": "minecraft:amethyst_shard" },
+    "F": { "item": "asobibatweaks:arcane_folio" },
+    "B": { "item": "minecraft:bookshelf" }
+  },
+  "result": {
+    "id": "asobibatweaks:arcane_bookshelf",
+    "count": 1
+  }
+}
