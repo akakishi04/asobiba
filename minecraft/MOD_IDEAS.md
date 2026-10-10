@@ -29,6 +29,16 @@ A tiny fraction of chunks receive a deterministic quirk from world seed + chunk 
 ### Minor anomalies
 Very rare harmless events: a village bell rings with nobody there, nearby sheep all stare in one direction, torches flicker, bats suddenly leave a cave.
 
+### Chicken Conspiracy / 鶏の密談 — accepted, planned (not implemented)
+Very rarely, when at least three chickens are gathered nearby, they briefly stop and face the same seemingly arbitrary direction, as if holding a secret meeting. When a player comes close, they quietly disperse and resume their normal behavior as though nothing happened.
+
+Implementation intent:
+- An optional ambient oddity, not a quest, progression system or reward source. No items, stat boosts, achievement, special message or persistent world changes.
+- Apply only during otherwise idle, safe moments; do not interrupt panic, breeding, feeding, combat responses or important vanilla chicken behavior.
+- Use low-frequency, bounded checks of already-loaded chickens near active players; never force-load chunks. Keep behavior compatible with the existing Mob Gatherings feature without making that feature a prerequisite.
+- Expose an independent on/off configuration option. Tune the exact probability, short duration and approach distance during implementation instead of creating mandatory player interactions.
+- Status: accepted for a future pass; no production implementation or GameTests yet. It is not a blocker for the existing v0.1 implementation-closure/CI scope.
+
 ### Seasonal micro-rules
 Not full seasons. Every few Minecraft days, one subtle environmental modifier rotates: mushrooms spread slightly more, snow lingers, bees work longer, etc.
 

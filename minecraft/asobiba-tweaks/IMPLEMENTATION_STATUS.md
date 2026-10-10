@@ -59,6 +59,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Enderman Micro-Building | `WorldOddityEvents` | Implemented |
 | Parrot Perches | `WorldOddityEvents` | Implemented |
 | Mob Gatherings | `WorldOddityEvents` | Implemented |
+| Chicken Conspiracy / 鶏の密談 | — | **Planned, not implemented:** rare synchronized facing among 3+ idle chickens; disperse when a player approaches. Ambient only, independently configurable; no GameTests yet; outside existing v0.1 closure scope. |
 | Rare Armor Stand Pose Drift | `WorldOddityEvents` | Implemented |
 | Elytra Armor Stand Display | `ArmorStandElytraMixin` | Implemented; visual playtest required |
 | Auto-connected Map Walls | `OceanAndDisplayEvents` | Implemented |

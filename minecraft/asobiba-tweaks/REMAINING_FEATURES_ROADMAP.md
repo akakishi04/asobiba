@@ -45,6 +45,10 @@ The bounded accepted implementation scopes are complete in the round7 local snap
 - The individual G01–G23 acceptance scenarios in `ACCEPTANCE_MATRIX.md`
 
 ## Working policy
+## Accepted future small oddities (not yet implemented)
+
+- **Chicken Conspiracy / 鶏の密談 — PLANNED:** Occasionally, three or more nearby chickens stand briefly facing the same direction as if conspiring, then disperse naturally when a player approaches. Purely atmospheric and unrewarded. Implement with an independent config toggle, finite loaded-entity checks and no interference with essential chicken AI. See `../MOD_IDEAS.md` (World oddities) for the accepted behavior. This is a future feature pass, **not** a missing item in the already completed bounded v0.1 scope, and is not covered by the existing 224 GameTests.
+
 
 1. Complete accepted missing behavior and fix failing conservation/runtime checks. User-delegated design allows bounded choices; it does not turn every future idea into a release requirement.
 2. Keep real resources authoritative, preserve player edits/cargo, never force-load chunks or manufacture recovery items, and keep river cargo default ON.
