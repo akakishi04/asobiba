@@ -246,3 +246,16 @@ The required tests run on a real NeoForge GameTestServer. GT01–GT84 are retain
 Automated coverage: `SnowGolemTiltGameTests` exercises the production pure state controller, including offscreen-only arming, first reveal, same-tick look-away/return, neutral restoration, bounded lifetimes/cooldowns/cache, reset and UUID isolation. Local full regression: all **267 required GameTests passed in 29.14 seconds**, including these 11 new state tests; full build passed in 54 seconds (2026-10-10). Published-head CI remains a separate gate.
 
 Manual client checks remain open: alternate two golems with different tilt states; pumpkin/sheared heads and glowing outline; cull then look back; pause/menu/resume; F5/camera changes; unload/reload and dimension/logout; disable while tilted; independent multiplayer observers. Vanilla source integration uses `SnowGolemModel.setupAnim` and its existing pumpkin head transform, but source inspection/build is not a rendered-client test.
+
+
+## Cloud line, armor-stand imitation and End void gathering (2026-10-10)
+
+Final clean local regression: **280/280 required GameTests passed in 35.99 seconds**, full clean build passed in **1 minute 8 seconds**. The standard build also ran **10,278 standalone cloud-state assertions**. Exact published-head CI remains a separate gate until reported on the feature pull request.
+
+| Coverage | Automated evidence | Remaining manual evidence |
+|---|---|---|
+| Cloud line | Ten `CloudLineGameTests` plus `verifyCloudLineState`: rarity/warmup, five distinct square sizes and regular spacing, vanilla drift/interpolation, dispersal/expiry, cooldown/reset, invalid input, world/clock isolation and immutable bounded snapshots | Actual cloud pass on FAST/FANCY/Fabulous; weather/fog appearance, natural encounters, shader-mod compatibility and separate multiplayer observers |
+| End void gathering | `EndermanVoidGatheringGameTests`: rejects Overworld; actual loaded End fixture, four actors walking natively to safe inset positions, shared gaze, exact staggered release, native survival stare, anger/combat/damage/carry interrupts, terrain/query bounds, unloaded/deep-column rejection, exact path/recompute ownership, cleanup and no rewards/world changes | Naturally generated island-rim frequency, multiplayer presentation and interaction with other mods' movement goals |
+| Villager armor-stand imitation | `VillagerArmorStandImitationGameTests`: actual native brain walk/held facing/full duration, diagonal arrival, ordinary navigation after release, work/meeting/rest/emergency/hostile priority, new movement-goal ownership, replacement memories/paths, unsafe/oversized/busy rejection and lifecycle cleanup | Natural village encounter frequency, arbitrary armor-stand placements, modpack AI interactions and visual readability |
+
+These are quiet ambience features. Passing the physical server scenarios does not establish actual client rendering or broad modpack compatibility. Data Logger remains outside this feature scope.

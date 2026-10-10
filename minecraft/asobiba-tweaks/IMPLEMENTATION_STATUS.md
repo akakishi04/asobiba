@@ -1,5 +1,15 @@
 # AsobibaTweaks implementation status
 
+## Three quiet ambient scenes (2026-10-10)
+
+Implemented on merged `bd49b33e`: an observer-local drifting cloud line; idle villagers briefly imitating a nearby armor stand; and two to four existing Endermen walking to a safe inset island rim, looking outward and releasing one by one. Each has an independent toggle and natural chance. There are no new rewards, spawning, teleportation, saved-world records or Data Logger changes.
+
+Final clean local verification: **280/280 required GameTests passed in 35.99 seconds; clean full build passed in 1 minute 8 seconds**. The normal `check` task also executes **10,278 pure cloud-state assertions**, all passed. The preceding integrated server run passed all 280 tests in 27.59 seconds; its later build-only failure was a standalone main runner incorrectly placed in JUnit's source set. The runner now has its own `cloudStateTest` source set, without disabling or weakening test discovery. The clean final run also includes the explicit oversized-villager safety gate.
+
+The new coverage comprises ten cloud state GameTests, two End-dimension tests (including actual native walking and staggered release), and one sequential villager native-brain scenario (walking, complete held pose, release, resumed navigation and priority interruptions). Native chunk/entity readiness and settled collision physics are established by fixtures rather than fabricated through position changes during a scene. Existing 267 required cases remain intact.
+
+Client render integration and shader/framebuffer state were source-reviewed and compiled; real FAST/FANCY/Fabulous presentation, shader-mod compatibility, multiplayer visuals and natural encounter frequency remain manual playtesting gates. Exact published-head CI and merge status are recorded by this feature's pull request.
+
 ## Snow Golem head tilt (2026-10-10)
 
 A new independently optional client-only head/pumpkin tilt is implemented on the previously merged `42e24475` baseline. It is prepared outside the current view, appears as an already-held subtle pose, and resets after looking away. There are no gameplay/network changes. Eleven dedicated-server-safe pure state tests cover first reveal, gaze transitions, expiry, cooldowns, bounds and lifecycle reset. Local full suite: **267/267 required tests passed in 29.14 seconds; full build passed in 54 seconds**. Actual rendered client/multiplayer presentation remains unverified; exact published-head CI is reported by the feature pull request.

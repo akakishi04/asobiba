@@ -72,6 +72,13 @@ public final class AsobibaTweaksConfig {
     public static final ModConfigSpec.BooleanValue OE_BACKWARD_BREEZE_ENABLED = bool("oddities.backwardBreeze", true, "Allow a tiny local particle swirl without changing velocity.");
     public static final ModConfigSpec.BooleanValue OE_UNCLAIMED_CHORD_ENABLED = bool("oddities.unclaimedChord", true, "Allow a faint ambient chord without a physical source or reward.");
 
+    public static final ModConfigSpec.BooleanValue VILLAGER_ARMOR_STAND_IMITATION_ENABLED = bool("oddities.villagerArmorStandImitation", true, "Allow idle villagers to briefly align beside a nearby armor stand before returning to ordinary activity.");
+    public static final ModConfigSpec.DoubleValue VILLAGER_ARMOR_STAND_IMITATION_CHANCE = BUILDER.defineInRange("oddities.villagerArmorStandImitationChancePerCheck", 0.02D, 0.0D, 0.1D);
+    public static final ModConfigSpec.BooleanValue CLOUD_LINE_ENABLED = bool("oddities.cloudLine", true, "Allow rare observer-local rows of differently sized square clouds that drift and disperse quietly.");
+    public static final ModConfigSpec.DoubleValue CLOUD_LINE_CHANCE = BUILDER.defineInRange("oddities.cloudLineChancePerCheck", 0.02D, 0.0D, 1.0D);
+    public static final ModConfigSpec.BooleanValue ENDERMAN_VOID_GATHERING_ENABLED = bool("oddities.endermanVoidGathering", true, "Allow rare idle Endermen to gather on validated inset End-island rim positions, gaze outward, then release one by one.");
+    public static final ModConfigSpec.DoubleValue ENDERMAN_VOID_GATHERING_CHANCE = BUILDER.defineInRange("oddities.endermanVoidGatheringChancePerCheck", 0.01D, 0.0D, 0.1D);
+
     public static final ModConfigSpec.BooleanValue SNOW_GOLEM_HEAD_TILT_ENABLED = bool("oddities.snowGolemHeadTilt", true, "Observer-local snow-golem head/pumpkin tilt; looking away restores the neutral pose.");
     public static final ModConfigSpec.DoubleValue SNOW_GOLEM_TILT_CHANCE = BUILDER.defineInRange("oddities.snowGolemHeadTiltChancePerCheck", 0.01D, 0.0D, 0.1D);
     public static final ModConfigSpec.DoubleValue SNOW_GOLEM_TILT_ANGLE = BUILDER.defineInRange("oddities.snowGolemHeadTiltDegrees", 6.0D, 1.0D, 10.0D);

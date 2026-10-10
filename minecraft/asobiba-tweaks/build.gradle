@@ -65,3 +65,19 @@ neoForge.ideSyncTask generateModMetadata
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
+
+// Keep the standalone runner separate from JUnit discovery; both checks remain strict.
+sourceSets {
+    cloudStateTest {
+        java.srcDir 'src/cloudStateTest/java'
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+// Pure cosmetic-state regression, also run by the normal local/CI build.
+var verifyCloudLineState = tasks.register('verifyCloudLineState', JavaExec) {
+    dependsOn tasks.named('cloudStateTestClasses')
+    classpath = sourceSets.cloudStateTest.runtimeClasspath
+    mainClass = 'io.github.akakishi04.asobibatweaks.feature.CloudLineStateTest'
+}
+tasks.named('check') { dependsOn verifyCloudLineState }
