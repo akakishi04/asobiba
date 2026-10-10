@@ -72,6 +72,10 @@ public final class AsobibaTweaksConfig {
     public static final ModConfigSpec.BooleanValue OE_BACKWARD_BREEZE_ENABLED = bool("oddities.backwardBreeze", true, "Allow a tiny local particle swirl without changing velocity.");
     public static final ModConfigSpec.BooleanValue OE_UNCLAIMED_CHORD_ENABLED = bool("oddities.unclaimedChord", true, "Allow a faint ambient chord without a physical source or reward.");
 
+    public static final ModConfigSpec.BooleanValue SNOW_GOLEM_HEAD_TILT_ENABLED = bool("oddities.snowGolemHeadTilt", true, "Observer-local snow-golem head/pumpkin tilt; looking away restores the neutral pose.");
+    public static final ModConfigSpec.DoubleValue SNOW_GOLEM_TILT_CHANCE = BUILDER.defineInRange("oddities.snowGolemHeadTiltChancePerCheck", 0.01D, 0.0D, 0.1D);
+    public static final ModConfigSpec.DoubleValue SNOW_GOLEM_TILT_ANGLE = BUILDER.defineInRange("oddities.snowGolemHeadTiltDegrees", 6.0D, 1.0D, 10.0D);
+
     public static final ModConfigSpec.BooleanValue ARMOR_STAND_POSE_DRIFT_ENABLED = bool("oddities.armorStandPoseDrift", true, "Allow very rare subtle armor-stand pose changes.");
     public static final ModConfigSpec.DoubleValue ARMOR_STAND_POSE_DRIFT_CHANCE = BUILDER.defineInRange("oddities.armorStandPoseDriftChancePerCheck", 0.0005D, 0.0D, 1.0D);
 

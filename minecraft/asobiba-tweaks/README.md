@@ -78,6 +78,7 @@ Already-loaded eligibility, priority AI, individual toggles, shared cooldowns an
 - **Rare mob gatherings**
 - **Enderman micro-building**
 - **Parrot perches**
+- **Snow Golem head tilt** — very rarely, a calm nearby golem is already holding its head/pumpkin slightly askew when you look; looking away and back restores its normal pose. Client-only cosmetic, independently configurable.
 - **Rare armor-stand pose drift**
 - **Armor Stand loadout swap**
 - **Opened Elytra display on Armor Stands**

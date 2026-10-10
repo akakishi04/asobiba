@@ -239,3 +239,10 @@ The required tests run on a real NeoForge GameTestServer. GT01–GT84 are retain
 - **World generation:** model determinism is narrower than physical channel continuity, shore appearance and useful boat navigation. Structure/reference guards and exceptional low terrain intentionally remain possible interruptions.
 - **Compatibility/performance:** sustained multiplayer, actual modpack POIs/loot/terrain hooks and long-lived history budgets need their own measured runs.
 - **Intentional scope:** all 41 selectable enchantment families have code; Mending is branchless and Flame's third slot is deliberately open. Additional ammo-domain specializations, pack animals, portage and unrestricted bridge geometry are not missing initial-release implementations.
+
+
+## Snow Golem head tilt (2026-10-10)
+
+Automated coverage: `SnowGolemTiltGameTests` exercises the production pure state controller, including offscreen-only arming, first reveal, same-tick look-away/return, neutral restoration, bounded lifetimes/cooldowns/cache, reset and UUID isolation. Local full regression: all **267 required GameTests passed in 29.14 seconds**, including these 11 new state tests; full build passed in 54 seconds (2026-10-10). Published-head CI remains a separate gate.
+
+Manual client checks remain open: alternate two golems with different tilt states; pumpkin/sheared heads and glowing outline; cull then look back; pause/menu/resume; F5/camera changes; unload/reload and dimension/logout; disable while tilted; independent multiplayer observers. Vanilla source integration uses `SnowGolemModel.setupAnim` and its existing pumpkin head transform, but source inspection/build is not a rendered-client test.
