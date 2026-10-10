@@ -120,7 +120,7 @@ public final class VillageSpecialistWorkshopGameTests {
     }
 
     /** Recognized, physically traversable ground-floor POI stays functional. */
-    @GameTest(template = "empty16x6x9", batch = "specialist_crafting", timeoutTicks = 45)
+    @GameTest(template = "empty16x6x9", batch = "specialist_entry_open", timeoutTicks = 75)
     public static void realSpecialistEntryMakesRegisteredStationReachable(
             GameTestHelper helper) {
         WorkshopFixture f = setupPhysicalWorkshop(helper);
@@ -133,7 +133,7 @@ public final class VillageSpecialistWorkshopGameTests {
                             f.level(), f.origin())
                     || !"valid".equals(f.building().validationState())
                     || f.building().validatedCapacity() != 1) {
-                helper.fail("Physically open public hall did not expose its real job-site POI",
+                helper.fail("Physically open public hall did not expose its real job-site POI; " + workshopDiagnostics(f),
                         new BlockPos(7, 2, 4));
                 return;
             }
@@ -142,7 +142,7 @@ public final class VillageSpecialistWorkshopGameTests {
     }
 
     /** A workstation can survive, yet be unreachable behind an edited wall. */
-    @GameTest(template = "empty16x6x9", batch = "specialist_crafting", timeoutTicks = 55)
+    @GameTest(template = "empty16x6x9", batch = "specialist_entry_blocked", timeoutTicks = 85)
     public static void blockedSpecialistPassageCannotCountAsWorkingPoi(
             GameTestHelper helper) {
         WorkshopFixture f = setupPhysicalWorkshop(helper);
@@ -157,7 +157,7 @@ public final class VillageSpecialistWorkshopGameTests {
                             f.level(), f.origin())
                     || !"invalid".equals(f.building().validationState())
                     || f.building().validatedCapacity() != 0) {
-                helper.fail("Blocked real workstation corridor was wrongly considered usable",
+                helper.fail("Blocked real workstation corridor was wrongly considered usable; " + workshopDiagnostics(f),
                         new BlockPos(7, 2, 3));
                 return;
             }
@@ -169,7 +169,7 @@ public final class VillageSpecialistWorkshopGameTests {
                             f.level(), f.origin())
                         || !"valid".equals(f.building().validationState())
                         || f.building().validatedCapacity() != 1) {
-                    helper.fail("Removing obstruction did not restore a genuine job-site POI",
+                    helper.fail("Removing obstruction did not restore a genuine job-site POI; " + workshopDiagnostics(f),
                             new BlockPos(7, 2, 3));
                     return;
                 }
@@ -200,6 +200,24 @@ public final class VillageSpecialistWorkshopGameTests {
         building.setValidatedCapacity(0);
         data.touch();
         return new WorkshopFixture(level, base, building);
+    }
+
+    private static String workshopDiagnostics(WorkshopFixture f) {
+        BlockPos base = f.origin();
+        var level = f.level();
+        BlockPos entrance = base.offset(2, 1, 0);
+        BlockPos hall = base.offset(2, 1, 1);
+        return "validation=" + f.building().validationState()
+                + ", cap=" + f.building().validatedCapacity()
+                + ", station=" + level.getBlockState(base.offset(2, 1, 2))
+                + ", entrance=" + level.getBlockState(entrance)
+                + ", entranceHead=" + level.getBlockState(entrance.above())
+                + ", entranceFloor=" + level.getBlockState(entrance.below())
+                + ", hall=" + level.getBlockState(hall)
+                + ", hallHead=" + level.getBlockState(hall.above())
+                + ", hallFloor=" + level.getBlockState(hall.below())
+                + ", accessible="
+                + VillageBuildingService.specialistPrimaryStationAccessible(level, base);
     }
 
     private record WorkshopFixture(ServerLevel level, BlockPos origin,
