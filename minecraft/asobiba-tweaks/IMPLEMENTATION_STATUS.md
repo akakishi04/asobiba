@@ -1,5 +1,10 @@
 # AsobibaTweaks implementation status
 
+## Snow Golem head tilt (2026-10-10)
+
+A new independently optional client-only head/pumpkin tilt is implemented on the previously merged `42e24475` baseline. It is prepared outside the current view, appears as an already-held subtle pose, and resets after looking away. There are no gameplay/network changes. Eleven dedicated-server-safe pure state tests cover first reveal, gaze transitions, expiry, cooldowns, bounds and lifecycle reset. Local full suite: **267/267 required tests passed in 29.14 seconds; full build passed in 54 seconds**. Actual rendered client/multiplayer presentation remains unverified; exact published-head CI is reported by the feature pull request.
+
+
 ## Latest baseline and new independent-feature pass (2026-10-10)
 
 The historical 224-test integration below was subsequently published as `5a472c0` and merged to `main` in `e6f74bed`. [CI run 38040837678](https://github.com/akakishi04/asobiba/actions/runs/38040837678) passed both mod builds, all 224 required GameTests, and dedicated-server startup. Its older publication-pending wording is a preserved checkpoint, superseded by this result.

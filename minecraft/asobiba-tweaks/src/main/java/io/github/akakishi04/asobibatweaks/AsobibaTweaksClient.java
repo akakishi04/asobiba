@@ -6,6 +6,7 @@ import io.github.akakishi04.asobibatweaks.client.FletchingCopyScreen;
 import io.github.akakishi04.asobibatweaks.client.NetherFishRenderer;
 import io.github.akakishi04.asobibatweaks.client.AfterimageDecoyRenderer;
 import io.github.akakishi04.asobibatweaks.client.NodGestureClient;
+import io.github.akakishi04.asobibatweaks.client.SnowGolemTiltClient;
 import io.github.akakishi04.asobibatweaks.feature.NodGestureNetworking;
 import io.github.akakishi04.asobibatweaks.feature.AfterimageDecoyRegistration;
 import io.github.akakishi04.asobibatweaks.client.QuiverClientEvents;
@@ -39,6 +40,7 @@ public final class AsobibaTweaksClient {
         modBus.addListener(this::registerRenderers);
         NeoForge.EVENT_BUS.register(new EnchantingScreenEvents());
         NeoForge.EVENT_BUS.register(new QuiverClientEvents());
+        NeoForge.EVENT_BUS.register(new SnowGolemTiltClient());
         NeoForge.EVENT_BUS.register(new FrostWalkerToggleClientEvents());
     }
 

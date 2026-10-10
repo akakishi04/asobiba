@@ -58,6 +58,7 @@
   },
   "client": [
     "VillagerNodModelMixin",
+    "SnowGolemTiltModelMixin",
     "AtlasItemInHandRendererMixin"
   ]
 }
