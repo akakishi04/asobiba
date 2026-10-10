@@ -33,7 +33,7 @@ public final class VillageHouseVerticalExpansionGameTests {
     private static final BlockPos MARK = new BlockPos(7, 5, 4);
     private VillageHouseVerticalExpansionGameTests() {}
 
-    @GameTest(template = "empty16x14x9", timeoutTicks = 70)
+    @GameTest(template = "empty16x14x9", timeoutTicks = 70, batch = "second_floor")
     public static void originalPaidHouseSchedulesPersistedSecondFloor(GameTestHelper helper) {
         Fixture f = setup(helper);
         helper.runAtTickTime(4, () -> {
@@ -62,7 +62,7 @@ public final class VillageHouseVerticalExpansionGameTests {
         });
     }
 
-    @GameTest(template = "empty16x14x9", timeoutTicks = 70)
+    @GameTest(template = "empty16x14x9", timeoutTicks = 70, batch = "second_floor")
     public static void playerUpperShellEditBlocksExpansionWithoutPayment(GameTestHelper helper) {
         Fixture f = setup(helper);
         f.level().setBlock(f.base().offset(0, 6, 1),
@@ -80,7 +80,7 @@ public final class VillageHouseVerticalExpansionGameTests {
         });
     }
 
-    @GameTest(template = "empty16x14x9", timeoutTicks = 70)
+    @GameTest(template = "empty16x14x9", timeoutTicks = 70, batch = "second_floor")
     public static void placedUpperWallReconcilesWithoutSecondItemDebit(GameTestHelper helper) {
         Fixture f = setup(helper);
         // Execute this focused transaction before the next GameTestServer
@@ -141,7 +141,7 @@ public final class VillageHouseVerticalExpansionGameTests {
         }
     }
 
-    @GameTest(template = "empty16x14x9", timeoutTicks = 160)
+    @GameTest(template = "empty16x14x9", timeoutTicks = 160, batch = "second_floor")
     public static void physicallyCompleteSecondStoreyRetainsBuildingIdAndCountsBeds(
             GameTestHelper helper) {
         Fixture f = setup(helper);
@@ -206,7 +206,7 @@ public final class VillageHouseVerticalExpansionGameTests {
         });
     }
 
-    @GameTest(template = "empty16x14x9", timeoutTicks = 70)
+    @GameTest(template = "empty16x14x9", timeoutTicks = 70, batch = "second_floor")
     public static void liveExpansionExcludesConflictingHouseRepairs(GameTestHelper helper) {
         Fixture f = setup(helper);
         helper.runAtTickTime(4, () -> {

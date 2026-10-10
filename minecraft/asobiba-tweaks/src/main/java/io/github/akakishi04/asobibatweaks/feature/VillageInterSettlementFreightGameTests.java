@@ -27,7 +27,7 @@ public final class VillageInterSettlementFreightGameTests {
     private static final BlockPos MARK = new BlockPos(8, 2, 4);
     private VillageInterSettlementFreightGameTests() {}
 
-    @GameTest(template = "empty16x6x9")
+    @GameTest(template = "empty16x6x9", batch = "village_trade")
     public static void realPorterMovesPaidStockBetweenSeparateVillageBarrels(GameTestHelper helper) {
         Fixture f = setup(helper);
         f.source().setItem(0, new ItemStack(Items.COBBLESTONE, 64));
@@ -68,7 +68,7 @@ public final class VillageInterSettlementFreightGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty16x6x9")
+    @GameTest(template = "empty16x6x9", batch = "village_trade")
     public static void fullDestinationRetainsRealPorterParcelUntilSpaceReturns(GameTestHelper helper) {
         Fixture f = setup(helper);
         f.source().setItem(0, new ItemStack(Items.WHEAT, 64));
@@ -99,7 +99,7 @@ public final class VillageInterSettlementFreightGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty16x6x9")
+    @GameTest(template = "empty16x6x9", batch = "village_trade")
     public static void removedSourceStockCancelsUnpaidTransfer(GameTestHelper helper) {
         Fixture f = setup(helper);
         f.source().setItem(0, new ItemStack(Items.COBBLESTONE, 64));
@@ -119,7 +119,7 @@ public final class VillageInterSettlementFreightGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty16x6x9")
+    @GameTest(template = "empty16x6x9", batch = "village_trade")
     public static void splitRealStockStillPaysExactParcel(GameTestHelper helper) {
         Fixture f = setup(helper);
         for (int i = 0; i < 8; i++)
@@ -147,7 +147,7 @@ public final class VillageInterSettlementFreightGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty16x6x9")
+    @GameTest(template = "empty16x6x9", batch = "village_trade")
     public static void sameItemWithDifferentComponentsIsNotSwapped(GameTestHelper helper) {
         Fixture f = setup(helper);
         ItemStack named = new ItemStack(Items.COBBLESTONE, 64);
@@ -180,7 +180,7 @@ public final class VillageInterSettlementFreightGameTests {
     }
 
     /** Genuinely different items satisfying the same material category prevent import churn. */
-    @GameTest(template = "empty16x6x9")
+    @GameTest(template = "empty16x6x9", batch = "village_trade")
     public static void stoneSupplyCategoryBlocksRedundantCobbleExport(GameTestHelper helper) {
         Fixture f = setup(helper);
         f.source().setItem(0, new ItemStack(Items.COBBLESTONE, 64));
@@ -211,7 +211,7 @@ public final class VillageInterSettlementFreightGameTests {
     }
 
     /** Construction reservations reduce real category surplus before logistics planning. */
-    @GameTest(template = "empty16x6x9")
+    @GameTest(template = "empty16x6x9", batch = "village_trade")
     public static void reservedConstructionMaterialRemainsAtHome(GameTestHelper helper) {
         Fixture f = setup(helper);
         f.source().setItem(0, new ItemStack(Items.COBBLESTONE, 64));

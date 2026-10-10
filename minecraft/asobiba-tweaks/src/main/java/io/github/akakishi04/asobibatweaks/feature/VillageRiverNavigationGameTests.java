@@ -21,7 +21,7 @@ public final class VillageRiverNavigationGameTests {
 
     private VillageRiverNavigationGameTests() {}
 
-    @GameTest(template = "empty3x3x3")
+    @GameTest(template = "empty3x3x3", batch = "river_navigation")
     public static void connectedSourceWaterIsNavigable(GameTestHelper helper) {
         for (int x = 0; x < 3; x++) {
             for (int z = 0; z < 3; z++) {
@@ -41,7 +41,7 @@ public final class VillageRiverNavigationGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty3x3x3")
+    @GameTest(template = "empty3x3x3", batch = "river_navigation")
     public static void solidBarrierRequiresRealWaterDetour(GameTestHelper helper) {
         for (int x = 0; x < 3; x++) {
             for (int z = 0; z < 3; z++) {

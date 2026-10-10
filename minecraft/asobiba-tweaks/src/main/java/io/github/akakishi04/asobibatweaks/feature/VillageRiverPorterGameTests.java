@@ -22,7 +22,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 public final class VillageRiverPorterGameTests {
     private VillageRiverPorterGameTests() {}
 
-    @GameTest(template = "empty16x6x9")
+    @GameTest(template = "empty16x6x9", batch = "river_porter")
     public static void corePorterStagesPhysicalShipment(GameTestHelper helper) {
         var world = VillageRiverCargoGameTests.setup(helper);
         var local = warehouses(helper, world);
@@ -52,7 +52,7 @@ public final class VillageRiverPorterGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty16x6x9")
+    @GameTest(template = "empty16x6x9", batch = "river_porter")
     public static void remotePorterCollectsOnlyArrivedFreight(GameTestHelper helper) {
         var world = VillageRiverCargoGameTests.setup(helper);
         var local = warehouses(helper, world);

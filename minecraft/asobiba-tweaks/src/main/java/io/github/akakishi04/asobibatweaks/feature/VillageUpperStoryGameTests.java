@@ -22,7 +22,7 @@ public final class VillageUpperStoryGameTests {
     private static final BlockPos MARK = new BlockPos(8, 3, 4);
     private VillageUpperStoryGameTests() {}
 
-    @GameTest(template = "empty16x6x9", timeoutTicks = 45)
+    @GameTest(template = "empty16x6x9", timeoutTicks = 45, batch = "upper_story")
     public static void upperFloorRequiresPhysicalOrientedStairsAndSafeLanding(
             GameTestHelper helper) {
         // Place the whole 4-tread flight within the real GameTest fixture;
@@ -100,7 +100,7 @@ public final class VillageUpperStoryGameTests {
         });
     }
 
-    @GameTest(template = "empty3x3x3", timeoutTicks = 35)
+    @GameTest(template = "empty3x3x3", timeoutTicks = 35, batch = "upper_story")
     public static void threeStoryRevalidationFitsDefaultBoundedProbeBudget(
             GameTestHelper helper) {
         BlockPos base = helper.absolutePos(new BlockPos(1, 1, 1));
@@ -123,7 +123,7 @@ public final class VillageUpperStoryGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty3x3x3", timeoutTicks = 40)
+    @GameTest(template = "empty3x3x3", timeoutTicks = 40, batch = "upper_story")
     public static void multistoryBlueprintKeepsUpperLandingFreeOfBeds(
             GameTestHelper helper) {
         var level = helper.getLevel();

@@ -167,7 +167,7 @@ public final class VillageRiverCargoGameTests {
         }
     }
 
-    @GameTest(template = "empty16x6x9", timeoutTicks = 60)
+    @GameTest(template = "empty16x6x9", timeoutTicks = 60, batch = "river_freight")
     public static void fullBarrelAndPlayerCargoNeverDeleteFreight(GameTestHelper helper) {
         Fixture test = setup(helper);
         test.source().setItem(0, new ItemStack(Items.OAK_CHEST_BOAT));
@@ -218,7 +218,7 @@ public final class VillageRiverCargoGameTests {
     }
 
     /** V90: a full target must not block a different, physically receivable shipment. */
-    @GameTest(template = "empty16x6x9")
+    @GameTest(template = "empty16x6x9", batch = "river_freight")
     public static void receivingCapacityWinsOverBlockedDockItem(GameTestHelper helper) {
         Fixture test = setup(helper);
         test.source().setItem(0, new ItemStack(Items.OAK_CHEST_BOAT));
@@ -256,7 +256,7 @@ public final class VillageRiverCargoGameTests {
     }
 
     /** V90: among receivable goods prefer genuine dock shortage over source slot order. */
-    @GameTest(template = "empty16x6x9")
+    @GameTest(template = "empty16x6x9", batch = "river_freight")
     public static void lowerDestinationStockTakesFreightPriority(GameTestHelper helper) {
         Fixture test = setup(helper);
         test.source().setItem(0, new ItemStack(Items.OAK_CHEST_BOAT));
@@ -278,7 +278,7 @@ public final class VillageRiverCargoGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty16x6x9")
+    @GameTest(template = "empty16x6x9", batch = "river_freight")
     public static void emptyIdleCarrierReturnsExactlyOnePaidBoatItem(GameTestHelper helper) {
         Fixture f = setup(helper);
         f.source().setItem(0, new ItemStack(Items.OAK_CHEST_BOAT));
@@ -315,7 +315,7 @@ public final class VillageRiverCargoGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty16x6x9")
+    @GameTest(template = "empty16x6x9", batch = "river_freight")
     public static void idleCarrierWithCargoCannotBeDestroyedForBoatItem(GameTestHelper helper) {
         Fixture f = setup(helper);
         f.source().setItem(0, new ItemStack(Items.OAK_CHEST_BOAT));
@@ -338,7 +338,7 @@ public final class VillageRiverCargoGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty16x6x9")
+    @GameTest(template = "empty16x6x9", batch = "river_freight")
     public static void noBoatItemNeverSpawnsBoatOrTransfersCargo(GameTestHelper helper) {
         Fixture test = setup(helper);
         test.source().setItem(0, new ItemStack(Items.COBBLESTONE, 40));
@@ -353,7 +353,7 @@ public final class VillageRiverCargoGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty16x6x9")
+    @GameTest(template = "empty16x6x9", batch = "river_freight")
     public static void actualBoatAndCarrierSavedDataRoundTrip(GameTestHelper helper) {
         Fixture test = setup(helper);
         test.source().setItem(0, new ItemStack(Items.OAK_CHEST_BOAT));
@@ -390,7 +390,7 @@ public final class VillageRiverCargoGameTests {
     }
 
     /** Both directions spend and deliver real inventory, with per-dock receipts. */
-    @GameTest(template = "empty16x6x9")
+    @GameTest(template = "empty16x6x9", batch = "river_freight")
     public static void returnTripCarriesRealReverseFreightAndReceipts(GameTestHelper helper) {
         Fixture test = setup(helper);
         test.source().setItem(0, new ItemStack(Items.OAK_CHEST_BOAT));

@@ -30,7 +30,7 @@ public final class VillageHouseThirdFloorExpansionGameTests {
 
     private VillageHouseThirdFloorExpansionGameTests() {}
 
-    @GameTest(template = "empty16x14x9", timeoutTicks = 65)
+    @GameTest(template = "empty16x14x9", timeoutTicks = 65, batch = "third_floor")
     public static void skilledOriginalSecondFloorSchedulesPersistentThirdFloor(
             GameTestHelper helper) {
         Fixture f = setup(helper);
@@ -62,7 +62,7 @@ public final class VillageHouseThirdFloorExpansionGameTests {
         });
     }
 
-    @GameTest(template = "empty16x14x9", timeoutTicks = 65)
+    @GameTest(template = "empty16x14x9", timeoutTicks = 65, batch = "third_floor")
     public static void playerEditedThirdFloorCannotTriggerDemolition(GameTestHelper helper) {
         Fixture f = setup(helper);
         BlockPos blocker = f.base().offset(0, 10, 1);
@@ -88,7 +88,7 @@ public final class VillageHouseThirdFloorExpansionGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty16x14x9", timeoutTicks = 80)
+    @GameTest(template = "empty16x14x9", timeoutTicks = 80, batch = "third_floor")
     public static void secondStoreyBedDemolishesOnceAndDropsRealItem(GameTestHelper helper) {
         Fixture f = setup(helper);
         var project = project(f);
@@ -144,7 +144,7 @@ public final class VillageHouseThirdFloorExpansionGameTests {
         });
     }
 
-    @GameTest(template = "empty16x14x9", timeoutTicks = 95)
+    @GameTest(template = "empty16x14x9", timeoutTicks = 95, batch = "third_floor")
     public static void completeThirdFloorMaintainsOriginalIdAndFiveRealBeds(GameTestHelper helper) {
         Fixture f = setup(helper);
         var project = project(f);

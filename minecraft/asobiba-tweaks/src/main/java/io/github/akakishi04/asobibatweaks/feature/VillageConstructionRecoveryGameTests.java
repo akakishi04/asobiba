@@ -22,7 +22,7 @@ public final class VillageConstructionRecoveryGameTests {
     private static final BlockPos MARKER = new BlockPos(8, 3, 4);
     private VillageConstructionRecoveryGameTests() {}
 
-    @GameTest(template = "empty16x6x9")
+    @GameTest(template = "empty16x6x9", batch = "building_recovery")
     public static void alreadyPresentFoundationAdvancesWithoutPayingAgain(GameTestHelper helper) {
         Fixture f = prepare(helper);
         var step = f.plan().getFirst();
@@ -53,7 +53,7 @@ public final class VillageConstructionRecoveryGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty16x6x9")
+    @GameTest(template = "empty16x6x9", batch = "building_recovery")
     public static void completedTwoHalfBedReconcilesExactlyOneUnpaidCursor(GameTestHelper helper) {
         Fixture f = prepare(helper);
         int index = footIndex(f.plan());
@@ -79,7 +79,7 @@ public final class VillageConstructionRecoveryGameTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty16x6x9")
+    @GameTest(template = "empty16x6x9", batch = "building_recovery")
     public static void brokenBedHalfNeverApprovesFreeCompletedBed(GameTestHelper helper) {
         Fixture f = prepare(helper);
         int index = footIndex(f.plan());

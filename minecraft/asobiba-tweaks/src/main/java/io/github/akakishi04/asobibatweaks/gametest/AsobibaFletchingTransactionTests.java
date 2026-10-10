@@ -30,7 +30,7 @@ public final class AsobibaFletchingTransactionTests {
 
     private AsobibaFletchingTransactionTests() {}
 
-    @GameTest(template = "empty3x3x3")
+    @GameTest(template = "empty3x3x3", batch = "fletching_transactions")
     public static void paidCopyConservesArrowCountComponentsAndXp(GameTestHelper helper) {
         ServerPlayer player = helper.makeMockServerPlayerInLevel();
         var sharpness = helper.getLevel().registryAccess()
@@ -75,7 +75,7 @@ public final class AsobibaFletchingTransactionTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty3x3x3")
+    @GameTest(template = "empty3x3x3", batch = "fletching_transactions")
     public static void invalidMaterialsNeverSpendXpOrEmitArrows(GameTestHelper helper) {
         ServerPlayer player = helper.makeMockServerPlayerInLevel();
         var sharpness = helper.getLevel().registryAccess()
@@ -108,7 +108,7 @@ public final class AsobibaFletchingTransactionTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty3x3x3")
+    @GameTest(template = "empty3x3x3", batch = "fletching_transactions")
     public static void invalidQuantityAndInsufficientXpAreAtomic(GameTestHelper helper) {
         ServerPlayer player = helper.makeMockServerPlayerInLevel();
         var sharpness = helper.getLevel().registryAccess()

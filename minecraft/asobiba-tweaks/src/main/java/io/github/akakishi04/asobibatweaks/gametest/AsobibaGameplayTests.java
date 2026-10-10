@@ -37,7 +37,7 @@ public final class AsobibaGameplayTests {
 
     private AsobibaGameplayTests() {}
 
-    @GameTest(template = "empty3x3x3")
+    @GameTest(template = "empty3x3x3", batch = "general_gameplay")
     public static void arrowEnchantmentEligibility(GameTestHelper helper) {
         var enchantments = helper.getLevel().registryAccess()
                 .lookupOrThrow(Registries.ENCHANTMENT);
@@ -63,7 +63,7 @@ public final class AsobibaGameplayTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty3x3x3")
+    @GameTest(template = "empty3x3x3", batch = "general_gameplay")
     public static void masteryBranchPersistsOnStack(GameTestHelper helper) {
         var registry = helper.getLevel().registryAccess()
                 .lookupOrThrow(Registries.ENCHANTMENT);
@@ -89,7 +89,7 @@ public final class AsobibaGameplayTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty3x3x3")
+    @GameTest(template = "empty3x3x3", batch = "general_gameplay")
     public static void workBlockSavedDataRoundTrip(GameTestHelper helper) {
         var level = helper.getLevel();
         var efficiency = level.registryAccess().lookupOrThrow(Registries.ENCHANTMENT)
@@ -115,7 +115,7 @@ public final class AsobibaGameplayTests {
         helper.succeed();
     }
 
-    @GameTest(template = "empty3x3x3")
+    @GameTest(template = "empty3x3x3", batch = "general_gameplay")
     public static void frostWalkerToggleIsItemLocal(GameTestHelper helper) {
         ItemStack boots = new ItemStack(Items.IRON_BOOTS);
         if (!FrostWalkerToggle.enabled(boots)) {

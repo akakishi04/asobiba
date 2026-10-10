@@ -15,7 +15,7 @@ public final class ForestRegenerationGameTests {
     private static final BlockPos CENTER = new BlockPos(8, 2, 4);
     private ForestRegenerationGameTests() {}
 
-    @GameTest(template = "empty16x6x9", timeoutTicks = 35)
+    @GameTest(template = "empty16x6x9", timeoutTicks = 35, batch = "forest_safety")
     public static void unmodifiedClearingCanRegrowButFarmCannot(GameTestHelper helper) {
         prepare(helper);
         helper.runAtTickTime(4, () -> {
@@ -46,7 +46,7 @@ public final class ForestRegenerationGameTests {
         });
     }
 
-    @GameTest(template = "empty16x6x9", timeoutTicks = 35)
+    @GameTest(template = "empty16x6x9", timeoutTicks = 35, batch = "forest_safety")
     public static void roadAndStorageNearSaplingAreProtected(GameTestHelper helper) {
         prepare(helper);
         helper.runAtTickTime(9, () -> {
@@ -71,7 +71,7 @@ public final class ForestRegenerationGameTests {
         });
     }
 
-    @GameTest(template = "empty16x6x9", timeoutTicks = 35)
+    @GameTest(template = "empty16x6x9", timeoutTicks = 35, batch = "forest_safety")
     public static void nonVanillaLikeBlockEntitiesProtectPlayerLand(GameTestHelper helper) {
         prepare(helper);
         helper.runAtTickTime(12, () -> {
