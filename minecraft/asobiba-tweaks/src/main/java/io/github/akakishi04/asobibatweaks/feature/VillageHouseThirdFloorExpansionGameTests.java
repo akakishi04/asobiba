@@ -363,6 +363,105 @@ public final class VillageHouseThirdFloorExpansionGameTests {
         helper.succeed();
     }
 
+    @GameTest(template = "empty16x14x9", timeoutTicks = 80,
+            batch = "third_story_supply_1")
+    public static void thirdFloorWallCargoLoadedBeforeRoofNavigation(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        var project = project(f);
+        var steps = VillageHouseThirdFloorExpansionService.steps(project);
+        int cursor = -1;
+        for (int i = 0; i < steps.size(); i++) {
+            if (steps.get(i).pos().equals(f.base().offset(0, 12, 4))) {
+                cursor = i;
+                break;
+            }
+        }
+        if (cursor < 0) {
+            helper.fail("No actual new third-floor roof step", MARK);
+            return;
+        }
+        final int at = cursor;
+        var target = steps.get(at).pos();
+        project.setWorkCursor(at);
+        f.builder().setPos(f.base().getX() + 3.5D,
+                f.base().getY() + 1.0D, f.base().getZ() + 1.5D);
+        helper.runAtTickTime(3, () -> {
+            VillageHouseThirdFloorExpansionService.advance(
+                    f.builder(), f.level(), project);
+            if (project.workCursor() != at || !f.level().getBlockState(target).isAir()
+                    || count(f.storage(), Items.OAK_PLANKS) != 127
+                    || VillagerSimData.workCargoCount(f.builder(),
+                            f.level().registryAccess(), 8, Items.OAK_PLANKS) != 1) {
+                helper.fail("Third-storey worker did not pre-pay one real roof plank", MARK);
+                return;
+            }
+            f.builder().setPos(target.getX() + 0.5D,
+                    target.getY(), target.getZ() + 0.5D);
+            VillageHouseThirdFloorExpansionService.advance(
+                    f.builder(), f.level(), project);
+            if (project.workCursor() != at + 1
+                    || !f.level().getBlockState(target).is(Blocks.OAK_PLANKS)
+                    || count(f.storage(), Items.OAK_PLANKS) != 127
+                    || VillagerSimData.hasWorkCargo(f.builder(),
+                            f.level().registryAccess(), 8)) {
+                helper.fail("Upstairs roof work duplicated a paid plank or never completed", MARK);
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = "empty16x14x9", timeoutTicks = 80,
+            batch = "third_story_supply_2")
+    public static void thirdFloorBedCargoLoadedBeforeUpperBedroomNavigation(
+            GameTestHelper helper) {
+        Fixture f = setup(helper);
+        var project = project(f);
+        var steps = VillageHouseThirdFloorExpansionService.steps(project);
+        int cursor = -1;
+        for (int i = 0; i < steps.size(); i++) {
+            if (steps.get(i).kind() == VillageHouseThirdFloorExpansionService.PLACE_BED
+                    && steps.get(i).pos().equals(f.base().offset(1, 9, 2))) {
+                cursor = i;
+                break;
+            }
+        }
+        if (cursor < 0) {
+            helper.fail("No genuine third-floor two-half Bed step", MARK);
+            return;
+        }
+        final int at = cursor;
+        var foot = steps.get(at).pos();
+        var head = foot.relative(steps.get(at).state().getValue(BedBlock.FACING));
+        project.setWorkCursor(at);
+        f.builder().setPos(f.base().getX() + 3.5D,
+                f.base().getY() + 1.0D, f.base().getZ() + 1.5D);
+        helper.runAtTickTime(3, () -> {
+            VillageHouseThirdFloorExpansionService.advance(
+                    f.builder(), f.level(), project);
+            if (project.workCursor() != at || !f.level().getBlockState(foot).isAir()
+                    || count(f.storage(), Items.WHITE_BED) != 1
+                    || VillagerSimData.workCargoCount(f.builder(),
+                            f.level().registryAccess(), 8, Items.WHITE_BED) != 1) {
+                helper.fail("Carpenter attempted third-floor bed travel before carrying its item", MARK);
+                return;
+            }
+            f.builder().setPos(foot.getX() + 0.5D, foot.getY(), foot.getZ() + 0.5D);
+            VillageHouseThirdFloorExpansionService.advance(
+                    f.builder(), f.level(), project);
+            if (project.workCursor() != at + 1
+                    || !f.level().getBlockState(foot).is(Blocks.WHITE_BED)
+                    || !f.level().getBlockState(head).is(Blocks.WHITE_BED)
+                    || count(f.storage(), Items.WHITE_BED) != 1
+                    || VillagerSimData.hasWorkCargo(f.builder(),
+                            f.level().registryAccess(), 8)) {
+                helper.fail("Real pre-carried Bed failed to occupy both physical upper-half blocks", MARK);
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
     private static VillageSavedData.ProjectRecord project(Fixture f) {
         var p = f.data().createProject(f.villageId(), "building", 87, f.base());
         p.setTemplateId(VillageHouseThirdFloorExpansionService.TEMPLATE);

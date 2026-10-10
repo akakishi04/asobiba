@@ -193,6 +193,37 @@ public final class VillageHouseThirdFloorExpansionService {
             return;
         }
 
+        // A third floor is outside ground-level warehouse reach.
+        // Load the actual finished piece into durable Carpenter cargo before
+        // navigating upstairs; never ping-pong to an unreachable roof.
+        if (step.kind() == PLACE_BED) {
+            String cursor = Integer.toString(project.workCursor());
+            if (!cursor.equals(project.parameter(PAID_BED))
+                    && VillagerSimData.workCargoCount(carpenter,
+                        level.registryAccess(), WORK_SLOTS, Items.WHITE_BED) < 1
+                    && !VillageCarpenterCraftingService.ensureWhiteBed(
+                        carpenter, level,
+                        VillageBridgeService.plank(project.parameter(WOOD)), WORK_SLOTS)) {
+                pause(data, project, "stage a real third-floor bed near warehouse");
+                return;
+            }
+        } else if (step.kind() == PLACE) {
+            Block wood = VillageBridgeService.plank(project.parameter(WOOD));
+            if (VillagerSimData.workCargoCount(carpenter,
+                    level.registryAccess(), WORK_SLOTS, step.material()) < 1) {
+                boolean staged = VillageCarpenterCraftingService.isCraftedFixture(
+                        step.material(), wood)
+                    ? VillageCarpenterCraftingService.ensureFixture(
+                        carpenter, level, step.material(), wood, WORK_SLOTS)
+                    : VillageSimulationEvents.ensureCargoItem(
+                        carpenter, level, step.material(), 1, WORK_SLOTS);
+                if (!staged) {
+                    pause(data, project, "stage real third-floor construction stock");
+                    return;
+                }
+            }
+        }
+
         if (carpenter.distanceToSqr(step.pos().getCenter()) > 8.0D * 8.0D) {
             carpenter.getNavigation().moveTo(step.pos().getX() + 0.5D,
                     step.pos().getY(), step.pos().getZ() + 0.5D, 0.75D);

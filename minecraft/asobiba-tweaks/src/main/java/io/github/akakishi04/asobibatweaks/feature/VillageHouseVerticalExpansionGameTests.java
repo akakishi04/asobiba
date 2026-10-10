@@ -252,6 +252,62 @@ public final class VillageHouseVerticalExpansionGameTests {
         });
     }
 
+    @GameTest(template = "empty16x14x9", timeoutTicks = 75,
+            batch = "vertical_supply_preflight")
+    public static void secondFloorCarpenterPreloadsPhysicalPlankBeforeRoofTravel(
+            GameTestHelper helper) {
+        Fixture f = setup(helper);
+        var original = f.village().projectIds().stream()
+                .map(f.data()::project).flatMap(java.util.Optional::stream)
+                .filter(p -> "house_5x5".equals(p.templateId())
+                        && "complete".equals(p.phase()))
+                .findFirst().orElseThrow();
+        var p = f.data().createProject(f.villageId(), "building", 86, f.base());
+        p.setTemplateId(VillageHouseVerticalExpansionService.TEMPLATE);
+        p.setParameter("expand_original", original.id().toString());
+        p.setParameter("expand_building", f.house().id().toString());
+        p.setParameter("expand_plank", "oak");
+        p.setPhase("upper_shell");
+        var plan = VillageHouseVerticalExpansionService.steps(p);
+        int roof = -1;
+        for (int i = 0; i < plan.size(); i++) {
+            if (plan.get(i).pos().equals(f.base().offset(0, 8, 4))) {
+                roof = i;
+                break;
+            }
+        }
+        if (roof < 0) {
+            helper.fail("No physically buildable upper roof target", MARK);
+            return;
+        }
+        p.setWorkCursor(roof);
+        var target = plan.get(roof).pos();
+        final int index = roof;
+        f.builder().setPos(f.base().getX() + 3.5D,
+                f.base().getY() + 1.0D, f.base().getZ() + 1.5D);
+        helper.runAtTickTime(3, () -> {
+            VillageHouseVerticalExpansionService.advance(f.builder(), f.level(), p);
+            if (p.workCursor() != index || !f.level().getBlockState(target).isAir()
+                    || count(f.materials(), Items.OAK_PLANKS) != 127
+                    || VillagerSimData.workCargoCount(f.builder(),
+                            f.level().registryAccess(), 8, Items.OAK_PLANKS) != 1) {
+                helper.fail("Upper-floor worker failed to preload one physical plank", MARK);
+                return;
+            }
+            f.builder().setPos(target.getX() + 0.5D, target.getY(),
+                    target.getZ() + 0.5D);
+            VillageHouseVerticalExpansionService.advance(f.builder(), f.level(), p);
+            if (p.workCursor() != index + 1
+                    || !f.level().getBlockState(target).is(Blocks.OAK_PLANKS)
+                    || count(f.materials(), Items.OAK_PLANKS) != 127
+                    || VillagerSimData.hasWorkCargo(f.builder(), f.level().registryAccess(), 8)) {
+                helper.fail("Previously paid plank disappeared or was spent twice upstairs", MARK);
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
     private static Fixture setup(GameTestHelper helper) {
         ServerLevel level = helper.getLevel();
         BlockPos base = helper.absolutePos(new BlockPos(5, 1, 2));

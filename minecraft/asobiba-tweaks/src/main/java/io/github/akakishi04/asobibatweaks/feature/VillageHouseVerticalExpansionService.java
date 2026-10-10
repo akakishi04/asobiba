@@ -170,6 +170,36 @@ public final class VillageHouseVerticalExpansionService {
             return;
         }
 
+        // Stage real building materials near a recognized warehouse BEFORE
+        // following stairs to an upper floor. Otherwise each missing item
+        // makes the worker alternate forever between roof and warehouse.
+        if (!step.remove()) {
+            Block timber = VillageBridgeService.plank(project.parameter(WOOD));
+            if (step.bed()) {
+                String cursor = Integer.toString(project.workCursor());
+                if (!cursor.equals(project.parameter(PAID_BED_CURSOR))
+                        && VillagerSimData.workCargoCount(carpenter,
+                            level.registryAccess(), CARGO_SLOTS, Items.WHITE_BED) < 1
+                        && !VillageCarpenterCraftingService.ensureWhiteBed(
+                            carpenter, level, timber, CARGO_SLOTS)) {
+                    pause(data, project, "stage physical upstairs bed near warehouse");
+                    return;
+                }
+            } else if (VillagerSimData.workCargoCount(carpenter,
+                    level.registryAccess(), CARGO_SLOTS, step.material()) < 1) {
+                boolean staged = VillageCarpenterCraftingService.isCraftedFixture(
+                        step.material(), timber)
+                    ? VillageCarpenterCraftingService.ensureFixture(
+                        carpenter, level, step.material(), timber, CARGO_SLOTS)
+                    : VillageSimulationEvents.ensureCargoItem(
+                        carpenter, level, step.material(), 1, CARGO_SLOTS);
+                if (!staged) {
+                    pause(data, project, "stage real upper-shell materials near warehouse");
+                    return;
+                }
+            }
+        }
+
         if (carpenter.distanceToSqr(step.pos().getCenter()) > 8.0D * 8.0D) {
             carpenter.getNavigation().moveTo(
                     step.pos().getX() + 0.5D,

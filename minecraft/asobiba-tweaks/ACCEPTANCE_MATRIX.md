@@ -144,5 +144,8 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT68 | missingSecondStoreyStairCostsOneRealItemAndRestoresRoute | A genuine original two-storey stair hole is restored with the exact oriented StairBlock, one actual stored item debit, conserved house identity and SavedData/cursor replay safety |
 | GT69 | playerRotatedStairCannotBeOverwrittenEvenWithMissingNeighbor | A player-rotated neighboring stair vetoes an autonomous repair even when another original tread is missing; no items or player blocks are changed |
 | GT70 | threeStoreyRepairCarriesRealStairUpstairsAndRestoresBedAccess | A three-storey home's second stair flight requires real carried worker cargo before walking upstairs; the paid block restores connected stairs and actual upper-bed access |
+| GT71 | secondFloorCarpenterPreloadsPhysicalPlankBeforeRoofTravel | An original 1→2-storey Carpenter must withdraw exactly one physical roof plank before starting an unreachable upper-shell trip and consume it only after reaching the real placement site |
+| GT72 | thirdFloorWallCargoLoadedBeforeRoofNavigation | An original 2→3-storey Carpenter cannot ping-pong empty-handed to the roof; a single real wooden block remains in durable cargo across travel and is consumed once upon placement |
+| GT73 | thirdFloorBedCargoLoadedBeforeUpperBedroomNavigation | A two-half White Bed is physically sourced into Carpenter cargo before upstairs travel and placed using exactly one real existing finished item |
 
 These tests are **not** a full acceptance of G01-G22: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.
