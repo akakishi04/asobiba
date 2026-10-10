@@ -50,6 +50,28 @@ public final class AsobibaTweaksConfig {
     public static final ModConfigSpec.BooleanValue PARROT_PERCHES_ENABLED = bool("vanilla.parrotPerches", true, "Allow parrots to perch on narrow vanilla blocks.");
     public static final ModConfigSpec.BooleanValue MOB_GATHERINGS_ENABLED = bool("oddities.mobGatherings", true, "Enable rare unexplained same-species mob gatherings.");
     public static final ModConfigSpec.DoubleValue MOB_GATHERING_CHANCE = BUILDER.defineInRange("oddities.mobGatheringChancePerCheck", 0.002D, 0.0D, 1.0D);
+    // Independent enchantments and harmless ambience remain separately switchable.
+    public static final ModConfigSpec.BooleanValue ROOTED_ENABLED = bool("enchantments.rooted", true, "Replant a harvested mature crop with one matching real inventory seed.");
+    public static final ModConfigSpec.BooleanValue OMINOUS_ENABLED = bool("enchantments.ominous", true, "Modestly bias eligible harmless oddities with capped armor stacking.");
+    public static final ModConfigSpec.BooleanValue NOD_ENABLED = bool("enchantments.nod", true, "Allow rare idle villager nods in response to an enchanted helmet greeting.");
+    public static final ModConfigSpec.BooleanValue AFTERIMAGE_DECOY_ENABLED = bool("enchantments.afterimageDecoy", true, "Allow brief bounded hostile distraction after a genuine sprint departure.");
+    public static final ModConfigSpec.IntValue AFTERIMAGE_LIFETIME_TICKS = BUILDER.defineInRange("enchantments.afterimageLifetimeTicks", 30, 1, 100);
+    public static final ModConfigSpec.IntValue AFTERIMAGE_COOLDOWN_TICKS = BUILDER.defineInRange("enchantments.afterimageCooldownTicks", 300, 20, 72000);
+    public static final ModConfigSpec.DoubleValue AFTERIMAGE_TRIGGER_DISTANCE = BUILDER.defineInRange("enchantments.afterimageTriggerDistance", 2.0D, 0.5D, 8.0D);
+    public static final ModConfigSpec.DoubleValue AFTERIMAGE_TARGET_RADIUS = BUILDER.defineInRange("enchantments.afterimageTargetRadius", 8.0D, 1.0D, 16.0D);
+    public static final ModConfigSpec.IntValue AFTERIMAGE_MAX_TARGETS = BUILDER.defineInRange("enchantments.afterimageMaxTargets", 3, 1, 4);
+    public static final ModConfigSpec.BooleanValue CHICKEN_CONSPIRACY_ENABLED = bool("oddities.chickenConspiracy", true, "Allow rare brief safe idle chicken meetings, independently of Mob Gatherings.");
+    public static final ModConfigSpec.DoubleValue CHICKEN_CONSPIRACY_CHANCE = BUILDER.defineInRange("oddities.chickenConspiracyChancePerCheck", 0.01D, 0.0D, 0.1D);
+    public static final ModConfigSpec.DoubleValue AMBIENT_ODDITY_CHANCE = BUILDER.defineInRange("oddities.ambientChancePerCheck", 0.005D, 0.0D, 0.05D);
+    public static final ModConfigSpec.DoubleValue NOD_GREETING_CHANCE = BUILDER.defineInRange("oddities.nodGreetingChance", 0.12D, 0.0D, 1.0D);
+    public static final ModConfigSpec.BooleanValue OE_REPLYING_BELL_ENABLED = bool("oddities.replyingBell", true, "Allow distant cosmetic replies to ordinary dusk/night bell rings.");
+    public static final ModConfigSpec.BooleanValue OE_UNSEEN_FOOTSTEPS_ENABLED = bool("oddities.unseenFootsteps", true, "Allow quiet cosmetic footsteps without spawning an actor.");
+    public static final ModConfigSpec.BooleanValue OE_EMPTY_KNOCK_ENABLED = bool("oddities.emptyKnock", true, "Allow cosmetic knocking by closed wooden doors without changing them.");
+    public static final ModConfigSpec.BooleanValue OE_COLD_EMBER_ENABLED = bool("oddities.coldEmber", true, "Allow one harmless smoke wisp from an extinguished campfire.");
+    public static final ModConfigSpec.BooleanValue OE_UNUSUAL_GLANCE_ENABLED = bool("oddities.unusualGlance", true, "Allow one or two safe idle animals to glance briefly toward an empty spot.");
+    public static final ModConfigSpec.BooleanValue OE_BACKWARD_BREEZE_ENABLED = bool("oddities.backwardBreeze", true, "Allow a tiny local particle swirl without changing velocity.");
+    public static final ModConfigSpec.BooleanValue OE_UNCLAIMED_CHORD_ENABLED = bool("oddities.unclaimedChord", true, "Allow a faint ambient chord without a physical source or reward.");
+
     public static final ModConfigSpec.BooleanValue ARMOR_STAND_POSE_DRIFT_ENABLED = bool("oddities.armorStandPoseDrift", true, "Allow very rare subtle armor-stand pose changes.");
     public static final ModConfigSpec.DoubleValue ARMOR_STAND_POSE_DRIFT_CHANCE = BUILDER.defineInRange("oddities.armorStandPoseDriftChancePerCheck", 0.0005D, 0.0D, 1.0D);
 

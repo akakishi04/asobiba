@@ -3,6 +3,10 @@ package io.github.akakishi04.asobibatweaks.feature;
 import io.github.akakishi04.asobibatweaks.AsobibaTweaksConfig;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Rotations;
 import net.minecraft.server.level.ServerLevel;
@@ -18,6 +22,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.tick.EntityTickEvent;
 
 public final class WorldOddityEvents {
+    private static final Map<Animal, Path> GATHER_PATHS = new WeakHashMap<>();
     @SubscribeEvent
     public void onEntityTick(EntityTickEvent.Post event) {
         if (event.getEntity().level().isClientSide()) return;
@@ -134,50 +139,57 @@ public final class WorldOddityEvents {
     }
 
     private static void tickGathering(Animal animal) {
-        if (!AsobibaTweaksConfig.MOB_GATHERINGS_ENABLED.getAsBoolean() || animal.isBaby()) return;
-
-        long now = animal.level().getGameTime();
+        ServerLevel level = (ServerLevel)animal.level();
+        long now = level.getGameTime();
         long until = animal.getPersistentData().getLong("asobibatweaks_gather_until");
-        if (until > now && animal instanceof PathfinderMob pathfinder) {
-            double cx = animal.getPersistentData().getDouble("asobibatweaks_gather_x");
-            double cy = animal.getPersistentData().getDouble("asobibatweaks_gather_y");
-            double cz = animal.getPersistentData().getDouble("asobibatweaks_gather_z");
-            if (animal.level().getNearestPlayer(animal, 5.0D) != null) {
+        Path ownedPath = GATHER_PATHS.get(animal);
+        if (until > 0) {
+            boolean ownsNavigation = ownedPath != null && animal.getNavigation().getPath() == ownedPath;
+            if (!AsobibaTweaksConfig.MOB_GATHERINGS_ENABLED.getAsBoolean() || until <= now
+                    || !AmbientOddityService.idle(animal, ownsNavigation)
+                    || AmbientOddityService.hasAmbientLook(animal)
+                    || AmbientOddityService.nearestPlayer(level, animal, 5) != null) {
                 animal.getPersistentData().remove("asobibatweaks_gather_until");
-                pathfinder.getNavigation().stop();
+                // Only release the exact path we created. Never stop a new vanilla/modded task.
+                if (ownsNavigation) animal.getNavigation().stop();
+                GATHER_PATHS.remove(animal);
                 return;
             }
-            pathfinder.getLookControl().setLookAt(cx, cy, cz);
+            animal.getLookControl().setLookAt(
+                    animal.getPersistentData().getDouble("asobibatweaks_gather_x"),
+                    animal.getPersistentData().getDouble("asobibatweaks_gather_y"),
+                    animal.getPersistentData().getDouble("asobibatweaks_gather_z"));
             return;
         }
-
-        if (animal.tickCount % 1200 != Math.floorMod(animal.getId(), 1200)
-                || animal.getRandom().nextDouble() >= AsobibaTweaksConfig.MOB_GATHERING_CHANCE.getAsDouble()) return;
-
-        List<Animal> same = animal.level().getEntitiesOfClass(
-                Animal.class,
-                animal.getBoundingBox().inflate(10.0D),
-                other -> other.getType() == animal.getType() && other.isAlive() && !other.isBaby() && !other.isPassenger()
-        );
-        if (same.size() < 4) return;
-
-        same = same.stream()
-                .sorted(Comparator.comparingDouble(animal::distanceToSqr))
-                .limit(7)
-                .toList();
-
+        if (!AsobibaTweaksConfig.MOB_GATHERINGS_ENABLED.getAsBoolean() || animal.isBaby()
+                || animal.tickCount % 1200 != Math.floorMod(animal.getId(), 1200)
+                || !AmbientOddityService.idle(animal) || AmbientOddityService.hasAmbientLook(animal)) return;
+        if (AmbientOddityService.state(level).nextEvent > now || !AmbientOddityService.claimProbe(level)) return;
+        var player = AmbientOddityService.nearestPlayer(level, animal, 16);
+        if (player == null
+                || !AmbientOddityService.ready(level, player, animal.blockPosition(), AmbientOddityService.Kind.GATHERING)
+                || !AmbientOddityService.quiet(player)) return;
+        List<Animal> sampled = AmbientOddityService.nearby(level, Animal.class, animal.getBoundingBox().inflate(10));
+        if (sampled.size() >= AmbientOddityService.MAX_QUERY_RESULTS) return;
+        List<Animal> same = sampled.stream().filter(other -> other.getType() == animal.getType()
+                && !other.isBaby() && AmbientOddityService.idle(other)
+                && !AmbientOddityService.hasAmbientLook(other) && AmbientOddityService.nearestPlayer(level, other, 5) == null)
+                .sorted(Comparator.comparingDouble(animal::distanceToSqr)).limit(7).toList();
+        if (same.size() < 4 || animal.getRandom().nextDouble() >= AmbientOddityService.chance(player,
+                AsobibaTweaksConfig.MOB_GATHERING_CHANCE.getAsDouble())) return;
         double cx = same.stream().mapToDouble(Mob::getX).average().orElse(animal.getX());
         double cy = same.stream().mapToDouble(Mob::getY).average().orElse(animal.getY());
         double cz = same.stream().mapToDouble(Mob::getZ).average().orElse(animal.getZ());
-
+        AmbientOddityService.reserve(level, player, animal.blockPosition());
         for (int i = 0; i < same.size(); i++) {
             Animal member = same.get(i);
-            if (!(member instanceof PathfinderMob pathfinder)) continue;
             double angle = Math.PI * 2.0D * i / same.size();
             double tx = cx + Math.cos(angle) * 2.2D;
             double tz = cz + Math.sin(angle) * 2.2D;
-            pathfinder.getNavigation().moveTo(tx, cy, tz, 0.9D);
-            member.getPersistentData().putLong("asobibatweaks_gather_until", now + 400L);
+            if (!level.hasChunkAt(BlockPos.containing(tx, cy, tz))) continue;
+            if (!member.getNavigation().moveTo(tx, cy, tz, 0.9D)) continue;
+            GATHER_PATHS.put(member, member.getNavigation().getPath());
+            member.getPersistentData().putLong("asobibatweaks_gather_until", now + 200L);
             member.getPersistentData().putDouble("asobibatweaks_gather_x", cx);
             member.getPersistentData().putDouble("asobibatweaks_gather_y", cy);
             member.getPersistentData().putDouble("asobibatweaks_gather_z", cz);

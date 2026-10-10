@@ -1,8 +1,15 @@
 # AsobibaTweaks accepted-feature completion roadmap
 
+## Latest baseline and new independent-feature pass (2026-10-10)
+
+The historical 224-test integration below was subsequently published as `5a472c0` and merged to `main` in `e6f74bed`. [CI run 38040837678](https://github.com/akakishi04/asobiba/actions/runs/38040837678) passed both mod builds, all 224 required GameTests, and dedicated-server startup. Its older publication-pending wording is a preserved checkpoint, superseded by this result.
+
+The new pass starts from `3644c33` and covers Chicken Conspiracy, Rooted, Ominous/OE01–OE07, Afterimage Decoy and Nod. All bounded new runtime paths are implemented. Final required server suite and full build: **256/256 passed in 28.65 seconds; BUILD SUCCESSFUL in 58 seconds** (`new-backlog-gametest6-build.log`). Identical-source repeat/full build: **256/256 in 36.22 seconds; BUILD SUCCESSFUL in 57 seconds** (`new-backlog-final-repeat2-build.log`). This includes 31 new feature tests and one physical-roof regression; the existing composite repair test now deterministically exercises its unchanged retry bound. The unchanged Data Logger build also passed (59 seconds). Exact published-head CI and merge status are reported by the feature pull request; these local results do not replace that gate or real-client/multiplayer playtesting.
+
+
 This tracks implementation against `../MOD_IDEAS.md`, separately from verification and future extensions. Current code/verification is summarized in `IMPLEMENTATION_STATUS.md`; scenario gates and test references are in `ACCEPTANCE_MATRIX.md`. `IMPLEMENTATION_DECISIONS.md` records the bounded design choices.
 
-## Current integration checkpoint (2026-10-10)
+## Historical 224-test integration checkpoint (2026-10-10)
 
 - Published baseline: `6d0426f` (V91 recipient-warehouse replacement). The larger integration described below is local and uncommitted at this checkpoint; it is not a published or merged release.
 - Latest completed integration run: `asobiba-local-gametest-round7.log`, **224/224 required GameTests passed in 17.99 seconds; BUILD SUCCESSFUL in 40 seconds**. Identical-source repeat/full AsobibaTweaks build also passed: `asobiba-final-repeat-build.log`, **224/224 in 17.40 seconds; BUILD SUCCESSFUL in 34 seconds**. Both local mod builds are green; dedicated-server smoke and exact published-head CI remain pending.
@@ -44,18 +51,18 @@ The bounded accepted implementation scopes are complete in the round7 local snap
 - New-world river/coast visuals and ecology balance under varied terrain, seeds and other mods
 - The individual G01–G23 acceptance scenarios in `ACCEPTANCE_MATRIX.md`
 
-## Accepted future small oddities (not yet implemented)
+## Independent oddities implemented in the new pass
 
-- **Chicken Conspiracy / 鶏の密談 — PLANNED:** Occasionally, three or more nearby chickens stand briefly facing the same direction as if conspiring, then disperse naturally when a player approaches. Purely atmospheric and unrewarded. Implement with an independent config toggle, finite loaded-entity checks and no interference with essential chicken AI. See `../MOD_IDEAS.md` (World oddities).
-- **O01 ambient event expansion — PLANNED:** Seven harmless new events, OE01 Replying Bell, OE02 Unseen Footsteps, OE03 Empty Knock, OE04 Cold Ember, OE05 Unusual Glance, OE06 Backward Breeze and OE07 Unclaimed Chord. Each may naturally happen very rarely even without O01; O01 only increases already-eligible occurrence within hard rate/loaded-chunk/AI constraints. Eligible Chicken Conspiracy, Mob Gatherings and N20 Nod may also be biased under their own independent prerequisites. No hazardous events, extra rewards, fake entities or world edits.
+- **Chicken Conspiracy / 鶏の密談 — IMPLEMENTED:** Occasionally, three or more nearby chickens stand briefly facing the same direction as if conspiring, then disperse naturally when a player approaches. Purely atmospheric and unrewarded. Implement with an independent config toggle, finite loaded-entity checks and no interference with essential chicken AI. See `../MOD_IDEAS.md` (World oddities).
+- **O01 ambient event expansion — IMPLEMENTED:** Seven harmless new events, OE01 Replying Bell, OE02 Unseen Footsteps, OE03 Empty Knock, OE04 Cold Ember, OE05 Unusual Glance, OE06 Backward Breeze and OE07 Unclaimed Chord. Each may naturally happen very rarely even without O01; O01 only increases already-eligible occurrence within hard rate/loaded-chunk/AI constraints. Eligible Chicken Conspiracy, Mob Gatherings and N20 Nod may also be biased under their own independent prerequisites. No hazardous events, extra rewards, fake entities or world edits.
 
-## Accepted future enchantments (not yet implemented)
+## Independent enchantments implemented in the new pass
 
-- **L01 — 根付き / Rooted (Hoe) — PLANNED:** Harvest eligible mature crops and replant in the vacated safe cell using a genuinely owned matching seed. No duplication, free planting or area harvesting.
-- **O01 — 不吉 / Ominous (Armor) — PLANNED:** Slightly bias harmless eligible ambient encounters in the expanded OE01–OE07 pool and separately permitted oddities; never Bad Omen, dangerous/hostile events, increased loot or N17 combat behavior. Multi-piece scaling must be capped.
-- **N17 — 残像 / Afterimage Decoy (Chestplate) — PLANNED:** On a genuine sprint departure, briefly create a translucent afterimage that can draw the attention of a small bounded number of nearby ordinary hostile mobs. Proposed duration ~1.5 seconds, cooldown ~15 seconds; no bosses, PvP, dangerous permanent aggro modifications, free drops or persistent phantom target.
-- **N20 — 頷き / Nod (Helmet) — PLANNED:** Greet an idle villager by facing them and crouching; they may briefly nod. Purely social, including children, no reputation/trade benefits; O01 affects eligibility only when N20 is actually worn.
-- All four enchantments and the OE01–OE07 event family are **accepted future work, not implemented**. Enchantment registry, levels, effects, client/server sync, configuration and GameTests remain to be built. They are not part of the historical 224-test v0.1 closure. Detailed decisions and safety limits: `../MOD_IDEAS.md`.
+- **L01 — 根付き / Rooted (Hoe) — IMPLEMENTED:** Harvest eligible mature crops and replant in the vacated safe cell using a genuinely owned matching seed. No duplication, free planting or area harvesting.
+- **O01 — 不吉 / Ominous (Armor) — IMPLEMENTED:** Slightly bias harmless eligible ambient encounters in the expanded OE01–OE07 pool and separately permitted oddities; never Bad Omen, dangerous/hostile events, increased loot or N17 combat behavior. Multi-piece scaling must be capped.
+- **N17 — 残像 / Afterimage Decoy (Chestplate) — IMPLEMENTED:** On a genuine sprint departure, briefly create a translucent afterimage that can draw the attention of a small bounded number of nearby ordinary hostile mobs. Proposed duration ~1.5 seconds, cooldown ~15 seconds; no bosses, PvP, dangerous permanent aggro modifications, free drops or persistent phantom target.
+- **N20 — 頷き / Nod (Helmet) — IMPLEMENTED:** Greet an idle villager by facing them and crouching; they may briefly nod. Purely social, including children, no reputation/trade benefits; O01 affects eligibility only when N20 is actually worn.
+- All four enchantments and the OE01–OE07 event family now have registry/runtime paths, configuration and engine regressions. Nod has explicit server-approved client synchronization; Afterimage uses normal tracked-entity rendering. They are independent additions after the historical 224-test closure. Decisions and safety limits: `IMPLEMENTATION_DECISIONS.md`; exact verification: `ACCEPTANCE_MATRIX.md`.
 
 ## Working policy
 

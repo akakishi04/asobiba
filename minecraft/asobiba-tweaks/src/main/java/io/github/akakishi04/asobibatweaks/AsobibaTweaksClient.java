@@ -4,6 +4,10 @@ import io.github.akakishi04.asobibatweaks.client.EnchantingScreenEvents;
 import io.github.akakishi04.asobibatweaks.client.FrostWalkerToggleClientEvents;
 import io.github.akakishi04.asobibatweaks.client.FletchingCopyScreen;
 import io.github.akakishi04.asobibatweaks.client.NetherFishRenderer;
+import io.github.akakishi04.asobibatweaks.client.AfterimageDecoyRenderer;
+import io.github.akakishi04.asobibatweaks.client.NodGestureClient;
+import io.github.akakishi04.asobibatweaks.feature.NodGestureNetworking;
+import io.github.akakishi04.asobibatweaks.feature.AfterimageDecoyRegistration;
 import io.github.akakishi04.asobibatweaks.client.QuiverClientEvents;
 import io.github.akakishi04.asobibatweaks.client.VillageStatusScreen;
 import io.github.akakishi04.asobibatweaks.feature.VillageStatusNetworking;
@@ -25,6 +29,7 @@ public final class AsobibaTweaksClient {
     public AsobibaTweaksClient(IEventBus modBus, ModContainer container) {
         container.registerExtensionPoint(IConfigScreenFactory.class, ConfigurationScreen::new);
         VillageStatusNetworking.installClientHandler(VillageStatusScreen::open);
+        NodGestureNetworking.installClientHandler(NodGestureClient::accept);
         FletchingCopyNetworking.installClientHandler(FletchingCopyScreen::open);
         QuiverNetworking.installClientHandler(payload -> {
             if (Minecraft.getInstance().player != null) {
@@ -38,6 +43,7 @@ public final class AsobibaTweaksClient {
     }
 
     private void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
+        event.registerEntityRenderer(AfterimageDecoyRegistration.DECOY.get(), AfterimageDecoyRenderer::new);
         event.registerEntityRenderer(AsobibaRegistries.LAVA_MINNOW.get(), NetherFishRenderer::new);
         event.registerEntityRenderer(AsobibaRegistries.EMBERFIN.get(), NetherFishRenderer::new);
         event.registerEntityRenderer(AsobibaRegistries.BASALT_EEL.get(), NetherFishRenderer::new);

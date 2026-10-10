@@ -1,0 +1,22 @@
+{
+  "anvil_cost": 2,
+  "description": {
+    "translate": "enchantment.asobibatweaks.afterimage"
+  },
+  "effects": {},
+  "max_cost": {
+    "base": 45,
+    "per_level_above_first": 0
+  },
+  "max_level": 1,
+  "min_cost": {
+    "base": 20,
+    "per_level_above_first": 0
+  },
+  "primary_items": "#minecraft:enchantable/chest_armor",
+  "slots": [
+    "chest"
+  ],
+  "supported_items": "#minecraft:enchantable/chest_armor",
+  "weight": 2
+}

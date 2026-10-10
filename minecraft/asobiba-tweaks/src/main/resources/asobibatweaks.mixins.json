@@ -4,6 +4,7 @@
   "package": "io.github.akakishi04.asobibatweaks.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "BellAmbientReplyMixin",
     "EntitySharedFlagAccessor",
     "FeatherFallingAirControlMixin",
     "AbstractMinecartMixin",
@@ -56,6 +57,7 @@
     "defaultRequire": 1
   },
   "client": [
+    "VillagerNodModelMixin",
     "AtlasItemInHandRendererMixin"
   ]
 }

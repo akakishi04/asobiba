@@ -31,6 +31,19 @@ Nearly every gameplay family has its own switch. Important defaults:
 - **Fletching Table expansion** — bulk arrow crafting plus lightweight and heavyweight arrow tuning.
 - **Field repair** — inefficient material-based repairs away from an anvil.
 
+### Independent enchantments and quiet oddities
+
+All four enchantments are level I and available through ordinary enchanting-table, enchanted-book trade and random-loot pools. Their behavior can be disabled separately without removing registry entries.
+
+- **Rooted / 根付き** (Hoe): harvesting mature Wheat, Carrots, Potatoes or Beetroot replants the same safe cell using one matching real inventory/offhand planting item. No seed means ordinary harvesting only; it never harvests an area or creates free crops.
+- **Ominous / 不吉** (Armor): at most +25% relative chance for already eligible harmless ambience, regardless of armor-piece count. It never creates Bad Omen, hostile spawns or rewards and never strengthens Afterimage.
+- **Afterimage / 残像** (Chestplate): a genuine grounded sprint departure leaves a brief translucent decoy. Default lifetime 1.5 seconds / cooldown 15 seconds, with at most three nearby ordinary hostiles already targeting you redirected temporarily. It has no collision, damage, copied inventory, drops or saved phantom targets.
+- **Nod / 頷き** (Helmet): face an idle villager and deliberately crouch after standing briefly. They may nod once; children can respond too. No reputation, trade or work benefits.
+- **Chicken Conspiracy / 鶏の密談**: three to six nearby idle chickens briefly face the same direction and resume normally when approached. Independent of Mob Gatherings.
+- Seven very rare natural events, also possible without Ominous: a distant reply to a nighttime village bell, soft unseen footsteps, a knock by a closed wooden door, smoke from an extinguished campfire, an unusual animal glance, a tiny backward particle breeze, and a quiet unclaimed chord. They never change blocks, spawn an invisible actor or grant loot.
+
+Already-loaded eligibility, priority AI, individual toggles, shared cooldowns and finite query/particle/sound limits are authoritative. See `IMPLEMENTATION_DECISIONS.md` for exact bounds and `ACCEPTANCE_MATRIX.md` for automated versus manual verification.
+
 ### Movement and physical interaction
 
 - **Wall Kick**

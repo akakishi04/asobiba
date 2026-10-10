@@ -59,6 +59,28 @@ public final class VillageHouseReuseGameTests {
         helper.succeed();
     }
 
+    @GameTest(template = "empty16x6x9", batch = "house_reuse_fresh_cover")
+    public static void freshOwnedRoofSupportsReuseButMissingBedCoverRejectsIt(GameTestHelper helper) {
+        Fixture fixture = prepare(helper);
+        fixture.storage().setItem(0, new ItemStack(Items.WHITE_BED));
+        BlockPos bedRoof = fixture.extraFoot().above(3);
+        var roof = fixture.level().getBlockState(bedRoof);
+        fixture.level().setBlock(bedRoof, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
+        if (VillageHouseReuseService.tryPlan(fixture.builder(), fixture.level(), fixture.villageId())
+                || active(fixture) != null || fixture.storage().getItem(0).getCount() != 1) {
+            helper.fail("An uncovered extra bed must not be furnished or charged", new BlockPos(6, 2, 4));
+            return;
+        }
+        // Deliberately same tick: correctness cannot depend on pending sky-light propagation.
+        fixture.level().setBlock(bedRoof, roof, Block.UPDATE_ALL);
+        if (!VillageHouseReuseService.tryPlan(fixture.builder(), fixture.level(), fixture.villageId())
+                || active(fixture) == null || fixture.storage().getItem(0).getCount() != 1) {
+            helper.fail("An immediately restored real roof must permit a paid furnishing plan", new BlockPos(6, 2, 4));
+            return;
+        }
+        helper.succeed();
+    }
+
     @GameTest(template = "empty16x6x9", batch = "house_reuse")
     public static void carpenterAddsPaidSecondBedWithoutAnotherHouse(GameTestHelper helper) {
         Fixture fixture = prepare(helper);

@@ -23,5 +23,9 @@
   "item.asobibatweaks.arcane_folio": "秘術の書片",
   "item.asobibatweaks.quiver": "矢筒",
   "tooltip.asobibatweaks.quiver.slots": "使用中の弾薬枠: %s / %s",
-  "message.asobibatweaks.quiver.selected": "矢筒スロット %s: %s"
+  "message.asobibatweaks.quiver.selected": "矢筒スロット %s: %s",
+  "enchantment.asobibatweaks.rooted": "根付き",
+  "enchantment.asobibatweaks.ominous": "不吉",
+  "enchantment.asobibatweaks.afterimage": "残像",
+  "enchantment.asobibatweaks.nod": "頷き"
 }
