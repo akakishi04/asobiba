@@ -27,5 +27,16 @@
   "enchantment.asobibatweaks.rooted": "Rooted",
   "enchantment.asobibatweaks.ominous": "Ominous",
   "enchantment.asobibatweaks.afterimage": "Afterimage",
-  "enchantment.asobibatweaks.nod": "Nod"
+  "enchantment.asobibatweaks.nod": "Nod",
+  "gamerule.asobibaDailyPlayTimeEnabled": "Asobiba: daily play limit",
+  "gamerule.asobibaDailyPlayTimeEnabled.description": "Opt in for this world only. Counts each player's cumulative real play time per calendar date; reaching the cap disconnects them until the next reset. Skipped dates do not increase played days. Default: OFF.",
+  "gamerule.asobibaDailyPlayTimeLimitMinutes": "Asobiba: daily limit (minutes)",
+  "gamerule.asobibaDailyPlayTimeLimitMinutes.description": "Allowed real play time per player per date, 1–1440 minutes. Default: 120. Offline time and paused singleplayer time do not count; multiplayer menus do.",
+  "gamerule.asobibaDailyPlayTimeResetUtcOffsetMinutes": "Asobiba: reset UTC offset (min)",
+  "gamerule.asobibaDailyPlayTimeResetUtcOffsetMinutes.description": "Reset at midnight at this fixed UTC offset, in minutes (−840 to 840). Default: 540, Japan UTC+09:00. Fixed offset only; no daylight-saving changes.",
+  "hud.asobibatweaks.daily_play_time.days": "Played days: %s",
+  "hud.asobibatweaks.daily_play_time.remaining": "Today remaining: %s",
+  "hud.asobibatweaks.daily_play_time.paused": " (paused)",
+  "hud.asobibatweaks.daily_play_time.syncing": " (syncing)",
+  "asobibatweaks.play_time.limit_reached": "Daily play-time limit reached. You can play again after %s."
 }

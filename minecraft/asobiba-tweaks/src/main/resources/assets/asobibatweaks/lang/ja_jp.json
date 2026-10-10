@@ -27,5 +27,16 @@
   "enchantment.asobibatweaks.rooted": "根付き",
   "enchantment.asobibatweaks.ominous": "不吉",
   "enchantment.asobibatweaks.afterimage": "残像",
-  "enchantment.asobibatweaks.nod": "頷き"
+  "enchantment.asobibatweaks.nod": "頷き",
+  "gamerule.asobibaDailyPlayTimeEnabled": "あそびば：1日のプレイ時間制限",
+  "gamerule.asobibaDailyPlayTimeEnabled.description": "このワールドだけで有効になります。現実の暦日ごとに各プレイヤーの実プレイ時間を合算し、上限に達すると次のリセットまで参加できません。遊んでいない日はプレイ日数に含めません。初期値：オフ。",
+  "gamerule.asobibaDailyPlayTimeLimitMinutes": "あそびば：1日の上限（分）",
+  "gamerule.asobibaDailyPlayTimeLimitMinutes.description": "各プレイヤーが1日に遊べる実時間。1〜1440分、初期値120分。オフライン時間とシングルプレイの一時停止中は加算しません。マルチプレイのメニュー表示中は加算します。",
+  "gamerule.asobibaDailyPlayTimeResetUtcOffsetMinutes": "あそびば：リセットのUTC時差（分）",
+  "gamerule.asobibaDailyPlayTimeResetUtcOffsetMinutes.description": "指定した固定UTC時差で午前0時にリセットします。−840〜840分。初期値540分は日本時間（UTC+09:00）。固定時差のため夏時間には自動対応しません。",
+  "hud.asobibatweaks.daily_play_time.days": "プレイ日数：%s日",
+  "hud.asobibatweaks.daily_play_time.remaining": "今日の残り：%s",
+  "hud.asobibatweaks.daily_play_time.paused": "（一時停止）",
+  "hud.asobibatweaks.daily_play_time.syncing": "（同期待ち）",
+  "asobibatweaks.play_time.limit_reached": "今日のプレイ時間の上限に達しました。%s 以降にまた遊べます。"
 }

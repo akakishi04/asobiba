@@ -156,7 +156,7 @@ Village subsystems have individual config switches in addition to a master villa
 ### Session / daily-life features
 
 - **Daily Favor** — a small deterministic activity bonus for the current Minecraft day
-- **Play Time Limit** — warning-only or disconnect mode, disabled by default
+- **Daily Play Time Limit** — saved per-world/per-player daily time budget, real-calendar played-day count and remaining-time HUD; disconnects at the cap and rejects same-date re-entry. Opt-in per world.
 
 ## World safety
 
@@ -175,3 +175,18 @@ CI performs:
 3. A build of the separate Minecraft data-logger mod.
 
 Actual gameplay balance, visuals and long-running world simulation still require in-game playtesting.
+
+
+## Daily play timer settings
+
+At world creation, open **More → Game Rules** and find the daily play timer settings under **Player**. Japanese labels are provided. New and existing worlds default to disabled; selecting the timer is explicit.
+
+- `asobibaDailyPlayTimeEnabled`: enable the daily limit (default `false`).
+- `asobibaDailyPlayTimeLimitMinutes`: daily allowance, 1–1440 minutes (default `120`).
+- `asobibaDailyPlayTimeResetUtcOffsetMinutes`: real-calendar midnight's fixed UTC offset, −840 to +840 minutes (default `540`, Japan/UTC+9). This is a fixed offset, not an automatic daylight-saving timezone.
+
+Existing worlds and dedicated servers use the same world-saved rules. An operator can run `/gamerule asobibaDailyPlayTimeEnabled true`, `/gamerule asobibaDailyPlayTimeLimitMinutes 120`, and `/gamerule asobibaDailyPlayTimeResetUtcOffsetMinutes 540`.
+
+The HUD shows the number of different real-calendar dates actually played and today's remaining time. Rejoining on the same date does not add a day; skipped dates do not count; sleeping in Minecraft does not advance this counter. Offline time and a genuinely paused integrated server are excluded. Disabling the timer pauses accounting while retaining previous records; re-enabling resumes the saved budget. The limit exits the world/server, not Minecraft or the operating system.
+
+Legacy global `playTimeLimit.*` session settings are retained only for configuration compatibility and no longer enforce limits. They do not silently enable the new world rule. Old versions stored no daily history, so historical played dates cannot be backfilled: counting starts with actual play while the new timer is enabled. World administrators can change rules/files and system clocks; this is a playtime aid, not tamper-resistant parental-control software.

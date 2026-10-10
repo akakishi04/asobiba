@@ -22,10 +22,15 @@ public final class AsobibaTweaksConfig {
     public static final ModConfigSpec.BooleanValue UNIVERSAL_BOND_FRIENDLY_FIRE = bool("universalBond.friendlyFire", false, "Allow owner and bonded mob to damage each other.");
     public static final ModConfigSpec.BooleanValue UNIVERSAL_BOND_ALLOW_BOSSES = bool("universalBond.allowBosses", false, "Allow Ender Dragon and Wither to participate in Universal Bond.");
 
-    public static final ModConfigSpec.BooleanValue PLAY_TIME_LIMIT_ENABLED = bool("playTimeLimit.enabled", false, "Enable a per-login-session play time limit.");
-    public static final ModConfigSpec.IntValue PLAY_TIME_LIMIT_MINUTES = BUILDER.defineInRange("playTimeLimit.limitMinutes", 120, 1, 10080);
-    public static final ModConfigSpec.IntValue PLAY_TIME_WARNING_MINUTES = BUILDER.defineInRange("playTimeLimit.warningMinutes", 10, 0, 1440);
-    public static final ModConfigSpec.ConfigValue<String> PLAY_TIME_LIMIT_MODE = BUILDER.define("playTimeLimit.mode", "WARN_ONLY", value ->
+    // Legacy keys remain parseable for compatibility. Daily enforcement uses per-world PlayTimeRules only.
+    @Deprecated
+    public static final ModConfigSpec.BooleanValue PLAY_TIME_LIMIT_ENABLED = bool("playTimeLimit.enabled", false, "Legacy session setting, no longer used. Configure the daily timer in this world's game rules instead.");
+    @Deprecated
+    public static final ModConfigSpec.IntValue PLAY_TIME_LIMIT_MINUTES = BUILDER.comment("Legacy session setting, ignored. Configure the daily timer in this world's game rules instead.").defineInRange("playTimeLimit.limitMinutes", 120, 1, 10080);
+    @Deprecated
+    public static final ModConfigSpec.IntValue PLAY_TIME_WARNING_MINUTES = BUILDER.comment("Legacy session setting, ignored. Configure the daily timer in this world's game rules instead.").defineInRange("playTimeLimit.warningMinutes", 10, 0, 1440);
+    @Deprecated
+    public static final ModConfigSpec.ConfigValue<String> PLAY_TIME_LIMIT_MODE = BUILDER.comment("Legacy session setting, ignored. Configure the daily timer in this world's game rules instead.").define("playTimeLimit.mode", "WARN_ONLY", value ->
             value instanceof String s && (s.equalsIgnoreCase("WARN_ONLY") || s.equalsIgnoreCase("DISCONNECT")));
 
     public static final ModConfigSpec.BooleanValue WORLD_FOLKLORE_ENABLED = bool("worldFolklore.enabled", true, "Enable seed-specific hidden folklore rules and tiny ritual responses.");

@@ -34,6 +34,8 @@ import io.github.akakishi04.asobibatweaks.feature.MovementTweaksEvents;
 import io.github.akakishi04.asobibatweaks.feature.NetherFishingEvents;
 import io.github.akakishi04.asobibatweaks.feature.OceanAndDisplayEvents;
 import io.github.akakishi04.asobibatweaks.feature.PlayTimeLimitEvents;
+import io.github.akakishi04.asobibatweaks.feature.PlayTimeRules;
+import io.github.akakishi04.asobibatweaks.feature.DailyPlayTimeNetworking;
 import io.github.akakishi04.asobibatweaks.feature.PowerMasteryEvents;
 import io.github.akakishi04.asobibatweaks.feature.QuiverNetworking;
 import io.github.akakishi04.asobibatweaks.feature.QuiverAmmoEvents;
@@ -75,6 +77,7 @@ public final class AsobibaTweaks {
     public static final String MOD_ID = "asobibatweaks";
 
     public AsobibaTweaks(IEventBus modBus, ModContainer container) {
+        PlayTimeRules.register();
         AsobibaRegistries.register(modBus);
         AfterimageDecoyRegistration.register(modBus);
         modBus.addListener(VillageStatusNetworking::registerPayloads);
@@ -83,6 +86,7 @@ public final class AsobibaTweaks {
         modBus.addListener(FrostWalkerToggleNetworking::registerPayloads);
         modBus.addListener(MaceMasteryEvents::registerPayloads);
         modBus.addListener(NodGestureNetworking::registerPayloads);
+        modBus.addListener(DailyPlayTimeNetworking::registerPayloads);
         container.registerConfig(ModConfig.Type.COMMON, AsobibaTweaksConfig.SPEC);
         NeoForge.EVENT_BUS.register(new GrowingItemsEvents());
         NeoForge.EVENT_BUS.register(new GiantOrganismEvents());

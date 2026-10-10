@@ -8,6 +8,7 @@ import io.github.akakishi04.asobibatweaks.client.AfterimageDecoyRenderer;
 import io.github.akakishi04.asobibatweaks.client.NodGestureClient;
 import io.github.akakishi04.asobibatweaks.client.SnowGolemTiltClient;
 import io.github.akakishi04.asobibatweaks.client.CloudLineClient;
+import io.github.akakishi04.asobibatweaks.client.DailyPlayTimeClient;
 import io.github.akakishi04.asobibatweaks.feature.NodGestureNetworking;
 import io.github.akakishi04.asobibatweaks.feature.AfterimageDecoyRegistration;
 import io.github.akakishi04.asobibatweaks.client.QuiverClientEvents;
@@ -43,6 +44,7 @@ public final class AsobibaTweaksClient {
         NeoForge.EVENT_BUS.register(new QuiverClientEvents());
         NeoForge.EVENT_BUS.register(new SnowGolemTiltClient());
         NeoForge.EVENT_BUS.register(new CloudLineClient());
+        DailyPlayTimeClient.register();
         NeoForge.EVENT_BUS.register(new FrostWalkerToggleClientEvents());
     }
 

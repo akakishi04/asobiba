@@ -1,5 +1,13 @@
 # AsobibaTweaks implementation status
 
+## Durable daily play timer (2026-10-10)
+
+Implemented on merged `834cefb7`: per-world/per-player saved daily allowance, same-date admission rejection across saved restarts, real-calendar played-day count, server-authoritative countdown HUD and native world-creation game-rule settings. The default is opt-in, 120 minutes, midnight at UTC+9. Legacy global session settings remain parseable but no longer enforce limits; historical dates cannot be reconstructed.
+
+Final local full regression: **291/291 required GameTests passed in 27.35 seconds; full build passed in 53 seconds**. The unchanged 280 prior cases and eleven new timer cases passed. Standard `check` also passed **52 ledger assertions, 58 HUD assertions and 10,278 existing cloud-state assertions**. The preceding full run passed all 291 in 27.95 seconds and built in 51 seconds; the final run additionally checks bounded checkpoint behavior on rejected login retries.
+
+A local dedicated-server smoke also reached `Done (0.531s)` successfully. Native evidence includes writing the real SavedData file and loading it through fresh storage, transformed `PlayerList.canPlayerLogin` rejection, and a disconnect packet/closed channel while another connection and the server remain available. Exact published-head CI is recorded on the feature pull request. Actual graphics-client world creation, HUD appearance, integrated pause/rejoin and a full real-client/server process restart remain manual checks; no rendered-client or tamper-resistance claim is made.
+
 ## Three quiet ambient scenes (2026-10-10)
 
 Implemented on merged `bd49b33e`: an observer-local drifting cloud line; idle villagers briefly imitating a nearby armor stand; and two to four existing Endermen walking to a safe inset island rim, looking outward and releasing one by one. Each has an independent toggle and natural chance. There are no new rewards, spawning, teleportation, saved-world records or Data Logger changes.
@@ -141,7 +149,7 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Refugees / Migration / Village Fission | `VillagePopulationMigrationService`, `VillageSavedData.MigrationRecord`, `VillageSimulationEvents`, `VillageOutpostLifecycleService` | **V6+V10 implemented core**: Viability-driven planned/refugee waves, persistent MigrationRecords, physical loaded-route travel, real travel/founding supplies, Displaced return/permanence, relocation/abandonment hysteresis, sustained-integration merge redirects, and delayed daughter-Village creation only after mature Outpost infrastructure validation; CI build + dedicated-server smoke PASS |
 | Villager Breeding Overhaul | `VillagePopulationMigrationService`, `VillageEconomyService` | **V6 implemented**: sustainable-population / Viability / housing / Welfare / food gates, village-wide birth cooldown and recovery-only Recovery Growth path |
 | Forest Regeneration | `ForestRegenerationEvents`, `VillageBuildingService` | Implemented slow compatible natural seeding with indexed village/worksite/road and physical player-use/BlockEntity protection; long-run/modpack ecology remains a verification gate. Managed real-sapling forestry uses the separate bounded resource-site path |
-| Play Time Limit | `PlayTimeLimitEvents` | Implemented; default OFF |
+| Daily Play Time Limit | `PlayTimeLimitEvents`, `DailyPlayTimeService`, `DailyPlayTimeLedger`, `PlayTimeRules`, `DailyPlayTimeClient` | World-saved daily allowance and real-calendar played-day HUD; opt-in per world |
 | Paid building repair / legacy circulation | `VillageBedRepairService`, `VillageStairRepairService`, `VillageBuildingRepairService`, `VillageHouseCirculationService` | V86/V89 implemented: actual paid beds/stairs/composite shells and explicit versioned circulation migration; circulation-aware shell-manifest regression passed round7; identical-source repeat also passed |
 | Temporary construction access | `VillageConstructionAccessService` | Supported real-paid exterior stair ramps and conservative recovery implemented; autonomous traversal remains a gameplay gate |
 | Physical river / inter-settlement freight | `VillageRiverCargoService`, `VillageRiverPorterService`, `VillageInterSettlementFreightService`, `VillageResourceReservations` | Paid carriers, first/last-mile cargo, inventory/category/project demand, physical recovery and replacement storage implemented; bounded transaction tests passed round7, actual restart/long navigation still open |
