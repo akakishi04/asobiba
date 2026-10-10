@@ -70,6 +70,8 @@ Detailed village-system gap analysis and migration order: [`VILLAGE_IMPLEMENTATI
 | Blast / Slipstream Wind Pressure | `PhysicsTransportEvents` | Implemented |
 | Wind Pressure Resistance | datapack enchantment + `PhysicsTransportEvents` | Implemented |
 | Growing Enchantments | `EnchantmentTweaksEvents`, `EnchantmentMasteryData` | Implemented |
+| New enchantment L01 — 根付き / Rooted | — | **Planned, not implemented:** enchanted Hoe uses a real held seed/planting item to replant an eligible mature harvested crop in place; no free items. Levels/acquisition/mastery pending, no GameTests. Outside completed v0.1 baseline. |
+| New enchantment O01 — 不吉 / Ominous | — | **Planned, not implemented:** enchanted Armor slightly increases encounters with otherwise eligible harmless ambient oddities only; no dangerous effects or reward boost. Bounded stacking/tuning pending, no GameTests. Outside completed v0.1 baseline. |
 | Enchantment Branches | `EnchantmentTweaksEvents`, specialized `*MasteryEvents` / `*MasteryService`, native-effect mixins | **V92 integrated:** all 41 selectable-branch families have audited runtime paths; Mending is separately branchless, Flame has two branches by design. Native-domain semantics, mastery-100 cap, distinct armor-branch coexistence and paid ammo history are implemented. Included mastery scenarios passed round7, including native Wind launch; identical-source repeat also passed; real client/multiplayer acceptance remains open |
 | Curse Growth | `EnchantmentTweaksEvents` | Implemented |
 | Fortune / Silk Touch Switching | `EnchantmentTweaksEvents` | Implemented |

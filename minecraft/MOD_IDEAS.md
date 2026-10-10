@@ -1774,6 +1774,27 @@ Accepted direction:
 Design constraint: this is a smart container/viewer for real vanilla maps, not an infinite minimap or automatic world map.
 
 
+## Newly accepted independent enchantments — planned, not implemented
+
+These two new enchants are **accepted implementation candidates**, separate from the existing 41 vanilla mastery-branch families. Their level caps, acquisition rules, conflicts, visual/audio feedback and mastery compatibility remain undecided until design review. Do not count them as implemented or part of the passed 224-test baseline.
+
+### L01 — 根付き / Rooted (Hoe; planned)
+
+- When the player harvests a fully mature, eligible replantable crop **using the enchanted Hoe**, offer to replant the same crop in its vacated valid soil position.
+- Consume the matching **real seed or other normal planting item** from the player's inventory; never fabricate a seed, duplicate crop drops, grow an immature crop into maturity or destroy adjacent crops.
+- If no compatible seed, valid farmland/planting surface or safe empty target exists, leave ordinary harvesting intact and do not place anything.
+- Initial scope is ordinary planted crops with well-defined harvest/replant behavior; plants that do not need replanting, unsupported modded crops and unusual multi-block plants require explicit later rules.
+- No automatic area harvesting, free plant growth or expanded reach is implied. Enchantment levels, activation details and whether mastery specialization is appropriate are future tuning decisions.
+- Status: **accepted for future implementation; no registry/runtime code or tests yet**.
+
+### O01 — 不吉 / Ominous (Armor; planned)
+
+- While wearing enchanted armor, the player becomes modestly more likely to encounter **existing harmless ambient oddities** when their normal, safe trigger conditions are already satisfied.
+- This must not raise hostile spawns, inflict Bad Omen/status effects, force dangerous events, create item rewards or increase progression/loot chances. The enchant should feel strange, not punitive or farmable.
+- Respect each oddity's configuration toggle, normal cooldown, proximity rules and global performance/event limits. Never force-load chunks or invent an event solely because the armor is worn.
+- Multiple enchanted armor pieces must use a bounded, non-explosive composition rule; precise probabilities, event eligibility, acquisition and enchantment level cap remain to be designed.
+- Status: **accepted for future implementation; no registry/runtime code or tests yet**.
+
 ## Accepted enchantment-system tweaks
 
 ### Growing Enchantments
