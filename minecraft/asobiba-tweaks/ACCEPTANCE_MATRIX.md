@@ -139,5 +139,7 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT63 | closedTradeRoadReturnsPaidParcelToItsRealOrigin | A previously paid 16-item Porter shipment follows a suspended route back to its genuinely owned source Barrel with unchanged total inventory and zero fake trade traffic |
 | GT64 | fullReturnWarehouseKeepsPhysicalPaidParcel | A real returned freight parcel stays in persistent Porter cargo while the originating warehouse is full, then inserts exactly once after physical space returns |
 | GT65 | destroyedReceivingBarrelNeverStrandsPorterCargo | A loaded, player-destroyed destination Barrel causes actual paid goods to return to their source rather than trapping the worker or fabricating replacement items |
+| GT66 | realSpecialistEntryMakesRegisteredStationReachable | A genuine physically completed Armorer workshop with unobstructed public entrance and standing cell retains one physically usable Blast Furnace job site |
+| GT67 | blockedSpecialistPassageCannotCountAsWorkingPoi | A player Obsidian block in the real internal access corridor makes a still-present workstation inaccessible; removing obstruction physically restores job-site capacity |
 
 These tests are **not** a full acceptance of G01-G22: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.

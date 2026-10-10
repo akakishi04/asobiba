@@ -3,6 +3,7 @@ package io.github.akakishi04.asobibatweaks.feature;
 import io.github.akakishi04.asobibatweaks.AsobibaTweaks;
 import java.util.List;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerLevel;
@@ -117,6 +118,92 @@ public final class VillageSpecialistWorkshopGameTests {
         }
         helper.succeed();
     }
+
+    /** Recognized, physically traversable ground-floor POI stays functional. */
+    @GameTest(template = "empty16x6x9", batch = "specialist_crafting", timeoutTicks = 45)
+    public static void realSpecialistEntryMakesRegisteredStationReachable(
+            GameTestHelper helper) {
+        WorkshopFixture f = setupPhysicalWorkshop(helper);
+        helper.runAtTickTime(7, () -> {
+            VillageBuildingService.revalidateChunk(
+                    f.level(), new ChunkPos(f.origin()));
+            if (!f.level().getBlockState(f.origin().offset(2, 1, 2))
+                        .is(Blocks.BLAST_FURNACE)
+                    || !VillageBuildingService.specialistPrimaryStationAccessible(
+                            f.level(), f.origin())
+                    || !"valid".equals(f.building().validationState())
+                    || f.building().validatedCapacity() != 1) {
+                helper.fail("Physically open public hall did not expose its real job-site POI",
+                        new BlockPos(7, 2, 4));
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
+    /** A workstation can survive, yet be unreachable behind an edited wall. */
+    @GameTest(template = "empty16x6x9", batch = "specialist_crafting", timeoutTicks = 55)
+    public static void blockedSpecialistPassageCannotCountAsWorkingPoi(
+            GameTestHelper helper) {
+        WorkshopFixture f = setupPhysicalWorkshop(helper);
+        BlockPos hallway = f.origin().offset(2, 1, 1);
+        f.level().setBlock(hallway, Blocks.OBSIDIAN.defaultBlockState(), Block.UPDATE_ALL);
+        helper.runAtTickTime(8, () -> {
+            VillageBuildingService.revalidateChunk(f.level(), new ChunkPos(f.origin()));
+            if (!f.level().getBlockState(hallway).is(Blocks.OBSIDIAN)
+                    || !f.level().getBlockState(f.origin().offset(2, 1, 2))
+                        .is(Blocks.BLAST_FURNACE)
+                    || VillageBuildingService.specialistPrimaryStationAccessible(
+                            f.level(), f.origin())
+                    || !"invalid".equals(f.building().validationState())
+                    || f.building().validatedCapacity() != 0) {
+                helper.fail("Blocked real workstation corridor was wrongly considered usable",
+                        new BlockPos(7, 2, 3));
+                return;
+            }
+            f.level().setBlock(hallway, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
+            helper.runAtTickTime(22, () -> {
+                VillageBuildingService.revalidateChunk(
+                        f.level(), new ChunkPos(f.origin()));
+                if (!VillageBuildingService.specialistPrimaryStationAccessible(
+                            f.level(), f.origin())
+                        || !"valid".equals(f.building().validationState())
+                        || f.building().validatedCapacity() != 1) {
+                    helper.fail("Removing obstruction did not restore a genuine job-site POI",
+                            new BlockPos(7, 2, 3));
+                    return;
+                }
+                helper.succeed();
+            });
+        });
+    }
+
+    private static WorkshopFixture setupPhysicalWorkshop(GameTestHelper helper) {
+        ServerLevel level = helper.getLevel();
+        BlockPos base = helper.absolutePos(new BlockPos(5, 1, 2));
+        VillageSavedData data = VillageSavedData.get(level);
+        var village = data.createVillage(base, level.getGameTime());
+        var source = data.createProject(village.id(), "building", 65, base);
+        source.setTemplateId("village_armory_5x5");
+        source.setParameter("plank", "oak");
+        source.setPhase("complete");
+        for (var part : VillageSimulationEvents.projectPlan(source)) {
+            if (!part.state().isAir()) {
+                level.setBlock(part.pos(), part.state(), Block.UPDATE_CLIENTS);
+            }
+        }
+        var building = data.createBuilding(
+                village.id(), base, base.offset(4, 4, 4), true);
+        building.setTemplateId("village_armory_5x5");
+        building.setClassification("workshop");
+        building.setValidationState("unknown");
+        building.setValidatedCapacity(0);
+        data.touch();
+        return new WorkshopFixture(level, base, building);
+    }
+
+    private record WorkshopFixture(ServerLevel level, BlockPos origin,
+                                   VillageSavedData.BuildingRecord building) {}
 
     private static Fixture setup(GameTestHelper helper) {
         helper.setBlock(CENTER, Blocks.BARREL);

@@ -249,6 +249,30 @@ public final class VillageBuildingService {
                 && state.getValue(HorizontalDirectionalBlock.FACING) == direction;
     }
 
+    /**
+     * Bounded V87 access check for the existing purpose-built 5x5 workshop
+     * family. All eleven vanilla specialist templates deliberately use the
+     * same open, straight front passage to their primary station at (2,1,2).
+     * An intact job block behind player-owned obstruction is NOT functional
+     * profession capacity simply because its BlockEntity survived.
+     *
+     * This checks the real vanilla standing spaces from the known public
+     * entrance to the station. It does not assert distant road reachability
+     * or adopt ownership of arbitrary modded buildings.
+     */
+    static boolean specialistPrimaryStationAccessible(ServerLevel level, BlockPos base) {
+        BlockPos entrance = base.offset(2, 1, 0);
+        BlockPos approach = base.offset(2, 1, 1);
+        for (BlockPos standing : new BlockPos[]{entrance, approach}) {
+            if (!VillageSimulationScheduler.isChunkLoaded(level, standing)
+                    || !level.getBlockState(standing).isAir()
+                    || !level.getBlockState(standing.above()).isAir()
+                    || !level.getBlockState(standing.below()).isFaceSturdy(
+                            level, standing.below(), Direction.UP)) return false;
+        }
+        return true;
+    }
+
     private static boolean revalidateBuilding(ServerLevel level, VillageSavedData.BuildingRecord building) {
         int beds = 0;
         int containers = 0;
@@ -345,7 +369,8 @@ public final class VillageBuildingService {
                     building.templateId());
             if (expected != null) {
                 valid = level.getBlockState(min.offset(2, 1, 2)).is(expected)
-                        && usableInteriorCells >= 2;
+                        && usableInteriorCells >= 2
+                        && specialistPrimaryStationAccessible(level, min);
                 building.setValidatedCapacity(valid ? 1 : 0);
             } else {
                 valid = nonStorageWorkstations > 0 && usableInteriorCells >= 2;
