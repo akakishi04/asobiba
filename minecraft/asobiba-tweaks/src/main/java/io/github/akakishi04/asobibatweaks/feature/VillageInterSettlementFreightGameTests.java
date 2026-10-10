@@ -416,6 +416,203 @@ public final class VillageInterSettlementFreightGameTests {
         helper.succeed();
     }
 
+    /** Recipient replacement is persisted separately from the shared road endpoint. */
+    @GameTest(template = "empty16x6x9", batch = "trade_delivery_reroute")
+    public static void destroyedReceiverReroutesExactNamedCargoAfterReload(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        ItemStack named = new ItemStack(Items.COBBLESTONE, 64);
+        named.set(DataComponents.CUSTOM_NAME, Component.literal("Paid recipient parcel"));
+        f.source().setItem(0, named);
+        if (!start(f) || !VillageInterSettlementFreightService.handlePorter(f.porter(), f.level())) {
+            helper.fail("Cannot stage real named recipient parcel", MARK);
+            return;
+        }
+        BlockPos replacementPos = helper.absolutePos(new BlockPos(12, 1, 6));
+        Container replacement = alternate(f, replacementPos, f.destination());
+        f.level().setBlock(f.targetPos(), Blocks.STONE.defaultBlockState(), 3);
+        VillageInterSettlementFreightService.handlePorter(f.porter(), f.level());
+        CompoundTag ticket = f.porter().getPersistentData()
+                .getCompound("asobibatweaks_inter_village_freight");
+        if (!"delivery".equals(ticket.getString("phase"))
+                || ticket.getLong("delivery_target") != replacementPos.asLong()
+                || ticket.getLong("target") != f.targetPos().asLong()
+                || !f.route().to().equals(f.targetPos())
+                || count(replacement, Items.COBBLESTONE) != 0
+                || count(f.source(), Items.COBBLESTONE) != 48
+                || VillagerSimData.workCargoCount(f.porter(), f.level().registryAccess(),
+                    16, Items.COBBLESTONE) != 16) {
+            helper.fail("Replacement must reserve an exact paid parcel before physical travel", MARK);
+            return;
+        }
+        Villager restored = EntityType.VILLAGER.create(f.level());
+        if (restored == null) throw new IllegalStateException("Cannot restore freight worker");
+        restored.load(f.porter().saveWithoutId(new CompoundTag()));
+        f.porter().discard();
+        if (restored.getPersistentData().getCompound("asobibatweaks_inter_village_freight")
+                .getLong("delivery_target") != replacementPos.asLong()) {
+            helper.fail("Recipient replacement did not survive actual entity NBT", MARK);
+            return;
+        }
+        restored.setPos(replacementPos.getX() + 0.5D,
+                replacementPos.getY() + 1.0D, replacementPos.getZ() + 0.5D);
+        VillageInterSettlementFreightService.handlePorter(restored, f.level());
+        VillageInterSettlementFreightService.handlePorter(restored, f.level());
+        if (count(replacement, Items.COBBLESTONE) != 16
+                || !ItemStack.isSameItemSameComponents(replacement.getItem(0), named)
+                || count(f.source(), Items.COBBLESTONE) != 48
+                || VillagerSimData.hasWorkCargo(restored, f.level().registryAccess(), 16)
+                || VillageInterSettlementFreightService.hasActiveTicket(restored)
+                || f.route().trafficScore() != 16
+                || !f.level().getBlockState(f.targetPos()).is(Blocks.STONE)) {
+            helper.fail("Reloaded replacement delivery lost components or duplicated real stock", MARK);
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty16x6x9", batch = "trade_delivery_reroute")
+    public static void fullReceiverUsesOnlyItsOwnRegisteredSpare(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        f.source().setItem(0, new ItemStack(Items.WHEAT, 64));
+        if (!start(f) || !VillageInterSettlementFreightService.handlePorter(f.porter(), f.level())) {
+            helper.fail("Cannot stage full receiver parcel", MARK);
+            return;
+        }
+        for (int i = 0; i < f.target().getContainerSize(); i++)
+            f.target().setItem(i, new ItemStack(Items.DIRT, 64));
+        BlockPos foreignPos = helper.absolutePos(new BlockPos(12, 1, 5));
+        Container foreign = alternate(f, foreignPos, f.origin());
+        BlockPos replacementPos = helper.absolutePos(new BlockPos(12, 1, 6));
+        Container replacement = alternate(f, replacementPos, f.destination());
+        f.porter().setPos(replacementPos.getX() + 0.5D,
+                replacementPos.getY() + 1.0D, replacementPos.getZ() + 0.5D);
+        VillageInterSettlementFreightService.handlePorter(f.porter(), f.level());
+        if (count(replacement, Items.WHEAT) != 16 || count(foreign, Items.WHEAT) != 0
+                || count(f.target(), Items.WHEAT) != 0 || count(f.source(), Items.WHEAT) != 48
+                || VillagerSimData.hasWorkCargo(f.porter(), f.level().registryAccess(), 16)
+                || VillageInterSettlementFreightService.hasActiveTicket(f.porter())
+                || f.route().trafficScore() != 16) {
+            helper.fail("Full receiver rerouting crossed village ownership or lost physical stock", MARK);
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty16x6x9", batch = "trade_delivery_reroute")
+    public static void foreignOrInvalidReceiverNeverAcceptsHeldFreight(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        f.source().setItem(0, new ItemStack(Items.WHEAT, 64));
+        if (!start(f) || !VillageInterSettlementFreightService.handlePorter(f.porter(), f.level())) {
+            helper.fail("Cannot stage receiver ownership parcel", MARK);
+            return;
+        }
+        for (int i = 0; i < f.target().getContainerSize(); i++)
+            f.target().setItem(i, new ItemStack(Items.DIRT, 64));
+        BlockPos foreignPos = helper.absolutePos(new BlockPos(12, 1, 5));
+        Container foreign = alternate(f, foreignPos, f.origin());
+        BlockPos invalidPos = helper.absolutePos(new BlockPos(12, 1, 6));
+        Container invalid = alternate(f, invalidPos, f.destination());
+        VillageSavedData.get(f.level()).storageAt(f.destination(), invalidPos)
+                .orElseThrow().setValidationState("unknown");
+        f.porter().setPos(f.targetPos().getX() + 0.5D,
+                f.targetPos().getY() + 1.0D, f.targetPos().getZ() + 0.5D);
+        VillageInterSettlementFreightService.handlePorter(f.porter(), f.level());
+        if (count(foreign, Items.WHEAT) != 0 || count(invalid, Items.WHEAT) != 0
+                || count(f.source(), Items.WHEAT) != 48
+                || VillagerSimData.workCargoCount(f.porter(), f.level().registryAccess(),
+                    16, Items.WHEAT) != 16
+                || !VillageInterSettlementFreightService.hasActiveTicket(f.porter())
+                || f.route().trafficScore() != 0) {
+            helper.fail("Foreign or invalid receiver consumed the conserved waiting parcel", MARK);
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty16x6x9", batch = "trade_delivery_reroute")
+    public static void canceledRoadOverridesPersistedRecipientReplacement(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        f.source().setItem(0, new ItemStack(Items.WHEAT, 64));
+        if (!start(f) || !VillageInterSettlementFreightService.handlePorter(f.porter(), f.level())) {
+            helper.fail("Cannot stage route cancellation parcel", MARK);
+            return;
+        }
+        BlockPos replacementPos = helper.absolutePos(new BlockPos(12, 1, 6));
+        Container replacement = alternate(f, replacementPos, f.destination());
+        f.level().setBlock(f.targetPos(), Blocks.STONE.defaultBlockState(), 3);
+        VillageInterSettlementFreightService.handlePorter(f.porter(), f.level());
+        f.route().setState("suspended");
+        VillageInterSettlementFreightService.handlePorter(f.porter(), f.level());
+        if (count(replacement, Items.WHEAT) != 0 || count(f.source(), Items.WHEAT) != 64
+                || VillagerSimData.hasWorkCargo(f.porter(), f.level().registryAccess(), 16)
+                || VillageInterSettlementFreightService.hasActiveTicket(f.porter())
+                || f.route().trafficScore() != 0) {
+            helper.fail("A replacement receiver bypassed real route cancellation", MARK);
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty16x6x9", batch = "trade_delivery_reroute")
+    public static void partialReceiptReroutesOnlyRemainingPhysicalCargo(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        f.source().setItem(0, new ItemStack(Items.WHEAT, 64));
+        if (!start(f) || !VillageInterSettlementFreightService.handlePorter(f.porter(), f.level())) {
+            helper.fail("Cannot stage partial receiver parcel", MARK);
+            return;
+        }
+        for (int i = 0; i < f.target().getContainerSize(); i++)
+            f.target().setItem(i, new ItemStack(Items.DIRT, 64));
+        f.target().setItem(0, new ItemStack(Items.WHEAT, 60));
+        f.porter().setPos(f.targetPos().getX() + 0.5D,
+                f.targetPos().getY() + 1.0D, f.targetPos().getZ() + 0.5D);
+        VillageInterSettlementFreightService.handlePorter(f.porter(), f.level());
+        if (count(f.target(), Items.WHEAT) != 64
+                || VillagerSimData.workCargoCount(f.porter(), f.level().registryAccess(),
+                    16, Items.WHEAT) != 12 || f.route().trafficScore() != 4) {
+            helper.fail("Partial receiver must accept only four actual carried items", MARK);
+            return;
+        }
+        BlockPos replacementPos = helper.absolutePos(new BlockPos(12, 1, 6));
+        Container replacement = alternate(f, replacementPos, f.destination());
+        VillageInterSettlementFreightService.handlePorter(f.porter(), f.level());
+        VillageInterSettlementFreightService.handlePorter(f.porter(), f.level());
+        if (count(replacement, Items.WHEAT) != 12 || count(f.target(), Items.WHEAT) != 64
+                || count(f.source(), Items.WHEAT) != 48
+                || VillagerSimData.hasWorkCargo(f.porter(), f.level().registryAccess(), 16)
+                || VillageInterSettlementFreightService.hasActiveTicket(f.porter())
+                || f.route().trafficScore() != 16) {
+            helper.fail("Replacement replay duplicated the already receipted part of a parcel", MARK);
+            return;
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty16x6x9", batch = "trade_delivery_reroute")
+    public static void removedReplacementIsRevalidatedBeforeDelivery(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        f.source().setItem(0, new ItemStack(Items.WHEAT, 64));
+        if (!start(f) || !VillageInterSettlementFreightService.handlePorter(f.porter(), f.level())) {
+            helper.fail("Cannot stage replacement revalidation parcel", MARK);
+            return;
+        }
+        BlockPos replacementPos = helper.absolutePos(new BlockPos(12, 1, 6));
+        alternate(f, replacementPos, f.destination());
+        f.level().setBlock(f.targetPos(), Blocks.STONE.defaultBlockState(), 3);
+        VillageInterSettlementFreightService.handlePorter(f.porter(), f.level());
+        f.level().setBlock(replacementPos, Blocks.GLASS.defaultBlockState(), 3);
+        VillageInterSettlementFreightService.handlePorter(f.porter(), f.level());
+        if (count(f.source(), Items.WHEAT) != 64
+                || VillagerSimData.hasWorkCargo(f.porter(), f.level().registryAccess(), 16)
+                || VillageInterSettlementFreightService.hasActiveTicket(f.porter())
+                || f.route().trafficScore() != 0
+                || !f.level().getBlockState(replacementPos).is(Blocks.GLASS)) {
+            helper.fail("Removed replacement was not physically revalidated before cargo debit", MARK);
+            return;
+        }
+        helper.succeed();
+    }
+
     private static Container alternate(Fixture f, BlockPos pos, UUID owner) {
         f.level().setBlock(pos.below(), Blocks.STONE.defaultBlockState(),
                 net.minecraft.world.level.block.Block.UPDATE_ALL);

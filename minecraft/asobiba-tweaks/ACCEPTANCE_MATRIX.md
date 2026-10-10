@@ -153,4 +153,12 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT77 | carpenterPaysOnePlankBeforeTravelingToDistantRoof | A distant real roof repair preloads exactly one physical plank from recognized ground-level Barrel into persistent Carpenter cargo, then consumes only that item when reaching the actual roof; no duplication or phantom material |
 | GT78 | finishedSecondBedIsCarriedBeforeLongHouseWalk | A genuine one-story home physically receives its second Bed from remote registered storage only after the worker first carries its real unstackable item; no warehouse↔home oscillation or repeated payment |
 
+
+| GT79 | destroyedReceiverReroutesExactNamedCargoAfterReload | Destroyed destination selects a recognized same-village spare without remote insertion; the separate parcel destination and exact named cargo survive entity NBT while the shared route endpoint remains unchanged |
+| GT80 | fullReceiverUsesOnlyItsOwnRegisteredSpare | Full receiver routes the physically paid parcel to real recipient-owned spare storage, never a closer foreign warehouse |
+| GT81 | foreignOrInvalidReceiverNeverAcceptsHeldFreight | Foreign-village and unvalidated replacement containers remain untouched; a full receiver retains all actual cargo and records no false traffic |
+| GT82 | canceledRoadOverridesPersistedRecipientReplacement | Route cancellation supersedes a parcel's persisted replacement receiver and physically returns its exact paid inventory without trade receipts |
+| GT83 | partialReceiptReroutesOnlyRemainingPhysicalCargo | A partial four-item receipt followed by a replacement deposits only the remaining twelve real items, with exactly sixteen total traffic and no duplicate replay |
+| GT84 | removedReplacementIsRevalidatedBeforeDelivery | A selected spare destroyed before arrival is revalidated and triggers a real return, preserves the replacement player block, and creates no phantom delivery |
+
 These tests are **not** a full acceptance of G01-G22: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.

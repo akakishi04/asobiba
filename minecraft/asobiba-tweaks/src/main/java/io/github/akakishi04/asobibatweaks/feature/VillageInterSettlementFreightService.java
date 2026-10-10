@@ -315,8 +315,29 @@ public final class VillageInterSettlementFreightService {
         }
 
         boolean delivery = "delivery".equals(phase);
-        BlockPos where = delivery ? to : from;
+        // Keep the original route endpoint immutable. A receiving warehouse
+        // replacement belongs to this parcel, not to every user of the route.
+        BlockPos where = delivery && ticket.contains("delivery_target", Tag.TAG_LONG)
+                ? BlockPos.of(ticket.getLong("delivery_target")) : delivery ? to : from;
+        if (delivery && !VillageSimulationScheduler.isAreaLoaded(
+                level, porter.blockPosition(), where)) return true;
         Container container = recognized(level, data, delivery ? destinationId : originId, where);
+        if (delivery) {
+            ItemStack sample = ticketCargoSample(porter, level, ticket);
+            if (sample.isEmpty()) {
+                porter.getPersistentData().remove(TICKET);
+                return true;
+            }
+            if (container == null || !canReceive(container, sample, remaining)) {
+                VillageStorageService.LocatedContainer replacement = receivingReplacement(
+                        porter, level, data, destinationId, to, where, sample, remaining);
+                if (replacement != null) {
+                    where = replacement.record().pos();
+                    container = replacement.container();
+                    ticket.putLong("delivery_target", where.asLong());
+                }
+            }
+        }
         if (container == null) {
             // An unloaded endpoint is UNKNOWN. A genuinely missing, already
             // loaded destination cannot hold our real purchased cargo.
@@ -407,6 +428,44 @@ public final class VillageInterSettlementFreightService {
             porter.getPersistentData().remove(TICKET);
         }
         return true;
+    }
+
+    /** A bounded, loaded local receiving district, never a foreign warehouse.
+     * Existing partial capacity remains usable when no complete alternative is
+     * available. Unknown chunks do not prove destruction and never force-load.
+     */
+    private static VillageStorageService.LocatedContainer receivingReplacement(
+            Villager porter, ServerLevel level, VillageSavedData data,
+            UUID destinationId, BlockPos routeTarget, BlockPos currentTarget,
+            ItemStack sample, int quantity) {
+        VillageSavedData.VillageRecord village = data.village(destinationId).orElse(null);
+        if (village == null) return null;
+        List<VillageSavedData.StorageRecord> candidates = data.storagesForVillage(destinationId)
+                .stream().filter(r -> !r.pos().equals(currentTarget))
+                .sorted(Comparator
+                    .comparingInt((VillageSavedData.StorageRecord r) ->
+                        r.pos().distManhattan(routeTarget))
+                    .thenComparing(r -> r.id().toString()))
+                .limit(MAX_STORES).toList();
+        for (VillageSavedData.StorageRecord record : candidates) {
+            BlockPos pos = record.pos();
+            if (pos.distManhattan(routeTarget) > 24
+                    || pos.distManhattan(village.center()) > 24
+                    || !VillageSimulationScheduler.isAreaLoaded(
+                        level, porter.blockPosition(), pos)) continue;
+            Container target = recognized(level, data, destinationId, pos);
+            if (target != null && canReceive(target, sample, quantity))
+                return new VillageStorageService.LocatedContainer(record, target);
+        }
+        return null;
+    }
+
+    private static ItemStack ticketCargoSample(
+            Villager porter, ServerLevel level, CompoundTag ticket) {
+        for (ItemStack stack : VillagerSimData.workCargo(porter, level.registryAccess(), SLOTS)) {
+            if (matchesTicket(level, ticket, stack)) return stack.copyWithCount(1);
+        }
+        return ItemStack.EMPTY;
     }
 
     /** Return the originally carried goods after a verified route loss.
