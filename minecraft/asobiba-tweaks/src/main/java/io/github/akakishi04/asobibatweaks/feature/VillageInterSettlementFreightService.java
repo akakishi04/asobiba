@@ -415,19 +415,66 @@ public final class VillageInterSettlementFreightService {
     private static boolean returnPaidCargoHome(
             Villager porter, ServerLevel level, UUID originId,
             BlockPos sourcePos, CompoundTag ticket) {
-        if (!VillageSimulationScheduler.isChunkLoaded(level, sourcePos)) return true;
-        VillageSavedData data = VillageSavedData.get(level);
-        Container origin = recognized(level, data, originId, sourcePos);
-        if (origin == null) return true; // loaded missing home: retain actual cargo
-        if (porter.distanceToSqr(sourcePos.getCenter()) > 4.5D * 4.5D) {
-            porter.getNavigation().moveTo(sourcePos.getX() + 0.5D,
-                    sourcePos.getY() + 1.0D, sourcePos.getZ() + 0.5D, 0.75D);
+        // Only the actual persistent parcel may be returned. An interrupted
+        // shipment with no matching real cargo must not reserve the worker
+        // forever or synthesize an inventory refund.
+        int remaining = ticket.getInt("remaining");
+        ItemStack sample = ItemStack.EMPTY;
+        List<ItemStack> cargo = VillagerSimData.workCargo(
+                porter, level.registryAccess(), SLOTS);
+        for (ItemStack stack : cargo) {
+            if (matchesTicket(level, ticket, stack)) {
+                sample = stack.copyWithCount(1);
+                break;
+            }
+        }
+        if (sample.isEmpty()) {
+            porter.getPersistentData().remove(TICKET);
             return true;
         }
 
-        int remaining = ticket.getInt("remaining");
-        List<ItemStack> cargo = VillagerSimData.workCargo(
-                porter, level.registryAccess(), SLOTS);
+        VillageSavedData data = VillageSavedData.get(level);
+        Container origin = recognized(level, data, originId, sourcePos);
+        BlockPos returnPos = sourcePos;
+        if (origin == null || !canReceive(origin, sample, remaining)) {
+            // A destroyed or filled original warehouse need not strand paid
+            // physical cargo. The alternative must be a loaded, independently
+            // registered store in the SAME originating village, close to its
+            // former source and within the bounded local warehouse district.
+            VillageSavedData.VillageRecord village = data.village(originId).orElse(null);
+            if (village != null) {
+                List<VillageSavedData.StorageRecord> alternatives =
+                        data.storagesForVillage(originId).stream()
+                        .filter(r -> !r.pos().equals(sourcePos))
+                        .sorted(Comparator
+                            .comparingInt((VillageSavedData.StorageRecord r) ->
+                                r.pos().distManhattan(sourcePos))
+                            .thenComparing(r -> r.id().toString()))
+                        .limit(MAX_STORES).toList();
+                for (VillageSavedData.StorageRecord record : alternatives) {
+                    BlockPos candidatePos = record.pos();
+                    if (!"valid".equals(record.validationState())
+                            || candidatePos.distManhattan(sourcePos) > 24
+                            || candidatePos.distManhattan(village.center()) > 24
+                            || !VillageSimulationScheduler.isAreaLoaded(
+                                level, porter.blockPosition(), candidatePos)) continue;
+                    Container candidate = recognized(level, data, originId, candidatePos);
+                    if (candidate == null || !canReceive(candidate, sample, remaining)) continue;
+                    origin = candidate;
+                    returnPos = candidatePos;
+                    break;
+                }
+            }
+        }
+        if (origin == null
+                || !VillageSimulationScheduler.isAreaLoaded(
+                    level, porter.blockPosition(), returnPos)) return true;
+        if (porter.distanceToSqr(returnPos.getCenter()) > 4.5D * 4.5D) {
+            porter.getNavigation().moveTo(returnPos.getX() + 0.5D,
+                    returnPos.getY() + 1.0D, returnPos.getZ() + 0.5D, 0.75D);
+            return true;
+        }
+
         int returned = 0;
         for (int i = 0; i < cargo.size() && returned < remaining; i++) {
             ItemStack carried = cargo.get(i);

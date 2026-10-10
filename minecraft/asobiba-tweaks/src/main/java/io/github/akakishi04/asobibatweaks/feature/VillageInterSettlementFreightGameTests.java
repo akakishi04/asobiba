@@ -324,6 +324,112 @@ public final class VillageInterSettlementFreightGameTests {
         helper.succeed();
     }
 
+
+    /** A paid returned parcel may enter a genuine spare origin warehouse. */
+    @GameTest(template = "empty16x6x9", batch = "trade_return_reroute")
+    public static void fullOriginUsesPhysicallyRegisteredAlternateWarehouse(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        f.source().setItem(0, new ItemStack(Items.WHEAT, 64));
+        if (!start(f) || !VillageInterSettlementFreightService.handlePorter(
+                f.porter(), f.level())) {
+            helper.fail("Could not physically pick up replacement-store shipment", MARK);
+            return;
+        }
+        // Simulate the original container being completely refilled by others.
+        for (int i = 0; i < f.source().getContainerSize(); i++)
+            f.source().setItem(i, new ItemStack(Items.DIRT, 64));
+        BlockPos alternatePos = helper.absolutePos(new BlockPos(4, 1, 4));
+        Container alternate = alternate(f, alternatePos, f.origin());
+        f.route().setState("suspended");
+        f.porter().setPos(alternatePos.getX() + 0.5D,
+                alternatePos.getY() + 1.0D, alternatePos.getZ() + 0.5D);
+        VillageInterSettlementFreightService.handlePorter(f.porter(), f.level());
+        if (count(alternate, Items.WHEAT) != 16
+                || count(f.target(), Items.WHEAT) != 0
+                || VillagerSimData.hasWorkCargo(
+                    f.porter(), f.level().registryAccess(), 16)
+                || VillageInterSettlementFreightService.hasActiveTicket(f.porter())
+                || f.route().trafficScore() != 0) {
+            helper.fail("Returned paid cargo did not reach alternate real origin storage", MARK);
+            return;
+        }
+        helper.succeed();
+    }
+
+    /** A removed source must not permanently strand already carried items. */
+    @GameTest(template = "empty16x6x9", batch = "trade_return_reroute")
+    public static void destroyedOriginReturnsPaidCargoToReplacement(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        f.source().setItem(0, new ItemStack(Items.COBBLESTONE, 64));
+        if (!start(f) || !VillageInterSettlementFreightService.handlePorter(
+                f.porter(), f.level())) {
+            helper.fail("Could not physically load parcel before destroying source", MARK);
+            return;
+        }
+        BlockPos alternatePos = helper.absolutePos(new BlockPos(4, 1, 4));
+        Container alternate = alternate(f, alternatePos, f.origin());
+        f.level().setBlock(f.sourcePos(), Blocks.STONE.defaultBlockState(),
+                net.minecraft.world.level.block.Block.UPDATE_ALL);
+        f.route().setState("suspended");
+        f.porter().setPos(alternatePos.getX() + 0.5D,
+                alternatePos.getY() + 1.0D, alternatePos.getZ() + 0.5D);
+        VillageInterSettlementFreightService.handlePorter(f.porter(), f.level());
+        if (!f.level().getBlockState(f.sourcePos()).is(Blocks.STONE)
+                || count(alternate, Items.COBBLESTONE) != 16
+                || count(f.target(), Items.COBBLESTONE) != 0
+                || VillagerSimData.hasWorkCargo(
+                    f.porter(), f.level().registryAccess(), 16)
+                || VillageInterSettlementFreightService.hasActiveTicket(f.porter())
+                || f.route().trafficScore() != 0) {
+            helper.fail("Lost origin created or deleted freight instead of returning real cargo", MARK);
+            return;
+        }
+        helper.succeed();
+    }
+
+    /** A nearby barrel owned by ANOTHER village is not a valid refund sink. */
+    @GameTest(template = "empty16x6x9", batch = "trade_return_reroute")
+    public static void foreignWarehouseNeverReceivesOriginFreight(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        f.source().setItem(0, new ItemStack(Items.WHEAT, 64));
+        if (!start(f) || !VillageInterSettlementFreightService.handlePorter(
+                f.porter(), f.level())) {
+            helper.fail("Could not pay the foreign-storage isolation shipment", MARK);
+            return;
+        }
+        for (int i = 0; i < f.source().getContainerSize(); i++)
+            f.source().setItem(i, new ItemStack(Items.DIRT, 64));
+        BlockPos wrongPos = helper.absolutePos(new BlockPos(4, 1, 4));
+        Container wrong = alternate(f, wrongPos, f.destination());
+        f.route().setState("inactive");
+        f.porter().setPos(wrongPos.getX() + 0.5D,
+                wrongPos.getY() + 1.0D, wrongPos.getZ() + 0.5D);
+        VillageInterSettlementFreightService.handlePorter(f.porter(), f.level());
+        if (count(wrong, Items.WHEAT) != 0
+                || VillagerSimData.workCargoCount(
+                    f.porter(), f.level().registryAccess(), 16, Items.WHEAT) != 16
+                || !VillageInterSettlementFreightService.hasActiveTicket(f.porter())
+                || f.route().trafficScore() != 0) {
+            helper.fail("Foreign village wrongly accepted real origin return goods", MARK);
+            return;
+        }
+        helper.succeed();
+    }
+
+    private static Container alternate(Fixture f, BlockPos pos, UUID owner) {
+        f.level().setBlock(pos.below(), Blocks.STONE.defaultBlockState(),
+                net.minecraft.world.level.block.Block.UPDATE_ALL);
+        f.level().setBlock(pos, Blocks.BARREL.defaultBlockState(),
+                net.minecraft.world.level.block.Block.UPDATE_ALL);
+        var data = VillageSavedData.get(f.level());
+        var record = data.createStorage(owner, pos, "general");
+        record.setValidationState("valid");
+        data.touch();
+        if (!(f.level().getBlockEntity(pos) instanceof Container container))
+            throw new IllegalStateException("Missing real alternate Barrel");
+        return container;
+    }
+
     private static boolean start(Fixture f) {
         return VillageInterSettlementFreightService.assign(f.porter(), f.level(),
                 f.route().id(), f.origin(), f.destination(), f.sourcePos(),

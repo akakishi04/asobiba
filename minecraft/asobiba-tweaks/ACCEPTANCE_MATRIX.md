@@ -147,5 +147,8 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT71 | secondFloorCarpenterPreloadsPhysicalPlankBeforeRoofTravel | An original 1→2-storey Carpenter must withdraw exactly one physical roof plank before starting an unreachable upper-shell trip and consume it only after reaching the real placement site |
 | GT72 | thirdFloorWallCargoLoadedBeforeRoofNavigation | An original 2→3-storey Carpenter cannot ping-pong empty-handed to the roof; a single real wooden block remains in durable cargo across travel and is consumed once upon placement |
 | GT73 | thirdFloorBedCargoLoadedBeforeUpperBedroomNavigation | A two-half White Bed is physically sourced into Carpenter cargo before upstairs travel and placed using exactly one real existing finished item |
+| GT74 | fullOriginUsesPhysicallyRegisteredAlternateWarehouse | Real paid return freight uses another loaded recognized warehouse of the same source village when the original Barrel is full, without incrementing route traffic |
+| GT75 | destroyedOriginReturnsPaidCargoToReplacement | Physically paid 16-unit freight can be returned to a real replacement origin Barrel after the original block is destroyed; no free parcel or cross-village receipt |
+| GT76 | foreignWarehouseNeverReceivesOriginFreight | A nearby fully loaded but foreign-village Barrel must not receive paid return goods; all 16 real units remain in the Porter's persisted cargo |
 
 These tests are **not** a full acceptance of G01-G22: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.

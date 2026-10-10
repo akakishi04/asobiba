@@ -443,7 +443,13 @@ public final class VillageHouseThirdFloorExpansionGameTests {
                     || count(f.storage(), Items.WHITE_BED) != 1
                     || VillagerSimData.workCargoCount(f.builder(),
                             f.level().registryAccess(), 8, Items.WHITE_BED) != 1) {
-                helper.fail("Carpenter attempted third-floor bed travel before carrying its item", MARK);
+                helper.fail("Carpenter attempted third-floor bed travel before carrying its item"
+                        + " [cursor=" + project.workCursor()
+                        + ", pause=" + project.pausedReason()
+                        + ", storedBeds=" + count(f.storage(), Items.WHITE_BED)
+                        + ", carriedBeds=" + VillagerSimData.workCargoCount(
+                            f.builder(), f.level().registryAccess(), 8, Items.WHITE_BED)
+                        + ", foot=" + f.level().getBlockState(foot) + "]", MARK);
                 return;
             }
             f.builder().setPos(foot.getX() + 0.5D, foot.getY(), foot.getZ() + 0.5D);
