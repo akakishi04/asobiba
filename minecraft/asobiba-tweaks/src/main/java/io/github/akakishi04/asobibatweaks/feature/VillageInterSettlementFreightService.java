@@ -281,23 +281,54 @@ public final class VillageInterSettlementFreightService {
         BlockPos from = BlockPos.of(ticket.getLong("source"));
         BlockPos to = BlockPos.of(ticket.getLong("target"));
         int remaining = ticket.getInt("remaining");
+        if (remaining <= 0) {
+            porter.getPersistentData().remove(TICKET);
+            return true;
+        }
+        String phase = ticket.getString("phase");
+        if ("recovery".equals(phase)) {
+            // A route can remain missing indefinitely. Recovery requires
+            // only the old real source warehouse, never the lost destination.
+            return returnPaidCargoHome(porter, level, originId, from, ticket);
+        }
+        if (!"pickup".equals(phase) && !"delivery".equals(phase)) return true;
+        // An unknown corridor is not proof that the destination vanished.
         if (!VillageSimulationScheduler.isAreaLoaded(level, from, to)) return true;
+
         VillageSavedData data = VillageSavedData.get(level);
         VillageSavedData.RouteRecord route = data.route(ticket.getUUID("route")).orElse(null);
-        if (route == null || !"inter_village_trade".equals(route.type())
-                || !route.villageId().equals(originId)
-                || !route.from().equals(from) || !route.to().equals(to)) return true;
-        boolean delivery = "delivery".equals(ticket.getString("phase"));
+        boolean validRoute = route != null && "inter_village_trade".equals(route.type())
+                && "active".equals(route.state())
+                && route.villageId().equals(originId)
+                && route.from().equals(from) && route.to().equals(to)
+                && data.village(destinationId)
+                    .filter(v -> "active".equals(v.lifecycle())).isPresent();
+        if (!validRoute) {
+            if ("pickup".equals(phase)) {
+                // No source item was taken before pickup: release the ticket,
+                // never invent or refund any inventory.
+                porter.getPersistentData().remove(TICKET);
+                return true;
+            }
+            ticket.putString("phase", "recovery");
+            return returnPaidCargoHome(porter, level, originId, from, ticket);
+        }
+
+        boolean delivery = "delivery".equals(phase);
         BlockPos where = delivery ? to : from;
         Container container = recognized(level, data, delivery ? destinationId : originId, where);
-        if (container == null) return true;
+        if (container == null) {
+            // An unloaded endpoint is UNKNOWN. A genuinely missing, already
+            // loaded destination cannot hold our real purchased cargo.
+            if (delivery && VillageSimulationScheduler.isChunkLoaded(level, to)) {
+                ticket.putString("phase", "recovery");
+                return returnPaidCargoHome(porter, level, originId, from, ticket);
+            }
+            return true;
+        }
         if (porter.distanceToSqr(where.getCenter()) > 4.5D * 4.5D) {
             porter.getNavigation().moveTo(where.getX() + 0.5D, where.getY() + 1.0D,
                     where.getZ() + 0.5D, 0.75D);
-            return true;
-        }
-        if (remaining <= 0) {
-            porter.getPersistentData().remove(TICKET);
             return true;
         }
         if (!delivery) {
@@ -369,8 +400,65 @@ public final class VillageInterSettlementFreightService {
             VillageStorageService.reconcileVillage(originId, level);
             VillageStorageService.reconcileVillage(destinationId, level);
         }
-        if (ticket.getInt("remaining") == 0) porter.getPersistentData().remove(TICKET);
+        if (ticket.getInt("remaining") == 0
+                || !hasTicketCargo(porter, level, ticket)) {
+            // A parcel stolen/dropped by another entity must not leave the
+            // Porter permanently reserved for nonexistent physical cargo.
+            porter.getPersistentData().remove(TICKET);
+        }
         return true;
+    }
+
+    /** Return the originally carried goods after a verified route loss.
+     * This is a genuine physical return trip, never an abstract refund.
+     */
+    private static boolean returnPaidCargoHome(
+            Villager porter, ServerLevel level, UUID originId,
+            BlockPos sourcePos, CompoundTag ticket) {
+        if (!VillageSimulationScheduler.isChunkLoaded(level, sourcePos)) return true;
+        VillageSavedData data = VillageSavedData.get(level);
+        Container origin = recognized(level, data, originId, sourcePos);
+        if (origin == null) return true; // loaded missing home: retain actual cargo
+        if (porter.distanceToSqr(sourcePos.getCenter()) > 4.5D * 4.5D) {
+            porter.getNavigation().moveTo(sourcePos.getX() + 0.5D,
+                    sourcePos.getY() + 1.0D, sourcePos.getZ() + 0.5D, 0.75D);
+            return true;
+        }
+
+        int remaining = ticket.getInt("remaining");
+        List<ItemStack> cargo = VillagerSimData.workCargo(
+                porter, level.registryAccess(), SLOTS);
+        int returned = 0;
+        for (int i = 0; i < cargo.size() && returned < remaining; i++) {
+            ItemStack carried = cargo.get(i);
+            if (!matchesTicket(level, ticket, carried)) continue;
+            int offered = Math.min(carried.getCount(), remaining - returned);
+            ItemStack leftovers = insert(origin, carried.copyWithCount(offered));
+            int accepted = offered - leftovers.getCount();
+            if (accepted <= 0) continue;
+            carried.shrink(accepted);
+            if (carried.isEmpty()) cargo.set(i, ItemStack.EMPTY);
+            returned += accepted;
+        }
+        if (returned > 0) {
+            VillagerSimData.setWorkCargo(porter, level.registryAccess(), cargo, SLOTS);
+            ticket.putInt("remaining", remaining - returned);
+            VillageStorageService.reconcileVillage(originId, level);
+        }
+        if (ticket.getInt("remaining") <= 0
+                || !hasTicketCargo(porter, level, ticket)) {
+            porter.getPersistentData().remove(TICKET);
+        }
+        return true;
+    }
+
+    private static boolean hasTicketCargo(
+            Villager porter, ServerLevel level, CompoundTag ticket) {
+        for (ItemStack stack : VillagerSimData.workCargo(
+                porter, level.registryAccess(), SLOTS)) {
+            if (matchesTicket(level, ticket, stack)) return true;
+        }
+        return false;
     }
 
     private static Container recognized(ServerLevel level, VillageSavedData data,

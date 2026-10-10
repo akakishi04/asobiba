@@ -239,6 +239,91 @@ public final class VillageInterSettlementFreightGameTests {
         helper.succeed();
     }
 
+    /** A closed genuine road reverses a physically carried parcel, never mints it. */
+    @GameTest(template = "empty16x6x9", batch = "village_trade")
+    public static void closedTradeRoadReturnsPaidParcelToItsRealOrigin(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        f.source().setItem(0, new ItemStack(Items.COBBLESTONE, 64));
+        if (!start(f) || !VillageInterSettlementFreightService.handlePorter(
+                f.porter(), f.level())
+                || count(f.source(), Items.COBBLESTONE) != 48
+                || VillagerSimData.workCargoCount(
+                        f.porter(), f.level().registryAccess(), 16, Items.COBBLESTONE) != 16) {
+            helper.fail("Real source inventory was not charged for outgoing freight", MARK);
+            return;
+        }
+        f.route().setState("suspended");
+        VillageInterSettlementFreightService.handlePorter(f.porter(), f.level());
+        if (count(f.source(), Items.COBBLESTONE) != 64
+                || count(f.target(), Items.COBBLESTONE) != 0
+                || VillagerSimData.hasWorkCargo(f.porter(), f.level().registryAccess(), 16)
+                || VillageInterSettlementFreightService.hasActiveTicket(f.porter())
+                || f.route().trafficScore() != 0) {
+            helper.fail("Suspended road did not return exact real freight without a fake delivery", MARK);
+            return;
+        }
+        helper.succeed();
+    }
+
+    /** The original returning cargo is retained when its home warehouse is full. */
+    @GameTest(template = "empty16x6x9", batch = "village_trade")
+    public static void fullReturnWarehouseKeepsPhysicalPaidParcel(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        f.source().setItem(0, new ItemStack(Items.WHEAT, 64));
+        if (!start(f) || !VillageInterSettlementFreightService.handlePorter(
+                f.porter(), f.level())) {
+            helper.fail("Physical shipment setup failed", MARK);
+            return;
+        }
+        // Another worker/player can refill the original warehouse while our
+        // real 16 items are still carried. Never delete that held parcel.
+        for (int i = 0; i < f.source().getContainerSize(); i++)
+            f.source().setItem(i, new ItemStack(Items.DIRT, 64));
+        f.route().setState("inactive");
+        VillageInterSettlementFreightService.handlePorter(f.porter(), f.level());
+        if (VillagerSimData.workCargoCount(f.porter(), f.level().registryAccess(),
+                    16, Items.WHEAT) != 16
+                || !VillageInterSettlementFreightService.hasActiveTicket(f.porter())
+                || count(f.target(), Items.WHEAT) != 0) {
+            helper.fail("Full origin store deleted returned physical cargo", MARK);
+            return;
+        }
+        f.source().setItem(26, ItemStack.EMPTY);
+        VillageInterSettlementFreightService.handlePorter(f.porter(), f.level());
+        if (count(f.source(), Items.WHEAT) != 16
+                || VillagerSimData.hasWorkCargo(f.porter(), f.level().registryAccess(), 16)
+                || VillageInterSettlementFreightService.hasActiveTicket(f.porter())) {
+            helper.fail("Recovered origin capacity did not receive the exact held parcel", MARK);
+            return;
+        }
+        helper.succeed();
+    }
+
+    /** Loaded missing receivers trigger an actual return; missing unpaid stock does not. */
+    @GameTest(template = "empty16x6x9", batch = "village_trade")
+    public static void destroyedReceivingBarrelNeverStrandsPorterCargo(GameTestHelper helper) {
+        Fixture f = setup(helper);
+        f.source().setItem(0, new ItemStack(Items.COBBLESTONE, 64));
+        if (!start(f) || !VillageInterSettlementFreightService.handlePorter(
+                f.porter(), f.level())) {
+            helper.fail("Could not pay original freight parcel", MARK);
+            return;
+        }
+        f.level().setBlock(f.targetPos(), Blocks.STONE.defaultBlockState(),
+                net.minecraft.world.level.block.Block.UPDATE_ALL);
+        VillageInterSettlementFreightService.handlePorter(f.porter(), f.level());
+        if (!f.level().getBlockState(f.targetPos()).is(Blocks.STONE)
+                || count(f.source(), Items.COBBLESTONE) != 64
+                || VillagerSimData.hasWorkCargo(f.porter(), f.level().registryAccess(), 16)
+                || VillageInterSettlementFreightService.hasActiveTicket(f.porter())
+                || f.route().trafficScore() != 0) {
+            helper.fail("A destroyed destination dropped or manufactured real carried freight",
+                    MARK);
+            return;
+        }
+        helper.succeed();
+    }
+
     private static boolean start(Fixture f) {
         return VillageInterSettlementFreightService.assign(f.porter(), f.level(),
                 f.route().id(), f.origin(), f.destination(), f.sourcePos(),
