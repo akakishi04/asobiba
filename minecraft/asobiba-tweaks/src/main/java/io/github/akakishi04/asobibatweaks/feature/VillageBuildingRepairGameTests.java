@@ -93,7 +93,67 @@ public final class VillageBuildingRepairGameTests {
         });
     }
 
+
+    /**
+     * A physically distant repair roof must never summon an empty Carpenter
+     * away from its recognized real ground-floor building material Barrel.
+     */
+    @GameTest(template = "empty16x6x9", batch = "repair_material_preflight",
+            timeoutTicks = 80)
+    public static void carpenterPaysOnePlankBeforeTravelingToDistantRoof(
+            GameTestHelper helper) {
+        // Put the real Barrel at the far western side of the loaded test
+        // structure so the genuine missing roof plank lies >7 blocks away.
+        Fixture sample = prepare(helper, -5);
+        helper.runAtTickTime(4, () -> {
+            if (!VillageBuildingRepairService.tryPlan(
+                    sample.builder(), sample.level(), sample.building().villageId())) {
+                helper.fail("Distant physical roof hole must schedule a repair",
+                        new BlockPos(7, 5, 4));
+                return;
+            }
+            VillageSavedData.ProjectRecord repair = activeRepair(sample);
+            if (repair == null) {
+                helper.fail("No persistent roof repair project", new BlockPos(7, 5, 4));
+                return;
+            }
+            VillageBuildingRepairService.advance(
+                    sample.builder(), sample.level(), repair);
+            if (repair.workCursor() != 0
+                    || !sample.level().getBlockState(sample.hole()).isAir()
+                    || sample.stock().getItem(0).getCount() != 3
+                    || VillagerSimData.workCargoCount(sample.builder(),
+                        sample.level().registryAccess(), 8, Items.OAK_PLANKS) != 1) {
+                helper.fail("Carpenter navigated to roof before loading a real plank",
+                        new BlockPos(7, 5, 4));
+                return;
+            }
+
+            // Emulate completion of ONLY the travel leg; the same physical
+            // cargo must be paid at the real upper roof work position once.
+            sample.builder().setPos(sample.hole().getX() + 0.5D,
+                    sample.hole().getY(), sample.hole().getZ() + 0.5D);
+            VillageBuildingRepairService.advance(
+                    sample.builder(), sample.level(), repair);
+            if (!sample.level().getBlockState(sample.hole()).is(Blocks.OAK_PLANKS)
+                    || sample.stock().getItem(0).getCount() != 3
+                    || VillagerSimData.hasWorkCargo(
+                        sample.builder(), sample.level().registryAccess(), 8)
+                    || !"complete".equals(repair.phase())
+                    || !repair.reservations().isEmpty()) {
+                helper.fail("Paid roof repair lost or duplicated real Carpenter cargo",
+                        new BlockPos(7, 5, 4));
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
     private static Fixture prepare(GameTestHelper helper) {
+        return prepare(helper, 2);
+    }
+
+    private static Fixture prepare(GameTestHelper helper, int warehouseX) {
         ServerLevel level = helper.getLevel();
         BlockPos base = helper.absolutePos(new BlockPos(5, 1, 2));
         VillageSavedData data = VillageSavedData.get(level);
@@ -124,7 +184,7 @@ public final class VillageBuildingRepairGameTests {
         building.setValidationState("invalid");
         building.setValidatedCapacity(0);
 
-        BlockPos supply = base.offset(2, 1, 1);
+        BlockPos supply = base.offset(warehouseX, 1, 1);
         level.setBlock(supply, Blocks.BARREL.defaultBlockState(), 3);
         VillageSavedData.StorageRecord storage =
                 data.createStorage(village.id(), supply, "construction");
@@ -135,7 +195,12 @@ public final class VillageBuildingRepairGameTests {
 
         Villager builder = EntityType.VILLAGER.create(level);
         if (builder == null) throw new IllegalStateException("Cannot create real Carpenter");
-        builder.setPos(base.getX() + 2.5D, base.getY() + 2.0D, base.getZ() + 2.5D);
+        if (warehouseX == 2) {
+            builder.setPos(base.getX() + 2.5D, base.getY() + 2.0D, base.getZ() + 2.5D);
+        } else {
+            builder.setPos(supply.getX() + 0.5D, base.getY() + 2.0D,
+                    supply.getZ() + 0.5D);
+        }
         builder.setNoAi(true);
         if (!level.addFreshEntity(builder)) throw new IllegalStateException("Cannot spawn Carpenter");
         VillagerSimData.setVillageId(builder, village.id());

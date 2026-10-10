@@ -194,19 +194,26 @@ public final class VillageBuildingRepairService {
             pause(data, repair, "repair target no longer safe");
             return;
         }
+        // When the repair target is an upper roof, first pay the physical
+        // item into the Carpenter's persistent cargo near real village storage.
+        // Otherwise the worker can alternate forever between unreachable roof
+        // and ground-floor Barrel without actually placing the missing plank.
+        Item material = step.cost();
+        if (!VillageSimulationEvents.ensureCargoItem(
+                carpenter, level, material, 1, WORK_CARGO_SLOTS)) {
+            pause(data, repair, "stage actual repair plank before roof travel");
+            return;
+        }
         if (carpenter.distanceToSqr(step.pos().getCenter()) > 7.0D * 7.0D) {
             carpenter.getNavigation().moveTo(
                     step.pos().getX() + 0.5D, step.pos().getY(),
                     step.pos().getZ() + 0.5D, 0.75D);
-            pause(data, repair, "carpenter travelling to repair");
+            pause(data, repair, "carpenter carrying paid material to repair");
             return;
         }
-        Item material = step.cost();
-        if (!VillageSimulationEvents.ensureCargoItem(
-                carpenter, level, material, 1, WORK_CARGO_SLOTS)
-                || !VillagerSimData.takeWorkCargo(carpenter, level.registryAccess(),
-                        WORK_CARGO_SLOTS, material, 1)) {
-            pause(data, repair, "missing real repair materials");
+        if (!VillagerSimData.takeWorkCargo(carpenter, level.registryAccess(),
+                WORK_CARGO_SLOTS, material, 1)) {
+            pause(data, repair, "physical repair material missing from work cargo");
             return;
         }
         if (!level.setBlock(step.pos(), step.state(), Block.UPDATE_ALL)) {
