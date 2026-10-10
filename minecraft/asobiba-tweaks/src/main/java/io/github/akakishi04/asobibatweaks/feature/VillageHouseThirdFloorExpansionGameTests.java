@@ -548,7 +548,10 @@ public final class VillageHouseThirdFloorExpansionGameTests {
         storage.setItem(0, new ItemStack(Items.OAK_PLANKS, 64));
         storage.setItem(1, new ItemStack(Items.OAK_PLANKS, 64));
         storage.setItem(2, new ItemStack(Items.OAK_STAIRS, 4));
-        storage.setItem(3, new ItemStack(Items.WHITE_BED, 2));
+        // Beds are unstackable in vanilla. A 2-Bed ItemStack is an invalid
+        // fixture and may be clamped before the real cargo transaction.
+        storage.setItem(3, new ItemStack(Items.WHITE_BED));
+        storage.setItem(4, new ItemStack(Items.WHITE_BED));
 
         Villager worker = EntityType.VILLAGER.create(level);
         if (worker == null) throw new IllegalStateException("Third-storey worker factory failed");
