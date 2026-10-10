@@ -145,7 +145,68 @@ public final class VillageHouseReuseGameTests {
         });
     }
 
+
+    /** A distant village warehouse cannot trap a Carpenter in a fetch/travel loop. */
+    @GameTest(template = "empty16x6x9", batch = "house_reuse_supply", timeoutTicks = 85)
+    public static void finishedSecondBedIsCarriedBeforeLongHouseWalk(
+            GameTestHelper helper) {
+        // A real recognized Barrel is beyond the radius of the available
+        // extra bed slot. Never walk to the room empty-handed.
+        Fixture fixture = prepare(helper, 9);
+        fixture.storage().setItem(0, new ItemStack(Items.WHITE_BED));
+        VillageStorageService.reconcileVillage(fixture.villageId(), fixture.level());
+        helper.runAtTickTime(4, () -> {
+            if (!VillageHouseReuseService.tryPlan(
+                    fixture.builder(), fixture.level(), fixture.villageId())) {
+                helper.fail("Real distant warehouse stock did not authorize a bed reuse",
+                        new BlockPos(6, 2, 4));
+                return;
+            }
+            VillageSavedData.ProjectRecord furnishing = active(fixture);
+            if (furnishing == null) {
+                helper.fail("Distant house project was not persisted", new BlockPos(6, 2, 4));
+                return;
+            }
+            VillageHouseReuseService.advance(
+                    fixture.builder(), fixture.level(), furnishing);
+            if (furnishing.workCursor() != 0
+                    || !fixture.level().getBlockState(fixture.extraFoot()).isAir()
+                    || !fixture.level().getBlockState(fixture.extraHead()).isAir()
+                    || !fixture.storage().getItem(0).isEmpty()
+                    || VillagerSimData.workCargoCount(
+                        fixture.builder(), fixture.level().registryAccess(),
+                        8, Items.WHITE_BED) != 1) {
+                helper.fail("Carpenter walked to distant second-bed slot without first carrying Bed",
+                        new BlockPos(6, 2, 4));
+                return;
+            }
+            // Travel physically concluded: use only the identical already-
+            // withdrawn Bed while standing outside the furniture footprint.
+            BlockPos base = fixture.home().min();
+            fixture.builder().setPos(base.getX() + 2.5D, base.getY() + 2.0D,
+                    base.getZ() + 0.5D);
+            VillageHouseReuseService.advance(
+                    fixture.builder(), fixture.level(), furnishing);
+            if (!"complete".equals(furnishing.phase())
+                    || !fixture.level().getBlockState(fixture.extraFoot()).is(Blocks.WHITE_BED)
+                    || !fixture.level().getBlockState(fixture.extraHead()).is(Blocks.WHITE_BED)
+                    || !fixture.storage().getItem(0).isEmpty()
+                    || VillagerSimData.hasWorkCargo(
+                        fixture.builder(), fixture.level().registryAccess(), 8)
+                    || !furnishing.reservations().isEmpty()) {
+                helper.fail("Real pre-carried Bed failed to furnish house without second debit",
+                        new BlockPos(6, 2, 4));
+                return;
+            }
+            helper.succeed();
+        });
+    }
+
     private static Fixture prepare(GameTestHelper helper) {
+        return prepare(helper, 3);
+    }
+
+    private static Fixture prepare(GameTestHelper helper, int warehouseX) {
         ServerLevel level = helper.getLevel();
         BlockPos base = helper.absolutePos(new BlockPos(5, 1, 2));
         VillageSavedData data = VillageSavedData.get(level);
@@ -181,7 +242,7 @@ public final class VillageHouseReuseGameTests {
         building.setValidatedCapacity(1);
         building.setLastValidatedGameTime(level.getGameTime());
 
-        BlockPos supplies = base.offset(3, 1, 1);
+        BlockPos supplies = base.offset(warehouseX, 1, 1);
         level.setBlock(supplies, Blocks.BARREL.defaultBlockState(), Block.UPDATE_ALL);
         var stored = data.createStorage(village.id(), supplies, "construction");
         stored.setValidationState("valid");
@@ -190,7 +251,12 @@ public final class VillageHouseReuseGameTests {
 
         Villager builder = EntityType.VILLAGER.create(level);
         if (builder == null) throw new IllegalStateException("Cannot spawn Carpenter");
-        builder.setPos(base.getX() + 2.5D, base.getY() + 2.0D, base.getZ() + 0.5D);
+        if (warehouseX == 3) {
+            builder.setPos(base.getX() + 2.5D, base.getY() + 2.0D, base.getZ() + 0.5D);
+        } else {
+            builder.setPos(supplies.getX() - 0.5D, base.getY() + 2.0D,
+                    supplies.getZ() + 0.5D);
+        }
         builder.setNoAi(true);
         if (!level.addFreshEntity(builder)) throw new IllegalStateException("Carpenter spawn rejected");
         VillagerSimData.setVillageId(builder, village.id());

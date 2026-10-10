@@ -158,28 +158,34 @@ public final class VillageHouseReuseService {
             pause(data, project, "house interior no longer safe");
             return;
         }
-        if (carpenter.distanceToSqr(foot.getCenter()) > 7.0D * 7.0D) {
-            carpenter.getNavigation().moveTo(
-                    foot.getX() + 0.5D, foot.getY(), foot.getZ() + 0.5D, 0.75D);
-            pause(data, project, "carpenter carrying bed to home");
-            return;
-        }
         if (!paid && !level.getEntitiesOfClass(LivingEntity.class,
                 new AABB(foot).minmax(new AABB(head)),
                 e -> e.isAlive()).isEmpty()) {
             pause(data, project, "bed slot occupied");
             return;
         }
+        // The bed slot may be much farther from a recognized warehouse than
+        // the worker's interaction radius. Load a genuinely finished Bed
+        // (or exact wool + plank inputs) before traveling to that room.
+        // A paid, partially placed bed never needs another inventory debit.
         if (!paid) {
             Block timber = VillageBridgeService.plank(project.parameter(WOOD));
             if (!VillageCarpenterCraftingService.ensureWhiteBed(
                     carpenter, level, timber, CARGO_CAPACITY)) {
-                pause(data, project, "missing real white bed/wool/planks");
+                pause(data, project, "stage real white bed at village storage");
                 return;
             }
+        }
+        if (carpenter.distanceToSqr(foot.getCenter()) > 7.0D * 7.0D) {
+            carpenter.getNavigation().moveTo(
+                    foot.getX() + 0.5D, foot.getY(), foot.getZ() + 0.5D, 0.75D);
+            pause(data, project, "carpenter carrying physical bed to home");
+            return;
+        }
+        if (!paid) {
             if (!VillagerSimData.takeWorkCargo(carpenter,
                     level.registryAccess(), CARGO_CAPACITY, Items.WHITE_BED, 1)) {
-                pause(data, project, "finished bed not carried");
+                pause(data, project, "staged finished bed missing from cargo");
                 return;
             }
             project.setParameter(PAID, "true");

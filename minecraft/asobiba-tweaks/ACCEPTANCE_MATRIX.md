@@ -151,5 +151,6 @@ The required tests run on a real NeoForge GameTestServer. Existing small-world c
 | GT75 | destroyedOriginReturnsPaidCargoToReplacement | Physically paid 16-unit freight can be returned to a real replacement origin Barrel after the original block is destroyed; no free parcel or cross-village receipt |
 | GT76 | foreignWarehouseNeverReceivesOriginFreight | A nearby fully loaded but foreign-village Barrel must not receive paid return goods; all 16 real units remain in the Porter's persisted cargo |
 | GT77 | carpenterPaysOnePlankBeforeTravelingToDistantRoof | A distant real roof repair preloads exactly one physical plank from recognized ground-level Barrel into persistent Carpenter cargo, then consumes only that item when reaching the actual roof; no duplication or phantom material |
+| GT78 | finishedSecondBedIsCarriedBeforeLongHouseWalk | A genuine one-story home physically receives its second Bed from remote registered storage only after the worker first carries its real unstackable item; no warehouse↔home oscillation or repeated payment |
 
 These tests are **not** a full acceptance of G01-G22: real client control, multiplayer, actual process-level server restart, loaded/unloaded chunk recovery, long-lived village construction, projectile firing and inter-mod behavior still require dedicated scenarios.
