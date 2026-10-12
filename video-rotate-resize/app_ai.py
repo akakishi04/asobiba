@@ -23,6 +23,7 @@ from ai_backends import (
     validate_for_mode,
 )
 from ai_setup import setup_ai_environment
+from split_dialog import open_split_dialog
 from video_tool import (
     VideoToolError,
     build_extract_png_command,
@@ -168,6 +169,11 @@ class App:
             b, text="キャンセル", command=self._cancel, state="disabled"
         )
         self.stop.pack(side="left", padx=(8, 0))
+        self.split_button = ttk.Button(
+            b, text="無再エンコード カット・分割...",
+            command=lambda: open_split_dialog(self),
+        )
+        self.split_button.pack(side="left", padx=(8, 0))
 
         ttk.Label(f, text="ログ").grid(row=7, column=0, columnspan=3, sticky="w")
         lf = ttk.Frame(f)
@@ -292,6 +298,7 @@ class App:
         self.running = True
         self.start.configure(state="disabled")
         self.setup_button.configure(state="disabled")
+        self.split_button.configure(state="disabled")
         self.stop.configure(state="normal")
         self.progress.set(0)
         threading.Thread(target=worker, args=args, daemon=True).start()
@@ -503,6 +510,7 @@ class App:
         self.running = False
         self.root.after(0, lambda: self.start.configure(state="normal"))
         self.root.after(0, lambda: self.setup_button.configure(state="normal"))
+        self.root.after(0, lambda: self.split_button.configure(state="normal"))
         self.root.after(0, lambda: self.stop.configure(state="disabled"))
 
     def _cancel(self):
