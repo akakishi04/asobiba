@@ -1,0 +1,9 @@
+# Local settings and generated data
+config.json
+outputs/
+.cache/
+__pycache__/
+*.py[cod]
+.venv/
+.env
+*.log
