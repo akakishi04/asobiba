@@ -1,0 +1,15 @@
+{
+  "ollama": {
+    "base_url": "http://127.0.0.1:11434",
+    "model": "CHANGE_TO_YOUR_OLLAMA_MODEL",
+    "timeout_seconds": 240
+  },
+  "comfyui": {
+    "base_url": "http://127.0.0.1:8188",
+    "timeout_seconds": 60,
+    "poll_seconds": 2,
+    "generation_timeout_seconds": 1800,
+    "free_before_llm": true
+  },
+  "workflows": {}
+}
