@@ -1,5 +1,6 @@
 """Offline tests for mapping, validation, and the unload-before-submit barrier."""
 
+import io
 import json
 import tempfile
 import unittest
@@ -134,6 +135,15 @@ class ConfigFixture(unittest.TestCase):
             with self.assertRaisesRegex(core.OrchestratorError, "unload failed"):
                 core.execute(core.load_config(self.config_path), self.config_path, "picture", image)
         self.assertNotIn("/prompt", calls)
+
+    def test_free_endpoint_accepts_empty_http_200_body(self):
+        # Current ComfyUI POST /free returns HTTP 200 without JSON.
+        with patch.object(core.urllib.request, "urlopen", return_value=io.BytesIO(b"")):
+            response = core.http_json("http://127.0.0.1:8188", "/free", {"unload_models": True}, allow_empty=True)
+        self.assertEqual(response, {})
+        with patch.object(core.urllib.request, "urlopen", return_value=io.BytesIO(b"")):
+            with self.assertRaisesRegex(core.OrchestratorError, "APIがJSON"):
+                core.http_json("http://127.0.0.1:8188", "/queue")
 
     def test_busy_queue_does_not_unload_or_invoke_llm(self):
         with patch.object(core, "http_json", return_value={"queue_running": [[1]], "queue_pending": []}) as api:
