@@ -1,5 +1,6 @@
 # Local settings and generated data
 config.json
+config.json.tmp
 outputs/
 .cache/
 __pycache__/
