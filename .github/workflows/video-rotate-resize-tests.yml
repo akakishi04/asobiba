@@ -1,0 +1,27 @@
+name: video-rotate-resize tests
+
+on:
+  push:
+    paths:
+      - "video-rotate-resize/**"
+      - ".github/workflows/video-rotate-resize-tests.yml"
+  pull_request:
+    paths:
+      - "video-rotate-resize/**"
+      - ".github/workflows/video-rotate-resize-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run video tool unit tests
+        shell: pwsh
+        run: |
+          Set-Location video-rotate-resize
+          python -m unittest discover -v -p "test_*.py"

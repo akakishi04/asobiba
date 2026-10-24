@@ -7,3 +7,30 @@
 .idea/
 *.iml
 minecraft-data-logger/
+
+# Video AI settings
+/video-rotate-resize/ai_config.json
+/video-rotate-resize/ai_engines.json
+
+# AI engines and Python environments
+/video-rotate-resize/ai_engines/
+/video-rotate-resize/.venv/
+/video-rotate-resize/.venv-*/
+/video-rotate-resize/venv/
+/video-rotate-resize/venv-*/
+
+# Models and caches
+/video-rotate-resize/models/
+/video-rotate-resize/model_zoo/
+/video-rotate-resize/checkpoints/
+/video-rotate-resize/weights/
+/video-rotate-resize/seedvr2_models/
+/video-rotate-resize/.cache/
+/video-rotate-resize/huggingface/
+/video-rotate-resize/hf_cache/
+/video-rotate-resize/.video_ai_*/
+
+# Local dependencies and caches
+/video-rotate-resize/.app_deps/
+/video-rotate-resize/__pycache__/
+/video-rotate-resize/*.pyc
