@@ -294,9 +294,9 @@ class Application:
             config = self._collect_config()
             backup_path = CONFIG.with_suffix(".json.tmp")
             backup_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            core.load_config(backup_path)
             backup_path.replace(CONFIG)
             self.config = config
-            core.load_config(CONFIG)
             self._log("設定保存: config.json")
             self.status.set("設定を保存しました")
             return True
