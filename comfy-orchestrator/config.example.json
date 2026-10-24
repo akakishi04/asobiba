@@ -11,5 +11,48 @@
     "generation_timeout_seconds": 1800,
     "free_before_llm": true
   },
-  "workflows": {}
+  "workflows": {
+    "wai_t2i_basic": {
+      "kind": "t2i",
+      "description": "waiIllustrious SDXL v1.7 / アニメ・イラスト用。短い自然文を具体的な画像生成プロンプトへ整形する。GPU負荷を抑えるため、必要がなければ1024x1024・28stepsを超えない。",
+      "file": "workflows/wai_t2i_basic.api.json",
+      "bindings": {
+        "positive_prompt": {
+          "node": "8",
+          "input": "text"
+        },
+        "negative_prompt": {
+          "node": "5",
+          "input": "text"
+        },
+        "width": {
+          "node": "10",
+          "input": "width"
+        },
+        "height": {
+          "node": "10",
+          "input": "height"
+        },
+        "steps": {
+          "node": "11",
+          "input": "steps"
+        },
+        "cfg": {
+          "node": "11",
+          "input": "cfg"
+        },
+        "seed": {
+          "node": "11",
+          "input": "seed"
+        }
+      },
+      "defaults": {
+        "negative_prompt": "low quality, blurry, bad anatomy, extra fingers",
+        "width": 1024,
+        "height": 1024,
+        "steps": 28,
+        "cfg": 5.5
+      }
+    }
+  }
 }
