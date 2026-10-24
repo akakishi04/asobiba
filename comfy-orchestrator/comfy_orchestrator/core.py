@@ -166,6 +166,10 @@ def load_workflow(path: Path, bindings: dict) -> dict:
 def plan_schema(workflows: dict) -> dict:
     fields = {}
     for name, (typ, lo, hi) in PARAMS.items():
+        # Seed belongs to the user/host, not to the language model.
+        # LLMs may emit negative, oversized or imprecise seed values.
+        if name == "seed":
+            continue
         if any(name in entry["bindings"] for entry in workflows.values()):
             spec = {"type": typ}
             if lo is not None:
@@ -228,7 +232,7 @@ class Ollama:
     def interpret(self, text: str, workflows: dict, image: Path | None) -> dict:
         catalog = [
             {"id": key, "kind": data["kind"], "description": data.get("description", ""),
-             "parameters": [name for name in data["bindings"] if name != "image"],
+             "parameters": [name for name in data["bindings"] if name not in ("image", "seed")],
              "requires_image": "image" in data["bindings"]}
             for key, data in workflows.items()
         ]
@@ -377,6 +381,12 @@ def execute(
         note("Ollama: 自然文を解釈しモデルをアンロード")
         plan = Ollama(settings).interpret(request, workflows, image)
     check_cancelled()
+    # Treat an LLM-proposed seed as untrusted and ignore it, even if the model
+    # disregards the schema. An explicit GUI/CLI override always takes priority.
+    if isinstance(plan, dict) and isinstance(plan.get("parameters"), dict):
+        if "seed" in plan["parameters"]:
+            note("LLMが返したSeedは使用せず、GUI指定または乱数で設定します")
+        plan = {**plan, "parameters": {k: v for k, v in plan["parameters"].items() if k != "seed"}}
     workflow_id, params = validate_plan(plan, workflows, image is not None)
     selection = workflows[workflow_id]
     if overrides:
@@ -385,7 +395,9 @@ def execute(
                 raise OrchestratorError(f"指定したワークフローでは {name} を変更できません")
             check_param(name, value)
             params[name] = value
-    if "seed" in selection["bindings"] and "seed" not in params:
+    if "seed" in selection["bindings"] and (not overrides or "seed" not in overrides):
+        # Seed empty in the GUI => an independent reproducible 32-bit seed.
+        # Never silently inherit the fixed seed from the template JSON.
         params["seed"] = secrets.randbits(32)
     template = load_workflow(
         (config_path.resolve().parent / selection["file"]).resolve(), selection["bindings"]
