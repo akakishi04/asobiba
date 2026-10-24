@@ -48,6 +48,37 @@ class TestTheme(unittest.TestCase):
         self.assertNotIn("delete", source)
         self.assertNotIn("insert", source)
 
+    def test_theme_and_editor_font_are_persisted_with_other_settings(self):
+        class Field:
+            def __init__(self, value):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+        from types import SimpleNamespace
+        fake = SimpleNamespace(
+            config={
+                "llm": {"provider": "lmstudio", "base_url": "http://127.0.0.1:1234", "model": "a"},
+                "comfyui": {"base_url": "http://127.0.0.1:8188"},
+                "workflows": {},
+            },
+            llm_url=Field("http://127.0.0.1:57317"),
+            comfy_url=Field("http://127.0.0.1:8188"),
+            model=Field("gemma"),
+            unload_llm=Field(True),
+            free_comfy=Field(True),
+            workflow=Field("自動"),
+            dark_mode=Field(True),
+            editor_font_size=Field(15),
+            seed=Field(""),
+            _overrides=lambda: {"width": 768, "height": 768, "steps": 20, "cfg": 5.0},
+        )
+        saved = gui.Application._collect_config(fake)
+        self.assertEqual(saved["ui"]["font_size"], 15)
+        self.assertTrue(saved["ui"]["dark_mode"])
+        self.assertEqual(saved["llm"]["base_url"], "http://127.0.0.1:57317")
+
     def test_editor_font_size_has_safe_range(self):
         class State:
             def __init__(self, number):
