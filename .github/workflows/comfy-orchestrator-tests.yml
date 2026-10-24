@@ -1,0 +1,28 @@
+name: Comfy Orchestrator checks
+
+on:
+  push:
+    paths:
+      - "comfy-orchestrator/**"
+      - ".github/workflows/comfy-orchestrator-tests.yml"
+  pull_request:
+    paths:
+      - "comfy-orchestrator/**"
+      - ".github/workflows/comfy-orchestrator-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile and test (no running LM Studio or ComfyUI needed)
+        shell: pwsh
+        run: |
+          Set-Location comfy-orchestrator
+          python -m compileall -q comfy_orchestrator
+          python -m unittest discover -s tests -v -p "test_*.py"
