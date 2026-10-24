@@ -6,13 +6,14 @@ import base64
 import copy
 import json
 import mimetypes
+import secrets
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 class OrchestratorError(RuntimeError):
@@ -75,16 +76,29 @@ def load_config(path: Path) -> dict:
         raise OrchestratorError(f"設定ファイルを読み込めません: {path}: {exc}") from exc
     if not isinstance(config, dict):
         raise OrchestratorError("設定ファイルのトップレベルはJSONオブジェクトです")
-    for name in ("ollama", "comfyui", "workflows"):
+    for name in ("comfyui", "workflows"):
         if not isinstance(config.get(name), dict):
             raise OrchestratorError(f"設定ファイルに {name} オブジェクトが必要です")
-    for name in ("ollama", "comfyui"):
+    llm_key = "llm" if "llm" in config else "ollama"
+    if not isinstance(config.get(llm_key), dict):
+        raise OrchestratorError("llm または従来の ollama 設定が必要です")
+    provider = config[llm_key].get("provider", "lmstudio" if llm_key == "llm" else "ollama")
+    if provider not in ("lmstudio", "ollama"):
+        raise OrchestratorError("llm.provider は lmstudio または ollama を指定してください")
+    for name in (llm_key, "comfyui"):
         base = config[name].get("base_url")
         if not isinstance(base, str) or urllib.parse.urlsplit(base).scheme not in ("http", "https") or not urllib.parse.urlsplit(base).netloc:
             raise OrchestratorError(f"{name}.base_url は http(s) URL にしてください")
-    model = config["ollama"].get("model")
+    model = config[llm_key].get("model")
     if not isinstance(model, str) or not model.strip():
-        raise OrchestratorError("ollama.model にローカルで使用可能なモデル名を設定してください")
+        raise OrchestratorError(f"{llm_key}.model にローカルで使用可能なモデル名を設定してください")
+    if llm_key == "llm" and provider == "lmstudio":
+        length = config["llm"].get("context_length")
+        if length is not None and (isinstance(length, bool) or not isinstance(length, int) or length < 512 or length > 131072):
+            raise OrchestratorError("llm.context_length は512～131072の整数です")
+        unload = config["llm"].get("unload_after_inference", True)
+        if not isinstance(unload, bool):
+            raise OrchestratorError("llm.unload_after_inference は真偽値です")
     for key, item in config["workflows"].items():
         if not isinstance(key, str) or not key or not isinstance(item, dict):
             raise OrchestratorError("workflows の各項目に識別子とオブジェクトが必要です")
@@ -293,10 +307,14 @@ class ComfyUI:
             raise OrchestratorError(f"ComfyUIがワークフローを受理しませんでした: {result}")
         return prompt_id
 
-    def wait(self, prompt_id: str) -> dict:
+    def wait(self, prompt_id: str, cancel_event: Any = None) -> dict:
         deadline = time.monotonic() + self.wait_timeout
         route = "/history/" + urllib.parse.quote(prompt_id, safe="")
         while time.monotonic() < deadline:
+            if cancel_event is not None and cancel_event.is_set():
+                raise OrchestratorError(
+                    f"結果待機を終了しました。ComfyUI上の生成ジョブは継続します: prompt_id={prompt_id}"
+                )
             results = http_json(self.base, route, timeout=self.timeout)
             if prompt_id in results:
                 item = results[prompt_id]
@@ -310,8 +328,21 @@ class ComfyUI:
         raise OrchestratorError(f"生成結果の待機がタイムアウトしました。ComfyUIで確認してください: prompt_id={prompt_id}")
 
 
-def execute(config: dict, config_path: Path, request: str, image: Path | None = None, dry_run: bool = False) -> dict:
+def execute(
+    config: dict, config_path: Path, request: str, image: Path | None = None,
+    dry_run: bool = False, selected_workflow: str | None = None,
+    overrides: dict | None = None, progress: Callable[[str], None] | None = None,
+    cancel_event: Any = None,
+) -> dict:
+    """Interpret natural language, unload the chosen LLM, then run a fixed workflow.
+
+    A cancel event only stops this client's wait and does NOT interrupt ComfyUI jobs.
+    """
     workflows = config["workflows"]
+    if selected_workflow is not None:
+        if selected_workflow not in workflows:
+            raise OrchestratorError(f"登録されていないワークフローです: {selected_workflow}")
+        workflows = {selected_workflow: workflows[selected_workflow]}
     if not workflows:
         raise OrchestratorError("workflowsが空です。先にAPI形式JSONを配置してconfig.jsonへ登録してください")
     if not request.strip():
@@ -320,18 +351,60 @@ def execute(config: dict, config_path: Path, request: str, image: Path | None = 
         image = image.resolve()
         if not image.is_file():
             raise OrchestratorError(f"参照画像が見つかりません: {image}")
+
+    def note(message: str) -> None:
+        if progress:
+            progress(message)
+
+    def check_cancelled() -> None:
+        if cancel_event is not None and cancel_event.is_set():
+            raise OrchestratorError("生成開始前に処理を中止しました")
+
+    check_cancelled()
     comfy = ComfyUI(config["comfyui"])
     if not dry_run and config["comfyui"].get("free_before_llm", True):
+        note("ComfyUI: キューを確認して前回の生成モデルの解放を要求")
         comfy.free_if_idle()
-    plan = Ollama(config["ollama"]).interpret(request, workflows, image)
+    check_cancelled()
+
+    llm_key = "llm" if "llm" in config else "ollama"
+    settings = config[llm_key]
+    provider = settings.get("provider", "lmstudio" if llm_key == "llm" else "ollama")
+    if provider == "lmstudio":
+        from .lmstudio import LMStudio
+        plan = LMStudio(settings).interpret(request, workflows, image, progress=note)
+    else:
+        note("Ollama: 自然文を解釈しモデルをアンロード")
+        plan = Ollama(settings).interpret(request, workflows, image)
+    check_cancelled()
     workflow_id, params = validate_plan(plan, workflows, image is not None)
     selection = workflows[workflow_id]
-    template = load_workflow((config_path.resolve().parent / selection["file"]).resolve(), selection["bindings"])
+    if overrides:
+        for name, value in overrides.items():
+            if name not in selection["bindings"] or name == "image":
+                raise OrchestratorError(f"指定したワークフローでは {name} を変更できません")
+            check_param(name, value)
+            params[name] = value
+    if "seed" in selection["bindings"] and "seed" not in params:
+        params["seed"] = secrets.randbits(32)
+    template = load_workflow(
+        (config_path.resolve().parent / selection["file"]).resolve(), selection["bindings"]
+    )
+    note(f"ワークフロー確定: {workflow_id}")
     if dry_run:
         return {"status": "dry_run", "workflow_id": workflow_id, "parameters": params}
+
+    check_cancelled()
     uploaded = comfy.upload_image(image) if image is not None else None
     rendered = render_workflow(template, selection["bindings"], params, uploaded)
+    check_cancelled()
+    note("ComfyUI: キューに投入")
     prompt_id = comfy.submit(rendered)
-    history = comfy.wait(prompt_id)
-    return {"status": "completed", "workflow_id": workflow_id, "parameters": params,
-            "prompt_id": prompt_id, "outputs": history.get("outputs", {}), "comfy_status": history.get("status", {})}
+    note(f"ComfyUI: 生成完了を待機中（{prompt_id}）")
+    history = comfy.wait(prompt_id, cancel_event=cancel_event)
+    note("ComfyUI: 生成完了")
+    return {
+        "status": "completed", "workflow_id": workflow_id, "parameters": params,
+        "prompt_id": prompt_id, "outputs": history.get("outputs", {}),
+        "comfy_status": history.get("status", {}),
+    }
