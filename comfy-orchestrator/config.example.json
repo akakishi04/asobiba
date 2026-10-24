@@ -1,9 +1,4 @@
 {
-  "ollama": {
-    "base_url": "http://127.0.0.1:11434",
-    "model": "CHANGE_TO_YOUR_OLLAMA_MODEL",
-    "timeout_seconds": 240
-  },
   "comfyui": {
     "base_url": "http://127.0.0.1:8188",
     "timeout_seconds": 60,
@@ -54,5 +49,22 @@
         "cfg": 5.5
       }
     }
+  },
+  "llm": {
+    "provider": "lmstudio",
+    "base_url": "http://127.0.0.1:1234",
+    "model": "SELECT_IN_GUI",
+    "timeout_seconds": 240,
+    "context_length": 4096,
+    "unload_after_inference": true,
+    "token_env": "LMSTUDIO_API_TOKEN"
+  },
+  "ui": {
+    "workflow": "wai_t2i_basic",
+    "width": 768,
+    "height": 768,
+    "steps": 20,
+    "cfg": 5,
+    "seed": ""
   }
 }
