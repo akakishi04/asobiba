@@ -71,9 +71,10 @@ class LMStudio:
         if self.settings.get("context_length") is not None:
             settings["context_length"] = self.settings["context_length"]
         result = _request(self.settings, "/api/v1/models/load", settings)
-        if result.get("status") != "loaded" or not isinstance(result.get("instance_id"), str):
+        loaded_id = result.get("instance_id", result.get("model_instance_id"))
+        if result.get("status") != "loaded" or not isinstance(loaded_id, str) or not loaded_id:
             raise OrchestratorError(f"LM Studioのロード完了を確認できません: {result}")
-        return result["instance_id"]
+        return loaded_id
 
     def interpret(
         self, text: str, workflows: dict, image: Path | None,
