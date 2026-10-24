@@ -33,9 +33,14 @@ def bootstrap_config() -> dict:
     if not CONFIG.exists():
         shutil.copyfile(EXAMPLE, CONFIG)
     config = json.loads(CONFIG.read_text(encoding="utf-8"))
+    example = json.loads(EXAMPLE.read_text(encoding="utf-8"))
     if "llm" not in config:
-        config["llm"] = copy.deepcopy(json.loads(EXAMPLE.read_text(encoding="utf-8"))["llm"])
+        config["llm"] = copy.deepcopy(example["llm"])
     config["llm"]["provider"] = "lmstudio"
+    config.setdefault("workflows", {})
+    for workflow_id, entry in example.get("workflows", {}).items():
+        config["workflows"].setdefault(workflow_id, copy.deepcopy(entry))
+    config.setdefault("ui", copy.deepcopy(example.get("ui", {})))
     return config
 
 
