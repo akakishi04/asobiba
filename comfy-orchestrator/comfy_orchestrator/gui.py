@@ -20,6 +20,7 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from . import core
 from .lmstudio import list_models
+from .ui_theme import apply_ttk_theme, style_text_widget
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -116,25 +117,32 @@ class Application:
         self.cfg = tk.StringVar(value=str(options.get("cfg", 5.0)))
         self.seed = tk.StringVar(value=str(options.get("seed", "")))
         self.reference_image = tk.StringVar(value="")
+        self.dark_mode = tk.BooleanVar(value=bool(options.get("dark_mode", True)))
+        requested_font = options.get("font_size", 12)
+        if isinstance(requested_font, bool) or not isinstance(requested_font, int):
+            requested_font = 12
+        self.editor_font_size = tk.IntVar(value=max(10, min(20, requested_font)))
         self.unload_llm = tk.BooleanVar(value=llm.get("unload_after_inference", True))
         self.free_comfy = tk.BooleanVar(value=comfy.get("free_before_llm", True))
         self.status = tk.StringVar(value="準備完了 — LM Studioのサーバーを起動してください")
         self.result_info = tk.StringVar(value="生成画像はここに表示されます")
 
     def _build(self) -> None:
-        style = ttk.Style(self.root)
-        if "vista" in style.theme_names():
-            style.theme_use("vista")
-        style.configure("Heading.TLabel", font=("Yu Gothic UI", 17, "bold"))
-        style.configure("Section.TLabelframe.Label", font=("Yu Gothic UI", 10, "bold"))
-        style.configure("Run.TButton", padding=(14, 9))
+        apply_ttk_theme(self.root, self.dark_mode.get())
 
         layout = ttk.Frame(self.root, padding=14)
         layout.pack(fill="both", expand=True)
-        ttk.Label(layout, text="Comfy Orchestrator", style="Heading.TLabel").pack(anchor="w")
+        title_row = ttk.Frame(layout)
+        title_row.pack(fill="x")
+        ttk.Label(title_row, text="Comfy Orchestrator", style="Heading.TLabel").pack(side="left")
+        ttk.Checkbutton(
+            title_row, text="ダーク表示", variable=self.dark_mode,
+            command=self._switch_theme,
+        ).pack(side="right", padx=(10, 0))
         ttk.Label(
             layout,
             text="自然文 → LM Studioで解釈 → LLMアンロード → ComfyUI画像生成",
+            style="Muted.TLabel",
         ).pack(anchor="w", pady=(2, 12))
 
         connection = ttk.LabelFrame(layout, text="接続・モデル", padding=10, style="Section.TLabelframe")
@@ -177,13 +185,29 @@ class Application:
 
         prompt_panel = ttk.LabelFrame(left, text="自然文から生成", padding=10, style="Section.TLabelframe")
         prompt_panel.pack(fill="both", expand=True, padx=(0, 6))
+        editor_toolbar = ttk.Frame(prompt_panel)
+        editor_toolbar.pack(fill="x", pady=(0, 7))
         ttk.Label(
-            prompt_panel,
-            text="日本語で描写してください。プロンプトの整形はLLMが担当します。",
-        ).pack(anchor="w", pady=(0, 5))
-        self.prompt = scrolledtext.ScrolledText(prompt_panel, height=9, wrap="word", font=("Yu Gothic UI", 11))
+            editor_toolbar,
+            text="日本語で指示を入力。LLMが生成向けのプロンプトに変換します。",
+            style="Muted.TLabel",
+        ).pack(side="left", fill="x", expand=True)
+        ttk.Button(
+            editor_toolbar, text="A+", width=4, command=lambda: self._change_editor_font(1),
+        ).pack(side="right", padx=(4, 0))
+        ttk.Button(
+            editor_toolbar, text="A−", width=4, command=lambda: self._change_editor_font(-1),
+        ).pack(side="right", padx=(4, 0))
+        self.prompt = scrolledtext.ScrolledText(
+            prompt_panel, height=6, wrap="word",
+            font=("Meiryo UI", self.editor_font_size.get()),
+            undo=True, autoseparators=True, maxundo=100,
+            padx=14, pady=12, spacing1=3, spacing3=3,
+        )
         self.prompt.insert("1.0", "夕暮れの海辺に立つ銀髪の少女。アニメ調で、風になびく髪を自然に描いて。")
-        self.prompt.pack(fill="both", expand=True, pady=(0, 10))
+        # Never stretch the editor into a huge empty white area. It remains
+        # scrollable for longer prompts; IME composition is handled natively.
+        self.prompt.pack(fill="x", expand=False, pady=(0, 10))
 
         settings = ttk.LabelFrame(prompt_panel, text="生成設定（初期値は軽量寄り）", padding=9)
         settings.pack(fill="x", pady=(0, 8))
@@ -239,7 +263,9 @@ class Application:
         self.image_label = ttk.Label(preview_panel, text="生成画像のプレビュー", anchor="center")
         self.image_label.pack(fill="both", expand=True)
         ttk.Label(preview_panel, textvariable=self.result_info, wraplength=350).pack(anchor="w", pady=(5, 6))
-        self.images_list = tk.Listbox(preview_panel, height=4, exportselection=False)
+        self.images_list = tk.Listbox(
+            preview_panel, height=4, exportselection=False, font=("Meiryo UI", 9),
+        )
         self.images_list.pack(fill="x", pady=(0, 5))
         self.images_list.bind("<<ListboxSelect>>", self._show_selected_image)
         row = ttk.Frame(preview_panel)
@@ -255,10 +281,31 @@ class Application:
         self.progress_bar.pack(side="right")
         logs = ttk.LabelFrame(layout, text="実行ログ", padding=5)
         logs.pack(fill="x")
-        self.log = scrolledtext.ScrolledText(logs, height=6, wrap="word", state="disabled")
+        self.log = scrolledtext.ScrolledText(
+            logs, height=4, wrap="word", state="disabled",
+            font=("Meiryo UI", 9), padx=9, pady=7,
+        )
         self.log.pack(fill="x")
+        self._switch_theme()
         self._log("GUI起動。LM StudioのDeveloper画面でLocal Serverを起動してください。")
         self._log("設定は comfy-orchestrator/config.json に保存され、Gitには含まれません。")
+
+    def _switch_theme(self) -> None:
+        """Recolor widgets without rebuilding the window or resetting user text."""
+        colors = apply_ttk_theme(self.root, self.dark_mode.get())
+        style_text_widget(self.prompt, colors)
+        style_text_widget(self.log, colors, muted=True)
+        style_text_widget(self.images_list, colors)
+        self.prompt.configure(
+            font=("Meiryo UI", self.editor_font_size.get()),
+            padx=14, pady=12,
+        )
+
+    def _change_editor_font(self, delta: int) -> None:
+        """Adjust readability without disturbing focus, text, or IME input."""
+        size = max(10, min(20, self.editor_font_size.get() + delta))
+        self.editor_font_size.set(size)
+        self.prompt.configure(font=("Meiryo UI", size))
 
     def _log(self, text: str) -> None:
         self.log.configure(state="normal")
@@ -275,7 +322,12 @@ class Application:
         config["comfyui"]["base_url"] = self.comfy_url.get().strip()
         config["comfyui"]["free_before_llm"] = self.free_comfy.get()
         opts = self._overrides()
-        config["ui"] = {**opts, "workflow": self.workflow.get()}
+        config["ui"] = {
+            **opts,
+            "workflow": self.workflow.get(),
+            "dark_mode": self.dark_mode.get(),
+            "font_size": self.editor_font_size.get(),
+        }
         config["ui"]["seed"] = self.seed.get().strip()
         return config
 
