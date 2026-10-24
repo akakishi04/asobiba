@@ -11,6 +11,7 @@ from __future__ import annotations
 import ctypes
 import os
 from ctypes import wintypes
+import tkinter as tk
 from tkinter import font as tkfont
 
 
@@ -122,7 +123,7 @@ def sync_native_ime_font(widget) -> bool:
                     return True
             finally:
                 imm32.ImmReleaseContext(handle, h_imc)
-    except (AttributeError, OSError, RuntimeError, ValueError, TypeError):
+    except (tk.TclError, AttributeError, OSError, RuntimeError, ValueError, TypeError):
         # Windows/Tk IME support varies; leave the normal input path untouched.
         return False
     return False
