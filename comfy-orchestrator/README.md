@@ -4,7 +4,7 @@
 
 ## まずGUIを起動する
 
-1. LM Studioを起動し、**Developer / Local Server** からサーバーを有効にする（標準ポート `1234`）。
+1. **LM Studio 0.4.0以降**を起動し、**Developer / Local Server** からサーバーを有効にする（標準ポート `1234`）。
 2. ComfyUIを通常どおり起動する（標準ポート `8188`）。`waiIllustriousSDXL_v170.safetensors` がComfyUIに配置済みであること。
 3. Windowsで `comfy-orchestrator/run_gui.bat` をダブルクリック。あるいはPowerShellから:
 
