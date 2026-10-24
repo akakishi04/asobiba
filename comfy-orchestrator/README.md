@@ -25,7 +25,9 @@ python -m comfy_orchestrator --config config.json validate
 python -m unittest discover -s tests -v
 ```
 
-**モデル名と実際のワークフローはまだ登録していません。** 先に用意したワークフローのAPI形式JSONを `workflows/` に入れ、`workflows/README.md` の例に従って `config.json` を編集してください。`config.json` はGit管理対象外です。
+**登録済みワークフロー:** `wai_t2i_basic`（`workflows/wai_t2i_basic.api.json`、`waiIllustriousSDXL_v170.safetensors`）。`config.example.json` にはPositive/Negative、1024×1024、28 Steps、CFG 5.5、Seedのノード対応が登録されています。`Copy-Item config.example.json config.json` で設定をコピーし、`ollama.model` にローカルで利用できる実際のモデル名を指定してください。`config.json` はGit管理対象外です。既存の `config.json` がある場合、コピーで上書きしないで登録内容をマージしてください。
+
+画像生成の計算負荷を下げたい場合は、`config.json` 内のこのワークフローの `defaults` で `width`/`height` を768程度、`steps` を20程度から試せます（ただし、生成品質は変わります）。ワークフローJSONは元の設定を保持しています。ComfyUI側で同名のチェックポイントがインストールされている必要があります。
 
 ## 実行
 
