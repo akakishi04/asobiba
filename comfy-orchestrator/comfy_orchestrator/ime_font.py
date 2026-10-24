@@ -80,15 +80,21 @@ def _native_api():
     return user32, imm32, gdi32
 
 
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
 def sync_native_ime_font(widget) -> bool:
     """Use the text widget's actual font for uncommitted IME text.
 
     Returns False if an IME context is unavailable. Failures never block input.
     Called on the Tk main/UI thread, not on a background worker.
     """
-    if os.name != "nt":
+    if not _is_windows():
         return False
     try:
+        if widget.focus_get() is not widget:
+            return False
         # Resolve named, tuple, or Tcl font specifications, including DPI scaling.
         spec = tkfont.Font(root=widget, font=widget.cget("font"))
         actual = spec.actual()
@@ -124,7 +130,7 @@ def sync_native_ime_font(widget) -> bool:
 
 def install_native_ime_font(widget) -> None:
     """Refresh composition font when focusing the editor or starting IME text."""
-    if os.name != "nt":
+    if not _is_windows():
         return
 
     def on_focus(_event):
