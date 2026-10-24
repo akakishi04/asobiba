@@ -62,6 +62,17 @@ class LMStudioTests(unittest.TestCase):
             "/api/v1/models/unload",
         ])
 
+    def test_compatibility_with_older_load_response_field(self):
+        def fake_request(settings, route, payload=None):
+            if route == "/api/v1/models":
+                return {"models": [{"type": "llm", "key": MODEL, "loaded_instances": []}]}
+            if route == "/api/v1/models/load":
+                return {"status": "loaded", "model_instance_id": INSTANCE}
+            self.fail(route)
+
+        with patch.object(lmstudio, "_request", side_effect=fake_request):
+            self.assertEqual(lmstudio.LMStudio(self.settings)._ensure_loaded(), INSTANCE)
+
     def test_preloaded_instance_is_reused_then_unloaded(self):
         calls = []
 
