@@ -2,6 +2,15 @@
 
 ここに ComfyUI の **API形式のJSON**（UIの通常保存JSONではない）を配置してください。
 
+## 登録済み：wai_t2i_basic
+
+- ファイル: `wai_t2i_basic.api.json`（ユーザー作成のAPIエクスポート）
+- モデル: `waiIllustriousSDXL_v170.safetensors`（モデル本体はローカルComfyUI側に配置）
+- 変更可能な入力: Positive `8.text`、Negative `5.text`、画像サイズ `10.width` / `10.height`、`11.steps` / `11.cfg` / `11.seed`
+- 元の保存値: 1024×1024、28 Steps、CFG 5.5。LLMの入力がなくても画像品質設定の基準にできるよう `config.example.json` にも同じ初期値を設定しています。
+- API出力は画像保存ノード `13` に到達します。使用前に `python -m comfy_orchestrator --config config.json validate` を実行してください。
+
+
 ComfyUI の `Save (API Format)` 等で書き出した実行用ノード辞書を使用します。実際の書き出し操作はComfyUIのバージョンで異なります。
 ファイルを配置したら、`config.json` の `workflows` へID・種類・ファイル・入力のバインディングを登録します。
 モデルチェックポイントや巨大な重みファイルはGitで管理しないでください。
