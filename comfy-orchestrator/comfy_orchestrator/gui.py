@@ -20,6 +20,7 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from . import core
 from .lmstudio import list_models
+from .ime_font import install_native_ime_font, sync_native_ime_font
 from .ui_theme import apply_ttk_theme, style_text_widget
 
 
@@ -117,7 +118,7 @@ class Application:
         self.cfg = tk.StringVar(value=str(options.get("cfg", 5.0)))
         self.seed = tk.StringVar(value=str(options.get("seed", "")))
         self.reference_image = tk.StringVar(value="")
-        self.dark_mode = tk.BooleanVar(value=bool(options.get("dark_mode", True)))
+        self.dark_mode = tk.BooleanVar(value=bool(options.get("dark_mode", False)))
         requested_font = options.get("font_size", 12)
         if isinstance(requested_font, bool) or not isinstance(requested_font, int):
             requested_font = 12
@@ -287,6 +288,7 @@ class Application:
         )
         self.log.pack(fill="x")
         self._switch_theme()
+        install_native_ime_font(self.prompt)
         self._log("GUI起動。LM StudioのDeveloper画面でLocal Serverを起動してください。")
         self._log("設定は comfy-orchestrator/config.json に保存され、Gitには含まれません。")
 
@@ -300,12 +302,15 @@ class Application:
             font=("Meiryo UI", self.editor_font_size.get()),
             padx=14, pady=12,
         )
+        # The active IME overlay has its own font; update it as well.
+        sync_native_ime_font(self.prompt)
 
     def _change_editor_font(self, delta: int) -> None:
         """Adjust readability without disturbing focus, text, or IME input."""
         size = max(10, min(20, self.editor_font_size.get() + delta))
         self.editor_font_size.set(size)
         self.prompt.configure(font=("Meiryo UI", size))
+        sync_native_ime_font(self.prompt)
 
     def _log(self, text: str) -> None:
         self.log.configure(state="normal")
