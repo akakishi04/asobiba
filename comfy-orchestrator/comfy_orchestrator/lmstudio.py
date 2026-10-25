@@ -129,7 +129,7 @@ class LMStudio:
                 "messages": [{"role": "system", "content": system}, message],
                 "stream": False,
                 "temperature": 0.2,
-                "max_tokens": 2048,
+                "max_tokens": self.settings.get("max_tokens", 4096),
                 "response_format": {
                     "type": "json_schema",
                     "json_schema": {"name": "comfy_plan", "schema": plan_schema(workflows)},
