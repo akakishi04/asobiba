@@ -39,6 +39,11 @@ def bootstrap_config() -> dict:
     if "llm" not in config:
         config["llm"] = copy.deepcopy(example["llm"])
     config["llm"]["provider"] = "lmstudio"
+    # Backfill the new inference-only timeout without changing the user's
+    # chosen model, endpoint, token limit, or older API-management timeout.
+    config["llm"].setdefault(
+        "inference_timeout_seconds", example["llm"]["inference_timeout_seconds"]
+    )
     config.setdefault("workflows", {})
     for workflow_id, entry in example.get("workflows", {}).items():
         config["workflows"].setdefault(workflow_id, copy.deepcopy(entry))
