@@ -19,7 +19,14 @@ from .core import OrchestratorError, _open_json, plan_schema
 
 def _request(settings: dict, route: str, payload: dict | None = None) -> dict:
     base = settings["base_url"].rstrip("/")
-    timeout = float(settings.get("timeout_seconds", 240))
+    # Loading/unloading a model and waiting for a thinking LLM answer have
+    # different latency profiles. Only the inference request receives the
+    # longer wait; keep the ordinary API timeout for short management calls.
+    inference = route == "/v1/chat/completions"
+    timeout = float(
+        settings.get("inference_timeout_seconds", 600)
+        if inference else settings.get("timeout_seconds", 240)
+    )
     headers = {"Content-Type": "application/json"}
     token = os.environ.get(settings.get("token_env", "LMSTUDIO_API_TOKEN"), "")
     if token:
@@ -31,7 +38,17 @@ def _request(settings: dict, route: str, payload: dict | None = None) -> dict:
         headers=headers,
         method="POST" if data is not None else "GET",
     )
-    return _open_json(request, timeout=timeout)
+    try:
+        return _open_json(request, timeout=timeout)
+    except OrchestratorError as exc:
+        if "timed out" in str(exc).lower() or "timeout" in str(exc).lower():
+            label = "自然文解釈" if inference else "API操作"
+            raise OrchestratorError(
+                f"LM Studioの{label}で通信タイムアウトしました（{timeout:g}秒）。"
+                "LLMの推論負荷と起動状態を確認してください。"
+                "設定 llm.inference_timeout_seconds で推論待ちを変更できます。"
+            ) from exc
+        raise
 
 
 def list_models(settings: dict) -> list[dict]:
@@ -123,7 +140,10 @@ class LMStudio:
                 progress("LM Studio: モデルを確認・ロード")
             instance_id = self._ensure_loaded()
             if progress:
-                progress("LM Studio: 自然文を解釈")
+                progress(
+                    "LM Studio: 自然文を解釈"
+                    f"（応答待ち上限 {self.settings.get('inference_timeout_seconds', 600)} 秒）"
+                )
             request = {
                 "model": instance_id,
                 "messages": [{"role": "system", "content": system}, message],
