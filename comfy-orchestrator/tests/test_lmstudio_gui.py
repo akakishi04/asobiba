@@ -24,7 +24,8 @@ class LMStudioTests(unittest.TestCase):
             "base_url": "http://127.0.0.1:1234",
             "model": MODEL,
             "unload_after_inference": True,
-            "context_length": 4096,
+            "context_length": 8192,
+            "max_tokens": 4096,
         }
         self.workflows = {
             "wai": {
@@ -43,10 +44,11 @@ class LMStudioTests(unittest.TestCase):
                 return {"models": [{"type": "llm", "key": MODEL, "loaded_instances": []}]}
             if route == "/api/v1/models/load":
                 self.assertEqual(payload["model"], MODEL)
-                self.assertEqual(payload["context_length"], 4096)
+                self.assertEqual(payload["context_length"], 8192)
                 return {"status": "loaded", "instance_id": INSTANCE}
             if route == "/v1/chat/completions":
                 self.assertEqual(payload["model"], INSTANCE)
+                self.assertEqual(payload["max_tokens"], 4096)
                 self.assertEqual(payload["response_format"]["type"], "json_schema")
                 return {"choices": [{"message": {"content": json.dumps(self.plan)}}]}
             if route == "/api/v1/models/unload":
@@ -135,6 +137,8 @@ class GUIAndConfigTests(unittest.TestCase):
     def test_packaged_config_and_workflow_are_valid(self):
         c = core.load_config(ROOT / "config.example.json")
         self.assertEqual(c["llm"]["provider"], "lmstudio")
+        self.assertEqual(c["llm"]["context_length"], 8192)
+        self.assertEqual(c["llm"]["max_tokens"], 4096)
         self.assertIn("wai_t2i_basic", c["workflows"])
         self.assertTrue(c["llm"]["unload_after_inference"])
 
@@ -164,6 +168,48 @@ class GUIAndConfigTests(unittest.TestCase):
                 result = gui.bootstrap_config()
             self.assertEqual(result["llm"]["provider"], "lmstudio")
             self.assertIn("ollama", result)
+
+    def test_gui_migrates_original_token_defaults_and_preserves_model(self):
+        with tempfile.TemporaryDirectory() as name:
+            config = Path(name) / "config.json"
+            config.write_text(json.dumps({
+                "llm": {
+                    "provider": "lmstudio",
+                    "base_url": "http://127.0.0.1:57317",
+                    "model": "gemma-4-12b",
+                    "context_length": 4096,
+                },
+                "comfyui": {"base_url": "http://127.0.0.1:8188"},
+                "workflows": {},
+                "ui": {"width": 768, "height": 768},
+            }), encoding="utf-8")
+            with patch.object(gui, "CONFIG", config):
+                migrated = gui.bootstrap_config()
+            self.assertEqual(migrated["llm"]["context_length"], 8192)
+            self.assertEqual(migrated["llm"]["max_tokens"], 4096)
+            self.assertEqual(migrated["llm"]["model"], "gemma-4-12b")
+            self.assertEqual(migrated["llm"]["base_url"], "http://127.0.0.1:57317")
+            self.assertTrue(migrated["ui"]["token_defaults_v2_applied"])
+
+    def test_gui_token_migration_is_one_time_and_preserves_custom_limits(self):
+        with tempfile.TemporaryDirectory() as name:
+            config = Path(name) / "config.json"
+            config.write_text(json.dumps({
+                "llm": {
+                    "provider": "lmstudio",
+                    "base_url": "http://127.0.0.1:57317",
+                    "model": "gemma-4-12b",
+                    "context_length": 4096,
+                    "max_tokens": 1024,
+                },
+                "comfyui": {"base_url": "http://127.0.0.1:8188"},
+                "workflows": {},
+                "ui": {"token_defaults_v2_applied": True},
+            }), encoding="utf-8")
+            with patch.object(gui, "CONFIG", config):
+                migrated = gui.bootstrap_config()
+            self.assertEqual(migrated["llm"]["context_length"], 4096)
+            self.assertEqual(migrated["llm"]["max_tokens"], 1024)
 
     def test_cancellation_before_any_network(self):
         cfg = core.load_config(ROOT / "config.example.json")
