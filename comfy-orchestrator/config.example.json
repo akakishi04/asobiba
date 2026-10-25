@@ -55,9 +55,10 @@
     "base_url": "http://127.0.0.1:1234",
     "model": "SELECT_IN_GUI",
     "timeout_seconds": 240,
-    "context_length": 4096,
+    "context_length": 8192,
     "unload_after_inference": true,
-    "token_env": "LMSTUDIO_API_TOKEN"
+    "token_env": "LMSTUDIO_API_TOKEN",
+    "max_tokens": 4096
   },
   "ui": {
     "workflow": "wai_t2i_basic",
