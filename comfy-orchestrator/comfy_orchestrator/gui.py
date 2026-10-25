@@ -43,6 +43,19 @@ def bootstrap_config() -> dict:
     for workflow_id, entry in example.get("workflows", {}).items():
         config["workflows"].setdefault(workflow_id, copy.deepcopy(entry))
     config.setdefault("ui", copy.deepcopy(example.get("ui", {})))
+    # One-time migration from the original 4096/2048 token presets.
+    # Keep unrelated settings (including the user's chosen model and port).
+    # A marker prevents a deliberate future choice of smaller limits from
+    # being silently overwritten on the next startup.
+    ui = config["ui"]
+    if not ui.get("token_defaults_v2_applied", False):
+        llm = config["llm"]
+        defaults = example["llm"]
+        if llm.get("context_length") == 4096:
+            llm["context_length"] = defaults["context_length"]
+        if llm.get("max_tokens", 2048) == 2048:
+            llm["max_tokens"] = defaults["max_tokens"]
+        ui["token_defaults_v2_applied"] = True
     return config
 
 
