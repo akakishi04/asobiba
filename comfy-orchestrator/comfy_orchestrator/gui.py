@@ -317,7 +317,7 @@ class Application:
             wraplength=460, style="Muted.TLabel",
         ).pack(anchor="w", pady=(0, 10))
         self.reference_image.trace_add(
-            "write", lambda *_args: self._update_generation_controls()
+            "write", lambda *_args: self._on_reference_image_changed()
         )
 
         action_row = ttk.Frame(prompt_panel)
@@ -386,6 +386,21 @@ class Application:
         self.editor_font_size.set(size)
         self.prompt.configure(font=("Meiryo UI", size))
         sync_native_ime_font(self.prompt)
+
+    def _on_reference_image_changed(self) -> None:
+        """Switch between the sole T2I/I2I workflow when an image is added or removed."""
+        has_image = bool(self.reference_image.get().strip())
+        chosen = self.workflow.get()
+        if chosen != "自動":
+            entry = self.config["workflows"].get(chosen)
+            if entry and ("image" in entry["bindings"]) != has_image:
+                replacement = [
+                    key for key, value in self.config["workflows"].items()
+                    if ("image" in value["bindings"]) == has_image
+                ]
+                if len(replacement) == 1:
+                    self.workflow.set(replacement[0])
+        self._update_generation_controls()
 
     def _update_generation_controls(self) -> None:
         """Show I2I-only denoise and indicate that image size comes from the input."""
