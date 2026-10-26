@@ -100,7 +100,8 @@
     "unload_after_inference": true,
     "token_env": "LMSTUDIO_API_TOKEN",
     "max_tokens": 4096,
-    "inference_timeout_seconds": 600
+    "inference_timeout_seconds": 600,
+    "send_reference_to_llm": false
   },
   "ui": {
     "workflow": "wai_t2i_basic",
