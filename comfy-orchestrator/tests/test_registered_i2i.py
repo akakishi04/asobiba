@@ -114,6 +114,36 @@ class RegisteredI2ITests(unittest.TestCase):
         )
         self.assertEqual(t2i, base)
 
+    def test_gui_switches_from_t2i_to_i2i_on_image_selection(self):
+        class Value:
+            def __init__(self, value):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+            def set(self, value):
+                self.value = value
+
+        class FakeGui:
+            def __init__(self, config):
+                self.config = config
+                self.workflow = Value("wai_t2i_basic")
+                self.reference_image = Value("")
+                self.refreshed = 0
+
+            def _update_generation_controls(self):
+                self.refreshed += 1
+
+        fake = FakeGui(self.config)
+        fake.reference_image.set("C:/images/portrait.png")
+        gui.Application._on_reference_image_changed(fake)
+        self.assertEqual(fake.workflow.get(), "wai_i2i_basic")
+        fake.reference_image.set("")
+        gui.Application._on_reference_image_changed(fake)
+        self.assertEqual(fake.workflow.get(), "wai_t2i_basic")
+        self.assertEqual(fake.refreshed, 2)
+
     def test_gui_bad_i2i_denoise_is_rejected(self):
         with self.assertRaises(ValueError):
             gui.image_aware_overrides(self.config, "wai_i2i_basic", True, {}, "abc")
