@@ -72,11 +72,13 @@ class TestTheme(unittest.TestCase):
             dark_mode=Field(True),
             editor_font_size=Field(15),
             seed=Field(""),
+            denoise=Field("0.53"),
             _overrides=lambda: {"width": 768, "height": 768, "steps": 20, "cfg": 5.0},
         )
         saved = gui.Application._collect_config(fake)
         self.assertEqual(saved["ui"]["font_size"], 15)
         self.assertTrue(saved["ui"]["dark_mode"])
+        self.assertEqual(saved["ui"]["denoise"], "0.53")
         self.assertEqual(saved["llm"]["base_url"], "http://127.0.0.1:57317")
 
     def test_editor_font_size_has_safe_range(self):
