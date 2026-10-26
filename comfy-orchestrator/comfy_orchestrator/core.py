@@ -355,18 +355,34 @@ def execute(
     A cancel event only stops this client's wait and does NOT interrupt ComfyUI jobs.
     """
     workflows = config["workflows"]
-    if selected_workflow is not None:
-        if selected_workflow not in workflows:
-            raise OrchestratorError(f"登録されていないワークフローです: {selected_workflow}")
-        workflows = {selected_workflow: workflows[selected_workflow]}
-    if not workflows:
-        raise OrchestratorError("workflowsが空です。先にAPI形式JSONを配置してconfig.jsonへ登録してください")
     if not request.strip():
         raise OrchestratorError("自然文の指示を入力してください")
     if image is not None:
         image = image.resolve()
         if not image.is_file():
             raise OrchestratorError(f"参照画像が見つかりません: {image}")
+
+    # Only show workflows compatible with the presence/absence of an image.
+    # This prevents the LLM from choosing T2I when the user supplied an I2I
+    # reference, or choosing I2I with no image to upload.
+    if selected_workflow is not None:
+        if selected_workflow not in workflows:
+            raise OrchestratorError(f"登録されていないワークフローです: {selected_workflow}")
+        workflows = {selected_workflow: workflows[selected_workflow]}
+    workflows = {
+        key: entry for key, entry in workflows.items()
+        if ("image" in entry["bindings"]) == (image is not None)
+    }
+    if not workflows:
+        if selected_workflow is not None:
+            raise OrchestratorError(
+                f"{selected_workflow} と参照画像の有無が一致しません。"
+                "I2Iでは参照画像が必要、T2Iでは参照画像を指定しないでください"
+            )
+        raise OrchestratorError(
+            "参照画像の有無に対応するワークフローが未登録です。"
+            "まず適切なAPI形式JSONを登録してください"
+        )
 
     def note(message: str) -> None:
         if progress:
