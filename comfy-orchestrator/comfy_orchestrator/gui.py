@@ -103,6 +103,47 @@ def save_output_image(base_url: str, metadata: dict, prompt_id: str) -> Path:
     return destination
 
 
+def resolve_generation_workflow(config: dict, chosen: str, has_image: bool) -> str | None:
+    """Resolve the one compatible workflow in automatic mode, if unambiguous."""
+    if chosen != "自動":
+        return chosen
+    compatible = [
+        name for name, entry in config.get("workflows", {}).items()
+        if ("image" in entry["bindings"]) == has_image
+    ]
+    return compatible[0] if len(compatible) == 1 else None
+
+
+def image_aware_overrides(
+    config: dict, workflow_id: str | None, has_image: bool,
+    overrides: dict, denoise: str,
+) -> dict:
+    """Only apply parameters supported by the selected workflow.
+
+    An I2I workflow without a resize node uses its input image's dimensions;
+    passing GUI width/height would cause the orchestrator to reject it.
+    """
+    candidates = (
+        [config["workflows"][workflow_id]] if workflow_id in config["workflows"]
+        else [
+            entry for entry in config.get("workflows", {}).values()
+            if ("image" in entry["bindings"]) == has_image
+        ]
+    )
+    if not candidates:
+        raise core.OrchestratorError("参照画像と一致するワークフローがありません")
+    common = set(candidates[0]["bindings"])
+    for entry in candidates[1:]:
+        common.intersection_update(entry["bindings"])
+    result = {key: value for key, value in overrides.items() if key in common}
+    if "denoise" in common:
+        # User owns strength in GUI, not the LLM.
+        value = float(denoise)
+        core.check_param("denoise", value)
+        result["denoise"] = value
+    return result
+
+
 class Application:
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -135,6 +176,8 @@ class Application:
         self.steps = tk.StringVar(value=str(options.get("steps", 20)))
         self.cfg = tk.StringVar(value=str(options.get("cfg", 5.0)))
         self.seed = tk.StringVar(value=str(options.get("seed", "")))
+        self.denoise = tk.StringVar(value=str(options.get("denoise", 0.53)))
+        self.size_hint = tk.StringVar(value="")
         self.reference_image = tk.StringVar(value="")
         self.dark_mode = tk.BooleanVar(value=bool(options.get("dark_mode", False)))
         requested_font = options.get("font_size", 12)
@@ -238,19 +281,29 @@ class Application:
             values=["自動", *self.config.get("workflows", {}).keys()], state="readonly",
         )
         self.workflow_box.grid(row=0, column=1, columnspan=5, sticky="ew", pady=4)
+        self.workflow_box.bind("<<ComboboxSelected>>", lambda _e: self._update_generation_controls())
         ttk.Label(settings, text="幅").grid(row=1, column=0, sticky="w", padx=(0, 5))
-        ttk.Entry(settings, textvariable=self.width, width=7).grid(row=1, column=1, sticky="ew", padx=(0, 8))
+        self.width_entry = ttk.Entry(settings, textvariable=self.width, width=7)
+        self.width_entry.grid(row=1, column=1, sticky="ew", padx=(0, 8))
         ttk.Label(settings, text="高さ").grid(row=1, column=2, sticky="w", padx=(0, 5))
-        ttk.Entry(settings, textvariable=self.height, width=7).grid(row=1, column=3, sticky="ew", padx=(0, 8))
+        self.height_entry = ttk.Entry(settings, textvariable=self.height, width=7)
+        self.height_entry.grid(row=1, column=3, sticky="ew", padx=(0, 8))
         ttk.Label(settings, text="Steps").grid(row=1, column=4, sticky="w", padx=(0, 5))
         ttk.Entry(settings, textvariable=self.steps, width=7).grid(row=1, column=5, sticky="ew")
         ttk.Label(settings, text="CFG").grid(row=2, column=0, sticky="w")
         ttk.Entry(settings, textvariable=self.cfg, width=7).grid(row=2, column=1, sticky="ew", padx=(0, 8))
         ttk.Label(settings, text="Seed").grid(row=2, column=2, sticky="w")
         ttk.Entry(settings, textvariable=self.seed).grid(row=2, column=3, columnspan=3, sticky="ew")
+        ttk.Label(settings, text="Denoise (I2I)").grid(row=3, column=0, sticky="w")
+        self.denoise_entry = ttk.Entry(settings, textvariable=self.denoise, width=7)
+        self.denoise_entry.grid(row=3, column=1, sticky="ew", padx=(0, 8))
+        ttk.Label(settings, textvariable=self.size_hint, style="Muted.TLabel").grid(
+            row=3, column=2, columnspan=4, sticky="w"
+        )
         ttk.Label(
-            settings, text="Seed空欄＝毎回ランダム。元のAPIファイルは1024×1024 / 28 Stepsのまま保持。",
-        ).grid(row=3, column=0, columnspan=6, sticky="w", pady=(4, 0))
+            settings, text="Seed空欄＝毎回ランダム。I2IのDenoiseは小さいほど元画像を維持。",
+            style="Muted.TLabel",
+        ).grid(row=4, column=0, columnspan=6, sticky="w", pady=(4, 0))
 
         image_row = ttk.Frame(prompt_panel)
         image_row.pack(fill="x", pady=(0, 12))
@@ -260,9 +313,12 @@ class Application:
         ttk.Button(image_row, text="消去", command=lambda: self.reference_image.set("")).pack(side="left", padx=(5, 0))
         ttk.Label(
             prompt_panel,
-            text="参照画像はI2I/I2V対応ワークフローと画像対応LMMの登録後に使用できます。",
-            wraplength=460,
+            text="I2Iでは参照画像が必要です。画像はComfyUIに送ります。LLMの画像認識は初期設定でOFF。",
+            wraplength=460, style="Muted.TLabel",
         ).pack(anchor="w", pady=(0, 10))
+        self.reference_image.trace_add(
+            "write", lambda *_args: self._update_generation_controls()
+        )
 
         action_row = ttk.Frame(prompt_panel)
         action_row.pack(fill="x")
@@ -306,6 +362,7 @@ class Application:
         )
         self.log.pack(fill="x")
         self._switch_theme()
+        self._update_generation_controls()
         install_native_ime_font(self.prompt)
         self._log("GUI起動。LM StudioのDeveloper画面でLocal Serverを起動してください。")
         self._log("設定は comfy-orchestrator/config.json に保存され、Gitには含まれません。")
@@ -330,6 +387,23 @@ class Application:
         self.prompt.configure(font=("Meiryo UI", size))
         sync_native_ime_font(self.prompt)
 
+    def _update_generation_controls(self) -> None:
+        """Show I2I-only denoise and indicate that image size comes from the input."""
+        workflow_id = resolve_generation_workflow(
+            self.config, self.workflow.get(), bool(self.reference_image.get().strip())
+        )
+        bindings = self.config["workflows"].get(workflow_id, {}).get("bindings", {})
+        is_image = "image" in bindings
+        for entry in (self.width_entry, self.height_entry):
+            entry.configure(state="disabled" if is_image else "normal")
+        self.denoise_entry.configure(
+            state="normal" if "denoise" in bindings else "disabled"
+        )
+        self.size_hint.set(
+            "I2Iは元画像の解像度を使用" if is_image
+            else "T2Iは指定サイズで生成"
+        )
+
     def _log(self, text: str) -> None:
         self.log.configure(state="normal")
         self.log.insert("end", text + "\n")
@@ -352,6 +426,7 @@ class Application:
             "font_size": self.editor_font_size.get(),
         }
         config["ui"]["seed"] = self.seed.get().strip()
+        config["ui"]["denoise"] = self.denoise.get().strip()
         return config
 
     def _overrides(self) -> dict:
@@ -436,9 +511,18 @@ class Application:
             return
         image = Path(self.reference_image.get()).expanduser() if self.reference_image.get() else None
         selected = self.workflow.get()
-        if selected == "自動":
-            selected = None
         overrides = self._overrides()
+        selected = resolve_generation_workflow(
+            self.config, selected, image is not None
+        )
+        try:
+            overrides = image_aware_overrides(
+                self.config, selected, image is not None,
+                overrides, self.denoise.get(),
+            )
+        except (ValueError, core.OrchestratorError) as exc:
+            messagebox.showerror("生成設定エラー", str(exc))
+            return
         cfg = copy.deepcopy(self.config)
         self.stop_event.clear()
         self.working = True
