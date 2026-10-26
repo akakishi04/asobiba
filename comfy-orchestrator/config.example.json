@@ -48,6 +48,47 @@
         "steps": 28,
         "cfg": 5.5
       }
+    },
+    "wai_i2i_basic": {
+      "kind": "i2i",
+      "description": "waiIllustrious SDXL v1.7。参照画像の構図や色を基に自然文で全体を描き直す。入力画像の解像度を使用し、denoiseの低い値ほど元画像を維持する。",
+      "file": "workflows/wai_i2i_basic.api.json",
+      "bindings": {
+        "positive_prompt": {
+          "node": "8",
+          "input": "text"
+        },
+        "negative_prompt": {
+          "node": "5",
+          "input": "text"
+        },
+        "image": {
+          "node": "16",
+          "input": "image"
+        },
+        "steps": {
+          "node": "11",
+          "input": "steps"
+        },
+        "cfg": {
+          "node": "11",
+          "input": "cfg"
+        },
+        "seed": {
+          "node": "11",
+          "input": "seed"
+        },
+        "denoise": {
+          "node": "11",
+          "input": "denoise"
+        }
+      },
+      "defaults": {
+        "negative_prompt": "low quality, blurry, bad anatomy, extra fingers",
+        "steps": 28,
+        "cfg": 5.5,
+        "denoise": 0.53
+      }
     }
   },
   "llm": {
