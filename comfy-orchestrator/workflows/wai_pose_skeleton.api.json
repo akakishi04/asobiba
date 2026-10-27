@@ -1,0 +1,152 @@
+{
+  "2": {
+    "inputs": {
+      "ckpt_name": "waiIllustriousSDXL_v170.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "チェックポイントを読み込む"
+    }
+  },
+  "5": {
+    "inputs": {
+      "text": "low quality, blurry, bad anatomy, extra fingers",
+      "clip": [
+        "2",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIPテキストエンコード（プロンプト）"
+    }
+  },
+  "8": {
+    "inputs": {
+      "text": "1girl, silver hair, standing on the beach at sunset, anime style",
+      "clip": [
+        "2",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIPテキストエンコード（プロンプト）"
+    }
+  },
+  "10": {
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "空の潜在画像"
+    }
+  },
+  "11": {
+    "inputs": {
+      "seed": 372480319739612,
+      "steps": 28,
+      "cfg": 5.5,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 1,
+      "model": [
+        "2",
+        0
+      ],
+      "positive": [
+        "23",
+        0
+      ],
+      "negative": [
+        "23",
+        1
+      ],
+      "latent_image": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Kサンプラー"
+    }
+  },
+  "12": {
+    "inputs": {
+      "samples": [
+        "11",
+        0
+      ],
+      "vae": [
+        "2",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAEデコード"
+    }
+  },
+  "13": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "画像を保存"
+    }
+  },
+  "21": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "pose.png"
+    },
+    "_meta": {
+      "title": "ポーズ参考画像を読み込む"
+    }
+  },
+  "22": {
+    "class_type": "ControlNetLoader",
+    "inputs": {
+      "control_net_name": "controlnet-openpose-sdxl-1.0.safetensors"
+    },
+    "_meta": {
+      "title": "OpenPose SDXL ControlNetモデル"
+    }
+  },
+  "23": {
+    "class_type": "ControlNetApplyAdvanced",
+    "inputs": {
+      "positive": [
+        "8",
+        0
+      ],
+      "negative": [
+        "5",
+        0
+      ],
+      "control_net": [
+        "22",
+        0
+      ],
+      "image": [
+        "21",
+        0
+      ],
+      "strength": 0.85,
+      "start_percent": 0,
+      "end_percent": 1
+    },
+    "_meta": {
+      "title": "ポーズのみを生成条件に適用"
+    }
+  }
+}
