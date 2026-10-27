@@ -355,6 +355,10 @@ def execute(
     A cancel event only stops this client's wait and does NOT interrupt ComfyUI jobs.
     """
     workflows = config["workflows"]
+    if not workflows:
+        raise OrchestratorError(
+            "workflowsが空です。先にAPI形式JSONを配置してconfig.jsonへ登録してください"
+        )
     if not request.strip():
         raise OrchestratorError("自然文の指示を入力してください")
     if image is not None:
