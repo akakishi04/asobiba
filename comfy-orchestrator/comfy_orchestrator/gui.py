@@ -283,6 +283,28 @@ class Application:
         ).pack(side="left")
         ttk.Button(options_frame, text="設定を保存", command=self._save_settings).pack(side="right")
 
+        # The footer is laid out before the resizable main panes to guarantee
+        # that status and the optional log never fall below the visible screen.
+        footer = ttk.Frame(layout)
+        footer.pack(side="bottom", fill="x")
+        status_bar = ttk.Frame(footer)
+        status_bar.pack(side="bottom", fill="x", pady=(3, 0))
+        ttk.Label(status_bar, textvariable=self.status).pack(side="left", fill="x", expand=True)
+        self.logs_visible = False
+        self.log_toggle = ttk.Button(
+            status_bar, text="ログを表示", command=self._toggle_logs,
+        )
+        self.log_toggle.pack(side="right", padx=(8, 0))
+        self.progress_bar = ttk.Progressbar(status_bar, mode="indeterminate", length=125)
+        self.progress_bar.pack(side="right")
+        # Hidden on startup: logs remain buffered, without consuming screen height.
+        self.logs_panel = ttk.LabelFrame(footer, text="実行ログ", padding=5)
+        self.log = scrolledtext.ScrolledText(
+            self.logs_panel, height=4, wrap="word", state="disabled",
+            font=("Meiryo UI", 9), padx=9, pady=7,
+        )
+        self.log.pack(fill="x")
+
         main = ttk.Panedwindow(layout, orient="horizontal")
         main.pack(fill="both", expand=True, pady=(8, 5))
 
@@ -559,23 +581,6 @@ class Application:
             command=self._history_output_to_i2i,
         ).pack(fill="x", pady=(6, 0))
 
-        status_bar = ttk.Frame(layout)
-        status_bar.pack(fill="x", pady=(0, 3))
-        ttk.Label(status_bar, textvariable=self.status).pack(side="left", fill="x", expand=True)
-        self.logs_visible = False
-        self.log_toggle = ttk.Button(
-            status_bar, text="ログを表示", command=self._toggle_logs,
-        )
-        self.log_toggle.pack(side="right", padx=(8, 0))
-        self.progress_bar = ttk.Progressbar(status_bar, mode="indeterminate", length=125)
-        self.progress_bar.pack(side="right")
-        # Hidden on startup: logs remain buffered, without consuming screen height.
-        self.logs_panel = ttk.LabelFrame(layout, text="実行ログ", padding=5)
-        self.log = scrolledtext.ScrolledText(
-            self.logs_panel, height=4, wrap="word", state="disabled",
-            font=("Meiryo UI", 9), padx=9, pady=7,
-        )
-        self.log.pack(fill="x")
         self._switch_theme()
         self._update_generation_controls()
         install_native_ime_font(self.prompt)
