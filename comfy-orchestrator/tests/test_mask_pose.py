@@ -160,6 +160,52 @@ class WorkflowTests(unittest.TestCase):
                     image=img, selected_workflow="wai_inpaint_basic", dry_run=True,
                 )
 
+    def test_gui_image_clear_returns_to_t2i_and_clears_old_mask(self):
+        class Var:
+            def __init__(self, value=""):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+            def set(self, value):
+                self.value = value
+
+        class Fake:
+            _active_workflow = gui.Application._active_workflow
+
+            def __init__(self, config):
+                self.config = config
+                self.workflow = Var("wai_inpaint_basic")
+                self.reference_image = Var("C:/example.png")
+                self.mask_image = Var("C:/mask.png")
+                self.pose_image = Var()
+                self.pose_mode = Var("skeleton")
+                self._last_reference_image = "C:/example.png"
+                self._source_change_lock = False
+                self.refreshed = False
+
+            def _update_generation_controls(self):
+                self.refreshed = True
+
+        fake = Fake(self.cfg)
+        fake.reference_image.set("")
+        gui.Application._on_reference_image_changed(fake)
+        self.assertEqual(fake.workflow.get(), "wai_t2i_basic")
+        self.assertEqual(fake.mask_image.get(), "")
+        self.assertTrue(fake.refreshed)
+        fake.reference_image.set("C:/new.png")
+        gui.Application._on_reference_image_changed(fake)
+        self.assertEqual(fake.workflow.get(), "wai_i2i_basic")
+        fake.pose_mode.set("photo")
+        fake.pose_image.set("C:/designdoll.png")
+        gui.Application._on_pose_image_changed(fake)
+        self.assertEqual(fake.reference_image.get(), "")
+        self.assertEqual(fake.workflow.get(), "wai_pose_detect")
+        fake.pose_image.set("")
+        gui.Application._on_pose_image_changed(fake)
+        self.assertEqual(fake.workflow.get(), "wai_t2i_basic")
+
     def test_model_dependency_failures_explain_missing_weights(self):
         entry = self.entries["wai_pose_skeleton"]
         workflow = core.load_workflow(ROOT / entry["file"], entry["bindings"])
