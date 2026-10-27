@@ -849,13 +849,7 @@ class Application:
             messagebox.showerror("生成設定エラー", str(exc))
             return
         cfg = copy.deepcopy(self.config)
-        self.stop_event.clear()
-        self.working = True
-        self.run_button.configure(state="disabled")
-        self.preview_button.configure(state="disabled")
-        self.cancel_button.configure(state="normal")
-        self.progress_bar.start(12)
-        self.status.set("解釈テスト中..." if dry_run else "生成準備中...")
+        self._set_busy("解釈テスト中..." if dry_run else "生成準備中...")
         self._log("開始: " + ("解釈のみテスト" if dry_run else "画像生成") + f" / model={cfg['llm']['model']}")
 
         def task():
@@ -874,7 +868,11 @@ class Application:
                             images.append(path)
                         except Exception as exc:
                             self.messages.put(("progress", f"画像取得エラー: {exc}"))
-                self.messages.put(("done", (result, images)))
+                history_id = (
+                    self._record_completed_generation(result, images, prompt, image)
+                    if not dry_run else None
+                )
+                self.messages.put(("done", (result, images, history_id)))
             except Exception as exc:
                 self.messages.put(("error", str(exc)))
             finally:
@@ -905,7 +903,7 @@ class Application:
                     self._log(f"LM Studioモデル: {len(names)}件。必要なモデルを選択して設定を保存してください。")
                     self.status.set(f"モデル一覧を更新: {len(names)}件")
                 elif kind == "done":
-                    result, images = data
+                    result, images, history_id = data
                     if result["status"] == "dry_run":
                         self._log("解釈結果:\n" + json.dumps(result, ensure_ascii=False, indent=2))
                         self.status.set("解釈テスト完了（ComfyUI未実行）")
@@ -923,6 +921,8 @@ class Application:
                         )
                         self._log("生成完了: " + json.dumps(result.get("parameters", {}), ensure_ascii=False))
                         self.status.set("画像生成完了")
+                        self._refresh_history(select_id=history_id)
+                        self.tabs.select(0)
                 elif kind == "error":
                     self._log("ERROR: " + data)
                     self.status.set("エラー: " + data[:110])
@@ -933,6 +933,7 @@ class Application:
                     self.preview_button.configure(state="normal")
                     self.cancel_button.configure(state="disabled")
                     self.progress_bar.stop()
+                    self._history_selection_changed()
         except queue.Empty:
             pass
         if self.root.winfo_exists():
