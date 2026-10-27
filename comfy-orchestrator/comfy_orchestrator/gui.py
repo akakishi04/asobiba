@@ -501,6 +501,240 @@ class Application:
         self.log.see("end")
         self.log.configure(state="disabled")
 
+    def _refresh_history(self, select_id: str | None = None) -> None:
+        """Show latest saved images, including older outputs with unknown parameters."""
+        try:
+            self.history_store.import_legacy_outputs(limit=500)
+            entries = self.history_store.list_entries(limit=500)
+        except (HistoryError, OSError, ValueError) as exc:
+            self._log(f"履歴の読み込みに失敗: {exc}")
+            return
+        old_selected = set(self.history_table.selection())
+        self.history_entries = {entry.id: entry for entry in entries}
+        for item in self.history_table.get_children():
+            self.history_table.delete(item)
+        for entry in entries:
+            short = entry.request_text.replace("\n", " ").strip()[:80]
+            title = short or "(プロンプトなし)"
+            timestamp = entry.created_at
+            try:
+                from datetime import datetime
+                timestamp = datetime.fromisoformat(entry.created_at).astimezone().strftime("%m/%d %H:%M")
+            except (ValueError, OverflowError):
+                timestamp = entry.created_at[:16]
+            seed = str(entry.parameters.get("seed", "—"))
+            self.history_table.insert(
+                "", "end", iid=entry.id, text=title,
+                values=(timestamp, entry.kind.upper(), seed),
+            )
+        requested = {select_id} if select_id else old_selected
+        available = [entry_id for entry_id in requested if entry_id in self.history_entries]
+        if available:
+            self.history_table.selection_set(*available)
+            self.history_table.see(available[0])
+        self._history_selection_changed()
+        if not entries:
+            self.history_details.set("まだ保存された生成結果がありません")
+
+    def _selected_history(self) -> list[HistoryEntry]:
+        return [
+            self.history_entries[entry_id]
+            for entry_id in self.history_table.selection()
+            if entry_id in self.history_entries
+        ]
+
+    def _one_history(self) -> HistoryEntry | None:
+        selected = self._selected_history()
+        return selected[0] if len(selected) == 1 else None
+
+    def _history_selection_changed(self, _event=None) -> None:
+        selected = self._selected_history()
+        can_replay = (
+            len(selected) == 1
+            and not selected[0].legacy
+            and selected[0].workflow_id in self.config["workflows"]
+            and selected[0].first_image is not None
+            and (selected[0].reference_image is None or selected[0].reference_image.is_file())
+            and not self.working
+        )
+        state = "normal" if can_replay else "disabled"
+        self.same_seed_button.configure(state=state)
+        self.new_seed_button.configure(state=state)
+
+        if not selected:
+            self.history_details.set("履歴を選択してください")
+            self.history_image.configure(image="", text="履歴画像")
+            self.history_preview_photo = None
+            return
+        if len(selected) > 1:
+            self.history_details.set(
+                f"{len(selected)}件選択中。2件を比較するには「比較」を押してください。"
+            )
+            self.history_image.configure(image="", text="2件選択中")
+            self.history_preview_photo = None
+            return
+
+        entry = selected[0]
+        p = entry.parameters
+        self.history_details.set(
+            f"ワークフロー: {entry.workflow_id} / "
+            f"Seed: {p.get('seed', '不明')} / "
+            f"Steps: {p.get('steps', '不明')} / "
+            f"CFG: {p.get('cfg', '不明')} / "
+            f"画像: {len(entry.images)}枚"
+            + (" / 旧画像（再生成用設定なし）" if entry.legacy else "")
+        )
+        image = entry.first_image
+        if image is None or not image.is_file():
+            self.history_preview_photo = None
+            self.history_image.configure(image="", text="画像ファイルが見つかりません")
+            return
+        try:
+            photo = tk.PhotoImage(file=str(image))
+            scale = max(1, (max(photo.width(), photo.height()) + 279) // 280)
+            self.history_preview_photo = photo.subsample(scale, scale)
+            self.history_image.configure(image=self.history_preview_photo, text="")
+        except (tk.TclError, OSError):
+            self.history_preview_photo = None
+            self.history_image.configure(
+                image="", text="プレビューできない形式です。比較画面で確認してください"
+            )
+
+    def _restore_selected_history(self) -> None:
+        entry = self._one_history()
+        if entry is None:
+            messagebox.showinfo("履歴", "復元する履歴を1件選択してください")
+            return
+        if entry.legacy or entry.workflow_id not in self.config["workflows"]:
+            messagebox.showinfo(
+                "履歴", "この画像には生成設定が保存されていないため復元できません"
+            )
+            return
+        self.prompt.delete("1.0", "end")
+        self.prompt.insert("1.0", entry.request_text)
+        self.workflow.set(entry.workflow_id)
+        reference = entry.reference_image
+        self.reference_image.set(str(reference) if reference and reference.is_file() else "")
+        for key, variable in (
+            ("width", self.width), ("height", self.height),
+            ("steps", self.steps), ("cfg", self.cfg),
+            ("denoise", self.denoise), ("seed", self.seed),
+        ):
+            if key in entry.parameters:
+                variable.set(str(entry.parameters[key]))
+            elif key == "seed":
+                variable.set("")
+        self._update_generation_controls()
+        self.status.set("履歴から設定を復元しました。自然文を編集して生成できます")
+        self._log(f"履歴の設定を復元: {entry.workflow_id} / Seed={entry.parameters.get('seed', '不明')}")
+        self.prompt.focus_set()
+
+    def _compare_selected_history(self) -> None:
+        entries = self._selected_history()
+        if len(entries) == 2:
+            left, right = (e.first_image for e in entries)
+            titles = ("生成結果 A", "生成結果 B")
+        elif len(entries) == 1 and entries[0].reference_image is not None:
+            left, right = entries[0].reference_image, entries[0].first_image
+            titles = ("元画像", "生成結果")
+        else:
+            messagebox.showinfo(
+                "画像比較",
+                "I2Iは履歴を1件選択、T2IはCtrl+クリックで2件選択して比較してください",
+            )
+            return
+        if left is None or right is None or not left.is_file() or not right.is_file():
+            messagebox.showerror("画像比較", "比較する画像ファイルが見つかりません")
+            return
+        try:
+            ComparisonWindow(self.root, left, right, *titles)
+        except (ValueError, OSError, tk.TclError) as exc:
+            messagebox.showerror("画像比較", str(exc))
+
+    def _record_completed_generation(
+        self, result: dict, images: list[Path], request_text: str,
+        source_image: Path | None,
+    ) -> str | None:
+        if not images:
+            return None
+        try:
+            workflow_id = result["workflow_id"]
+            entry = self.history_store.record(
+                prompt_id=result["prompt_id"],
+                workflow_id=workflow_id,
+                kind=self.config["workflows"][workflow_id]["kind"],
+                request_text=request_text,
+                parameters=result["parameters"],
+                images=images,
+                reference_image=source_image,
+            )
+            return entry.id
+        except (HistoryError, OSError, ValueError) as exc:
+            self.messages.put(("progress", f"履歴保存に失敗しました（画像は保持）: {exc}"))
+            return None
+
+    def _set_busy(self, label: str) -> None:
+        self.stop_event.clear()
+        self.working = True
+        self.run_button.configure(state="disabled")
+        self.preview_button.configure(state="disabled")
+        self.cancel_button.configure(state="normal")
+        self.same_seed_button.configure(state="disabled")
+        self.new_seed_button.configure(state="disabled")
+        self.progress_bar.start(12)
+        self.status.set(label)
+
+    def _regenerate_selected_history(self, *, new_seed: bool) -> None:
+        if self.working:
+            return
+        entry = self._one_history()
+        if (
+            entry is None or entry.legacy
+            or entry.workflow_id not in self.config["workflows"]
+        ):
+            messagebox.showwarning("再生成", "再生成可能な履歴を1件選択してください")
+            return
+        if entry.reference_image is not None and not entry.reference_image.is_file():
+            messagebox.showerror("再生成", "履歴に保存した元画像が見つかりません")
+            return
+        if not self._save_settings():
+            return
+        cfg = copy.deepcopy(self.config)
+        self._set_busy("保存した設定を使って再生成中（LLMは呼び出しません）")
+        self._log(
+            f"再生成: {entry.workflow_id} / "
+            + ("別Seed" if new_seed else "同じSeed")
+        )
+
+        def task():
+            try:
+                result = core.execute_saved(
+                    cfg, CONFIG, entry.workflow_id, entry.parameters,
+                    reference_image=entry.reference_image,
+                    new_seed=new_seed,
+                    progress=lambda line: self.messages.put(("progress", line)),
+                    cancel_event=self.stop_event,
+                )
+                images = []
+                for item in output_images(result):
+                    try:
+                        images.append(
+                            save_output_image(
+                                cfg["comfyui"]["base_url"], item, result["prompt_id"]
+                            )
+                        )
+                    except Exception as exc:
+                        self.messages.put(("progress", f"画像取得エラー: {exc}"))
+                history_id = self._record_completed_generation(
+                    result, images, entry.request_text, entry.reference_image,
+                )
+                self.messages.put(("done", (result, images, history_id)))
+            except Exception as exc:
+                self.messages.put(("error", str(exc)))
+            finally:
+                self.messages.put(("idle", None))
+        threading.Thread(target=task, daemon=True).start()
+
     def _collect_config(self) -> dict:
         config = copy.deepcopy(self.config)
         config["llm"]["provider"] = "lmstudio"
