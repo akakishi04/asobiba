@@ -452,7 +452,7 @@ class Application:
         image_row = ttk.Frame(self.options_form)
         image_row.pack(fill="x", pady=(0, 12))
         ttk.Label(image_row, text="参照画像").pack(side="left", padx=(0, 8))
-        ttk.Entry(image_row, textvariable=self.reference_image).pack(side="left", fill="x", expand=True)
+        ttk.Entry(image_row, textvariable=self.reference_image, width=8).pack(side="left", fill="x", expand=True)
         ttk.Button(image_row, text="参照...", command=self._browse_image).pack(side="left", padx=(5, 0))
         ttk.Button(image_row, text="消去", command=lambda: self.reference_image.set("")).pack(side="left", padx=(5, 0))
         ttk.Label(
@@ -466,7 +466,7 @@ class Application:
         mask_row = ttk.Frame(self.options_form)
         mask_row.pack(fill="x", pady=(0, 5))
         ttk.Label(mask_row, text="部分修正").pack(side="left", padx=(0, 9))
-        ttk.Entry(mask_row, textvariable=self.mask_image, state="readonly").pack(
+        ttk.Entry(mask_row, textvariable=self.mask_image, state="readonly", width=8).pack(
             side="left", fill="x", expand=True
         )
         self.mask_button = ttk.Button(
@@ -483,7 +483,7 @@ class Application:
         pose_row = ttk.Frame(self.options_form)
         pose_row.pack(fill="x", pady=(0, 5))
         ttk.Label(pose_row, text="ポーズ参照").pack(side="left", padx=(0, 5))
-        ttk.Entry(pose_row, textvariable=self.pose_image, state="readonly").pack(
+        ttk.Entry(pose_row, textvariable=self.pose_image, state="readonly", width=8).pack(
             side="left", fill="x", expand=True
         )
         ttk.Button(pose_row, text="参照...", command=self._browse_pose).pack(
@@ -500,11 +500,11 @@ class Application:
         ttk.Radiobutton(
             pose_modes, text="骨格PNGを直接利用", variable=self.pose_mode,
             value="skeleton", command=self._on_pose_image_changed,
-        ).pack(side="left")
+        ).pack(anchor="w")
         ttk.Radiobutton(
             pose_modes, text="通常画像から骨格検出（DWPose）", variable=self.pose_mode,
             value="photo", command=self._on_pose_image_changed,
-        ).pack(side="left", padx=(8, 0))
+        ).pack(anchor="w", pady=(2, 0))
         ttk.Label(
             self.options_form, text="ポーズ参照はT2Iと別の入力です。通常画像モードは追加ControlNet・DWPoseが必要。",
             style="Muted.TLabel", wraplength=470,
