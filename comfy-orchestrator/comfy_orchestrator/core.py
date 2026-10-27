@@ -406,6 +406,7 @@ def execute(
     dry_run: bool = False, selected_workflow: str | None = None,
     overrides: dict | None = None, progress: Callable[[str], None] | None = None,
     cancel_event: Any = None, mask_image: Path | None = None, pose_image: Path | None = None,
+    composition_image: Path | None = None,
 ) -> dict:
     """Interpret natural language, unload the chosen LLM, then run a fixed workflow.
 
@@ -418,7 +419,10 @@ def execute(
         )
     if not request.strip():
         raise OrchestratorError("自然文の指示を入力してください")
-    for field, path_value in (("参照画像", image), ("マスク", mask_image), ("ポーズ画像", pose_image)):
+    for field, path_value in (
+        ("参照画像", image), ("マスク", mask_image), ("ポーズ画像", pose_image),
+        ("構図参考画像", composition_image),
+    ):
         if path_value is not None and not Path(path_value).is_file():
             raise OrchestratorError(f"{field}が見つかりません: {path_value}")
     if image is not None:
@@ -427,6 +431,12 @@ def execute(
         mask_image = Path(mask_image).resolve()
     if pose_image is not None:
         pose_image = Path(pose_image).resolve()
+    if composition_image is not None:
+        composition_image = Path(composition_image).resolve()
+        if not config.get("llm", {}).get("send_reference_to_llm", False):
+            raise OrchestratorError(
+                "構図参考画像をLLMで解析するには「画像をLLMで構図解析」をONにしてください"
+            )
 
     # Filter by exact required image sources before asking the LLM.
     # This prevents the LLM from choosing T2I when the user supplied an I2I
@@ -478,11 +488,22 @@ def execute(
         # A pose reference is also a valid vision input. The VLM receives the
         # same image used by pose ControlNet, while ComfyUI still receives it
         # through the separate "pose" binding. In I2I, prefer the source image.
-        vision_reference = image if image is not None else pose_image
-        plan = LMStudio(settings).interpret(
-            request, workflows, vision_reference, progress=note,
+        vision_reference = (
+            composition_image if composition_image is not None else
+            image if image is not None else pose_image
         )
+        if composition_image is not None:
+            plan = LMStudio(settings).interpret(
+                request, workflows, vision_reference, progress=note,
+                reference_role="composition",
+            )
+        else:
+            plan = LMStudio(settings).interpret(
+                request, workflows, vision_reference, progress=note,
+            )
     else:
+        if composition_image is not None:
+            raise OrchestratorError("LLM専用の構図参考画像は現在LM Studio接続で利用してください")
         note("Ollama: 自然文を解釈しモデルをアンロード")
         plan = Ollama(settings).interpret(request, workflows, image)
     check_cancelled()
