@@ -971,6 +971,13 @@ class Application:
                 self.pose_image.set(
                     str(entry.pose_image) if entry.pose_image and entry.pose_image.is_file() else ""
                 )
+            if hasattr(self, "composition_image"):
+                self.composition_image.set(
+                    str(entry.composition_image)
+                    if entry.composition_image and entry.composition_image.is_file() else ""
+                )
+                if entry.composition_image and hasattr(self, "vision_composition"):
+                    self.vision_composition.set(True)
             if hasattr(self, "pose_mode"):
                 self.pose_mode.set("photo" if entry.workflow_id == "wai_pose_detect" else "skeleton")
             self._last_reference_image = self.reference_image.get()
@@ -1016,6 +1023,7 @@ class Application:
         self, result: dict, images: list[Path], request_text: str,
         source_image: Path | None, mask_image: Path | None = None,
         pose_image: Path | None = None,
+        composition_image: Path | None = None,
     ) -> str | None:
         if not images:
             return None
@@ -1031,6 +1039,7 @@ class Application:
                 reference_image=source_image,
                 mask_image=mask_image,
                 pose_image=pose_image,
+                composition_image=composition_image,
             )
             return entry.id
         except (HistoryError, OSError, ValueError, sqlite3.Error) as exc:
@@ -1098,6 +1107,8 @@ class Application:
                 history_id = self._record_completed_generation(
                     result, images, entry.request_text, entry.reference_image,
                     entry.mask_image, entry.pose_image,
+                    entry.composition_image if entry.composition_image
+                    and entry.composition_image.is_file() else None,
                 )
                 self.messages.put(("done", (result, images, history_id)))
             except Exception as exc:
@@ -1315,7 +1326,7 @@ class Application:
                             self.messages.put(("progress", f"画像取得エラー: {exc}"))
                 history_id = (
                     self._record_completed_generation(
-                        result, images, prompt, image, mask, pose,
+                        result, images, prompt, image, mask, pose, composition,
                     )
                     if not dry_run else None
                 )
