@@ -473,7 +473,13 @@ def execute(
     provider = settings.get("provider", "lmstudio" if llm_key == "llm" else "ollama")
     if provider == "lmstudio":
         from .lmstudio import LMStudio
-        plan = LMStudio(settings).interpret(request, workflows, image, progress=note)
+        # A pose reference is also a valid vision input. The VLM receives the
+        # same image used by pose ControlNet, while ComfyUI still receives it
+        # through the separate "pose" binding. In I2I, prefer the source image.
+        vision_reference = image if image is not None else pose_image
+        plan = LMStudio(settings).interpret(
+            request, workflows, vision_reference, progress=note,
+        )
     else:
         note("Ollama: 自然文を解釈しモデルをアンロード")
         plan = Ollama(settings).interpret(request, workflows, image)
