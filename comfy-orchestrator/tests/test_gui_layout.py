@@ -72,6 +72,11 @@ class InitialGeometryTests(unittest.TestCase):
         )
         self.assertIn('self.form_canvas.create_window(', source)
         self.assertIn('self.form_canvas.configure(yscrollcommand=', source)
+        self.assertIn('for col in (1, 3):', source)
+        self.assertIn('preview_meta.pack(side="bottom", fill="x")', source)
+        self.assertIn('history_meta.pack(side="bottom", fill="x"', source)
+        self.assertNotIn('self.root.geometry("1240x910")', source)
+        self.assertNotIn('self.root.minsize(960, 760)', source)
         self.assertNotIn('self.logs_panel.pack(fill="x")', source)
 
 
