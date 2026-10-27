@@ -333,7 +333,7 @@ class Application:
         main.add(left, weight=3)
         main.add(right, weight=2)
 
-        prompt_panel = ttk.LabelFrame(left, text="自然文から生成", padding=8, style="Section.TLabelframe")
+        prompt_panel = ttk.LabelFrame(left, text="自然文・生成設定（下へスクロール可能）", padding=8, style="Section.TLabelframe")
         prompt_panel.pack(fill="both", expand=True, padx=(0, 6))
 
         # Reserve space for actions FIRST so a short screen never hides "Generate".
@@ -625,7 +625,7 @@ class Application:
             if widget is self.options_form:
                 inside_form = True
                 break
-            if isinstance(widget, (tk.Text, tk.Listbox, ttk.Treeview)):
+            if isinstance(widget, (tk.Text, tk.Scrollbar, ttk.Scrollbar, tk.Listbox, ttk.Treeview)):
                 return None
             widget = getattr(widget, "master", None)
         if not inside_form:
