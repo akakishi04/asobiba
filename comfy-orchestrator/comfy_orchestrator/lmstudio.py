@@ -155,10 +155,10 @@ class LMStudio:
                 "Do not claim pixel-accurate geometry or infer occluded joints. "
                 "Respect requested changes and preserve what the user wants preserved. "
                 + (
-                    "This is a COMPOSITION-ONLY reference for a new text-to-image illustration. "
-                    "Use its framing, camera, subject placement and pose as textual guidance; "
-                    "do NOT copy character identity, textures, clothing, colors, or background "
-                    "unless the user explicitly requests them."
+                    "This is a COMPOSITION-ONLY reference, not the image being edited or "
+                    "the ControlNet source. Use its framing, camera, subject placement "
+                    "and pose as textual guidance; do NOT copy character identity, "
+                    "textures, clothing, colors, or background unless the user requests them."
                     if composition_only else
                     "This is a POSE reference. Describe the pose, framing and viewpoint ONLY; "
                     "do not borrow the mannequin's material, color, design, clothes, or background."
@@ -175,7 +175,7 @@ class LMStudio:
             f"Reference image visible to the LLM: "
             f"{'yes' if self._has_visual_input else 'no'}\n"
             f"Reference role: "
-            f"{'composition only for new T2I' if composition_only else 'pose and camera only' if pose_only else 'composition of image to edit'}\n"
+            f"{'composition only (LLM reference)' if composition_only else 'pose and camera only' if pose_only else 'composition of image to edit'}\n"
             f"User request: {text}"
         )
         message: dict[str, Any] = {"role": "user", "content": user_text}
