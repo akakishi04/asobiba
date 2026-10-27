@@ -22,6 +22,7 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 from . import core
 from .comparison import ComparisonWindow
 from .history import HistoryStore, HistoryEntry, HistoryError
+from .mask_editor import edit_mask
 from .lmstudio import list_models
 from .ime_font import install_native_ime_font, sync_native_ime_font
 from .ui_theme import apply_ttk_theme, style_text_widget
@@ -106,46 +107,60 @@ def save_output_image(base_url: str, metadata: dict, prompt_id: str) -> Path:
     return destination
 
 
-def resolve_generation_workflow(config: dict, chosen: str, has_image: bool) -> str | None:
-    """Resolve the one compatible workflow in automatic mode, if unambiguous."""
-    if chosen != "自動":
+def resolve_generation_workflow(
+    config: dict, chosen: str, has_image: bool,
+    has_mask: bool = False, has_pose: bool = False,
+    pose_mode: str = "skeleton",
+) -> str | None:
+    """Route by available input type: no images always means plain T2I."""
+    candidates = core.compatible_workflows(
+        config.get("workflows", {}),
+        image=True if has_image else None,
+        mask=True if has_mask else None,
+        pose=True if has_pose else None,
+    )
+    if not candidates:
+        return None
+    if has_pose:
+        expected = "wai_pose_detect" if pose_mode == "photo" else "wai_pose_skeleton"
+        if expected in candidates:
+            return expected
+    if chosen in candidates:
         return chosen
-    compatible = [
-        name for name, entry in config.get("workflows", {}).items()
-        if ("image" in entry["bindings"]) == has_image
-    ]
-    return compatible[0] if len(compatible) == 1 else None
+    preferred = (
+        "wai_inpaint_basic" if has_mask else
+        "wai_i2i_basic" if has_image else
+        "wai_t2i_basic"
+    )
+    if preferred in candidates:
+        return preferred
+    return next(iter(candidates)) if len(candidates) == 1 else None
 
 
 def image_aware_overrides(
     config: dict, workflow_id: str | None, has_image: bool,
     overrides: dict, denoise: str,
+    control_strength: str = "0.85",
 ) -> dict:
-    """Only apply parameters supported by the selected workflow.
-
-    An I2I workflow without a resize node uses its input image's dimensions;
-    passing GUI width/height would cause the orchestrator to reject it.
-    """
+    """Strip settings unsupported by a selected workflow."""
     candidates = (
         [config["workflows"][workflow_id]] if workflow_id in config["workflows"]
-        else [
-            entry for entry in config.get("workflows", {}).values()
-            if ("image" in entry["bindings"]) == has_image
-        ]
+        else list(core.compatible_workflows(
+            config.get("workflows", {}), image=True if has_image else None,
+        ).values())
     )
     if not candidates:
-        raise core.OrchestratorError("参照画像と一致するワークフローがありません")
+        raise core.OrchestratorError("入力画像に対応するワークフローがありません")
     common = set(candidates[0]["bindings"])
     for entry in candidates[1:]:
         common.intersection_update(entry["bindings"])
     result = {key: value for key, value in overrides.items() if key in common}
-    if "denoise" in common:
-        # User owns strength in GUI, not the LLM.
-        value = float(denoise)
-        core.check_param("denoise", value)
-        result["denoise"] = value
+    for field, raw in (("denoise", denoise), ("control_strength", control_strength)):
+        if field in common:
+            value = float(raw)
+            core.check_param(field, value)
+            result[field] = value
     return result
-
 
 class Application:
     def __init__(self, root: tk.Tk):
@@ -186,6 +201,12 @@ class Application:
         self.denoise = tk.StringVar(value=str(options.get("denoise", 0.53)))
         self.size_hint = tk.StringVar(value="")
         self.reference_image = tk.StringVar(value="")
+        self.mask_image = tk.StringVar(value="")
+        self.pose_image = tk.StringVar(value="")
+        self.pose_mode = tk.StringVar(value=str(options.get("pose_mode", "skeleton")))
+        self.control_strength = tk.StringVar(value=str(options.get("control_strength", 0.85)))
+        self._source_change_lock = False
+        self._last_reference_image = ""
         self.dark_mode = tk.BooleanVar(value=bool(options.get("dark_mode", False)))
         requested_font = options.get("font_size", 12)
         if isinstance(requested_font, bool) or not isinstance(requested_font, int):
