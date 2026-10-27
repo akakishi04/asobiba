@@ -31,8 +31,23 @@ PARAMS = {
     "frames": ("integer", 1, 1000),
     "fps": ("integer", 1, 120),
     "denoise": ("number", 0, 1),
+    "control_strength": ("number", 0, 2),
 }
-ALLOWED_KINDS = {"t2i", "i2i", "t2v", "i2v"}
+ALLOWED_KINDS = {"t2i", "i2i", "t2v", "i2v", "inpaint", "pose"}
+IMAGE_INPUTS = frozenset({"image", "mask", "pose"})
+
+
+def supplied_inputs(image=None, mask=None, pose=None) -> frozenset[str]:
+    return frozenset(name for name, value in (("image", image), ("mask", mask), ("pose", pose)) if value is not None)
+
+
+def compatible_workflows(workflows: dict, image=None, mask=None, pose=None) -> dict:
+    supplied = supplied_inputs(image, mask, pose)
+    return {
+        key: entry for key, entry in workflows.items()
+        if IMAGE_INPUTS.intersection(entry["bindings"]) == supplied
+    }
+
 
 
 def http_json(base: str, route: str, payload: Any = None, timeout: float = 60, allow_empty: bool = False) -> dict:
@@ -115,7 +130,7 @@ def load_config(path: Path) -> dict:
         if not isinstance(key, str) or not key or not isinstance(item, dict):
             raise OrchestratorError("workflows の各項目に識別子とオブジェクトが必要です")
         if item.get("kind") not in ALLOWED_KINDS:
-            raise OrchestratorError(f"{key}.kind は t2i/i2i/t2v/i2v から選択してください")
+            raise OrchestratorError(f"{key}.kind は {', '.join(sorted(ALLOWED_KINDS))} から選択してください")
         if not isinstance(item.get("file"), str) or not item["file"]:
             raise OrchestratorError(f"{key}.file が未指定です")
         bindings = item.get("bindings")
@@ -125,12 +140,12 @@ def load_config(path: Path) -> dict:
         if not isinstance(defaults, dict):
             raise OrchestratorError(f"{key}.defaults はオブジェクトです")
         for field, binding in bindings.items():
-            if field not in PARAMS and field != "image":
+            if field not in PARAMS and field not in IMAGE_INPUTS:
                 raise OrchestratorError(f"未対応の入力名: {key}.{field}")
             if not isinstance(binding, dict) or not isinstance(binding.get("node"), str) or not isinstance(binding.get("input"), str) or not binding["node"] or not binding["input"]:
                 raise OrchestratorError(f"{key}.bindings.{field} は node と input が必要です")
         for field, value in defaults.items():
-            if field not in bindings or field == "image":
+            if field not in bindings or field in IMAGE_INPUTS:
                 raise OrchestratorError(f"{key}.defaults.{field} に対応する入力がありません")
             check_param(field, value)
         workflow_file = (path.resolve().parent / item["file"]).resolve()
@@ -215,7 +230,7 @@ def validate_plan(plan: dict, workflows: dict, has_image: bool) -> tuple[str, di
         raise OrchestratorError("parameters はJSONオブジェクトです")
     merged = dict(entry.get("defaults", {}))
     for name, value in params.items():
-        if name not in binds or name == "image":
+        if name not in binds or name in IMAGE_INPUTS:
             raise OrchestratorError(f"{selected} では {name} を変更できません")
         check_param(name, value)
         merged[name] = value
@@ -224,14 +239,20 @@ def validate_plan(plan: dict, workflows: dict, has_image: bool) -> tuple[str, di
     return selected, merged
 
 
-def render_workflow(workflow: dict, bindings: dict, params: dict, image_name: str | None) -> dict:
+def render_workflow(
+    workflow: dict, bindings: dict, params: dict, image_name: str | None,
+    mask_name: str | None = None, pose_name: str | None = None,
+) -> dict:
     rendered = copy.deepcopy(workflow)
     for name, value in params.items():
         bind = bindings[name]
         rendered[bind["node"]]["inputs"][bind["input"]] = value
-    if image_name is not None:
-        bind = bindings["image"]
-        rendered[bind["node"]]["inputs"][bind["input"]] = image_name
+    for field, value in (("image", image_name), ("mask", mask_name), ("pose", pose_name)):
+        if value is not None:
+            if field not in bindings:
+                raise OrchestratorError(f"ワークフローに {field} 入力がありません")
+            bind = bindings[field]
+            rendered[bind["node"]]["inputs"][bind["input"]] = value
     return rendered
 
 
@@ -348,7 +369,7 @@ def execute(
     config: dict, config_path: Path, request: str, image: Path | None = None,
     dry_run: bool = False, selected_workflow: str | None = None,
     overrides: dict | None = None, progress: Callable[[str], None] | None = None,
-    cancel_event: Any = None,
+    cancel_event: Any = None, mask_image: Path | None = None, pose_image: Path | None = None,
 ) -> dict:
     """Interpret natural language, unload the chosen LLM, then run a fixed workflow.
 
@@ -361,31 +382,33 @@ def execute(
         )
     if not request.strip():
         raise OrchestratorError("自然文の指示を入力してください")
+    for field, path_value in (("参照画像", image), ("マスク", mask_image), ("ポーズ画像", pose_image)):
+        if path_value is not None and not Path(path_value).is_file():
+            raise OrchestratorError(f"{field}が見つかりません: {path_value}")
     if image is not None:
-        image = image.resolve()
-        if not image.is_file():
-            raise OrchestratorError(f"参照画像が見つかりません: {image}")
+        image = Path(image).resolve()
+    if mask_image is not None:
+        mask_image = Path(mask_image).resolve()
+    if pose_image is not None:
+        pose_image = Path(pose_image).resolve()
 
-    # Only show workflows compatible with the presence/absence of an image.
+    # Filter by exact required image sources before asking the LLM.
     # This prevents the LLM from choosing T2I when the user supplied an I2I
     # reference, or choosing I2I with no image to upload.
     if selected_workflow is not None:
         if selected_workflow not in workflows:
             raise OrchestratorError(f"登録されていないワークフローです: {selected_workflow}")
         workflows = {selected_workflow: workflows[selected_workflow]}
-    workflows = {
-        key: entry for key, entry in workflows.items()
-        if ("image" in entry["bindings"]) == (image is not None)
-    }
+    workflows = compatible_workflows(workflows, image, mask_image, pose_image)
     if not workflows:
         if selected_workflow is not None:
             raise OrchestratorError(
-                f"{selected_workflow} と参照画像の有無が一致しません。"
-                "I2Iでは参照画像が必要、T2Iでは参照画像を指定しないでください"
+                f"{selected_workflow} と参照画像・マスク・ポーズ画像の指定が一致しません"
             )
         raise OrchestratorError(
-            "参照画像の有無に対応するワークフローが未登録です。"
-            "まず適切なAPI形式JSONを登録してください"
+            "指定された入力に対応するワークフローが未登録です。"
+            "T2Iは入力画像なし、I2Iは参照画像、部分修正は画像とマスク、"
+            "ポーズ生成はポーズ画像を指定してください"
         )
 
     def note(message: str) -> None:
@@ -423,7 +446,7 @@ def execute(
     selection = workflows[workflow_id]
     if overrides:
         for name, value in overrides.items():
-            if name not in selection["bindings"] or name == "image":
+            if name not in selection["bindings"] or name in IMAGE_INPUTS:
                 raise OrchestratorError(f"指定したワークフローでは {name} を変更できません")
             check_param(name, value)
             params[name] = value
@@ -440,7 +463,11 @@ def execute(
 
     check_cancelled()
     uploaded = comfy.upload_image(image) if image is not None else None
-    rendered = render_workflow(template, selection["bindings"], params, uploaded)
+    uploaded_mask = comfy.upload_image(mask_image) if mask_image is not None else None
+    uploaded_pose = comfy.upload_image(pose_image) if pose_image is not None else None
+    rendered = render_workflow(
+        template, selection["bindings"], params, uploaded, uploaded_mask, uploaded_pose,
+    )
     check_cancelled()
     note("ComfyUI: キューに投入")
     prompt_id = comfy.submit(rendered)
@@ -458,6 +485,7 @@ def execute_saved(
     config: dict, config_path: Path, workflow_id: str, parameters: dict,
     reference_image: Path | None = None, new_seed: bool = False,
     progress: Callable[[str], None] | None = None, cancel_event: Any = None,
+    mask_image: Path | None = None, pose_image: Path | None = None,
 ) -> dict:
     """Replay exact validated workflow inputs, without invoking or loading an LLM.
 
@@ -470,11 +498,13 @@ def execute_saved(
         raise OrchestratorError("保存された生成パラメータが不正です")
     selected = config["workflows"][workflow_id]
     bindings = selected["bindings"]
-    has_image = "image" in bindings
-    if has_image != (reference_image is not None):
-        raise OrchestratorError("I2Iの再生成には保存された参照画像が必要です")
-    if reference_image is not None and not reference_image.is_file():
-        raise OrchestratorError(f"参照画像がありません: {reference_image}")
+    required = IMAGE_INPUTS.intersection(bindings)
+    if required != supplied_inputs(reference_image, mask_image, pose_image):
+        raise OrchestratorError("再生成に必要な参照画像・マスク・ポーズ画像が揃っていません")
+    for field, value in (("参照画像", reference_image), ("マスク", mask_image), ("ポーズ画像", pose_image)):
+        if value is not None and not Path(value).is_file():
+            raise OrchestratorError(f"{field}がありません: {value}")
+    has_image = reference_image is not None
     if "seed" in bindings and not new_seed and "seed" not in parameters:
         raise OrchestratorError("元のSeedが履歴にありません。同条件の再生成はできません")
 
@@ -496,9 +526,11 @@ def execute_saved(
     if progress:
         progress("保存済みのプロンプトと生成設定を復元（LLMは使用しません）")
     uploaded = comfy.upload_image(reference_image) if has_image else None
+    uploaded_mask = comfy.upload_image(mask_image) if mask_image is not None else None
+    uploaded_pose = comfy.upload_image(pose_image) if pose_image is not None else None
     if cancel_event is not None and cancel_event.is_set():
         raise OrchestratorError("再生成開始前に中止しました")
-    rendered = render_workflow(template, bindings, params, uploaded)
+    rendered = render_workflow(template, bindings, params, uploaded, uploaded_mask, uploaded_pose)
     if progress:
         progress("ComfyUI: 保存設定で再生成を開始")
     prompt_id = comfy.submit(rendered)
