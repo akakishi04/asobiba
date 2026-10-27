@@ -1017,15 +1017,17 @@ class Application:
             messagebox.showwarning("モデル未設定", "「モデルを更新」からLM Studioのモデルを選択してください。")
             return
         image = Path(self.reference_image.get()).expanduser() if self.reference_image.get() else None
-        selected = self.workflow.get()
-        overrides = self._overrides()
-        selected = resolve_generation_workflow(
-            self.config, selected, image is not None
-        )
+        mask = Path(self.mask_image.get()).expanduser() if self.mask_image.get() else None
+        pose = Path(self.pose_image.get()).expanduser() if self.pose_image.get() else None
+        selected = self._active_workflow()
+        if selected is None:
+            messagebox.showerror("生成設定エラー", "画像・マスク・ポーズの指定に対応するワークフローがありません")
+            return
         try:
+            overrides = self._overrides()
             overrides = image_aware_overrides(
                 self.config, selected, image is not None,
-                overrides, self.denoise.get(),
+                overrides, self.denoise.get(), self.control_strength.get(),
             )
         except (ValueError, core.OrchestratorError) as exc:
             messagebox.showerror("生成設定エラー", str(exc))
@@ -1040,7 +1042,7 @@ class Application:
                     cfg, CONFIG, prompt, image=image, dry_run=dry_run,
                     selected_workflow=selected, overrides=overrides,
                     progress=lambda line: self.messages.put(("progress", line)),
-                    cancel_event=self.stop_event,
+                    cancel_event=self.stop_event, mask_image=mask, pose_image=pose,
                 )
                 images = []
                 if not dry_run:
@@ -1051,7 +1053,9 @@ class Application:
                         except Exception as exc:
                             self.messages.put(("progress", f"画像取得エラー: {exc}"))
                 history_id = (
-                    self._record_completed_generation(result, images, prompt, image)
+                    self._record_completed_generation(
+                        result, images, prompt, image, mask, pose,
+                    )
                     if not dry_run else None
                 )
                 self.messages.put(("done", (result, images, history_id)))
