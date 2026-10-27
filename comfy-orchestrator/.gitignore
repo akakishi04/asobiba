@@ -8,3 +8,6 @@ __pycache__/
 .venv/
 .env
 *.log
+
+# SQLite generation history, cached original references and WAL sidecars
+data/
