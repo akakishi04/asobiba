@@ -171,7 +171,7 @@ class LMStudio:
         )
         user_text = (
             f"Available workflows: {json.dumps(catalog, ensure_ascii=False)}\n"
-            f"Reference image routed to ComfyUI: {'yes' if image else 'no'}\n"
+            f"Reference image routed to ComfyUI: {'yes' if image and not composition_only else 'no'}\n"
             f"Reference image visible to the LLM: "
             f"{'yes' if self._has_visual_input else 'no'}\n"
             f"Reference role: "
