@@ -110,6 +110,89 @@ class CompositionVisionTests(unittest.TestCase):
             self.assertEqual(result["workflow_id"], "wai_pose_detect")
             self.assertEqual(seen, [(photo.resolve(), ("wai_pose_detect",), True)])
 
+    def test_llm_only_composition_image_generates_t2i_without_comfy_image_upload(self):
+        source_seen = []
+        self.cfg["comfyui"]["free_before_llm"] = False
+
+        class FakeLM:
+            def __init__(self, settings):
+                self.settings = settings
+
+            def interpret(self, text, workflows, image, progress=None, reference_role=None):
+                source_seen.append((tuple(workflows), image, reference_role))
+                return {
+                    "workflow_id": "wai_t2i_basic",
+                    "parameters": {
+                        "positive_prompt": "1girl, low angle, full body, sitting, centered",
+                    },
+                }
+
+        with tempfile.TemporaryDirectory() as folder:
+            composition = Path(folder) / "pose-study.png"
+            composition.write_bytes(b"reference only")
+            with patch.object(lmstudio, "LMStudio", FakeLM):
+                with patch.object(core, "ComfyUI") as mocked:
+                    runner = mocked.return_value
+                    runner.submit.return_value = "t2i-prompt"
+                    runner.wait.return_value = {}
+                    result = core.execute(
+                        self.cfg, ROOT / "config.example.json",
+                        "このポーズと構図で白い服の少女を描いて",
+                        composition_image=composition, dry_run=False,
+                    )
+                    runner.upload_image.assert_not_called()
+                    rendered = runner.submit.call_args.args[0]
+        self.assertEqual(
+            source_seen, [(("wai_t2i_basic",), composition.resolve(), "composition")]
+        )
+        self.assertEqual(result["workflow_id"], "wai_t2i_basic")
+        self.assertEqual(rendered["10"]["class_type"], "EmptyLatentImage")
+        self.assertEqual(rendered["8"]["inputs"]["text"],
+                         "1girl, low angle, full body, sitting, centered")
+
+    def test_composition_only_system_does_not_copy_manikin_appearance(self):
+        self.answer["workflow_id"] = "wai_t2i_basic"
+        calls = []
+
+        def fake_request(settings, route, payload=None):
+            calls.append((route, payload))
+            if route == "/v1/chat/completions":
+                return {"choices": [
+                    {"message": {"content": json.dumps(self.answer)}}
+                ]}
+            if route == "/api/v1/models/unload":
+                return {"instance_id": "v-instance"}
+            raise AssertionError(route)
+
+        with tempfile.TemporaryDirectory() as folder:
+            image = Path(folder) / "designdoll.png"
+            image.write_bytes(b"image")
+            with patch.object(
+                lmstudio.LMStudio, "_ensure_loaded", return_value="v-instance"
+            ), patch.object(lmstudio, "_request", side_effect=fake_request):
+                lmstudio.LMStudio(self.cfg["llm"]).interpret(
+                    "同じ構図でアニメイラストに",
+                    {"wai_t2i_basic": self.cfg["workflows"]["wai_t2i_basic"]},
+                    image, reference_role="composition",
+                )
+        payload = calls[0][1]
+        system = payload["messages"][0]["content"]
+        self.assertIn("COMPOSITION-ONLY reference", system)
+        self.assertIn("do NOT copy character identity", system)
+        self.assertIn("Reference role: composition only for new T2I",
+                      payload["messages"][1]["content"][0]["text"])
+
+    def test_composition_image_requires_vision_toggle(self):
+        self.cfg["llm"]["send_reference_to_llm"] = False
+        with tempfile.TemporaryDirectory() as folder:
+            image = Path(folder) / "reference.png"
+            image.write_bytes(b"reference")
+            with self.assertRaisesRegex(core.OrchestratorError, "構図解析"):
+                core.execute(
+                    self.cfg, ROOT / "config.example.json",
+                    "同じ構図で", composition_image=image, dry_run=True,
+                )
+
     def test_known_text_only_model_is_rejected_before_loading(self):
         client = lmstudio.LMStudio({
             **self.cfg["llm"], "model": "plain-text-model",
