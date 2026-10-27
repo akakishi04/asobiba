@@ -681,6 +681,8 @@ class Application:
             and selected[0].workflow_id in self.config["workflows"]
             and selected[0].first_image is not None
             and (selected[0].reference_image is None or selected[0].reference_image.is_file())
+            and (selected[0].mask_image is None or selected[0].mask_image.is_file())
+            and (selected[0].pose_image is None or selected[0].pose_image.is_file())
             and not self.working
         )
         state = "normal" if can_replay else "disabled"
@@ -738,9 +740,26 @@ class Application:
             return
         self.prompt.delete("1.0", "end")
         self.prompt.insert("1.0", entry.request_text)
-        self.workflow.set(entry.workflow_id)
-        reference = entry.reference_image
-        self.reference_image.set(str(reference) if reference and reference.is_file() else "")
+        self._source_change_lock = True
+        try:
+            self.workflow.set(entry.workflow_id)
+            reference = entry.reference_image
+            self.reference_image.set(
+                str(reference) if reference and reference.is_file() else ""
+            )
+            if hasattr(self, "mask_image"):
+                self.mask_image.set(
+                    str(entry.mask_image) if entry.mask_image and entry.mask_image.is_file() else ""
+                )
+            if hasattr(self, "pose_image"):
+                self.pose_image.set(
+                    str(entry.pose_image) if entry.pose_image and entry.pose_image.is_file() else ""
+                )
+            if hasattr(self, "pose_mode"):
+                self.pose_mode.set("photo" if entry.workflow_id == "wai_pose_detect" else "skeleton")
+            self._last_reference_image = self.reference_image.get()
+        finally:
+            self._source_change_lock = False
         for key, variable in (
             ("width", self.width), ("height", self.height),
             ("steps", self.steps), ("cfg", self.cfg),
@@ -779,7 +798,8 @@ class Application:
 
     def _record_completed_generation(
         self, result: dict, images: list[Path], request_text: str,
-        source_image: Path | None,
+        source_image: Path | None, mask_image: Path | None = None,
+        pose_image: Path | None = None,
     ) -> str | None:
         if not images:
             return None
@@ -793,6 +813,8 @@ class Application:
                 parameters=result["parameters"],
                 images=images,
                 reference_image=source_image,
+                mask_image=mask_image,
+                pose_image=pose_image,
             )
             return entry.id
         except (HistoryError, OSError, ValueError, sqlite3.Error) as exc:
@@ -820,9 +842,14 @@ class Application:
         ):
             messagebox.showwarning("再生成", "再生成可能な履歴を1件選択してください")
             return
-        if entry.reference_image is not None and not entry.reference_image.is_file():
-            messagebox.showerror("再生成", "履歴に保存した元画像が見つかりません")
-            return
+        for name, source in (
+            ("元画像", entry.reference_image),
+            ("部分修正マスク", entry.mask_image),
+            ("ポーズ参照", entry.pose_image),
+        ):
+            if source is not None and not source.is_file():
+                messagebox.showerror("再生成", f"履歴に保存した{name}が見つかりません")
+                return
         if not self._save_settings():
             return
         cfg = copy.deepcopy(self.config)
@@ -840,6 +867,7 @@ class Application:
                     new_seed=new_seed,
                     progress=lambda line: self.messages.put(("progress", line)),
                     cancel_event=self.stop_event,
+                    mask_image=entry.mask_image, pose_image=entry.pose_image,
                 )
                 images = []
                 for item in output_images(result):
@@ -853,6 +881,7 @@ class Application:
                         self.messages.put(("progress", f"画像取得エラー: {exc}"))
                 history_id = self._record_completed_generation(
                     result, images, entry.request_text, entry.reference_image,
+                    entry.mask_image, entry.pose_image,
                 )
                 self.messages.put(("done", (result, images, history_id)))
             except Exception as exc:
