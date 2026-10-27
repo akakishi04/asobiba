@@ -135,6 +135,12 @@ class RegisteredI2ITests(unittest.TestCase):
             def _update_generation_controls(self):
                 self.refreshed += 1
 
+            def _active_workflow(self):
+                return gui.resolve_generation_workflow(
+                    self.config, self.workflow.get(),
+                    bool(self.reference_image.get()),
+                )
+
         fake = FakeGui(self.config)
         fake.reference_image.set("C:/images/portrait.png")
         gui.Application._on_reference_image_changed(fake)
