@@ -126,6 +126,8 @@ def load_config(path: Path) -> dict:
         unload = config["llm"].get("unload_after_inference", True)
         if not isinstance(unload, bool):
             raise OrchestratorError("llm.unload_after_inference は真偽値です")
+        if not isinstance(config["llm"].get("send_reference_to_llm", False), bool):
+            raise OrchestratorError("llm.send_reference_to_llm は真偽値です")
     for key, item in config["workflows"].items():
         if not isinstance(key, str) or not key or not isinstance(item, dict):
             raise OrchestratorError("workflows の各項目に識別子とオブジェクトが必要です")
