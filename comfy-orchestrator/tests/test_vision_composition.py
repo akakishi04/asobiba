@@ -181,6 +181,10 @@ class CompositionVisionTests(unittest.TestCase):
         self.assertIn("do NOT copy character identity", system)
         self.assertIn("Reference role: composition only (LLM reference)",
                       payload["messages"][1]["content"][0]["text"])
+        self.assertIn(
+            "Reference image routed to ComfyUI: no",
+            payload["messages"][1]["content"][0]["text"],
+        )
 
     def test_composition_image_requires_vision_toggle(self):
         self.cfg["llm"]["send_reference_to_llm"] = False
