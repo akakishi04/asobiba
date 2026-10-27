@@ -105,6 +105,7 @@ class LMStudio:
     def interpret(
         self, text: str, workflows: dict, image: Path | None,
         progress: Callable[[str], None] | None = None,
+        reference_role: str | None = None,
     ) -> dict:
         if not isinstance(self.model, str) or not self.model.strip() or self.model == "SELECT_IN_GUI":
             raise OrchestratorError("LM Studioのモデルを選択してください")
@@ -114,6 +115,13 @@ class LMStudio:
         )
         pose_only = bool(workflows) and all(
             entry.get("kind") == "pose" for entry in workflows.values()
+        )
+        composition_only = (
+            reference_role == "composition"
+            or (
+                image is not None and not pose_only
+                and all("image" not in entry["bindings"] for entry in workflows.values())
+            )
         )
         catalog = [
             {"id": key, "kind": entry["kind"], "description": entry.get("description", ""),
@@ -147,6 +155,11 @@ class LMStudio:
                 "Do not claim pixel-accurate geometry or infer occluded joints. "
                 "Respect requested changes and preserve what the user wants preserved. "
                 + (
+                    "This is a COMPOSITION-ONLY reference for a new text-to-image illustration. "
+                    "Use its framing, camera, subject placement and pose as textual guidance; "
+                    "do NOT copy character identity, textures, clothing, colors, or background "
+                    "unless the user explicitly requests them."
+                    if composition_only else
                     "This is a POSE reference. Describe the pose, framing and viewpoint ONLY; "
                     "do not borrow the mannequin's material, color, design, clothes, or background."
                     if pose_only else
@@ -161,7 +174,8 @@ class LMStudio:
             f"Reference image routed to ComfyUI: {'yes' if image else 'no'}\n"
             f"Reference image visible to the LLM: "
             f"{'yes' if self._has_visual_input else 'no'}\n"
-            f"Reference role: {'pose and camera only' if pose_only else 'composition of image to edit'}\n"
+            f"Reference role: "
+            f"{'composition only for new T2I' if composition_only else 'pose and camera only' if pose_only else 'composition of image to edit'}\n"
             f"User request: {text}"
         )
         message: dict[str, Any] = {"role": "user", "content": user_text}
