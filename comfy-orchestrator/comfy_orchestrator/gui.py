@@ -177,6 +177,24 @@ def initial_window_bounds(screen_width: int, screen_height: int) -> tuple[int, i
     return width, height, x, y, min_width, min_height
 
 
+def preview_subsample(
+    image_width: int, image_height: int, viewport_width: int,
+    viewport_height: int, maximum: int,
+) -> int:
+    """Integer downscale factor fitting an image into its available viewport.
+
+    Tk PhotoImage uses integer subsampling. Small or still-unmapped viewports
+    fall back to a conservative capped preview size.
+    """
+    safe_width = max(80, min(maximum, viewport_width if viewport_width >= 40 else maximum))
+    safe_height = max(80, min(maximum, viewport_height if viewport_height >= 40 else maximum))
+    return max(
+        1,
+        (image_width + safe_width - 1) // safe_width,
+        (image_height + safe_height - 1) // safe_height,
+    )
+
+
 class Application:
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -289,7 +307,9 @@ class Application:
         footer.pack(side="bottom", fill="x")
         status_bar = ttk.Frame(footer)
         status_bar.pack(side="bottom", fill="x", pady=(3, 0))
-        ttk.Label(status_bar, textvariable=self.status).pack(side="left", fill="x", expand=True)
+        ttk.Label(
+            status_bar, textvariable=self.status, width=40, anchor="w",
+        ).pack(side="left", fill="x", expand=True)
         self.logs_visible = False
         self.log_toggle = ttk.Button(
             status_bar, text="ログを表示", command=self._toggle_logs,
@@ -836,7 +856,10 @@ class Application:
             return
         try:
             photo = tk.PhotoImage(file=str(image))
-            scale = max(1, (max(photo.width(), photo.height()) + 279) // 280)
+            scale = preview_subsample(
+                photo.width(), photo.height(),
+                self.history_image.winfo_width(), self.history_image.winfo_height(), 220,
+            )
             self.history_preview_photo = photo.subsample(scale, scale)
             self.history_image.configure(image=self.history_preview_photo, text="")
         except (tk.TclError, OSError):
@@ -1279,7 +1302,10 @@ class Application:
     def _display_image(self, path: Path) -> None:
         try:
             photo = tk.PhotoImage(file=str(path))
-            scale = max(1, (max(photo.width(), photo.height()) + 439) // 440)
+            scale = preview_subsample(
+                photo.width(), photo.height(),
+                self.image_label.winfo_width(), self.image_label.winfo_height(), 400,
+            )
             self.preview_photo = photo.subsample(scale, scale)
             self.image_label.configure(image=self.preview_photo, text="")
         except tk.TclError:
