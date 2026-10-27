@@ -292,11 +292,11 @@ class Application:
         options_frame = ttk.Frame(connection)
         options_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(6, 0))
         ttk.Checkbutton(
-            options_frame, text="解釈後にLM Studioの選択モデルをアンロード（推奨）",
+            options_frame, text="解釈後にLLMを解放（推奨）",
             variable=self.unload_llm
         ).pack(side="left", padx=(0, 22))
         ttk.Checkbutton(
-            options_frame, text="解釈前にComfyUIの空きモデルを解放",
+            options_frame, text="解釈前にComfyUIを解放",
             variable=self.free_comfy
         ).pack(side="left")
         ttk.Button(options_frame, text="設定を保存", command=self._save_settings).pack(side="right")
@@ -392,42 +392,62 @@ class Application:
         # scrollable for longer prompts; IME composition is handled natively.
         self.prompt.pack(fill="x", expand=False, pady=(0, 10))
 
-        settings = ttk.LabelFrame(self.options_form, text="生成設定（初期値は軽量寄り）", padding=9)
+        settings = ttk.LabelFrame(
+            self.options_form, text="生成パラメータ", padding=8,
+        )
         settings.pack(fill="x", pady=(0, 8))
-        for i in range(6):
-            settings.columnconfigure(i, weight=1 if i % 2 else 0)
-        ttk.Label(settings, text="ワークフロー").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        # Two setting pairs per row fit narrow split panes much better than six columns.
+        for col in (1, 3):
+            settings.columnconfigure(col, weight=1)
+
+        ttk.Label(settings, text="ワークフロー").grid(
+            row=0, column=0, sticky="w", padx=(0, 6)
+        )
         self.workflow_box = ttk.Combobox(
             settings, textvariable=self.workflow,
-            values=["自動", *self.config.get("workflows", {}).keys()], state="readonly",
+            values=["自動", *self.config.get("workflows", {}).keys()],
+            state="readonly",
         )
-        self.workflow_box.grid(row=0, column=1, columnspan=5, sticky="ew", pady=4)
-        self.workflow_box.bind("<<ComboboxSelected>>", lambda _e: self._update_generation_controls())
+        self.workflow_box.grid(
+            row=0, column=1, columnspan=3, sticky="ew", pady=4,
+        )
+        self.workflow_box.bind(
+            "<<ComboboxSelected>>", lambda _e: self._update_generation_controls()
+        )
         ttk.Label(settings, text="幅").grid(row=1, column=0, sticky="w", padx=(0, 5))
-        self.width_entry = ttk.Entry(settings, textvariable=self.width, width=7)
+        self.width_entry = ttk.Entry(settings, textvariable=self.width, width=8)
         self.width_entry.grid(row=1, column=1, sticky="ew", padx=(0, 8))
         ttk.Label(settings, text="高さ").grid(row=1, column=2, sticky="w", padx=(0, 5))
-        self.height_entry = ttk.Entry(settings, textvariable=self.height, width=7)
-        self.height_entry.grid(row=1, column=3, sticky="ew", padx=(0, 8))
-        ttk.Label(settings, text="Steps").grid(row=1, column=4, sticky="w", padx=(0, 5))
-        ttk.Entry(settings, textvariable=self.steps, width=7).grid(row=1, column=5, sticky="ew")
-        ttk.Label(settings, text="CFG").grid(row=2, column=0, sticky="w")
-        ttk.Entry(settings, textvariable=self.cfg, width=7).grid(row=2, column=1, sticky="ew", padx=(0, 8))
-        ttk.Label(settings, text="Seed").grid(row=2, column=2, sticky="w")
-        ttk.Entry(settings, textvariable=self.seed).grid(row=2, column=3, columnspan=3, sticky="ew")
-        ttk.Label(settings, text="Denoise (I2I)").grid(row=3, column=0, sticky="w")
-        self.denoise_entry = ttk.Entry(settings, textvariable=self.denoise, width=7)
-        self.denoise_entry.grid(row=3, column=1, sticky="ew", padx=(0, 8))
-        ttk.Label(settings, textvariable=self.size_hint, style="Muted.TLabel").grid(
-            row=3, column=2, columnspan=4, sticky="w"
+        self.height_entry = ttk.Entry(settings, textvariable=self.height, width=8)
+        self.height_entry.grid(row=1, column=3, sticky="ew")
+
+        ttk.Label(settings, text="Steps").grid(row=2, column=0, sticky="w")
+        ttk.Entry(settings, textvariable=self.steps, width=8).grid(
+            row=2, column=1, sticky="ew", padx=(0, 8),
         )
-        ttk.Label(settings, text="ポーズ強度").grid(row=4, column=0, sticky="w")
-        self.strength_entry = ttk.Entry(settings, textvariable=self.control_strength, width=7)
-        self.strength_entry.grid(row=4, column=1, sticky="ew", padx=(0, 8))
+        ttk.Label(settings, text="CFG").grid(row=2, column=2, sticky="w")
+        ttk.Entry(settings, textvariable=self.cfg, width=8).grid(
+            row=2, column=3, sticky="ew",
+        )
+        ttk.Label(settings, text="Seed").grid(row=3, column=0, sticky="w")
+        ttk.Entry(settings, textvariable=self.seed).grid(
+            row=3, column=1, columnspan=3, sticky="ew",
+        )
+        ttk.Label(settings, text="Denoise (I2I)").grid(row=4, column=0, sticky="w")
+        self.denoise_entry = ttk.Entry(settings, textvariable=self.denoise, width=8)
+        self.denoise_entry.grid(row=4, column=1, sticky="ew", padx=(0, 8))
+        ttk.Label(settings, text="ポーズ強度").grid(row=4, column=2, sticky="w")
+        self.strength_entry = ttk.Entry(
+            settings, textvariable=self.control_strength, width=8,
+        )
+        self.strength_entry.grid(row=4, column=3, sticky="ew")
         ttk.Label(
-            settings, text="Seed空欄＝毎回ランダム。画像なしはT2I／マスク指定は部分修正。",
+            settings, textvariable=self.size_hint, style="Muted.TLabel",
+        ).grid(row=5, column=0, columnspan=4, sticky="w", pady=(4, 0))
+        ttk.Label(
+            settings, text="Seed空欄＝ランダム。画像なしはT2I／マスク指定は部分修正。",
             style="Muted.TLabel",
-        ).grid(row=5, column=0, columnspan=6, sticky="w", pady=(4, 0))
+        ).grid(row=6, column=0, columnspan=4, sticky="w", pady=(3, 0))
 
         image_row = ttk.Frame(self.options_form)
         image_row.pack(fill="x", pady=(0, 12))
