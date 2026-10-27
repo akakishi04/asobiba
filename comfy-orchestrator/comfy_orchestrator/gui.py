@@ -485,37 +485,85 @@ class Application:
         self.prompt.configure(font=("Meiryo UI", size))
         sync_native_ime_font(self.prompt)
 
+    def _active_workflow(self) -> str | None:
+        get = lambda name: bool(getattr(self, name, None) and getattr(self, name).get().strip())
+        pose_mode = getattr(self, "pose_mode", None)
+        return resolve_generation_workflow(
+            self.config, self.workflow.get(),
+            get("reference_image"), get("mask_image"), get("pose_image"),
+            pose_mode.get() if pose_mode is not None else "skeleton",
+        )
+
     def _on_reference_image_changed(self) -> None:
-        """Switch between the sole T2I/I2I workflow when an image is added or removed."""
-        has_image = bool(self.reference_image.get().strip())
-        chosen = self.workflow.get()
-        if chosen != "自動":
-            entry = self.config["workflows"].get(chosen)
-            if entry and ("image" in entry["bindings"]) != has_image:
-                replacement = [
-                    key for key, value in self.config["workflows"].items()
-                    if ("image" in value["bindings"]) == has_image
-                ]
-                if len(replacement) == 1:
-                    self.workflow.set(replacement[0])
+        """Reference removed -> T2I; reference added -> I2I automatically."""
+        if getattr(self, "_source_change_lock", False):
+            return
+        self._source_change_lock = True
+        try:
+            source = self.reference_image.get().strip()
+            previous = getattr(self, "_last_reference_image", "")
+            self._last_reference_image = source
+            if hasattr(self, "mask_image") and source != previous:
+                self.mask_image.set("")
+            if source and hasattr(self, "pose_image"):
+                self.pose_image.set("")
+        finally:
+            self._source_change_lock = False
+        chosen = self._active_workflow()
+        if chosen:
+            self.workflow.set(chosen)
+        self._update_generation_controls()
+
+    def _on_pose_image_changed(self) -> None:
+        if self._source_change_lock:
+            return
+        self._source_change_lock = True
+        try:
+            if self.pose_image.get().strip():
+                self.reference_image.set("")
+                self.mask_image.set("")
+                self._last_reference_image = ""
+        finally:
+            self._source_change_lock = False
+        chosen = self._active_workflow()
+        if chosen:
+            self.workflow.set(chosen)
+        self._update_generation_controls()
+
+    def _on_mask_image_changed(self) -> None:
+        if self._source_change_lock:
+            return
+        chosen = self._active_workflow()
+        if chosen:
+            self.workflow.set(chosen)
         self._update_generation_controls()
 
     def _update_generation_controls(self) -> None:
-        """Show I2I-only denoise and indicate that image size comes from the input."""
-        workflow_id = resolve_generation_workflow(
-            self.config, self.workflow.get(), bool(self.reference_image.get().strip())
-        )
+        """Disable only the settings that are unsupported by the active mode."""
+        workflow_id = self._active_workflow()
         bindings = self.config["workflows"].get(workflow_id, {}).get("bindings", {})
-        is_image = "image" in bindings
+        uses_source_image = "image" in bindings
         for entry in (self.width_entry, self.height_entry):
-            entry.configure(state="disabled" if is_image else "normal")
+            entry.configure(state="disabled" if uses_source_image else "normal")
         self.denoise_entry.configure(
             state="normal" if "denoise" in bindings else "disabled"
         )
-        self.size_hint.set(
-            "I2Iは元画像の解像度を使用" if is_image
-            else "T2Iは指定サイズで生成"
+        if hasattr(self, "strength_entry"):
+            self.strength_entry.configure(
+                state="normal" if "control_strength" in bindings else "disabled"
+            )
+        if hasattr(self, "mask_button"):
+            self.mask_button.configure(
+                state="normal" if self.reference_image.get().strip() else "disabled"
+            )
+        hint = (
+            "ポーズを参照して生成" if "pose" in bindings else
+            "マスクの白い部分だけ変更" if "mask" in bindings else
+            "I2Iは元画像サイズ" if uses_source_image else
+            "参照画像なし：自動でT2I"
         )
+        self.size_hint.set(hint)
+
 
     def _log(self, text: str) -> None:
         self.log.configure(state="normal")
