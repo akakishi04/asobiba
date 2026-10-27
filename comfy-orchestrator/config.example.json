@@ -89,6 +89,153 @@
         "cfg": 5.5,
         "denoise": 0.53
       }
+    },
+    "wai_inpaint_basic": {
+      "kind": "inpaint",
+      "description": "元の絵の白マスク指定部分だけを描き直す部分修正（Illustrious SDXL）。マスク外のピクセルは合成で保護。素材の色や形を保つよう修正内容を明確に。",
+      "file": "workflows/wai_inpaint_basic.api.json",
+      "bindings": {
+        "positive_prompt": {
+          "node": "8",
+          "input": "text"
+        },
+        "negative_prompt": {
+          "node": "5",
+          "input": "text"
+        },
+        "image": {
+          "node": "16",
+          "input": "image"
+        },
+        "mask": {
+          "node": "19",
+          "input": "image"
+        },
+        "steps": {
+          "node": "11",
+          "input": "steps"
+        },
+        "cfg": {
+          "node": "11",
+          "input": "cfg"
+        },
+        "seed": {
+          "node": "11",
+          "input": "seed"
+        },
+        "denoise": {
+          "node": "11",
+          "input": "denoise"
+        }
+      },
+      "defaults": {
+        "negative_prompt": "low quality, blurry, bad anatomy, extra fingers",
+        "steps": 28,
+        "cfg": 5.5,
+        "denoise": 0.65
+      }
+    },
+    "wai_pose_skeleton": {
+      "kind": "pose",
+      "description": "OpenPose形式の骨格画像のみ参照してIllustrious SDXLで新しいイラストを生成。骨格以外の外観を画像から引き継がない。追加のSDXL ControlNetが必要。",
+      "file": "workflows/wai_pose_skeleton.api.json",
+      "bindings": {
+        "positive_prompt": {
+          "node": "8",
+          "input": "text"
+        },
+        "negative_prompt": {
+          "node": "5",
+          "input": "text"
+        },
+        "pose": {
+          "node": "21",
+          "input": "image"
+        },
+        "width": {
+          "node": "10",
+          "input": "width"
+        },
+        "height": {
+          "node": "10",
+          "input": "height"
+        },
+        "steps": {
+          "node": "11",
+          "input": "steps"
+        },
+        "cfg": {
+          "node": "11",
+          "input": "cfg"
+        },
+        "seed": {
+          "node": "11",
+          "input": "seed"
+        },
+        "control_strength": {
+          "node": "23",
+          "input": "strength"
+        }
+      },
+      "defaults": {
+        "negative_prompt": "low quality, blurry, bad anatomy, extra fingers",
+        "width": 768,
+        "height": 768,
+        "steps": 28,
+        "cfg": 5.5,
+        "control_strength": 0.85
+      }
+    },
+    "wai_pose_detect": {
+      "kind": "pose",
+      "description": "DesignDollなどの通常の人物画像からDWPoseで骨格を検出し、そのポーズだけ使って新しいイラストを生成。comfyui_controlnet_auxおよびSDXL ControlNetが必要。",
+      "file": "workflows/wai_pose_detect.api.json",
+      "bindings": {
+        "positive_prompt": {
+          "node": "8",
+          "input": "text"
+        },
+        "negative_prompt": {
+          "node": "5",
+          "input": "text"
+        },
+        "pose": {
+          "node": "21",
+          "input": "image"
+        },
+        "width": {
+          "node": "10",
+          "input": "width"
+        },
+        "height": {
+          "node": "10",
+          "input": "height"
+        },
+        "steps": {
+          "node": "11",
+          "input": "steps"
+        },
+        "cfg": {
+          "node": "11",
+          "input": "cfg"
+        },
+        "seed": {
+          "node": "11",
+          "input": "seed"
+        },
+        "control_strength": {
+          "node": "23",
+          "input": "strength"
+        }
+      },
+      "defaults": {
+        "negative_prompt": "low quality, blurry, bad anatomy, extra fingers",
+        "width": 768,
+        "height": 768,
+        "steps": 28,
+        "cfg": 5.5,
+        "control_strength": 0.85
+      }
     }
   },
   "llm": {
