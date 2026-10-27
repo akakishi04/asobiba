@@ -448,3 +448,64 @@ def execute(
         "prompt_id": prompt_id, "outputs": history.get("outputs", {}),
         "comfy_status": history.get("status", {}),
     }
+
+
+def execute_saved(
+    config: dict, config_path: Path, workflow_id: str, parameters: dict,
+    reference_image: Path | None = None, new_seed: bool = False,
+    progress: Callable[[str], None] | None = None, cancel_event: Any = None,
+) -> dict:
+    """Replay exact validated workflow inputs, without invoking or loading an LLM.
+
+    With new_seed=True only seed changes; for exact replay the original seed
+    and prompts are reused byte-for-byte. Does not stop other ComfyUI jobs.
+    """
+    if workflow_id not in config["workflows"]:
+        raise OrchestratorError(f"保存されたワークフローが未登録です: {workflow_id}")
+    if not isinstance(parameters, dict):
+        raise OrchestratorError("保存された生成パラメータが不正です")
+    selected = config["workflows"][workflow_id]
+    bindings = selected["bindings"]
+    has_image = "image" in bindings
+    if has_image != (reference_image is not None):
+        raise OrchestratorError("I2Iの再生成には保存された参照画像が必要です")
+    if reference_image is not None and not reference_image.is_file():
+        raise OrchestratorError(f"参照画像がありません: {reference_image}")
+    if "seed" in bindings and not new_seed and "seed" not in parameters:
+        raise OrchestratorError("元のSeedが履歴にありません。同条件の再生成はできません")
+
+    copied = dict(parameters)
+    if new_seed and "seed" in bindings:
+        copied["seed"] = secrets.randbits(32)
+    workflow_id, params = validate_plan(
+        {"workflow_id": workflow_id, "parameters": copied},
+        {workflow_id: selected}, has_image,
+    )
+    template = load_workflow(
+        (config_path.resolve().parent / selected["file"]).resolve(),
+        bindings,
+    )
+    if cancel_event is not None and cancel_event.is_set():
+        raise OrchestratorError("再生成開始前に中止しました")
+
+    comfy = ComfyUI(config["comfyui"])
+    if progress:
+        progress("保存済みのプロンプトと生成設定を復元（LLMは使用しません）")
+    uploaded = comfy.upload_image(reference_image) if has_image else None
+    if cancel_event is not None and cancel_event.is_set():
+        raise OrchestratorError("再生成開始前に中止しました")
+    rendered = render_workflow(template, bindings, params, uploaded)
+    if progress:
+        progress("ComfyUI: 保存設定で再生成を開始")
+    prompt_id = comfy.submit(rendered)
+    history = comfy.wait(prompt_id, cancel_event=cancel_event)
+    if progress:
+        progress("ComfyUI: 再生成完了")
+    return {
+        "status": "completed",
+        "workflow_id": workflow_id,
+        "parameters": params,
+        "prompt_id": prompt_id,
+        "outputs": history.get("outputs", {}),
+        "comfy_status": history.get("status", {}),
+    }
