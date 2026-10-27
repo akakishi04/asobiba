@@ -102,7 +102,14 @@ class LMStudio:
         instance_id: str | None = None
         catalog = [
             {"id": key, "kind": entry["kind"], "description": entry.get("description", ""),
-             "parameters": [name for name in entry["bindings"] if name not in ("image", "seed")],
+             "parameters": [
+                 name for name in entry["bindings"]
+                 if name not in ("image", "mask", "pose", "seed")
+             ],
+             "required_inputs": [
+                 name for name in ("image", "mask", "pose")
+                 if name in entry["bindings"]
+             ],
              "requires_image": "image" in entry["bindings"]}
             for key, entry in workflows.items()
         ]
