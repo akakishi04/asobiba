@@ -81,6 +81,51 @@ GUI右側に **「今回の結果」** と **「生成履歴」** のタブが�
 
 **表示形式:** 標準のTkinterでPNGを比較できます。JPEG/WebPの元画像を比較する場合や滑らかな任意倍率の拡大縮小には、任意で `python -m pip install Pillow` を実行してください。PillowはGUI起動や画像生成には必須ではありません。
 
+## 画像からI2I・部分修正・ポーズ参照（追加機能）
+
+### 自動切替
+
+- **参照画像が空、ポーズ画像も空** → 自動的に `wai_t2i_basic`（T2I）を選択します。直前がI2Iや部分修正でもT2Iへ戻ります。
+- **参照画像を選択** → `wai_i2i_basic`（通常I2I）へ切替。
+- **参照画像を選択し「範囲を塗る...」でマスクを確定** → `wai_inpaint_basic`（部分修正）へ切替。マスクを消すと通常I2Iに戻ります。
+- **ポーズ参照を選択** → `wai_pose_skeleton` または `wai_pose_detect`（ポーズのみを使ったT2I）へ切替。通常I2Iの元画像とは排他です。ポーズ参照を消すと通常T2Iへ戻ります。
+
+「今回の結果」の「この画像からI2I」、または履歴で1件選択して「選択した画像をI2Iの元画像にする」を押すと、生成済み画像を直接次のI2I入力にできます。
+
+### 部分修正（Inpainting）
+
+1. 元画像、または生成結果からI2I入力を選びます。
+2. **「範囲を塗る...」** を開き、修正したい領域だけを赤色のブラシで塗ります。Undo・全消去が可能です。
+3. **「この範囲を使う」** で元解像度の白黒マスクをローカル保存します。**白＝描き直す／黒＝元画像を維持する**。
+4. 自然文に「手の指を自然に修正する」などと入力し、通常どおり生成を実行します。
+
+ワークフローはComfyUI標準の `LoadImageMask`、`VAEEncodeForInpaint`、`ImageCompositeMasked` を利用。**未指定領域のピクセルを元画像から戻す構造**ですが、マスク境界は不自然になる可能性があります。必要ならマスクを少し広げて調整してください。一般SDXLチェックポイントを使う簡易Inpaintingであり、専用Inpaintモデル相当の保証はありません。
+
+**必要な追加Pythonパッケージ**：GUIのマスク描画のみ `Pillow` が必要です。通常のT2I/I2Iには不要。GUIを起動するPythonに次を実行：
+
+```powershell
+python -m pip install Pillow
+```
+
+### DesignDoll / 人物画像のポーズのみ参照
+
+**2種類の入力モード**があります。
+
+- **骨格PNGを直接利用**：OpenPose形式（黒地に色分けされた骨格線）の画像を指定。すでに骨格化されているため、外観・服の色などは読み込まず、ポーズ制御に使います。`wai_pose_skeleton`。
+- **通常画像から骨格検出（DWPose）**：DesignDollの人形スクリーンショットや人物画像を指定。DWPoseで関節位置を抽出してからControlNetへ渡します。`wai_pose_detect`。被写体や関節の隠れ方によって誤検出する場合があります。
+
+どちらのモードも **追加モデルの導入が必要** です：
+
+1. SDXL OpenPose ControlNet [xinsir/controlnet-openpose-sdxl-1.0](https://huggingface.co/xinsir/controlnet-openpose-sdxl-1.0) から `diffusion_pytorch_model.safetensors` を取得。必要なら `controlnet-openpose-sdxl-1.0.safetensors` とリネームして、`ComfyUI/models/controlnet/` へ配置します。**ワークフローはこのリネーム後のファイル名を参照**します。ComfyUIを再起動してください。
+2. 通常画像から骨格を推定する場合は、ComfyUI-Managerで [comfyui_controlnet_aux](https://github.com/comfyorg/comfyui-controlnet-aux) をインストール。DWPose関連の検出モデルも使用します。
+3. GUIの「ポーズ強度」で制御の強さを調整（初期0.85）。幅・高さは通常のT2I同様に変更できます。
+
+参照用のSDXL ControlNetは約2.5GBの追加モデルです。16GB VRAMでは通常のI2Iより計算・メモリ負荷が増すため、最初は768×768・20steps程度で動作確認してください。**モデルはこのアプリから自動ダウンロードしません。** 不足しているモデルやDWPoseノードは生成前にエラー表示します。Illustrious SDXLとの互換性・ポーズの再現度は実機検証が必要です。
+
+### 履歴との連携
+
+部分修正時の**元画像とマスク**、ポーズ参照時の**入力ポーズ画像**は、生成履歴にそれぞれ保存されます。以前の履歴DBも自動移行し、画像を変えずに再生成できます。複数案生成は今回追加していません。
+
 ## 実行時のモデル解放とPC負荷
 
 ```text
