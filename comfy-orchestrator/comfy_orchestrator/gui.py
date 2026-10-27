@@ -465,22 +465,29 @@ class Application:
         self.tabs.add(preview_panel, text="今回の結果")
         history_panel = ttk.Frame(self.tabs, padding=8)
         self.tabs.add(history_panel, text="生成履歴")
+
+        # Output and history actions are packed before expanding previews/lists.
+        # They remain visible even when the window is shorter than requested.
+        preview_actions = ttk.Frame(preview_panel)
+        preview_actions.pack(side="bottom", fill="x", pady=(5, 0))
+        history_actions = ttk.Frame(history_panel)
+        history_actions.pack(side="bottom", fill="x", pady=(5, 0))
         self.image_label = ttk.Label(preview_panel, text="生成画像のプレビュー", anchor="center")
         self.image_label.pack(fill="both", expand=True)
         ttk.Label(preview_panel, textvariable=self.result_info, wraplength=350).pack(anchor="w", pady=(5, 6))
         self.images_list = tk.Listbox(
-            preview_panel, height=4, exportselection=False, font=("Meiryo UI", 9),
+            preview_panel, height=3, exportselection=False, font=("Meiryo UI", 9),
         )
         self.images_list.pack(fill="x", pady=(0, 5))
         self.images_list.bind("<<ListboxSelect>>", self._show_selected_image)
-        row = ttk.Frame(preview_panel)
+        row = ttk.Frame(preview_actions)
         row.pack(fill="x")
         self.open_button = ttk.Button(row, text="画像を開く", command=self._open_image, state="disabled")
         self.open_button.pack(side="left", padx=(0, 6))
         ttk.Button(row, text="保存先を開く", command=self._open_outputs).pack(side="left")
         ttk.Button(
-            row, text="この画像からI2I", command=self._current_output_to_i2i,
-        ).pack(side="left", padx=(5, 0))
+            preview_actions, text="この画像からI2I", command=self._current_output_to_i2i,
+        ).pack(fill="x", pady=(5, 0))
 
         ttk.Label(
             history_panel,
@@ -492,7 +499,7 @@ class Application:
         table_holder.pack(fill="both", expand=True)
         self.history_table = ttk.Treeview(
             table_holder, columns=history_columns, show="tree headings",
-            selectmode="extended", height=11,
+            selectmode="extended", height=6,
         )
         self.history_table.heading("#0", text="指示 / 生成内容")
         self.history_table.column("#0", width=230, minwidth=130, stretch=True)
@@ -522,7 +529,7 @@ class Application:
             history_panel, text="履歴画像", anchor="center",
         )
         self.history_image.pack(fill="both", expand=True, pady=(0, 6))
-        first_row = ttk.Frame(history_panel)
+        first_row = ttk.Frame(history_actions)
         first_row.pack(fill="x", pady=(2, 4))
         ttk.Button(
             first_row, text="設定を復元", command=self._restore_selected_history,
@@ -533,7 +540,7 @@ class Application:
         ttk.Button(
             first_row, text="履歴更新", command=self._refresh_history,
         ).pack(side="left")
-        second_row = ttk.Frame(history_panel)
+        second_row = ttk.Frame(history_actions)
         second_row.pack(fill="x")
         self.same_seed_button = ttk.Button(
             second_row, text="同じSeedで再生成",
@@ -548,19 +555,24 @@ class Application:
         )
         self.new_seed_button.pack(side="left")
         ttk.Button(
-            history_panel, text="選択した画像をI2Iの元画像にする",
+            history_actions, text="選択した画像をI2Iの元画像にする",
             command=self._history_output_to_i2i,
         ).pack(fill="x", pady=(6, 0))
 
         status_bar = ttk.Frame(layout)
-        status_bar.pack(fill="x", pady=(0, 5))
+        status_bar.pack(fill="x", pady=(0, 3))
         ttk.Label(status_bar, textvariable=self.status).pack(side="left", fill="x", expand=True)
-        self.progress_bar = ttk.Progressbar(status_bar, mode="indeterminate", length=180)
+        self.logs_visible = False
+        self.log_toggle = ttk.Button(
+            status_bar, text="ログを表示", command=self._toggle_logs,
+        )
+        self.log_toggle.pack(side="right", padx=(8, 0))
+        self.progress_bar = ttk.Progressbar(status_bar, mode="indeterminate", length=125)
         self.progress_bar.pack(side="right")
-        logs = ttk.LabelFrame(layout, text="実行ログ", padding=5)
-        logs.pack(fill="x")
+        # Hidden on startup: logs remain buffered, without consuming screen height.
+        self.logs_panel = ttk.LabelFrame(layout, text="実行ログ", padding=5)
         self.log = scrolledtext.ScrolledText(
-            logs, height=4, wrap="word", state="disabled",
+            self.logs_panel, height=4, wrap="word", state="disabled",
             font=("Meiryo UI", 9), padx=9, pady=7,
         )
         self.log.pack(fill="x")
@@ -596,9 +608,9 @@ class Application:
         first, last = self.form_canvas.yview()
         if first <= 0.0 and last >= 1.0:
             return None
-        if event.num == 4:
+        if getattr(event, "num", None) == 4:
             amount = -3
-        elif event.num == 5:
+        elif getattr(event, "num", None) == 5:
             amount = 3
         else:
             delta = getattr(event, "delta", 0)
