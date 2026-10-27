@@ -179,7 +179,7 @@ class CompositionVisionTests(unittest.TestCase):
         system = payload["messages"][0]["content"]
         self.assertIn("COMPOSITION-ONLY reference", system)
         self.assertIn("do NOT copy character identity", system)
-        self.assertIn("Reference role: composition only for new T2I",
+        self.assertIn("Reference role: composition only (LLM reference)",
                       payload["messages"][1]["content"][0]["text"])
 
     def test_composition_image_requires_vision_toggle(self):
