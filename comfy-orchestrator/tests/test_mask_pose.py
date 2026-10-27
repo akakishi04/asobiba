@@ -290,6 +290,27 @@ class HistoryInputTests(unittest.TestCase):
             pose.unlink()
             self.assertEqual(store.get(entry2.id).pose_image.read_bytes(), b"pose bytes")
 
+    def test_composition_reference_archived_without_becoming_i2i_source(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            store = history.HistoryStore(root)
+            output = store.outputs / "sample.png"
+            output.write_bytes(b"result")
+            composition = root / "designdoll.png"
+            composition.write_bytes(b"composition")
+            entry = store.record(
+                prompt_id="composition-1", workflow_id="wai_t2i_basic",
+                kind="t2i", request_text="構図を参考に",
+                parameters={"positive_prompt": "1girl, full-body", "seed": 9},
+                images=[output], composition_image=composition,
+            )
+            composition.unlink()
+            loaded = history.HistoryStore(root).get(entry.id)
+            self.assertIsNone(loaded.reference_image)
+            self.assertIsNone(loaded.pose_image)
+            self.assertEqual(loaded.composition_image.read_bytes(), b"composition")
+            self.assertEqual(loaded.first_image, output.resolve())
+
     def test_schema_migration_from_old_database_preserves_history(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -313,6 +334,7 @@ class HistoryInputTests(unittest.TestCase):
             store = history.HistoryStore(root)
             self.assertIsNone(store.get("old").mask_image)
             self.assertIsNone(store.get("old").pose_image)
+            self.assertIsNone(store.get("old").composition_image)
             self.assertEqual(store.get("old").parameters["seed"], 42)
 
 
