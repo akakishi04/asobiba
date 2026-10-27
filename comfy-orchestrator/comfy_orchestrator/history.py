@@ -33,6 +33,8 @@ class HistoryEntry:
     images: tuple[Path, ...]
     reference_image: Path | None
     legacy: bool = False
+    mask_image: Path | None = None
+    pose_image: Path | None = None
 
     @property
     def first_image(self) -> Path | None:
@@ -70,6 +72,10 @@ class HistoryStore:
                     legacy INTEGER NOT NULL DEFAULT 0
                 )
             """)
+            columns = {row[1] for row in con.execute("PRAGMA table_info(generations)")}
+            for column in ("mask_file", "pose_file"):
+                if column not in columns:
+                    con.execute(f"ALTER TABLE generations ADD COLUMN {column} TEXT")
             con.execute(
                 "CREATE INDEX IF NOT EXISTS history_recent_idx "
                 "ON generations(created_at DESC, id DESC)"
@@ -101,6 +107,8 @@ class HistoryStore:
         parameters: dict,
         images: list[Path],
         reference_image: Path | None = None,
+        mask_image: Path | None = None,
+        pose_image: Path | None = None,
     ) -> HistoryEntry:
         if not isinstance(parameters, dict):
             raise HistoryError("履歴の生成設定はJSONオブジェクトである必要があります")
@@ -111,39 +119,50 @@ class HistoryStore:
         image_names = [self._relative_output(Path(x)) for x in images]
         row_id = uuid.uuid4().hex
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        reference_file: str | None = None
-        snapshot: Path | None = None
-        if reference_image is not None:
-            source = Path(reference_image).resolve()
-            if not source.is_file():
-                raise HistoryError(f"参照画像を保存できません: {source}")
-            if source.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
-                raise HistoryError("参照画像はPNG/JPEG/WebPのみ保存できます")
+        copied: list[Path] = []
+
+        def snapshot_asset(source: Path | None, folder_name: str) -> str | None:
+            if source is None:
+                return None
+            source = Path(source).resolve()
+            if not source.is_file() or source.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+                raise HistoryError(f"保存する画像がないか、対応していない形式です: {source}")
             if source.stat().st_size > 40 * 1024 * 1024:
-                raise HistoryError("参照画像は40MB以下にしてください")
-            folder = self.data / "references"
+                raise HistoryError("履歴の参照画像は40MB以下にしてください")
+            folder = self.data / folder_name
             folder.mkdir(parents=True, exist_ok=True)
             snapshot = folder / (row_id + source.suffix.lower())
+            # Never copy over the same path if a reference is already archived.
             shutil.copyfile(source, snapshot)
-            reference_file = snapshot.relative_to(self.data).as_posix()
+            copied.append(snapshot)
+            return snapshot.relative_to(self.data).as_posix()
+
+        try:
+            reference_file = snapshot_asset(reference_image, "references")
+            mask_file = snapshot_asset(mask_image, "masks")
+            pose_file = snapshot_asset(pose_image, "poses")
+        except Exception:
+            for file in copied:
+                file.unlink(missing_ok=True)
+            raise
 
         try:
             with self._connection() as con:
                 con.execute(
                     """INSERT INTO generations
                     (id,created_at,prompt_id,workflow_id,kind,request_text,
-                     parameters_json,images_json,reference_file,legacy)
-                    VALUES (?,?,?,?,?,?,?,?,?,0)""",
+                     parameters_json,images_json,reference_file,legacy,mask_file,pose_file)
+                    VALUES (?,?,?,?,?,?,?,?,?,0,?,?)""",
                     (
                         row_id, now, prompt_id, workflow_id, kind, request_text,
                         json.dumps(parameters, ensure_ascii=False),
                         json.dumps(image_names, ensure_ascii=False),
-                        reference_file,
+                        reference_file, mask_file, pose_file,
                     ),
                 )
         except Exception:
-            if snapshot is not None:
-                snapshot.unlink(missing_ok=True)
+            for file in copied:
+                file.unlink(missing_ok=True)
             raise
         result = self.get(row_id)
         assert result is not None
@@ -160,6 +179,14 @@ class HistoryStore:
                 self._child_path(self.data, row["reference_file"])
                 if row["reference_file"] else None
             )
+            mask = (
+                self._child_path(self.data, row["mask_file"])
+                if row["mask_file"] else None
+            )
+            pose = (
+                self._child_path(self.data, row["pose_file"])
+                if row["pose_file"] else None
+            )
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             raise HistoryError(f"保存した履歴が壊れています: {row['id']}") from exc
         return HistoryEntry(
@@ -168,6 +195,7 @@ class HistoryStore:
             kind=row["kind"], request_text=row["request_text"],
             parameters=parameters, images=images,
             reference_image=reference, legacy=bool(row["legacy"]),
+            mask_image=mask, pose_image=pose,
         )
 
     def list_entries(self, limit: int = 200) -> list[HistoryEntry]:
