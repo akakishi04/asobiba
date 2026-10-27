@@ -73,6 +73,8 @@ class TestTheme(unittest.TestCase):
             editor_font_size=Field(15),
             seed=Field(""),
             denoise=Field("0.53"),
+            pose_mode=Field("skeleton"),
+            control_strength=Field("0.85"),
             _overrides=lambda: {"width": 768, "height": 768, "steps": 20, "cfg": 5.0},
         )
         saved = gui.Application._collect_config(fake)
