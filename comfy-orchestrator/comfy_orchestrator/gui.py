@@ -597,6 +597,9 @@ class Application:
     def _update_generation_controls(self) -> None:
         """Disable only the settings that are unsupported by the active mode."""
         workflow_id = self._active_workflow()
+        # Keep the combobox honest: a missing reference always shows plain T2I.
+        if workflow_id and self.workflow.get() not in ("自動", workflow_id):
+            self.workflow.set(workflow_id)
         bindings = self.config["workflows"].get(workflow_id, {}).get("bindings", {})
         uses_source_image = "image" in bindings
         for entry in (self.width_entry, self.height_entry):
