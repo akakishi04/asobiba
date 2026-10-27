@@ -35,6 +35,7 @@ class HistoryEntry:
     legacy: bool = False
     mask_image: Path | None = None
     pose_image: Path | None = None
+    composition_image: Path | None = None
 
     @property
     def first_image(self) -> Path | None:
@@ -73,7 +74,7 @@ class HistoryStore:
                 )
             """)
             columns = {row[1] for row in con.execute("PRAGMA table_info(generations)")}
-            for column in ("mask_file", "pose_file"):
+            for column in ("mask_file", "pose_file", "composition_file"):
                 if column not in columns:
                     con.execute(f"ALTER TABLE generations ADD COLUMN {column} TEXT")
             con.execute(
@@ -109,6 +110,7 @@ class HistoryStore:
         reference_image: Path | None = None,
         mask_image: Path | None = None,
         pose_image: Path | None = None,
+        composition_image: Path | None = None,
     ) -> HistoryEntry:
         if not isinstance(parameters, dict):
             raise HistoryError("履歴の生成設定はJSONオブジェクトである必要があります")
@@ -141,6 +143,7 @@ class HistoryStore:
             reference_file = snapshot_asset(reference_image, "references")
             mask_file = snapshot_asset(mask_image, "masks")
             pose_file = snapshot_asset(pose_image, "poses")
+            composition_file = snapshot_asset(composition_image, "compositions")
         except Exception:
             for file in copied:
                 file.unlink(missing_ok=True)
@@ -151,13 +154,13 @@ class HistoryStore:
                 con.execute(
                     """INSERT INTO generations
                     (id,created_at,prompt_id,workflow_id,kind,request_text,
-                     parameters_json,images_json,reference_file,legacy,mask_file,pose_file)
-                    VALUES (?,?,?,?,?,?,?,?,?,0,?,?)""",
+                     parameters_json,images_json,reference_file,legacy,mask_file,pose_file,composition_file)
+                    VALUES (?,?,?,?,?,?,?,?,?,0,?,?,?)""",
                     (
                         row_id, now, prompt_id, workflow_id, kind, request_text,
                         json.dumps(parameters, ensure_ascii=False),
                         json.dumps(image_names, ensure_ascii=False),
-                        reference_file, mask_file, pose_file,
+                        reference_file, mask_file, pose_file, composition_file,
                     ),
                 )
         except Exception:
@@ -187,6 +190,10 @@ class HistoryStore:
                 self._child_path(self.data, row["pose_file"])
                 if row["pose_file"] else None
             )
+            composition = (
+                self._child_path(self.data, row["composition_file"])
+                if row["composition_file"] else None
+            )
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             raise HistoryError(f"保存した履歴が壊れています: {row['id']}") from exc
         return HistoryEntry(
@@ -196,6 +203,7 @@ class HistoryStore:
             parameters=parameters, images=images,
             reference_image=reference, legacy=bool(row["legacy"]),
             mask_image=mask, pose_image=pose,
+            composition_image=composition,
         )
 
     def list_entries(self, limit: int = 200) -> list[HistoryEntry]:
