@@ -166,8 +166,8 @@ class Application:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Asobiba | Comfy Orchestrator")
-        self.root.geometry("1150x815")
-        self.root.minsize(860, 670)
+        self.root.geometry("1240x910")
+        self.root.minsize(960, 760)
         self.messages: queue.Queue = queue.Queue()
         self.working = False
         self.stop_event = threading.Event()
