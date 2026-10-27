@@ -190,6 +190,108 @@ class SavedReplayTests(unittest.TestCase):
             )
 
 
+class HistoryGuiActionsTests(unittest.TestCase):
+    def test_restoring_i2i_history_populates_prompt_and_seed(self):
+        from comfy_orchestrator import gui
+
+        class Variable:
+            def __init__(self, value=""):
+                self.value = value
+
+            def set(self, value):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+        class Prompt:
+            def __init__(self):
+                self.text = ""
+                self.focused = False
+
+            def delete(self, start, end):
+                self.text = ""
+
+            def insert(self, start, value):
+                self.text = value
+
+            def focus_set(self):
+                self.focused = True
+
+        with tempfile.TemporaryDirectory() as folder:
+            store = history.HistoryStore(Path(folder))
+            output = store.outputs / "output.png"
+            output.write_bytes(b"image")
+            reference = Path(folder) / "ref.png"
+            reference.write_bytes(b"ref")
+            entry = store.record(
+                prompt_id="pr-1", workflow_id="wai_i2i_basic", kind="i2i",
+                request_text="服を赤にして", parameters={
+                    "positive_prompt": "1girl, red dress", "negative_prompt": "",
+                    "steps": 25, "cfg": 5.0, "seed": 4488, "denoise": 0.45,
+                },
+                images=[output], reference_image=reference,
+            )
+
+            class App:
+                def __init__(self):
+                    self.prompt = Prompt()
+                    self.workflow = Variable()
+                    self.reference_image = Variable()
+                    self.width = Variable("768")
+                    self.height = Variable("768")
+                    self.steps = Variable("20")
+                    self.cfg = Variable("5.5")
+                    self.seed = Variable()
+                    self.denoise = Variable("0.53")
+                    self.status = Variable()
+                    self.config = core.load_config(PROJECT / "config.example.json")
+                    self.lines = []
+                    self.updated = False
+
+                def _one_history(self):
+                    return entry
+
+                def _update_generation_controls(self):
+                    self.updated = True
+
+                def _log(self, msg):
+                    self.lines.append(msg)
+
+            fake = App()
+            gui.Application._restore_selected_history(fake)
+            self.assertEqual(fake.prompt.text, "服を赤にして")
+            self.assertEqual(fake.workflow.get(), "wai_i2i_basic")
+            self.assertEqual(fake.reference_image.get(), str(entry.reference_image))
+            self.assertEqual(fake.seed.get(), "4488")
+            self.assertEqual(fake.denoise.get(), "0.45")
+            self.assertTrue(fake.updated)
+            self.assertTrue(fake.prompt.focused)
+
+    def test_i2i_compare_uses_original_and_result(self):
+        from comfy_orchestrator import gui
+        with tempfile.TemporaryDirectory() as folder:
+            store = history.HistoryStore(Path(folder))
+            out = store.outputs / "output.png"
+            out.write_bytes(b"output")
+            original = Path(folder) / "original.png"
+            original.write_bytes(b"original")
+            entry = store.record(
+                prompt_id="123", workflow_id="wai_i2i_basic", kind="i2i",
+                request_text="test", parameters={"positive_prompt": "girl", "seed": 2},
+                images=[out], reference_image=original,
+            )
+            class FakeApp:
+                root = object()
+                def _selected_history(self):
+                    return [entry]
+            with patch.object(gui, "ComparisonWindow") as compare:
+                gui.Application._compare_selected_history(FakeApp())
+            args = compare.call_args.args
+            self.assertEqual(args[1:3], (entry.reference_image, entry.first_image))
+
+
+
 class ComparisonHelpersTests(unittest.TestCase):
     def test_scale_limits(self):
         self.assertEqual(comparison.clamp_zoom(0.5), 0.5)
