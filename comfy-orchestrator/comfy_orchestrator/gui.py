@@ -236,7 +236,7 @@ class Application:
         self.result_info = tk.StringVar(value="生成画像はここに表示されます")
 
     def _build(self) -> None:
-        apply_ttk_theme(self.root, self.dark_mode.get())
+        colors = apply_ttk_theme(self.root, self.dark_mode.get())
 
         layout = ttk.Frame(self.root, padding=10)
         layout.pack(fill="both", expand=True)
@@ -303,7 +303,7 @@ class Application:
         form_holder = ttk.Frame(prompt_panel)
         form_holder.pack(fill="both", expand=True)
         self.form_canvas = tk.Canvas(
-            form_holder, background=apply_ttk_theme(self.root, self.dark_mode.get())["surface"],
+            form_holder, background=colors["surface"],
             highlightthickness=0, borderwidth=0, width=320, height=250,
         )
         form_scrollbar = ttk.Scrollbar(
@@ -570,12 +570,60 @@ class Application:
         self._log("GUI起動。LM StudioのDeveloper画面でLocal Serverを起動してください。")
         self._log("設定は comfy-orchestrator/config.json に保存され、Gitには含まれません。")
 
+    def _size_form_to_canvas(self, width: int) -> None:
+        """Match the scrollable form to its viewport without growing the window."""
+        self.form_canvas.itemconfigure(self.form_window, width=max(1, width))
+        self._sync_form_scrollregion()
+
+    def _sync_form_scrollregion(self) -> None:
+        bounds = self.form_canvas.bbox("all")
+        if bounds:
+            self.form_canvas.configure(scrollregion=bounds)
+
+    def _on_form_mousewheel(self, event):
+        """Scroll just the option form; preserve normal text-editor scrolling."""
+        widget = event.widget
+        inside_form = False
+        while widget is not None:
+            if widget is self.options_form:
+                inside_form = True
+                break
+            if isinstance(widget, (tk.Text, tk.Listbox, ttk.Treeview)):
+                return None
+            widget = getattr(widget, "master", None)
+        if not inside_form:
+            return None
+        first, last = self.form_canvas.yview()
+        if first <= 0.0 and last >= 1.0:
+            return None
+        if event.num == 4:
+            amount = -3
+        elif event.num == 5:
+            amount = 3
+        else:
+            delta = getattr(event, "delta", 0)
+            if delta == 0:
+                return None
+            amount = -3 if delta > 0 else 3
+        self.form_canvas.yview_scroll(amount, "units")
+        return "break"
+
+    def _toggle_logs(self) -> None:
+        if self.logs_visible:
+            self.logs_panel.pack_forget()
+            self.log_toggle.configure(text="ログを表示")
+        else:
+            self.logs_panel.pack(fill="x", pady=(5, 0))
+            self.log_toggle.configure(text="ログを隠す")
+        self.logs_visible = not self.logs_visible
+
     def _switch_theme(self) -> None:
         """Recolor widgets without rebuilding the window or resetting user text."""
         colors = apply_ttk_theme(self.root, self.dark_mode.get())
         style_text_widget(self.prompt, colors)
         style_text_widget(self.log, colors, muted=True)
         style_text_widget(self.images_list, colors)
+        self.form_canvas.configure(background=colors["surface"])
         self.prompt.configure(
             font=("Meiryo UI", self.editor_font_size.get()),
             padx=14, pady=12,
