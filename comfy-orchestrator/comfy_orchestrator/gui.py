@@ -328,10 +328,13 @@ class Application:
         ttk.Label(settings, textvariable=self.size_hint, style="Muted.TLabel").grid(
             row=3, column=2, columnspan=4, sticky="w"
         )
+        ttk.Label(settings, text="ポーズ強度").grid(row=4, column=0, sticky="w")
+        self.strength_entry = ttk.Entry(settings, textvariable=self.control_strength, width=7)
+        self.strength_entry.grid(row=4, column=1, sticky="ew", padx=(0, 8))
         ttk.Label(
-            settings, text="Seed空欄＝毎回ランダム。I2IのDenoiseは小さいほど元画像を維持。",
+            settings, text="Seed空欄＝毎回ランダム。画像なしはT2I／マスク指定は部分修正。",
             style="Muted.TLabel",
-        ).grid(row=4, column=0, columnspan=6, sticky="w", pady=(4, 0))
+        ).grid(row=5, column=0, columnspan=6, sticky="w", pady=(4, 0))
 
         image_row = ttk.Frame(prompt_panel)
         image_row.pack(fill="x", pady=(0, 12))
@@ -347,6 +350,52 @@ class Application:
         self.reference_image.trace_add(
             "write", lambda *_args: self._on_reference_image_changed()
         )
+        mask_row = ttk.Frame(prompt_panel)
+        mask_row.pack(fill="x", pady=(0, 5))
+        ttk.Label(mask_row, text="部分修正").pack(side="left", padx=(0, 9))
+        ttk.Entry(mask_row, textvariable=self.mask_image, state="readonly").pack(
+            side="left", fill="x", expand=True
+        )
+        self.mask_button = ttk.Button(
+            mask_row, text="範囲を塗る...", command=self._edit_mask,
+        )
+        self.mask_button.pack(side="left", padx=(5, 0))
+        ttk.Button(
+            mask_row, text="消去", command=lambda: self.mask_image.set(""),
+        ).pack(side="left", padx=(5, 0))
+        self.mask_image.trace_add(
+            "write", lambda *_args: self._on_mask_image_changed()
+        )
+
+        pose_row = ttk.Frame(prompt_panel)
+        pose_row.pack(fill="x", pady=(0, 5))
+        ttk.Label(pose_row, text="ポーズ参照").pack(side="left", padx=(0, 5))
+        ttk.Entry(pose_row, textvariable=self.pose_image, state="readonly").pack(
+            side="left", fill="x", expand=True
+        )
+        ttk.Button(pose_row, text="参照...", command=self._browse_pose).pack(
+            side="left", padx=(5, 0)
+        )
+        ttk.Button(
+            pose_row, text="消去", command=lambda: self.pose_image.set(""),
+        ).pack(side="left", padx=(5, 0))
+        self.pose_image.trace_add(
+            "write", lambda *_args: self._on_pose_image_changed()
+        )
+        pose_modes = ttk.Frame(prompt_panel)
+        pose_modes.pack(fill="x", pady=(0, 6))
+        ttk.Radiobutton(
+            pose_modes, text="骨格PNGを直接利用", variable=self.pose_mode,
+            value="skeleton", command=self._on_pose_image_changed,
+        ).pack(side="left")
+        ttk.Radiobutton(
+            pose_modes, text="通常画像から骨格検出（DWPose）", variable=self.pose_mode,
+            value="photo", command=self._on_pose_image_changed,
+        ).pack(side="left", padx=(8, 0))
+        ttk.Label(
+            prompt_panel, text="ポーズ参照はT2Iと別の入力です。通常画像モードは追加ControlNet・DWPoseが必要。",
+            style="Muted.TLabel", wraplength=470,
+        ).pack(anchor="w", pady=(0, 6))
 
         action_row = ttk.Frame(prompt_panel)
         action_row.pack(fill="x")
@@ -380,6 +429,9 @@ class Application:
         self.open_button = ttk.Button(row, text="画像を開く", command=self._open_image, state="disabled")
         self.open_button.pack(side="left", padx=(0, 6))
         ttk.Button(row, text="保存先を開く", command=self._open_outputs).pack(side="left")
+        ttk.Button(
+            row, text="この画像からI2I", command=self._current_output_to_i2i,
+        ).pack(side="left", padx=(5, 0))
 
         ttk.Label(
             history_panel,
@@ -446,6 +498,10 @@ class Application:
             state="disabled",
         )
         self.new_seed_button.pack(side="left")
+        ttk.Button(
+            history_panel, text="選択した画像をI2Iの元画像にする",
+            command=self._history_output_to_i2i,
+        ).pack(fill="x", pady=(6, 0))
 
         status_bar = ttk.Frame(layout)
         status_bar.pack(fill="x", pady=(0, 5))
