@@ -162,12 +162,30 @@ def image_aware_overrides(
             result[field] = value
     return result
 
+def initial_window_bounds(screen_width: int, screen_height: int) -> tuple[int, int, int, int, int, int]:
+    """Screen-aware startup geometry with room for the Windows taskbar/title bar.
+
+    Return (width, height, left, top, min_width, min_height).
+    Avoid a minimum size taller than the user's actual display.
+    """
+    width = max(320, min(1240, screen_width - 72))
+    height = max(280, min(820, screen_height - 130))
+    x = max(0, (screen_width - width) // 2)
+    y = max(0, min(28, (screen_height - height) // 4))
+    min_width = min(width, max(320, min(840, screen_width - 90)))
+    min_height = min(height, max(280, min(540, screen_height - 150)))
+    return width, height, x, y, min_width, min_height
+
+
 class Application:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Asobiba | Comfy Orchestrator")
-        self.root.geometry("1240x910")
-        self.root.minsize(960, 760)
+        width, height, x, y, min_width, min_height = initial_window_bounds(
+            self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        )
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+        self.root.minsize(min_width, min_height)
         self.messages: queue.Queue = queue.Queue()
         self.working = False
         self.stop_event = threading.Event()
@@ -220,7 +238,7 @@ class Application:
     def _build(self) -> None:
         apply_ttk_theme(self.root, self.dark_mode.get())
 
-        layout = ttk.Frame(self.root, padding=14)
+        layout = ttk.Frame(self.root, padding=10)
         layout.pack(fill="both", expand=True)
         title_row = ttk.Frame(layout)
         title_row.pack(fill="x")
@@ -233,7 +251,7 @@ class Application:
             layout,
             text="自然文 → LM Studioで解釈 → LLMアンロード → ComfyUI画像生成",
             style="Muted.TLabel",
-        ).pack(anchor="w", pady=(2, 12))
+        ).pack(anchor="w", pady=(1, 6))
 
         connection = ttk.LabelFrame(layout, text="接続・モデル", padding=10, style="Section.TLabelframe")
         connection.pack(fill="x")
@@ -266,16 +284,49 @@ class Application:
         ttk.Button(options_frame, text="設定を保存", command=self._save_settings).pack(side="right")
 
         main = ttk.Panedwindow(layout, orient="horizontal")
-        main.pack(fill="both", expand=True, pady=(12, 8))
+        main.pack(fill="both", expand=True, pady=(8, 5))
 
         left = ttk.Frame(main)
         right = ttk.Frame(main)
         main.add(left, weight=3)
         main.add(right, weight=2)
 
-        prompt_panel = ttk.LabelFrame(left, text="自然文から生成", padding=10, style="Section.TLabelframe")
+        prompt_panel = ttk.LabelFrame(left, text="自然文から生成", padding=8, style="Section.TLabelframe")
         prompt_panel.pack(fill="both", expand=True, padx=(0, 6))
-        editor_toolbar = ttk.Frame(prompt_panel)
+
+        # Reserve space for actions FIRST so a short screen never hides "Generate".
+        action_row = ttk.Frame(prompt_panel)
+        action_row.pack(side="bottom", fill="x", pady=(8, 0))
+
+        # The editor and optional image controls now scroll independently of the
+        # generate/cancel buttons and the output/history pane.
+        form_holder = ttk.Frame(prompt_panel)
+        form_holder.pack(fill="both", expand=True)
+        self.form_canvas = tk.Canvas(
+            form_holder, background=apply_ttk_theme(self.root, self.dark_mode.get())["surface"],
+            highlightthickness=0, borderwidth=0, width=320, height=250,
+        )
+        form_scrollbar = ttk.Scrollbar(
+            form_holder, orient="vertical", command=self.form_canvas.yview
+        )
+        self.form_canvas.configure(yscrollcommand=form_scrollbar.set)
+        self.form_canvas.pack(side="left", fill="both", expand=True)
+        form_scrollbar.pack(side="right", fill="y")
+        self.options_form = ttk.Frame(self.form_canvas)
+        self.form_window = self.form_canvas.create_window(
+            (0, 0), window=self.options_form, anchor="nw",
+        )
+        self.options_form.bind(
+            "<Configure>", lambda _e: self._sync_form_scrollregion(),
+        )
+        self.form_canvas.bind(
+            "<Configure>", lambda event: self._size_form_to_canvas(event.width),
+        )
+        self.root.bind("<MouseWheel>", self._on_form_mousewheel, add="+")
+        self.root.bind("<Button-4>", self._on_form_mousewheel, add="+")
+        self.root.bind("<Button-5>", self._on_form_mousewheel, add="+")
+
+        editor_toolbar = ttk.Frame(self.options_form)
         editor_toolbar.pack(fill="x", pady=(0, 7))
         ttk.Label(
             editor_toolbar,
@@ -289,7 +340,7 @@ class Application:
             editor_toolbar, text="A−", width=4, command=lambda: self._change_editor_font(-1),
         ).pack(side="right", padx=(4, 0))
         self.prompt = scrolledtext.ScrolledText(
-            prompt_panel, height=6, wrap="word",
+            self.options_form, height=6, wrap="word",
             font=("Meiryo UI", self.editor_font_size.get()),
             undo=True, autoseparators=True, maxundo=100,
             padx=14, pady=12, spacing1=3, spacing3=3,
@@ -299,7 +350,7 @@ class Application:
         # scrollable for longer prompts; IME composition is handled natively.
         self.prompt.pack(fill="x", expand=False, pady=(0, 10))
 
-        settings = ttk.LabelFrame(prompt_panel, text="生成設定（初期値は軽量寄り）", padding=9)
+        settings = ttk.LabelFrame(self.options_form, text="生成設定（初期値は軽量寄り）", padding=9)
         settings.pack(fill="x", pady=(0, 8))
         for i in range(6):
             settings.columnconfigure(i, weight=1 if i % 2 else 0)
@@ -336,21 +387,21 @@ class Application:
             style="Muted.TLabel",
         ).grid(row=5, column=0, columnspan=6, sticky="w", pady=(4, 0))
 
-        image_row = ttk.Frame(prompt_panel)
+        image_row = ttk.Frame(self.options_form)
         image_row.pack(fill="x", pady=(0, 12))
         ttk.Label(image_row, text="参照画像").pack(side="left", padx=(0, 8))
         ttk.Entry(image_row, textvariable=self.reference_image).pack(side="left", fill="x", expand=True)
         ttk.Button(image_row, text="参照...", command=self._browse_image).pack(side="left", padx=(5, 0))
         ttk.Button(image_row, text="消去", command=lambda: self.reference_image.set("")).pack(side="left", padx=(5, 0))
         ttk.Label(
-            prompt_panel,
+            self.options_form,
             text="I2Iでは参照画像が必要です。画像はComfyUIに送ります。LLMの画像認識は初期設定でOFF。",
             wraplength=460, style="Muted.TLabel",
         ).pack(anchor="w", pady=(0, 10))
         self.reference_image.trace_add(
             "write", lambda *_args: self._on_reference_image_changed()
         )
-        mask_row = ttk.Frame(prompt_panel)
+        mask_row = ttk.Frame(self.options_form)
         mask_row.pack(fill="x", pady=(0, 5))
         ttk.Label(mask_row, text="部分修正").pack(side="left", padx=(0, 9))
         ttk.Entry(mask_row, textvariable=self.mask_image, state="readonly").pack(
@@ -367,7 +418,7 @@ class Application:
             "write", lambda *_args: self._on_mask_image_changed()
         )
 
-        pose_row = ttk.Frame(prompt_panel)
+        pose_row = ttk.Frame(self.options_form)
         pose_row.pack(fill="x", pady=(0, 5))
         ttk.Label(pose_row, text="ポーズ参照").pack(side="left", padx=(0, 5))
         ttk.Entry(pose_row, textvariable=self.pose_image, state="readonly").pack(
@@ -382,7 +433,7 @@ class Application:
         self.pose_image.trace_add(
             "write", lambda *_args: self._on_pose_image_changed()
         )
-        pose_modes = ttk.Frame(prompt_panel)
+        pose_modes = ttk.Frame(self.options_form)
         pose_modes.pack(fill="x", pady=(0, 6))
         ttk.Radiobutton(
             pose_modes, text="骨格PNGを直接利用", variable=self.pose_mode,
@@ -393,12 +444,10 @@ class Application:
             value="photo", command=self._on_pose_image_changed,
         ).pack(side="left", padx=(8, 0))
         ttk.Label(
-            prompt_panel, text="ポーズ参照はT2Iと別の入力です。通常画像モードは追加ControlNet・DWPoseが必要。",
+            self.options_form, text="ポーズ参照はT2Iと別の入力です。通常画像モードは追加ControlNet・DWPoseが必要。",
             style="Muted.TLabel", wraplength=470,
         ).pack(anchor="w", pady=(0, 6))
 
-        action_row = ttk.Frame(prompt_panel)
-        action_row.pack(fill="x")
         self.preview_button = ttk.Button(action_row, text="解釈のみテスト", command=lambda: self._start(True))
         self.preview_button.pack(side="left", padx=(0, 8))
         self.run_button = ttk.Button(
