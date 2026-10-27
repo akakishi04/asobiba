@@ -512,13 +512,17 @@ class Application:
         # They remain visible even when the window is shorter than requested.
         preview_actions = ttk.Frame(preview_panel)
         preview_actions.pack(side="bottom", fill="x", pady=(5, 0))
+        preview_meta = ttk.Frame(preview_panel)
+        preview_meta.pack(side="bottom", fill="x")
         history_actions = ttk.Frame(history_panel)
         history_actions.pack(side="bottom", fill="x", pady=(5, 0))
+        history_meta = ttk.Frame(history_panel)
+        history_meta.pack(side="bottom", fill="x", pady=(5, 0))
         self.image_label = ttk.Label(preview_panel, text="生成画像のプレビュー", anchor="center")
         self.image_label.pack(fill="both", expand=True)
-        ttk.Label(preview_panel, textvariable=self.result_info, wraplength=350).pack(anchor="w", pady=(5, 6))
+        ttk.Label(preview_meta, textvariable=self.result_info, wraplength=350).pack(anchor="w", pady=(3, 4))
         self.images_list = tk.Listbox(
-            preview_panel, height=3, exportselection=False, font=("Meiryo UI", 9),
+            preview_meta, height=3, exportselection=False, font=("Meiryo UI", 9),
         )
         self.images_list.pack(fill="x", pady=(0, 5))
         self.images_list.bind("<<ListboxSelect>>", self._show_selected_image)
@@ -564,13 +568,13 @@ class Application:
 
         self.history_details = tk.StringVar(value="履歴を選択してください")
         ttk.Label(
-            history_panel, textvariable=self.history_details,
+            history_meta, textvariable=self.history_details,
             wraplength=420, style="Muted.TLabel",
         ).pack(anchor="w", fill="x", pady=(8, 5))
         self.history_image = ttk.Label(
-            history_panel, text="履歴画像", anchor="center",
+            history_meta, text="履歴画像", anchor="center",
         )
-        self.history_image.pack(fill="both", expand=True, pady=(0, 6))
+        self.history_image.pack(fill="x", pady=(0, 4))
         first_row = ttk.Frame(history_actions)
         first_row.pack(fill="x", pady=(2, 4))
         ttk.Button(
@@ -858,7 +862,7 @@ class Application:
             photo = tk.PhotoImage(file=str(image))
             scale = preview_subsample(
                 photo.width(), photo.height(),
-                self.history_image.winfo_width(), self.history_image.winfo_height(), 220,
+                self.history_image.winfo_width(), self.history_image.winfo_height(), 120,
             )
             self.history_preview_photo = photo.subsample(scale, scale)
             self.history_image.configure(image=self.history_preview_photo, text="")
