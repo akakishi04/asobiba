@@ -1,0 +1,175 @@
+{
+  "2": {
+    "inputs": {
+      "ckpt_name": "waiIllustriousSDXL_v170.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "チェックポイントを読み込む"
+    }
+  },
+  "5": {
+    "inputs": {
+      "text": "low quality, blurry, bad anatomy, extra fingers",
+      "clip": [
+        "2",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIPテキストエンコード（プロンプト）"
+    }
+  },
+  "8": {
+    "inputs": {
+      "text": "1girl, silver hair, standing on the beach at sunset, anime style",
+      "clip": [
+        "2",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIPテキストエンコード（プロンプト）"
+    }
+  },
+  "11": {
+    "inputs": {
+      "seed": 986317717044112,
+      "steps": 28,
+      "cfg": 5.5,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 0.65,
+      "model": [
+        "2",
+        0
+      ],
+      "positive": [
+        "8",
+        0
+      ],
+      "negative": [
+        "5",
+        0
+      ],
+      "latent_image": [
+        "18",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Kサンプラー"
+    }
+  },
+  "12": {
+    "inputs": {
+      "samples": [
+        "11",
+        0
+      ],
+      "vae": [
+        "2",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAEデコード"
+    }
+  },
+  "13": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "20",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "画像を保存"
+    }
+  },
+  "16": {
+    "inputs": {
+      "image": "イラスト5.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "画像を読み込む"
+    }
+  },
+  "17": {
+    "inputs": {
+      "pixels": [
+        "16",
+        0
+      ],
+      "vae": [
+        "2",
+        2
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAEエンコード"
+    }
+  },
+  "18": {
+    "class_type": "VAEEncodeForInpaint",
+    "inputs": {
+      "pixels": [
+        "16",
+        0
+      ],
+      "vae": [
+        "2",
+        2
+      ],
+      "mask": [
+        "19",
+        0
+      ],
+      "grow_mask_by": 8
+    },
+    "_meta": {
+      "title": "VAEエンコード（部分修正）"
+    }
+  },
+  "19": {
+    "class_type": "LoadImageMask",
+    "inputs": {
+      "image": "mask.png",
+      "channel": "red"
+    },
+    "_meta": {
+      "title": "修正領域のマスク"
+    }
+  },
+  "20": {
+    "class_type": "ImageCompositeMasked",
+    "inputs": {
+      "destination": [
+        "16",
+        0
+      ],
+      "source": [
+        "12",
+        0
+      ],
+      "x": 0,
+      "y": 0,
+      "resize_source": true,
+      "mask": [
+        "19",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "マスク外を元画像から保護"
+    }
+  }
+}
