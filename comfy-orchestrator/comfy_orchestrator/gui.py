@@ -48,6 +48,7 @@ def bootstrap_config() -> dict:
     config["llm"].setdefault(
         "inference_timeout_seconds", example["llm"]["inference_timeout_seconds"]
     )
+    config["llm"].setdefault("send_reference_to_llm", False)
     config.setdefault("workflows", {})
     for workflow_id, entry in example.get("workflows", {}).items():
         config["workflows"].setdefault(workflow_id, copy.deepcopy(entry))
@@ -249,6 +250,9 @@ class Application:
             requested_font = 12
         self.editor_font_size = tk.IntVar(value=max(10, min(20, requested_font)))
         self.unload_llm = tk.BooleanVar(value=llm.get("unload_after_inference", True))
+        self.vision_composition = tk.BooleanVar(
+            value=bool(llm.get("send_reference_to_llm", False))
+        )
         self.free_comfy = tk.BooleanVar(value=comfy.get("free_before_llm", True))
         self.status = tk.StringVar(value="準備完了 — LM Studioのサーバーを起動してください")
         self.result_info = tk.StringVar(value="生成画像はここに表示されます")
@@ -509,6 +513,18 @@ class Application:
             self.options_form, text="ポーズ参照はT2Iと別の入力です。通常画像モードは追加ControlNet・DWPoseが必要。",
             style="Muted.TLabel", wraplength=470,
         ).pack(anchor="w", pady=(0, 6))
+        self.vision_checkbox = ttk.Checkbutton(
+            self.options_form,
+            text="画像をLLMで構図解析し、プロンプトに反映",
+            variable=self.vision_composition,
+        )
+        self.vision_checkbox.pack(anchor="w", pady=(2, 2))
+        ttk.Label(
+            self.options_form,
+            text="画像対応VLMが必要。人物の位置・視点・ポーズを英文タグに変換します。"
+                 "厳密な構図固定はControlNetを利用。",
+            style="Muted.TLabel", wraplength=470,
+        ).pack(anchor="w", pady=(0, 8))
 
         self.preview_button = ttk.Button(action_row, text="解釈のみテスト", command=lambda: self._start(True))
         self.preview_button.pack(side="left", padx=(0, 8))
@@ -772,6 +788,13 @@ class Application:
         if hasattr(self, "mask_button"):
             self.mask_button.configure(
                 state="normal" if self.reference_image.get().strip() else "disabled"
+            )
+        if hasattr(self, "vision_checkbox"):
+            has_visual_reference = bool(
+                self.reference_image.get().strip() or self.pose_image.get().strip()
+            )
+            self.vision_checkbox.configure(
+                state="normal" if has_visual_reference else "disabled"
             )
         hint = (
             "ポーズを参照して生成" if "pose" in bindings else
@@ -1060,6 +1083,7 @@ class Application:
         config["llm"]["base_url"] = self.llm_url.get().strip()
         config["llm"]["model"] = self.model.get().strip() or "SELECT_IN_GUI"
         config["llm"]["unload_after_inference"] = self.unload_llm.get()
+        config["llm"]["send_reference_to_llm"] = self.vision_composition.get()
         config["comfyui"]["base_url"] = self.comfy_url.get().strip()
         config["comfyui"]["free_before_llm"] = self.free_comfy.get()
         opts = self._overrides()
