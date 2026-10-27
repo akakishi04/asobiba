@@ -11,6 +11,7 @@ import json
 import os
 import queue
 import shutil
+import sqlite3
 import threading
 import urllib.parse
 import urllib.request
@@ -506,7 +507,7 @@ class Application:
         try:
             self.history_store.import_legacy_outputs(limit=500)
             entries = self.history_store.list_entries(limit=500)
-        except (HistoryError, OSError, ValueError) as exc:
+        except (HistoryError, OSError, ValueError, sqlite3.Error) as exc:
             self._log(f"履歴の読み込みに失敗: {exc}")
             return
         old_selected = set(self.history_table.selection())
@@ -669,7 +670,7 @@ class Application:
                 reference_image=source_image,
             )
             return entry.id
-        except (HistoryError, OSError, ValueError) as exc:
+        except (HistoryError, OSError, ValueError, sqlite3.Error) as exc:
             self.messages.put(("progress", f"履歴保存に失敗しました（画像は保持）: {exc}"))
             return None
 
