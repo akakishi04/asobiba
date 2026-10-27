@@ -19,6 +19,8 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from . import core
+from .comparison import ComparisonWindow
+from .history import HistoryStore, HistoryEntry, HistoryError
 from .lmstudio import list_models
 from .ime_font import install_native_ime_font, sync_native_ime_font
 from .ui_theme import apply_ttk_theme, style_text_widget
@@ -156,8 +158,12 @@ class Application:
         self.image_paths: list[Path] = []
         self.preview_photo: tk.PhotoImage | None = None
         self.config = bootstrap_config()
+        self.history_store = HistoryStore(ROOT)
+        self.history_entries: dict[str, HistoryEntry] = {}
+        self.history_preview_photo: tk.PhotoImage | None = None
         self._variables()
         self._build()
+        self._refresh_history()
         self.root.after(100, self._consume_messages)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -333,8 +339,12 @@ class Application:
         )
         self.cancel_button.pack(side="left")
 
-        preview_panel = ttk.LabelFrame(right, text="出力結果", padding=10, style="Section.TLabelframe")
-        preview_panel.pack(fill="both", expand=True)
+        self.tabs = ttk.Notebook(right)
+        self.tabs.pack(fill="both", expand=True)
+        preview_panel = ttk.Frame(self.tabs, padding=8)
+        self.tabs.add(preview_panel, text="今回の結果")
+        history_panel = ttk.Frame(self.tabs, padding=8)
+        self.tabs.add(history_panel, text="生成履歴")
         self.image_label = ttk.Label(preview_panel, text="生成画像のプレビュー", anchor="center")
         self.image_label.pack(fill="both", expand=True)
         ttk.Label(preview_panel, textvariable=self.result_info, wraplength=350).pack(anchor="w", pady=(5, 6))
@@ -348,6 +358,72 @@ class Application:
         self.open_button = ttk.Button(row, text="画像を開く", command=self._open_image, state="disabled")
         self.open_button.pack(side="left", padx=(0, 6))
         ttk.Button(row, text="保存先を開く", command=self._open_outputs).pack(side="left")
+
+        ttk.Label(
+            history_panel,
+            text="履歴を選択して設定を復元。Ctrl+クリックで2件選択すると比較できます。",
+            style="Muted.TLabel", wraplength=410,
+        ).pack(anchor="w", pady=(1, 7))
+        history_columns = ("date", "workflow", "seed")
+        table_holder = ttk.Frame(history_panel)
+        table_holder.pack(fill="both", expand=True)
+        self.history_table = ttk.Treeview(
+            table_holder, columns=history_columns, show="tree headings",
+            selectmode="extended", height=11,
+        )
+        self.history_table.heading("#0", text="指示 / 生成内容")
+        self.history_table.column("#0", width=230, minwidth=130, stretch=True)
+        self.history_table.heading("date", text="日時")
+        self.history_table.column("date", width=126, minwidth=105, stretch=False)
+        self.history_table.heading("workflow", text="種別")
+        self.history_table.column("workflow", width=85, minwidth=70, stretch=False)
+        self.history_table.heading("seed", text="Seed")
+        self.history_table.column("seed", width=93, minwidth=70, stretch=False)
+        history_y = ttk.Scrollbar(table_holder, orient="vertical", command=self.history_table.yview)
+        history_x = ttk.Scrollbar(table_holder, orient="horizontal", command=self.history_table.xview)
+        self.history_table.configure(yscrollcommand=history_y.set, xscrollcommand=history_x.set)
+        self.history_table.grid(row=0, column=0, sticky="nsew")
+        history_y.grid(row=0, column=1, sticky="ns")
+        history_x.grid(row=1, column=0, sticky="ew")
+        table_holder.columnconfigure(0, weight=1)
+        table_holder.rowconfigure(0, weight=1)
+        self.history_table.bind("<<TreeviewSelect>>", self._history_selection_changed)
+        self.history_table.bind("<Double-1>", lambda _e: self._restore_selected_history())
+
+        self.history_details = tk.StringVar(value="履歴を選択してください")
+        ttk.Label(
+            history_panel, textvariable=self.history_details,
+            wraplength=420, style="Muted.TLabel",
+        ).pack(anchor="w", fill="x", pady=(8, 5))
+        self.history_image = ttk.Label(
+            history_panel, text="履歴画像", anchor="center",
+        )
+        self.history_image.pack(fill="both", expand=True, pady=(0, 6))
+        first_row = ttk.Frame(history_panel)
+        first_row.pack(fill="x", pady=(2, 4))
+        ttk.Button(
+            first_row, text="設定を復元", command=self._restore_selected_history,
+        ).pack(side="left", padx=(0, 6))
+        ttk.Button(
+            first_row, text="比較", command=self._compare_selected_history,
+        ).pack(side="left", padx=(0, 6))
+        ttk.Button(
+            first_row, text="履歴更新", command=self._refresh_history,
+        ).pack(side="left")
+        second_row = ttk.Frame(history_panel)
+        second_row.pack(fill="x")
+        self.same_seed_button = ttk.Button(
+            second_row, text="同じSeedで再生成",
+            command=lambda: self._regenerate_selected_history(new_seed=False),
+            state="disabled",
+        )
+        self.same_seed_button.pack(side="left", padx=(0, 6))
+        self.new_seed_button = ttk.Button(
+            second_row, text="別Seedで再生成",
+            command=lambda: self._regenerate_selected_history(new_seed=True),
+            state="disabled",
+        )
+        self.new_seed_button.pack(side="left")
 
         status_bar = ttk.Frame(layout)
         status_bar.pack(fill="x", pady=(0, 5))
