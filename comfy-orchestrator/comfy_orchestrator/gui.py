@@ -238,6 +238,7 @@ class Application:
         self.denoise = tk.StringVar(value=str(options.get("denoise", 0.53)))
         self.size_hint = tk.StringVar(value="")
         self.reference_image = tk.StringVar(value="")
+        self.composition_image = tk.StringVar(value="")
         self.mask_image = tk.StringVar(value="")
         self.pose_image = tk.StringVar(value="")
         self.pose_mode = tk.StringVar(value=str(options.get("pose_mode", "skeleton")))
@@ -467,6 +468,32 @@ class Application:
         self.reference_image.trace_add(
             "write", lambda *_args: self._on_reference_image_changed()
         )
+        composition_row = ttk.Frame(self.options_form)
+        composition_row.pack(fill="x", pady=(0, 5))
+        ttk.Label(composition_row, text="構図参考（LLMのみ）").pack(
+            side="left", padx=(0, 6),
+        )
+        ttk.Entry(
+            composition_row, textvariable=self.composition_image,
+            state="readonly", width=8,
+        ).pack(side="left", fill="x", expand=True)
+        ttk.Button(
+            composition_row, text="参照...", command=self._browse_composition,
+        ).pack(side="left", padx=(5, 0))
+        ttk.Button(
+            composition_row, text="消去",
+            command=lambda: self.composition_image.set(""),
+        ).pack(side="left", padx=(5, 0))
+        self.composition_image.trace_add(
+            "write", lambda *_args: self._update_generation_controls(),
+        )
+        ttk.Label(
+            self.options_form,
+            text="この画像はComfyUIへ送らず、LLMの構図説明だけに使います。"
+                 "他の参照画像がなければT2Iで生成します。",
+            style="Muted.TLabel", wraplength=470,
+        ).pack(anchor="w", pady=(0, 8))
+
         mask_row = ttk.Frame(self.options_form)
         mask_row.pack(fill="x", pady=(0, 5))
         ttk.Label(mask_row, text="部分修正").pack(side="left", padx=(0, 9))
@@ -791,7 +818,9 @@ class Application:
             )
         if hasattr(self, "vision_checkbox"):
             has_visual_reference = bool(
-                self.reference_image.get().strip() or self.pose_image.get().strip()
+                self.reference_image.get().strip()
+                or self.pose_image.get().strip()
+                or self.composition_image.get().strip()
             )
             self.vision_checkbox.configure(
                 state="normal" if has_visual_reference else "disabled"
@@ -1136,6 +1165,16 @@ class Application:
         if picked:
             self.reference_image.set(picked)
 
+    def _browse_composition(self) -> None:
+        picked = filedialog.askopenfilename(
+            filetypes=[("Images", "*.png *.jpg *.jpeg *.webp"), ("All files", "*.*")]
+        )
+        if picked:
+            self.composition_image.set(picked)
+            self.vision_composition.set(True)
+            self._update_generation_controls()
+            self.status.set("画像をLLMに渡して構図を解析します。画像対応モデルを選択してください")
+
     def _browse_pose(self) -> None:
         picked = filedialog.askopenfilename(
             filetypes=[("Images", "*.png *.jpg *.jpeg *.webp"), ("All files", "*.*")]
@@ -1234,6 +1273,10 @@ class Application:
             messagebox.showwarning("モデル未設定", "「モデルを更新」からLM Studioのモデルを選択してください。")
             return
         image = Path(self.reference_image.get()).expanduser() if self.reference_image.get() else None
+        composition = (
+            Path(self.composition_image.get()).expanduser()
+            if self.composition_image.get() else None
+        )
         mask = Path(self.mask_image.get()).expanduser() if self.mask_image.get() else None
         pose = Path(self.pose_image.get()).expanduser() if self.pose_image.get() else None
         selected = self._active_workflow()
@@ -1260,6 +1303,7 @@ class Application:
                     selected_workflow=selected, overrides=overrides,
                     progress=lambda line: self.messages.put(("progress", line)),
                     cancel_event=self.stop_event, mask_image=mask, pose_image=pose,
+                    composition_image=composition,
                 )
                 images = []
                 if not dry_run:
