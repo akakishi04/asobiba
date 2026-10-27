@@ -829,6 +829,7 @@ class Application:
             "ポーズを参照して生成" if "pose" in bindings else
             "マスクの白い部分だけ変更" if "mask" in bindings else
             "I2Iは元画像サイズ" if uses_source_image else
+            "構図画像をLLMで解析→T2I" if self.composition_image.get().strip() else
             "参照画像なし：自動でT2I"
         )
         self.size_hint.set(hint)
