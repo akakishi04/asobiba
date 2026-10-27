@@ -203,16 +203,20 @@ class HistoryStore:
             except (ValueError, TypeError):
                 continue
         imported = 0
-        for image in sorted(self.outputs.glob("*"), key=lambda f: f.stat().st_mtime if f.is_file() else 0, reverse=True):
-            if imported >= limit:
-                break
-            if not image.is_file() or image.suffix.lower() not in extensions:
-                continue
-            relative = self._relative_output(image)
-            if relative in indexed:
-                continue
-            row_id = uuid.uuid4().hex
-            with self._connection() as con:
+        candidates = sorted(
+            (f for f in self.outputs.iterdir() if f.is_file() and f.suffix.lower() in extensions),
+            key=lambda f: f.stat().st_mtime,
+            reverse=True,
+        )
+        # One database transaction instead of hundreds of fsyncs at GUI launch.
+        with self._connection() as con:
+            for image in candidates:
+                if imported >= limit:
+                    break
+                relative = self._relative_output(image)
+                if relative in indexed:
+                    continue
+                row_id = uuid.uuid4().hex
                 con.execute(
                     """INSERT INTO generations
                     (id,created_at,prompt_id,workflow_id,kind,request_text,
@@ -226,6 +230,6 @@ class HistoryStore:
                         "{}", json.dumps([relative]), None,
                     ),
                 )
-            indexed.add(relative)
-            imported += 1
+                indexed.add(relative)
+                imported += 1
         return imported
