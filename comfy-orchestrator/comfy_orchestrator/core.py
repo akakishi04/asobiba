@@ -337,6 +337,40 @@ class ComfyUI:
         subfolder = result.get("subfolder", "")
         return f"{subfolder}/{name}" if subfolder else name
 
+    def ensure_pose_dependencies(self, workflow: dict) -> None:
+        """Check pose-only extra nodes and installed weights before GPU inference."""
+        if not any(node.get("class_type") == "ControlNetLoader" for node in workflow.values()):
+            return
+        try:
+            info = http_json(self.base, "/object_info/ControlNetLoader", timeout=self.timeout)
+            model_choices = (
+                info["ControlNetLoader"]["input"]["required"]["control_net_name"][0]
+            )
+        except (KeyError, IndexError, TypeError, OrchestratorError) as exc:
+            raise OrchestratorError(
+                "ComfyUIのControlNetLoaderを確認できません。ComfyUIを更新・再起動してください"
+            ) from exc
+        model_names = [
+            node["inputs"]["control_net_name"]
+            for node in workflow.values() if node.get("class_type") == "ControlNetLoader"
+        ]
+        for wanted in model_names:
+            if wanted not in model_choices:
+                raise OrchestratorError(
+                    f"OpenPose用ControlNetモデルがありません: {wanted}。"
+                    "ComfyUI/models/controlnet に配置して再起動してください"
+                )
+        if any(node.get("class_type") == "DWPreprocessor" for node in workflow.values()):
+            try:
+                info = http_json(self.base, "/object_info/DWPreprocessor", timeout=self.timeout)
+                if "DWPreprocessor" not in info:
+                    raise KeyError("DWPreprocessor")
+            except (KeyError, OrchestratorError) as exc:
+                raise OrchestratorError(
+                    "ポーズ抽出には comfyui_controlnet_aux (DWPose) の追加が必要です。"
+                    "ComfyUI Managerでインストールして再起動してください"
+                ) from exc
+
     def submit(self, workflow: dict) -> str:
         result = http_json(self.base, "/prompt", {"prompt": workflow}, self.timeout)
         prompt_id = result.get("prompt_id")
@@ -421,6 +455,14 @@ def execute(
 
     check_cancelled()
     comfy = ComfyUI(config["comfyui"])
+    if not dry_run:
+        # Fail early on uninstalled pose models without spending VRAM on an LLM.
+        for entry in workflows.values():
+            if entry.get("kind") == "pose":
+                pose_template = load_workflow(
+                    (config_path.resolve().parent / entry["file"]).resolve(), entry["bindings"],
+                )
+                comfy.ensure_pose_dependencies(pose_template)
     if not dry_run and config["comfyui"].get("free_before_llm", True):
         note("ComfyUI: キューを確認して前回の生成モデルの解放を要求")
         comfy.free_if_idle()
@@ -523,6 +565,8 @@ def execute_saved(
         raise OrchestratorError("再生成開始前に中止しました")
 
     comfy = ComfyUI(config["comfyui"])
+    if selected.get("kind") == "pose":
+        comfy.ensure_pose_dependencies(template)
     if progress:
         progress("保存済みのプロンプトと生成設定を復元（LLMは使用しません）")
     uploaded = comfy.upload_image(reference_image) if has_image else None
