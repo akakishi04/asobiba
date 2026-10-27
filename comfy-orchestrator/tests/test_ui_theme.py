@@ -67,6 +67,7 @@ class TestTheme(unittest.TestCase):
             comfy_url=Field("http://127.0.0.1:8188"),
             model=Field("gemma"),
             unload_llm=Field(True),
+            vision_composition=Field(True),
             free_comfy=Field(True),
             workflow=Field("自動"),
             dark_mode=Field(True),
@@ -81,6 +82,7 @@ class TestTheme(unittest.TestCase):
         self.assertEqual(saved["ui"]["font_size"], 15)
         self.assertTrue(saved["ui"]["dark_mode"])
         self.assertEqual(saved["ui"]["denoise"], "0.53")
+        self.assertTrue(saved["llm"]["send_reference_to_llm"])
         self.assertEqual(saved["llm"]["base_url"], "http://127.0.0.1:57317")
 
     def test_editor_font_size_has_safe_range(self):
