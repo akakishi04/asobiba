@@ -878,6 +878,8 @@ class Application:
         }
         config["ui"]["seed"] = self.seed.get().strip()
         config["ui"]["denoise"] = self.denoise.get().strip()
+        config["ui"]["pose_mode"] = self.pose_mode.get()
+        config["ui"]["control_strength"] = self.control_strength.get().strip()
         return config
 
     def _overrides(self) -> dict:
@@ -916,6 +918,60 @@ class Application:
         )
         if picked:
             self.reference_image.set(picked)
+
+    def _browse_pose(self) -> None:
+        picked = filedialog.askopenfilename(
+            filetypes=[("Images", "*.png *.jpg *.jpeg *.webp"), ("All files", "*.*")]
+        )
+        if picked:
+            self.pose_image.set(picked)
+
+    def _edit_mask(self) -> None:
+        source = self.reference_image.get().strip()
+        if not source:
+            messagebox.showwarning("部分修正", "先に修正する画像を指定してください")
+            return
+        result = edit_mask(self.root, Path(source), ROOT / "data" / "masks")
+        if result is not None:
+            self.mask_image.set(str(result))
+            self._log(f"部分修正マスクを保存: {result.name}")
+            self.status.set("修正範囲を指定しました。自然文を入力して生成してください")
+
+    def _use_as_i2i_source(self, path: Path | None) -> None:
+        if self.working:
+            messagebox.showwarning("I2I", "現在の処理が終了してから画像を指定してください")
+            return
+        if path is None or not path.is_file():
+            messagebox.showerror("I2I", "使用する画像ファイルが見つかりません")
+            return
+        self._source_change_lock = True
+        try:
+            self.mask_image.set("")
+            self.pose_image.set("")
+            self._last_reference_image = ""
+            self.reference_image.set(str(path))
+        finally:
+            self._source_change_lock = False
+        self._on_reference_image_changed()
+        self.workflow.set("wai_i2i_basic")
+        self._update_generation_controls()
+        self.tabs.select(0)
+        self.prompt.focus_set()
+        self.status.set("生成結果をI2Iの参照画像に設定しました")
+
+    def _current_output_to_i2i(self) -> None:
+        selected = self.images_list.curselection()
+        index = selected[0] if selected else 0
+        self._use_as_i2i_source(
+            self.image_paths[index] if index < len(self.image_paths) else None
+        )
+
+    def _history_output_to_i2i(self) -> None:
+        entry = self._one_history()
+        if entry is None:
+            messagebox.showinfo("I2I", "画像を1件選択してください")
+            return
+        self._use_as_i2i_source(entry.first_image)
 
     def _refresh_models(self) -> None:
         settings = copy.deepcopy(self.config["llm"])
