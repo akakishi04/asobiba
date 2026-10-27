@@ -78,7 +78,7 @@ class LMStudio:
                 f"LM Studioにモデル {self.model!r} がありません。GUIの「モデルを更新」から選択してください"
             )
         capabilities = matching.get("capabilities")
-        if self.settings.get("send_reference_to_llm", False) and self._has_visual_input:
+        if self.settings.get("send_reference_to_llm", False) and getattr(self, "_has_visual_input", False):
             # Older LM Studio versions may not report capabilities; only reject
             # models explicitly identified as text-only.
             if isinstance(capabilities, dict) and capabilities.get("vision") is False:
