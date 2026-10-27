@@ -86,6 +86,29 @@ def apply_ttk_theme(root: tk.Tk, dark: bool = True) -> dict[str, str]:
         selectbackground=[("readonly", p["input"])],
         selectforeground=[("readonly", p["text"])],
     )
+    style.configure(
+        "Treeview", background=p["input"], fieldbackground=p["input"],
+        foreground=p["text"], rowheight=26, borderwidth=0,
+    )
+    style.map(
+        "Treeview", background=[("selected", p["accent"])],
+        foreground=[("selected", "#FFFFFF")],
+    )
+    style.configure(
+        "Treeview.Heading", background=p["button"], foreground=p["text"],
+        font=("Meiryo UI", 9, "bold"), padding=(5, 6),
+    )
+    style.map("Treeview.Heading", background=[("active", p["button_hover"])])
+    style.configure("TNotebook", background=p["surface"], borderwidth=0)
+    style.configure(
+        "TNotebook.Tab", background=p["button"], foreground=p["text"],
+        padding=(12, 7),
+    )
+    style.map(
+        "TNotebook.Tab",
+        background=[("selected", p["surface"]), ("active", p["button_hover"])],
+        foreground=[("selected", p["text"])],
+    )
     style.configure("TCheckbutton", background=p["surface"], foreground=p["text"], padding=(0, 2))
     style.map(
         "TCheckbutton", background=[("active", p["surface"])],
