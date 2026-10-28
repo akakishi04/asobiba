@@ -1389,8 +1389,8 @@ class Application:
             while True:
                 kind, data = self.messages.get_nowait()
                 if kind == "progress":
-                    if data.startswith("【構図認識結果】\\n"):
-                        self.latest_composition_report = data.split("\\n", 1)[1]
+                    if data.startswith("【構図認識結果】\n"):
+                        self.latest_composition_report = data.split("\n", 1)[1]
                         self.status.set("構図認識が完了しました（認識結果...から確認可能）")
                     else:
                         self.status.set(data)
