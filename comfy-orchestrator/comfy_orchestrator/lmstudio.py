@@ -319,8 +319,12 @@ class LMStudio:
                       "Never fabricate the location of hidden joints."
                 )
             if progress:
+                task_label = (
+                    "自然文と構図観察結果から生成プロンプトを作成"
+                    if self._has_visual_input else "自然文を解釈"
+                )
                 progress(
-                    "LM Studio: 自然文と構図観察結果から生成プロンプトを作成"
+                    f"LM Studio: {task_label}"
                     f"（応答待ち上限 {self.settings.get('inference_timeout_seconds', 600)} 秒）"
                 )
             request = {
