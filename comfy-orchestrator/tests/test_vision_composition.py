@@ -46,6 +46,7 @@ class CompositionVisionTests(unittest.TestCase):
         catalog = {kind: self.cfg["workflows"][kind]}
         self.answer["workflow_id"] = kind
         calls = []
+        progress_events = []
 
         def fake_request(settings, route, payload=None):
             calls.append((route, payload))
@@ -72,9 +73,16 @@ class CompositionVisionTests(unittest.TestCase):
             ), patch.object(lmstudio, "_request", side_effect=fake_request):
                 result = lmstudio.LMStudio(self.cfg["llm"]).interpret(
                     "この構図の人物を赤髪の少女にして",
-                    catalog, reference,
+                    catalog, reference, progress=progress_events.append,
                 )
         self.assertEqual(result["workflow_id"], kind)
+        reports = [
+            line for line in progress_events
+            if line.startswith("【構図認識結果】\\n")
+        ]
+        self.assertEqual(len(reports), 1)
+        self.assertIn("カメラ視点: slightly low angle", reports[0])
+        self.assertIn("不明点・隠れた部分", reports[0])
         completions = [
             body for name, body in calls if name == "/v1/chat/completions"
         ]
@@ -102,6 +110,28 @@ class CompositionVisionTests(unittest.TestCase):
         self.assertIn(role, system)
         self.assertEqual(calls[-1][0], "/api/v1/models/unload")
         return payload
+
+    def test_composition_formatter_rejects_missing_or_unbounded_fields(self):
+        report = lmstudio.format_composition_observation(OBSERVATION)
+        self.assertIn("腕と手:", report)
+        self.assertIn("unknown", report)
+        missing = dict(OBSERVATION)
+        missing.pop("arms_and_hands")
+        with self.assertRaisesRegex(core.OrchestratorError, "arms_and_hands"):
+            lmstudio.format_composition_observation(missing)
+        oversized = dict(OBSERVATION)
+        oversized["framing"] = "x" * 301
+        with self.assertRaisesRegex(core.OrchestratorError, "framing"):
+            lmstudio.format_composition_observation(oversized)
+
+    def test_composition_schema_has_no_optional_fake_coordinates(self):
+        schema = lmstudio.composition_schema()
+        self.assertEqual(
+            set(schema["required"]), set(lmstudio.COMPOSITION_FIELDS)
+        )
+        self.assertFalse(schema["additionalProperties"])
+        self.assertNotIn("bounding_box", schema["properties"])
+        self.assertNotIn("keypoints", schema["properties"])
 
     def test_i2i_image_informs_composition_prompt(self):
         self._interpret_and_capture("wai_i2i_basic", "image to be edited")
