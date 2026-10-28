@@ -214,6 +214,7 @@ class Application:
         self.history_store = HistoryStore(ROOT)
         self.history_entries: dict[str, HistoryEntry] = {}
         self.history_preview_photo: tk.PhotoImage | None = None
+        self.latest_composition_report = ""
         self._variables()
         self._build()
         self._refresh_history()
@@ -540,12 +541,17 @@ class Application:
             self.options_form, text="ポーズ参照はT2Iと別の入力です。通常画像モードは追加ControlNet・DWPoseが必要。",
             style="Muted.TLabel", wraplength=470,
         ).pack(anchor="w", pady=(0, 6))
+        vision_row = ttk.Frame(self.options_form)
+        vision_row.pack(fill="x", pady=(2, 2))
         self.vision_checkbox = ttk.Checkbutton(
-            self.options_form,
+            vision_row,
             text="画像をLLMで構図解析し、プロンプトに反映",
             variable=self.vision_composition,
         )
-        self.vision_checkbox.pack(anchor="w", pady=(2, 2))
+        self.vision_checkbox.pack(side="left")
+        ttk.Button(
+            vision_row, text="認識結果...", command=self._show_composition_report,
+        ).pack(side="right", padx=(6, 0))
         ttk.Label(
             self.options_form,
             text="画像対応VLMが必要。人物の位置・視点・ポーズを英文タグに変換します。"
@@ -1177,6 +1183,40 @@ class Application:
         if picked:
             self.reference_image.set(picked)
 
+    def _show_composition_report(self) -> None:
+        """Show exactly what the selected local VLM thought it saw."""
+        report = self.latest_composition_report
+        if not report:
+            messagebox.showinfo(
+                "画像の構図認識",
+                "まず参照画像を選び、「解釈のみテスト」を実行してください。"
+                "画像対応モデルと構図解析ONが必要です。",
+            )
+            return
+        window = tk.Toplevel(self.root)
+        window.title("画像の構図認識結果（VLM推定）")
+        window.geometry("700x480")
+        window.minsize(440, 300)
+        window.transient(self.root)
+        ttk.Label(
+            window,
+            text="以下は画像対応LLMの観察結果です。誤認識があれば、生成指示を具体化するか"
+                 "ポーズControlNetの併用を検討してください。",
+            style="Muted.TLabel", wraplength=650,
+        ).pack(anchor="w", fill="x", padx=12, pady=(12, 7))
+        view = scrolledtext.ScrolledText(
+            window, wrap="word", font=("Meiryo UI", 11), padx=10,
+            pady=8, height=14,
+        )
+        view.insert("1.0", report)
+        view.configure(state="disabled")
+        view.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+        footer = ttk.Frame(window, padding=(12, 0, 12, 12))
+        footer.pack(fill="x")
+        ttk.Button(
+            footer, text="閉じる", command=window.destroy,
+        ).pack(side="right")
+
     def _browse_composition(self) -> None:
         picked = filedialog.askopenfilename(
             filetypes=[("Images", "*.png *.jpg *.jpeg *.webp"), ("All files", "*.*")]
@@ -1305,6 +1345,7 @@ class Application:
             messagebox.showerror("生成設定エラー", str(exc))
             return
         cfg = copy.deepcopy(self.config)
+        self.latest_composition_report = ""
         self._set_busy("解釈テスト中..." if dry_run else "生成準備中...")
         self._log("開始: " + ("解釈のみテスト" if dry_run else "画像生成") + f" / model={cfg['llm']['model']}")
 
@@ -1348,8 +1389,12 @@ class Application:
             while True:
                 kind, data = self.messages.get_nowait()
                 if kind == "progress":
+                    if data.startswith("【構図認識結果】\\n"):
+                        self.latest_composition_report = data.split("\\n", 1)[1]
+                        self.status.set("構図認識が完了しました（認識結果...から確認可能）")
+                    else:
+                        self.status.set(data)
                     self._log(data)
-                    self.status.set(data)
                 elif kind == "check":
                     for line in data:
                         self._log(line)
