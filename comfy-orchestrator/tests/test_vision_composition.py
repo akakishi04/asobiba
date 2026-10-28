@@ -14,6 +14,18 @@ from comfy_orchestrator import core, gui, lmstudio
 
 ROOT = Path(__file__).resolve().parents[1]
 
+OBSERVATION = {
+    "framing": "full body, feet visible",
+    "camera": "slightly low angle, three-quarter view",
+    "subject_placement": "one person, left of center",
+    "body_pose": "sitting, torso upright",
+    "torso_orientation": "body facing image-right",
+    "head_and_gaze": "head turned toward camera",
+    "arms_and_hands": "image-left hand rests on lap; image-right arm unknown",
+    "legs_and_feet": "knees bent; both feet visible",
+    "uncertain_or_hidden": "image-right hand is occluded; unknown",
+}
+
 
 class CompositionVisionTests(unittest.TestCase):
     def setUp(self):
@@ -38,9 +50,14 @@ class CompositionVisionTests(unittest.TestCase):
         def fake_request(settings, route, payload=None):
             calls.append((route, payload))
             if route == "/v1/chat/completions":
+                schema = payload["response_format"]["json_schema"]["name"]
+                response = (
+                    OBSERVATION if schema == "comfy_visual_observation"
+                    else self.answer
+                )
                 return {
                     "choices": [
-                        {"message": {"content": json.dumps(self.answer)}}
+                        {"message": {"content": json.dumps(response)}}
                     ]
                 }
             if route == "/api/v1/models/unload":
@@ -58,18 +75,30 @@ class CompositionVisionTests(unittest.TestCase):
                     catalog, reference,
                 )
         self.assertEqual(result["workflow_id"], kind)
-        payload = next(body for name, body in calls if name == "/v1/chat/completions")
+        completions = [
+            body for name, body in calls if name == "/v1/chat/completions"
+        ]
+        self.assertEqual(len(completions), 2)
+        vision, payload = completions
+        self.assertEqual(
+            vision["response_format"]["json_schema"]["name"],
+            "comfy_visual_observation",
+        )
+        self.assertEqual(vision["messages"][1]["content"][1]["type"], "image_url")
+        self.assertTrue(
+            vision["messages"][1]["content"][1]["image_url"]["url"].startswith(
+                "data:image/png;base64,"
+            )
+        )
         system = payload["messages"][0]["content"]
         message = payload["messages"][1]["content"]
-        self.assertIsInstance(message, list)
-        self.assertEqual(message[1]["type"], "image_url")
-        self.assertTrue(
-            message[1]["image_url"]["url"].startswith("data:image/png;base64,")
-        )
+        self.assertIsInstance(message, str)
         self.assertIn("COMPOSITION", system)
         self.assertIn("camera elevation", system)
         self.assertIn("subject location in the frame", system)
-        self.assertIn("Reference image visible to the LLM: yes", message[0]["text"])
+        self.assertIn("Reference image visible to the LLM: yes", message)
+        self.assertIn("Visual observations", message)
+        self.assertIn("image-right arm unknown", message)
         self.assertIn(role, system)
         self.assertEqual(calls[-1][0], "/api/v1/models/unload")
         return payload
@@ -157,8 +186,13 @@ class CompositionVisionTests(unittest.TestCase):
         def fake_request(settings, route, payload=None):
             calls.append((route, payload))
             if route == "/v1/chat/completions":
+                schema = payload["response_format"]["json_schema"]["name"]
+                response = (
+                    OBSERVATION if schema == "comfy_visual_observation"
+                    else self.answer
+                )
                 return {"choices": [
-                    {"message": {"content": json.dumps(self.answer)}}
+                    {"message": {"content": json.dumps(response)}}
                 ]}
             if route == "/api/v1/models/unload":
                 return {"instance_id": "v-instance"}
@@ -175,16 +209,21 @@ class CompositionVisionTests(unittest.TestCase):
                     {"wai_t2i_basic": self.cfg["workflows"]["wai_t2i_basic"]},
                     image, reference_role="composition",
                 )
-        payload = calls[0][1]
+        completions = [
+            payload for route, payload in calls if route == "/v1/chat/completions"
+        ]
+        self.assertEqual(len(completions), 2)
+        payload = completions[1]
         system = payload["messages"][0]["content"]
         self.assertIn("COMPOSITION-ONLY reference", system)
         self.assertIn("do NOT copy character identity", system)
         self.assertIn("Reference role: composition only (LLM reference)",
-                      payload["messages"][1]["content"][0]["text"])
+                      payload["messages"][1]["content"])
         self.assertIn(
             "Reference image routed to ComfyUI: no",
-            payload["messages"][1]["content"][0]["text"],
+            payload["messages"][1]["content"],
         )
+        self.assertIn("Visual observations", payload["messages"][1]["content"])
 
     def test_composition_image_requires_vision_toggle(self):
         self.cfg["llm"]["send_reference_to_llm"] = False
