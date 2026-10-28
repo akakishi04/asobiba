@@ -78,7 +78,7 @@ class CompositionVisionTests(unittest.TestCase):
         self.assertEqual(result["workflow_id"], kind)
         reports = [
             line for line in progress_events
-            if line.startswith("【構図認識結果】\\n")
+            if line.startswith("【構図認識結果】\n")
         ]
         self.assertEqual(len(reports), 1)
         self.assertIn("カメラ視点: slightly low angle", reports[0])
