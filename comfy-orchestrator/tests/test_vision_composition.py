@@ -93,7 +93,7 @@ class CompositionVisionTests(unittest.TestCase):
         system = payload["messages"][0]["content"]
         message = payload["messages"][1]["content"]
         self.assertIsInstance(message, str)
-        self.assertIn("COMPOSITION", system)
+        self.assertIn("visual observation pass", system)
         self.assertIn("camera elevation", system)
         self.assertIn("subject location in the frame", system)
         self.assertIn("Reference image visible to the LLM: yes", message)
@@ -109,7 +109,7 @@ class CompositionVisionTests(unittest.TestCase):
     def test_pose_reference_is_limited_to_pose_and_viewpoint(self):
         payload = self._interpret_and_capture("wai_pose_detect", "POSE reference")
         self.assertIn("do not borrow the mannequin's material", payload["messages"][0]["content"])
-        self.assertIn("Reference role: pose and camera only", payload["messages"][1]["content"][0]["text"])
+        self.assertIn("Reference role: pose and camera only", payload["messages"][1]["content"])
 
     def test_pose_photo_is_passed_to_local_lmstudio(self):
         seen = []
