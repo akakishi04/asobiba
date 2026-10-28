@@ -64,6 +64,62 @@ def list_models(settings: dict) -> list[dict]:
     ]
 
 
+# A separate observation pass makes mistaken image interpretation visible
+# before those mistakes are translated into an SDXL generation prompt.
+COMPOSITION_FIELDS = {
+    "framing": "画角・切り取り",
+    "camera": "カメラ視点",
+    "subject_placement": "人数・画面内の位置",
+    "body_pose": "全身姿勢・重心",
+    "torso_orientation": "胴体の向き",
+    "head_and_gaze": "頭部と視線",
+    "arms_and_hands": "腕と手",
+    "legs_and_feet": "脚と足",
+    "uncertain_or_hidden": "不明点・隠れた部分",
+}
+
+
+def composition_schema() -> dict:
+    """Small, strictly formatted factual observation (no invented coordinates)."""
+    return {
+        "type": "object",
+        "properties": {
+            key: {"type": "string", "maxLength": 300}
+            for key in COMPOSITION_FIELDS
+        },
+        "required": list(COMPOSITION_FIELDS),
+        "additionalProperties": False,
+    }
+
+
+def read_json_reply(result: dict, label: str) -> dict:
+    """Validate an LM Studio structured response without trusting its content."""
+    choices = result.get("choices")
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        raise OrchestratorError(f"LM Studioの{label}応答形式が不正です")
+    message = choices[0].get("message")
+    raw = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(raw, str):
+        raise OrchestratorError(f"LM Studioの{label}がJSON文字列を返しませんでした")
+    try:
+        parsed = json.loads(raw)
+    except ValueError as exc:
+        raise OrchestratorError(f"LM Studioの{label}のJSONを解析できません: {raw[:150]}") from exc
+    if not isinstance(parsed, dict):
+        raise OrchestratorError(f"LM Studioの{label}はJSONオブジェクトが必要です")
+    return parsed
+
+
+def format_composition_observation(observation: dict) -> str:
+    lines = []
+    for key, label in COMPOSITION_FIELDS.items():
+        value = observation.get(key)
+        if not isinstance(value, str) or not value.strip() or len(value) > 300:
+            raise OrchestratorError(f"構図認識結果の {key} が不正です")
+        lines.append(f"{label}: {value.strip()}")
+    return "\n".join(lines)
+
+
 class LMStudio:
     def __init__(self, settings: dict):
         self.settings = settings
