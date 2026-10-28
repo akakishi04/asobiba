@@ -293,7 +293,7 @@ class LMStudio:
                     ],
                     "stream": False,
                     "temperature": 0.0,
-                    "max_tokens": min(1600, self.settings.get("max_tokens", 4096)),
+                    "max_tokens": self.settings.get("max_tokens", 4096),
                     "response_format": {
                         "type": "json_schema",
                         "json_schema": {
