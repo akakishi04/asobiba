@@ -87,6 +87,22 @@ class PromptProfileTests(unittest.TestCase):
                     LEGACY_SYSTEM,
                 )
 
+    def test_unrelated_t2i_models_do_not_receive_illustrious_rules(self):
+        unrelated = {
+            "qwen_t2i": {
+                "kind": "t2i",
+                "description": "Qwen Image general text-to-image workflow",
+                "bindings": {"positive_prompt": {"node": "8", "input": "text"}},
+            }
+        }
+        self.assertFalse(prompt_profiles.is_t2i_context(unrelated))
+        self.assertEqual(
+            prompt_profiles.apply_t2i_profile(
+                LEGACY_SYSTEM, unrelated, "illustrious_v2"
+            ),
+            LEGACY_SYSTEM,
+        )
+
     def test_unexpected_profile_is_rejected(self):
         with self.assertRaises(ValueError):
             prompt_profiles.apply_t2i_profile(
