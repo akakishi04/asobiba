@@ -1,7 +1,7 @@
-"""Versioned T2I prompt-design policies for the installed WAI-Illustrious model.
+"""Versioned T2I and I2I/inpaint prompt policies for WAI-Illustrious SDXL.
 
-Only the system instructions change. Workflows, ComfyUI nodes and numeric
-generation settings are not modified by the prompt-profile switch.
+Only the language-model instructions change. Workflows, ComfyUI nodes and
+numeric generation settings are not modified by the profile switches.
 """
 
 from __future__ import annotations
