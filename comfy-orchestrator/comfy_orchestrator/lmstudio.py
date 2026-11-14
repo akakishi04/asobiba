@@ -16,10 +16,11 @@ from typing import Any, Callable
 
 from .core import OrchestratorError, _open_json, plan_schema
 from .prompt_profiles import (
-    DEFAULT_T2I_PROFILE,
-    T2I_PROFILE_LEGACY,
-    apply_t2i_profile,
-    is_t2i_context,
+    DEFAULT_T2I_PROFILE, T2I_PROFILE_LEGACY,
+    DEFAULT_I2I_PROFILE, I2I_PROFILE_LEGACY,
+    apply_t2i_profile, apply_i2i_profile,
+    is_t2i_context, is_i2i_context,
+    edit_strength_hint,
 )
 
 
@@ -233,7 +234,28 @@ class LMStudio:
             )
         )
         profile = self.settings.get("t2i_prompt_profile", DEFAULT_T2I_PROFILE)
+        edit_profile = self.settings.get("i2i_prompt_profile", DEFAULT_I2I_PROFILE)
         system = apply_t2i_profile(system, workflows, profile)
+        system = apply_i2i_profile(system, workflows, edit_profile)
+        edit_enabled = (
+            is_i2i_context(workflows) and edit_profile != I2I_PROFILE_LEGACY
+        )
+        edit_context = ""
+        if edit_enabled:
+            mask_present = any(
+                entry.get("kind") == "inpaint" for entry in workflows.values()
+            )
+            edit_context = f"Mask present: {'yes' if mask_present else 'no'}\n"
+            if "_edit_denoise" in self.settings:
+                denoise = self.settings["_edit_denoise"]
+                edit_context += (
+                    f"Edit strength hint: {edit_strength_hint(denoise)} "
+                    f"(host denoise={denoise:g}; this is NOT a change request)\n"
+                )
+            edit_context += (
+                "Priority: preserve original except for explicitly requested edits. "
+                "A text-only LLM must not pretend it has seen the source image.\n"
+            )
         # Legacy keeps the original exact user metadata for fair comparison.
         # Do not describe a text-only T2I request as an image-to-edit operation.
         no_image_role = (
@@ -248,6 +270,7 @@ class LMStudio:
             f"{'yes' if self._has_visual_input else 'no'}\n"
             f"Reference role: "
             f"{'composition only (LLM reference)' if composition_only else 'pose and camera only' if pose_only else no_image_role if not self._has_visual_input else 'composition of image to edit'}\n"
+            f"{edit_context}"
             f"User request: {text}"
         )
         message: dict[str, Any] = {"role": "user", "content": user_text}
@@ -338,6 +361,11 @@ class LMStudio:
                     "T2Iプロンプト: "
                     + ("Illustrious v2（構図・陰影の一貫性重視）"
                        if profile != T2I_PROFILE_LEGACY else "従来版（比較用）")
+                )
+            if progress and is_i2i_context(workflows):
+                progress(
+                    "I2I/部分修正プロンプト: "
+                    + ("保持重視 v1" if edit_enabled else "従来版（比較用）")
                 )
             if progress:
                 task_label = (
