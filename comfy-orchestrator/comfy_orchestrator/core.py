@@ -126,6 +126,12 @@ def load_config(path: Path) -> dict:
         unload = config["llm"].get("unload_after_inference", True)
         if not isinstance(unload, bool):
             raise OrchestratorError("llm.unload_after_inference は真偽値です")
+        from .prompt_profiles import DEFAULT_T2I_PROFILE, T2I_PROFILES
+        profile = config["llm"].get("t2i_prompt_profile", DEFAULT_T2I_PROFILE)
+        if not isinstance(profile, str) or profile not in T2I_PROFILES:
+            raise OrchestratorError(
+                "llm.t2i_prompt_profile は illustrious_v2 または legacy です"
+            )
         if not isinstance(config["llm"].get("send_reference_to_llm", False), bool):
             raise OrchestratorError("llm.send_reference_to_llm は真偽値です")
     for key, item in config["workflows"].items():
