@@ -92,3 +92,104 @@ def apply_t2i_profile(base_system: str, workflows: dict, profile: str) -> str:
     if profile == T2I_PROFILE_LEGACY or not is_t2i_context(workflows):
         return base_system
     return base_system + "\n\n" + ILLUSTRIOUS_T2I_V2_INSTRUCTIONS.strip()
+
+
+
+# I2I is an EDITING task, not a second T2I scene invention. Keep a separate
+# version switch so A/B comparisons do not change T2I policy or node graphs.
+I2I_PROFILE_LEGACY = "legacy"
+I2I_PROFILE_PRESERVE_EDIT_V1 = "preserve_edit_v1"
+DEFAULT_I2I_PROFILE = I2I_PROFILE_PRESERVE_EDIT_V1
+I2I_PROFILES = (I2I_PROFILE_PRESERVE_EDIT_V1, I2I_PROFILE_LEGACY)
+
+I2I_PROFILE_LABELS = {
+    I2I_PROFILE_PRESERVE_EDIT_V1: "保持重視 (v1)",
+    I2I_PROFILE_LEGACY: "従来 (比較用)",
+}
+I2I_LABEL_TO_PROFILE = {label: key for key, label in I2I_PROFILE_LABELS.items()}
+
+
+ILLUSTRIOUS_I2I_PRESERVE_EDIT_V1 = """
+You are also a conservative image-edit prompt designer for WAI Illustrious
+SDXL. This workflow starts from a SOURCE IMAGE. Your job is to implement the
+user's requested EDIT, not to create or redesign an unrelated illustration.
+
+Before writing JSON, distinguish internally:
+- PRESERVE: subject count and identity, existing composition and crop, camera,
+  pose, expression, clothes, background, lighting and colors, unless the user
+  explicitly asks to change them.
+- EDIT: only the elements and attributes that the user explicitly requests.
+  Never change an unaffected element to make the prompt sound more detailed.
+
+Build positive_prompt using concise English Danbooru-like tags, keeping
+specific user-provided visual facts and the requested edits central.
+For example, "fix hair flow" means more coherent hair strands following
+gravity/movement, NOT a different hairstyle, outfit or camera angle.
+"Make folds/shadows natural" means fabric tension, folds and light direction
+consistent with the source, NOT a new lighting scheme.
+
+IMPORTANT: When the reference image has NOT been shown to the LLM,
+do not claim to know its actual appearance. You can request that its
+unchanged composition, character and clothing be retained, but NEVER
+invent specific pose, clothes, hair, background or light direction.
+When an image is visible, rely only on observable facts; an absent or
+hidden feature must stay uncertain, not hallucinated.
+
+Keep negative_prompt concise and artifact-focused: quality/lowres and
+specific unwanted artifacts, without negating requested elements.
+Avoid adding random accessories, named characters, styles, colors,
+artists or conflicting quality boosters.
+
+The host controls denoise, seed, steps, CFG and workflow selection.
+An edit-strength hint can express risk of deviation, but does not give
+permission to override any explicit preservation request. Higher denoise
+can change MORE of the source even with a cautious prompt.
+Return ONLY valid JSON with positive_prompt, negative_prompt and
+supported parameters. Never append explanations or extra schema fields.
+""".strip()
+
+ILLUSTRIOUS_INPAINT_EXTRA = """
+INPAINT-SPECIFIC: The user painted a mask. Focus the prompt on the requested
+correction within that masked region. Areas outside the mask must not be
+redesigned. Do not claim to know the mask's exact outline or contents unless
+they were explicitly described. The compositing workflow, not the prompt,
+enforces protection outside the mask; seams and edges still need care.
+""".strip()
+
+
+def is_i2i_context(workflows: dict) -> bool:
+    """Restrict the editing policy to the shipped WAI image-edit workflows."""
+    return bool(workflows) and all(
+        isinstance(entry, dict)
+        and entry.get("kind") in ("i2i", "inpaint")
+        and (
+            "illustrious" in str(entry.get("description", "")).lower()
+            or "wai" in name.lower()
+        )
+        for name, entry in workflows.items()
+    )
+
+
+def apply_i2i_profile(base_system: str, workflows: dict, profile: str) -> str:
+    """Return an unchanged legacy prompt, or conservative image-edit guidance."""
+    if profile not in I2I_PROFILES:
+        raise ValueError(f"unsupported I2I prompt profile: {profile!r}")
+    if profile == I2I_PROFILE_LEGACY or not is_i2i_context(workflows):
+        return base_system
+    suffix = ILLUSTRIOUS_I2I_PRESERVE_EDIT_V1
+    if workflows and all(entry.get("kind") == "inpaint" for entry in workflows.values()):
+        suffix += "\n\n" + ILLUSTRIOUS_INPAINT_EXTRA
+    return base_system + "\n\n" + suffix
+
+
+def edit_strength_hint(denoise: float) -> str:
+    """Translate the host's actual denoise into a cautious language-only hint."""
+    if isinstance(denoise, bool) or not isinstance(denoise, (int, float)):
+        raise ValueError("denoise must be numeric")
+    if not 0 <= denoise <= 1:
+        raise ValueError("denoise must be between 0 and 1")
+    if denoise <= 0.40:
+        return "preserve-oriented"
+    if denoise <= 0.60:
+        return "balanced"
+    return "transform-oriented"
