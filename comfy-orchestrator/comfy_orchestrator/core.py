@@ -126,11 +126,19 @@ def load_config(path: Path) -> dict:
         unload = config["llm"].get("unload_after_inference", True)
         if not isinstance(unload, bool):
             raise OrchestratorError("llm.unload_after_inference は真偽値です")
-        from .prompt_profiles import DEFAULT_T2I_PROFILE, T2I_PROFILES
+        from .prompt_profiles import (
+            DEFAULT_T2I_PROFILE, T2I_PROFILES,
+            DEFAULT_I2I_PROFILE, I2I_PROFILES,
+        )
         profile = config["llm"].get("t2i_prompt_profile", DEFAULT_T2I_PROFILE)
         if not isinstance(profile, str) or profile not in T2I_PROFILES:
             raise OrchestratorError(
                 "llm.t2i_prompt_profile は illustrious_v2 または legacy です"
+            )
+        edit_profile = config["llm"].get("i2i_prompt_profile", DEFAULT_I2I_PROFILE)
+        if not isinstance(edit_profile, str) or edit_profile not in I2I_PROFILES:
+            raise OrchestratorError(
+                "llm.i2i_prompt_profile は preserve_edit_v1 または legacy です"
             )
         if not isinstance(config["llm"].get("send_reference_to_llm", False), bool):
             raise OrchestratorError("llm.send_reference_to_llm は真偽値です")
@@ -491,6 +499,19 @@ def execute(
     provider = settings.get("provider", "lmstudio" if llm_key == "llm" else "ollama")
     if provider == "lmstudio":
         from .lmstudio import LMStudio
+        from .prompt_profiles import is_i2i_context
+        # An edit-strength hint is provided to the prompt designer only.
+        # Keep it out of config.json, the LLM output schema and ComfyUI nodes.
+        if is_i2i_context(workflows):
+            settings = dict(settings)
+            if len(workflows) == 1:
+                edit_workflow = next(iter(workflows.values()))
+                effective_denoise = (overrides or {}).get(
+                    "denoise", edit_workflow.get("defaults", {}).get("denoise")
+                )
+                if effective_denoise is not None:
+                    check_param("denoise", effective_denoise)
+                    settings["_edit_denoise"] = float(effective_denoise)
         # A pose reference is also a valid vision input. The VLM receives the
         # same image used by pose ControlNet, while ComfyUI still receives it
         # through the separate "pose" binding. In I2I, prefer the source image.
