@@ -1018,18 +1018,23 @@ class Application:
 
         entry = selected[0]
         p = entry.parameters
+        if entry.kind == "t2i":
+            policy_label = T2I_PROFILE_LABELS.get(
+                entry.prompt_profile, entry.prompt_profile or "記録なし"
+            )
+        elif entry.kind in ("i2i", "inpaint"):
+            policy_label = I2I_PROFILE_LABELS.get(
+                entry.prompt_profile, entry.prompt_profile or "記録なし"
+            )
+        else:
+            policy_label = None
         self.history_details.set(
             f"ワークフロー: {entry.workflow_id} / "
             f"Seed: {p.get('seed', '不明')} / "
             f"Steps: {p.get('steps', '不明')} / "
             f"CFG: {p.get('cfg', '不明')} / "
             f"画像: {len(entry.images)}枚"
-            + (
-                " / T2I方式: " + T2I_PROFILE_LABELS.get(
-                    entry.prompt_profile, entry.prompt_profile or "不明"
-                )
-                if entry.kind == "t2i" else ""
-            )
+            + (f" / 方式: {policy_label}" if policy_label else "")
             + (" / 旧画像（再生成用設定なし）" if entry.legacy else "")
         )
         image = entry.first_image
@@ -1099,8 +1104,13 @@ class Application:
                 variable.set(str(entry.parameters[key]))
             elif key == "seed":
                 variable.set("")
-        if entry.prompt_profile in T2I_PROFILE_LABELS:
+        if entry.kind == "t2i" and entry.prompt_profile in T2I_PROFILE_LABELS:
             self.t2i_profile.set(T2I_PROFILE_LABELS[entry.prompt_profile])
+        elif (
+            entry.kind in ("i2i", "inpaint")
+            and entry.prompt_profile in I2I_PROFILE_LABELS
+        ):
+            self.i2i_profile.set(I2I_PROFILE_LABELS[entry.prompt_profile])
         self._update_generation_controls()
         self.status.set("履歴から設定を復元しました。自然文を編集して生成できます")
         self._log(f"履歴の設定を復元: {entry.workflow_id} / Seed={entry.parameters.get('seed', '不明')}")
@@ -1190,6 +1200,7 @@ class Application:
             return
         cfg = copy.deepcopy(self.config)
         self.latest_prompt_profile = entry.prompt_profile
+        self.latest_request_text = entry.request_text
         self._set_busy("保存した設定を使って再生成中（LLMは呼び出しません）")
         self._log(
             f"再生成: {entry.workflow_id} / "
@@ -1572,9 +1583,14 @@ class Application:
             return
         cfg = copy.deepcopy(self.config)
         self.latest_composition_report = ""
-        self.latest_prompt_profile = cfg["llm"].get(
-            "t2i_prompt_profile", DEFAULT_T2I_PROFILE
-        ) if selected == "wai_t2i_basic" else None
+        kind = cfg["workflows"][selected]["kind"]
+        self.latest_prompt_profile = (
+            cfg["llm"].get("t2i_prompt_profile", DEFAULT_T2I_PROFILE)
+            if kind == "t2i" else
+            cfg["llm"].get("i2i_prompt_profile", DEFAULT_I2I_PROFILE)
+            if kind in ("i2i", "inpaint") else None
+        )
+        self.latest_request_text = prompt
         self._set_busy("解釈テスト中..." if dry_run else "生成準備中...")
         self._log("開始: " + ("解釈のみテスト" if dry_run else "画像生成") + f" / model={cfg['llm']['model']}")
 
