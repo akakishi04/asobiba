@@ -69,10 +69,19 @@ Do not include commentary, markdown, a numbered plan or unrecognized fields.
 
 
 def is_t2i_context(workflows: dict) -> bool:
-    """Do not apply T2I illustration instructions to I2I, pose or inpainting."""
+    """Only use the WAI-Illustrious policy with matching T2I checkpoints.
+
+    A future Qwen/Image or other T2I workflow must not silently inherit
+    assumptions about Danbooru tags.
+    """
     return bool(workflows) and all(
-        isinstance(entry, dict) and entry.get("kind") == "t2i"
-        for entry in workflows.values()
+        isinstance(entry, dict)
+        and entry.get("kind") == "t2i"
+        and (
+            "illustrious" in str(entry.get("description", "")).lower()
+            or "wai" in name.lower()
+        )
+        for name, entry in workflows.items()
     )
 
 
