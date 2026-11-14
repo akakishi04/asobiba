@@ -36,6 +36,7 @@ class HistoryEntry:
     mask_image: Path | None = None
     pose_image: Path | None = None
     composition_image: Path | None = None
+    prompt_profile: str | None = None
 
     @property
     def first_image(self) -> Path | None:
@@ -74,7 +75,7 @@ class HistoryStore:
                 )
             """)
             columns = {row[1] for row in con.execute("PRAGMA table_info(generations)")}
-            for column in ("mask_file", "pose_file", "composition_file"):
+            for column in ("mask_file", "pose_file", "composition_file", "prompt_profile"):
                 if column not in columns:
                     con.execute(f"ALTER TABLE generations ADD COLUMN {column} TEXT")
             con.execute(
@@ -111,6 +112,7 @@ class HistoryStore:
         mask_image: Path | None = None,
         pose_image: Path | None = None,
         composition_image: Path | None = None,
+        prompt_profile: str | None = None,
     ) -> HistoryEntry:
         if not isinstance(parameters, dict):
             raise HistoryError("履歴の生成設定はJSONオブジェクトである必要があります")
@@ -118,6 +120,10 @@ class HistoryStore:
             raise HistoryError("出力画像がない生成結果は履歴に登録できません")
         if not prompt_id or not workflow_id:
             raise HistoryError("prompt_idとworkflow_idが必要です")
+        if prompt_profile is not None and (
+            not isinstance(prompt_profile, str) or len(prompt_profile) > 64
+        ):
+            raise HistoryError("プロンプト方式が不正です")
         image_names = [self._relative_output(Path(x)) for x in images]
         row_id = uuid.uuid4().hex
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -154,13 +160,14 @@ class HistoryStore:
                 con.execute(
                     """INSERT INTO generations
                     (id,created_at,prompt_id,workflow_id,kind,request_text,
-                     parameters_json,images_json,reference_file,legacy,mask_file,pose_file,composition_file)
-                    VALUES (?,?,?,?,?,?,?,?,?,0,?,?,?)""",
+                     parameters_json,images_json,reference_file,legacy,mask_file,pose_file,composition_file,prompt_profile)
+                    VALUES (?,?,?,?,?,?,?,?,?,0,?,?,?,?)""",
                     (
                         row_id, now, prompt_id, workflow_id, kind, request_text,
                         json.dumps(parameters, ensure_ascii=False),
                         json.dumps(image_names, ensure_ascii=False),
                         reference_file, mask_file, pose_file, composition_file,
+                        prompt_profile,
                     ),
                 )
         except Exception:
@@ -204,6 +211,7 @@ class HistoryStore:
             reference_image=reference, legacy=bool(row["legacy"]),
             mask_image=mask, pose_image=pose,
             composition_image=composition,
+            prompt_profile=row["prompt_profile"] or None,
         )
 
     def list_entries(self, limit: int = 200) -> list[HistoryEntry]:
