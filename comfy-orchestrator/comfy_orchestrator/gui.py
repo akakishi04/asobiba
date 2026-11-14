@@ -222,6 +222,7 @@ class Application:
         self.history_preview_photo: tk.PhotoImage | None = None
         self.latest_composition_report = ""
         self.latest_prompt_plan: dict | None = None
+        self.latest_prompt_profile: str | None = None
         self._variables()
         self._build()
         self._refresh_history()
@@ -963,6 +964,12 @@ class Application:
             f"Steps: {p.get('steps', '不明')} / "
             f"CFG: {p.get('cfg', '不明')} / "
             f"画像: {len(entry.images)}枚"
+            + (
+                " / T2I方式: " + T2I_PROFILE_LABELS.get(
+                    entry.prompt_profile, entry.prompt_profile or "不明"
+                )
+                if entry.kind == "t2i" else ""
+            )
             + (" / 旧画像（再生成用設定なし）" if entry.legacy else "")
         )
         image = entry.first_image
@@ -1032,6 +1039,8 @@ class Application:
                 variable.set(str(entry.parameters[key]))
             elif key == "seed":
                 variable.set("")
+        if entry.prompt_profile in T2I_PROFILE_LABELS:
+            self.t2i_profile.set(T2I_PROFILE_LABELS[entry.prompt_profile])
         self._update_generation_controls()
         self.status.set("履歴から設定を復元しました。自然文を編集して生成できます")
         self._log(f"履歴の設定を復元: {entry.workflow_id} / Seed={entry.parameters.get('seed', '不明')}")
@@ -1064,6 +1073,7 @@ class Application:
         source_image: Path | None, mask_image: Path | None = None,
         pose_image: Path | None = None,
         composition_image: Path | None = None,
+        prompt_profile: str | None = None,
     ) -> str | None:
         if not images:
             return None
@@ -1080,6 +1090,7 @@ class Application:
                 mask_image=mask_image,
                 pose_image=pose_image,
                 composition_image=composition_image,
+                prompt_profile=prompt_profile,
             )
             return entry.id
         except (HistoryError, OSError, ValueError, sqlite3.Error) as exc:
@@ -1118,6 +1129,7 @@ class Application:
         if not self._save_settings():
             return
         cfg = copy.deepcopy(self.config)
+        self.latest_prompt_profile = entry.prompt_profile
         self._set_busy("保存した設定を使って再生成中（LLMは呼び出しません）")
         self._log(
             f"再生成: {entry.workflow_id} / "
@@ -1149,6 +1161,7 @@ class Application:
                     entry.mask_image, entry.pose_image,
                     entry.composition_image if entry.composition_image
                     and entry.composition_image.is_file() else None,
+                    entry.prompt_profile,
                 )
                 self.messages.put(("done", (result, images, history_id)))
             except Exception as exc:
@@ -1232,8 +1245,7 @@ class Application:
         negative = str(params.get("negative_prompt", ""))
         profile = (
             T2I_PROFILE_LABELS.get(
-                self.config["llm"].get("t2i_prompt_profile", DEFAULT_T2I_PROFILE),
-                "他モード",
+                self.latest_prompt_profile, "履歴再生成（LLMなし）",
             )
             if result.get("workflow_id") == "wai_t2i_basic" else "T2I以外"
         )
@@ -1443,6 +1455,9 @@ class Application:
             return
         cfg = copy.deepcopy(self.config)
         self.latest_composition_report = ""
+        self.latest_prompt_profile = cfg["llm"].get(
+            "t2i_prompt_profile", DEFAULT_T2I_PROFILE
+        ) if selected == "wai_t2i_basic" else None
         self._set_busy("解釈テスト中..." if dry_run else "生成準備中...")
         self._log("開始: " + ("解釈のみテスト" if dry_run else "画像生成") + f" / model={cfg['llm']['model']}")
 
@@ -1466,6 +1481,7 @@ class Application:
                 history_id = (
                     self._record_completed_generation(
                         result, images, prompt, image, mask, pose, composition,
+                        self.latest_prompt_profile,
                     )
                     if not dry_run else None
                 )
