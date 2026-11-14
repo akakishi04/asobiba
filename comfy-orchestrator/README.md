@@ -58,7 +58,7 @@ GUIの入力欄を**コンパクトな6行のエディタ**に変更し、`Meiry
 
 ## T2I品質改善用プロンプト（v2 / 従来版比較）
 
-GUIの生成設定に **「T2Iプロンプト」** を追加しました。WAI-Illustrious SDXLを使う通常T2IのSystem Promptのみを切り替えます。
+GUIの生成設定に **「T2Iプロンプト」** を追加しました。WAI-Illustrious SDXLを使う通常T2I向けに、System Promptと画像なしの参照役割メタデータを切り替えます。他系列のT2IへIllustrious専用タグ規則は適用しません。
 
 | モード | 内容 |
 | --- | --- |
