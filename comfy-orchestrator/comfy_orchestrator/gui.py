@@ -221,6 +221,7 @@ class Application:
         self.history_entries: dict[str, HistoryEntry] = {}
         self.history_preview_photo: tk.PhotoImage | None = None
         self.latest_composition_report = ""
+        self.latest_prompt_plan: dict | None = None
         self._variables()
         self._build()
         self._refresh_history()
@@ -627,9 +628,14 @@ class Application:
         self.open_button = ttk.Button(row, text="画像を開く", command=self._open_image, state="disabled")
         self.open_button.pack(side="left", padx=(0, 6))
         ttk.Button(row, text="保存先を開く", command=self._open_outputs).pack(side="left")
+        result_tools = ttk.Frame(preview_actions)
+        result_tools.pack(fill="x", pady=(5, 0))
         ttk.Button(
-            preview_actions, text="この画像からI2I", command=self._current_output_to_i2i,
-        ).pack(fill="x", pady=(5, 0))
+            result_tools, text="この画像からI2I", command=self._current_output_to_i2i,
+        ).pack(side="left", fill="x", expand=True, padx=(0, 4))
+        ttk.Button(
+            result_tools, text="生成タグを見る", command=self._show_prompt_preview,
+        ).pack(side="left", fill="x", expand=True)
 
         ttk.Label(
             history_panel,
@@ -1213,6 +1219,67 @@ class Application:
         if picked:
             self.reference_image.set(picked)
 
+    def _show_prompt_preview(self) -> None:
+        """Inspect and copy exactly the Positive/Negative returned by the LLM."""
+        result = self.latest_prompt_plan
+        if not result or not isinstance(result.get("parameters"), dict):
+            messagebox.showinfo(
+                "生成タグ", "「解釈のみテスト」または画像生成を実行してください。",
+            )
+            return
+        params = result["parameters"]
+        positive = str(params.get("positive_prompt", ""))
+        negative = str(params.get("negative_prompt", ""))
+        profile = (
+            T2I_PROFILE_LABELS.get(
+                self.config["llm"].get("t2i_prompt_profile", DEFAULT_T2I_PROFILE),
+                "他モード",
+            )
+            if result.get("workflow_id") == "wai_t2i_basic" else "T2I以外"
+        )
+        popup = tk.Toplevel(self.root)
+        popup.title(f"生成タグ / {profile}")
+        popup.geometry("780x600")
+        popup.minsize(480, 360)
+        popup.transient(self.root)
+        ttk.Label(
+            popup,
+            text=f"ワークフロー: {result.get('workflow_id', '?')}  /  T2I方式: {profile}",
+            style="Muted.TLabel",
+        ).pack(anchor="w", padx=12, pady=(10, 6))
+
+        def add_prompt_area(label: str, value: str):
+            frame = ttk.LabelFrame(popup, text=label, padding=8)
+            frame.pack(fill="both", expand=True, padx=12, pady=(0, 8))
+            editor = scrolledtext.ScrolledText(
+                frame, height=8, wrap="word", font=("Meiryo UI", 10),
+            )
+            editor.insert("1.0", value)
+            editor.configure(state="disabled")
+            editor.pack(fill="both", expand=True)
+            return value
+
+        add_prompt_area("Positive", positive)
+        add_prompt_area("Negative", negative)
+        buttons = ttk.Frame(popup, padding=(12, 0, 12, 12))
+        buttons.pack(fill="x")
+        ttk.Button(
+            buttons, text="Positiveをコピー",
+            command=lambda: self._copy_to_clipboard(positive),
+        ).pack(side="left", padx=(0, 6))
+        ttk.Button(
+            buttons, text="Negativeをコピー",
+            command=lambda: self._copy_to_clipboard(negative),
+        ).pack(side="left")
+        ttk.Button(
+            buttons, text="閉じる", command=popup.destroy,
+        ).pack(side="right")
+
+    def _copy_to_clipboard(self, value: str) -> None:
+        self.root.clipboard_clear()
+        self.root.clipboard_append(value)
+        self.root.update_idletasks()
+
     def _show_composition_report(self) -> None:
         """Show exactly what the selected local VLM thought it saw."""
         report = self.latest_composition_report
@@ -1438,9 +1505,12 @@ class Application:
                     self.status.set(f"モデル一覧を更新: {len(names)}件")
                 elif kind == "done":
                     result, images, history_id = data
+                    self.latest_prompt_plan = result
                     if result["status"] == "dry_run":
                         self._log("解釈結果:\n" + json.dumps(result, ensure_ascii=False, indent=2))
                         self.status.set("解釈テスト完了（ComfyUI未実行）")
+                        self.tabs.select(0)
+                        self._show_prompt_preview()
                     else:
                         self.image_paths = images
                         self.images_list.delete(0, "end")
