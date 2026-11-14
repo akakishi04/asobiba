@@ -24,6 +24,11 @@ from .comparison import ComparisonWindow
 from .history import HistoryStore, HistoryEntry, HistoryError
 from .mask_editor import edit_mask
 from .lmstudio import list_models
+from .prompt_profiles import (
+    DEFAULT_T2I_PROFILE,
+    T2I_PROFILE_LABELS,
+    T2I_LABEL_TO_PROFILE,
+)
 from .ime_font import install_native_ime_font, sync_native_ime_font
 from .ui_theme import apply_ttk_theme, style_text_widget
 
@@ -49,6 +54,7 @@ def bootstrap_config() -> dict:
         "inference_timeout_seconds", example["llm"]["inference_timeout_seconds"]
     )
     config["llm"].setdefault("send_reference_to_llm", False)
+    config["llm"].setdefault("t2i_prompt_profile", DEFAULT_T2I_PROFILE)
     config.setdefault("workflows", {})
     for workflow_id, entry in example.get("workflows", {}).items():
         config["workflows"].setdefault(workflow_id, copy.deepcopy(entry))
@@ -255,6 +261,12 @@ class Application:
         self.vision_composition = tk.BooleanVar(
             value=bool(llm.get("send_reference_to_llm", False))
         )
+        self.t2i_profile = tk.StringVar(
+            value=T2I_PROFILE_LABELS.get(
+                llm.get("t2i_prompt_profile", DEFAULT_T2I_PROFILE),
+                T2I_PROFILE_LABELS[DEFAULT_T2I_PROFILE],
+            )
+        )
         self.free_comfy = tk.BooleanVar(value=comfy.get("free_before_llm", True))
         self.status = tk.StringVar(value="準備完了 — LM Studioのサーバーを起動してください")
         self.result_info = tk.StringVar(value="生成画像はここに表示されます")
@@ -454,6 +466,21 @@ class Application:
             settings, text="Seed空欄＝ランダム。画像なしはT2I／マスク指定は部分修正。",
             style="Muted.TLabel",
         ).grid(row=6, column=0, columnspan=4, sticky="w", pady=(3, 0))
+        ttk.Label(settings, text="T2Iプロンプト").grid(
+            row=7, column=0, sticky="w", pady=(6, 2),
+        )
+        self.t2i_profile_box = ttk.Combobox(
+            settings, textvariable=self.t2i_profile,
+            values=list(T2I_PROFILE_LABELS.values()), state="readonly",
+            width=20,
+        )
+        self.t2i_profile_box.grid(
+            row=7, column=1, columnspan=3, sticky="ew", pady=(6, 2),
+        )
+        ttk.Label(
+            settings, text="改善版は構図・光・質感を整理。I2Iの指示は従来どおり。",
+            style="Muted.TLabel",
+        ).grid(row=8, column=0, columnspan=4, sticky="w", pady=(2, 0))
 
         image_row = ttk.Frame(self.options_form)
         image_row.pack(fill="x", pady=(0, 12))
@@ -1131,6 +1158,9 @@ class Application:
         config["llm"]["model"] = self.model.get().strip() or "SELECT_IN_GUI"
         config["llm"]["unload_after_inference"] = self.unload_llm.get()
         config["llm"]["send_reference_to_llm"] = self.vision_composition.get()
+        config["llm"]["t2i_prompt_profile"] = T2I_LABEL_TO_PROFILE[
+            self.t2i_profile.get()
+        ]
         config["comfyui"]["base_url"] = self.comfy_url.get().strip()
         config["comfyui"]["free_before_llm"] = self.free_comfy.get()
         opts = self._overrides()
