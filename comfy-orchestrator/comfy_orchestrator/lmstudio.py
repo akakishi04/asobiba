@@ -15,6 +15,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .core import OrchestratorError, _open_json, plan_schema
+from .prompt_profiles import (
+    DEFAULT_T2I_PROFILE,
+    T2I_PROFILE_LEGACY,
+    apply_t2i_profile,
+    is_t2i_context,
+)
 
 
 def _request(settings: dict, route: str, payload: dict | None = None) -> dict:
@@ -226,13 +232,22 @@ class LMStudio:
                 if self._has_visual_input else ""
             )
         )
+        profile = self.settings.get("t2i_prompt_profile", DEFAULT_T2I_PROFILE)
+        system = apply_t2i_profile(system, workflows, profile)
+        # Legacy keeps the original exact user metadata for fair comparison.
+        # Do not describe a text-only T2I request as an image-to-edit operation.
+        no_image_role = (
+            "none (text-to-image)" if (
+                is_t2i_context(workflows) and profile != T2I_PROFILE_LEGACY
+            ) else "composition of image to edit"
+        )
         user_text = (
             f"Available workflows: {json.dumps(catalog, ensure_ascii=False)}\n"
             f"Reference image routed to ComfyUI: {'yes' if image and not composition_only else 'no'}\n"
             f"Reference image visible to the LLM: "
             f"{'yes' if self._has_visual_input else 'no'}\n"
             f"Reference role: "
-            f"{'composition only (LLM reference)' if composition_only else 'pose and camera only' if pose_only else 'composition of image to edit'}\n"
+            f"{'composition only (LLM reference)' if composition_only else 'pose and camera only' if pose_only else no_image_role if not self._has_visual_input else 'composition of image to edit'}\n"
             f"User request: {text}"
         )
         message: dict[str, Any] = {"role": "user", "content": user_text}
@@ -317,6 +332,12 @@ class LMStudio:
                     + json.dumps(observed, ensure_ascii=False)
                     + "\nTranslate only well-supported observations into tags. "
                       "Never fabricate the location of hidden joints."
+                )
+            if progress and is_t2i_context(workflows):
+                progress(
+                    "T2Iプロンプト: "
+                    + ("Illustrious v2（構図・陰影の一貫性重視）"
+                       if profile != T2I_PROFILE_LEGACY else "従来版（比較用）")
                 )
             if progress:
                 task_label = (
