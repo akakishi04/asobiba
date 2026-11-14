@@ -1383,6 +1383,11 @@ class Application:
                 style="Muted.TLabel", wraplength=740,
             ).pack(anchor="w", padx=12, pady=(0, 5))
 
+        # Pack the action bar before expanding editors, so copy/close is
+        # reachable even if the window is resized smaller than its content.
+        buttons = ttk.Frame(popup, padding=(12, 0, 12, 12))
+        buttons.pack(side="bottom", fill="x")
+
         def add_readonly(label: str, value: str, *, rows: int, grow: bool) -> None:
             frame = ttk.LabelFrame(popup, text=label, padding=7)
             frame.pack(fill="both" if grow else "x",
@@ -1400,8 +1405,6 @@ class Application:
         add_readonly("Positive", positive, rows=7, grow=True)
         add_readonly("Negative", negative_text, rows=4, grow=True)
 
-        buttons = ttk.Frame(popup, padding=(12, 0, 12, 12))
-        buttons.pack(fill="x")
         ttk.Button(
             buttons, text="Positiveをコピー",
             command=lambda: self._copy_to_clipboard(positive),
