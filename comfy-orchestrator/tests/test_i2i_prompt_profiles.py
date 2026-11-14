@@ -259,6 +259,48 @@ class SavedHistoryPromptTests(unittest.TestCase):
         self.assertEqual(fake.calls[1][0]["positive_prompt"], "long hair, orange sky")
         self.assertEqual(fake.calls[1][0]["profile"], "preserve_edit_v1")
 
+    def test_restoring_i2i_history_recovers_its_original_policy(self):
+        from types import SimpleNamespace
+
+        entry = self.new_entry("restore-profile", "legacy")
+        class Var:
+            def __init__(self, value=""):
+                self.value = value
+            def get(self):
+                return self.value
+            def set(self, value):
+                self.value = value
+        class Prompt:
+            def __init__(self):
+                self.value = ""
+            def delete(self, *_args):
+                self.value = ""
+            def insert(self, *_args):
+                self.value = _args[-1]
+            def focus_set(self):
+                pass
+
+        state = SimpleNamespace(
+            config=core.load_config(ROOT / "config.example.json"),
+            prompt=Prompt(),
+            workflow=Var(), reference_image=Var(),
+            mask_image=Var(), pose_image=Var(),
+            composition_image=Var(), vision_composition=Var(False),
+            pose_mode=Var("skeleton"), _last_reference_image="",
+            _source_change_lock=False,
+            width=Var(), height=Var(), steps=Var(), cfg=Var(),
+            denoise=Var(), seed=Var(), t2i_profile=Var(),
+            i2i_profile=Var("保持重視 (v1)"), status=Var(),
+            _one_history=lambda: entry,
+            _update_generation_controls=lambda: None,
+            _log=lambda _msg: None,
+        )
+        gui.Application._restore_selected_history(state)
+        self.assertEqual(state.i2i_profile.get(), "従来 (比較用)")
+        self.assertEqual(state.prompt.value, entry.request_text)
+        self.assertEqual(state.denoise.get(), "0.53")
+        self.assertEqual(state.seed.get(), "9786")
+
     def test_legacy_import_has_no_invented_prompts(self):
         other = self.store.outputs / "old.png"
         other.write_bytes(b"old")
