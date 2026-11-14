@@ -202,6 +202,32 @@ def preview_subsample(
     )
 
 
+def history_prompt_details(entry: HistoryEntry | None) -> dict | None:
+    """Expose only the literal prompts and metadata stored for this exact run.
+
+    Never call an LLM, infer a missing negative prompt or consult the latest run.
+    Pre-history imported images have no known generation parameters.
+    """
+    if entry is None or entry.legacy or not isinstance(entry.parameters, dict):
+        return None
+    positive = entry.parameters.get("positive_prompt")
+    if not isinstance(positive, str) or not positive.strip():
+        return None
+    negative = entry.parameters.get("negative_prompt")
+    return {
+        "workflow_id": entry.workflow_id,
+        "kind": entry.kind,
+        "profile": entry.prompt_profile,
+        "request_text": entry.request_text,
+        "positive_prompt": positive,
+        "negative_prompt": negative if isinstance(negative, str) else None,
+        "seed": entry.parameters.get("seed"),
+        "steps": entry.parameters.get("steps"),
+        "cfg": entry.parameters.get("cfg"),
+        "denoise": entry.parameters.get("denoise"),
+    }
+
+
 class Application:
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -223,6 +249,7 @@ class Application:
         self.latest_composition_report = ""
         self.latest_prompt_plan: dict | None = None
         self.latest_prompt_profile: str | None = None
+        self.latest_request_text: str | None = None
         self._variables()
         self._build()
         self._refresh_history()
@@ -720,10 +747,16 @@ class Application:
             state="disabled",
         )
         self.new_seed_button.pack(side="left")
+        history_tools = ttk.Frame(history_actions)
+        history_tools.pack(fill="x", pady=(6, 0))
         ttk.Button(
-            history_actions, text="選択した画像をI2Iの元画像にする",
+            history_tools, text="生成タグを見る",
+            command=self._show_selected_history_prompt,
+        ).pack(side="left", fill="x", expand=True, padx=(0, 5))
+        ttk.Button(
+            history_tools, text="この画像からI2I",
             command=self._history_output_to_i2i,
-        ).pack(fill="x", pady=(6, 0))
+        ).pack(side="left", fill="x", expand=True)
 
         self._switch_theme()
         self._update_generation_controls()
