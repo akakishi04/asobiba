@@ -1295,8 +1295,21 @@ class Application:
         if picked:
             self.reference_image.set(picked)
 
+    def _show_selected_history_prompt(self) -> None:
+        """Inspect this selected history entry, never the last generated image."""
+        selected = self._one_history()
+        details = history_prompt_details(selected)
+        if details is None:
+            messagebox.showinfo(
+                "履歴の生成タグ",
+                "履歴を1件選択してください。旧画像など生成プロンプトが"
+                "保存されていない項目は表示できません。",
+            )
+            return
+        self._open_prompt_details(details, from_history=True)
+
     def _show_prompt_preview(self) -> None:
-        """Inspect and copy exactly the Positive/Negative returned by the LLM."""
+        """Inspect the most recent result/dry-run without changing history."""
         result = self.latest_prompt_plan
         if not result or not isinstance(result.get("parameters"), dict):
             messagebox.showinfo(
@@ -1304,38 +1317,78 @@ class Application:
             )
             return
         params = result["parameters"]
-        positive = str(params.get("positive_prompt", ""))
-        negative = str(params.get("negative_prompt", ""))
-        profile = (
-            T2I_PROFILE_LABELS.get(
-                self.latest_prompt_profile, "履歴再生成（LLMなし）",
-            )
-            if result.get("workflow_id") == "wai_t2i_basic" else "T2I以外"
-        )
+        workflow_id = result.get("workflow_id", "")
+        kind = self.config.get("workflows", {}).get(workflow_id, {}).get("kind")
+        self._open_prompt_details({
+            "workflow_id": workflow_id,
+            "kind": kind,
+            "profile": self.latest_prompt_profile,
+            "request_text": self.latest_request_text,
+            "positive_prompt": params.get("positive_prompt", ""),
+            "negative_prompt": params.get("negative_prompt"),
+            "seed": params.get("seed"),
+            "steps": params.get("steps"),
+            "cfg": params.get("cfg"),
+            "denoise": params.get("denoise"),
+        }, from_history=False)
+
+    def _open_prompt_details(self, details: dict, *, from_history: bool) -> None:
+        """Shared read-only viewer for current and historic literal prompts."""
+        kind = details.get("kind")
+        version = details.get("profile")
+        if kind == "t2i":
+            version_text = T2I_PROFILE_LABELS.get(version, version or "記録なし")
+        elif kind in ("i2i", "inpaint"):
+            version_text = I2I_PROFILE_LABELS.get(version, version or "記録なし")
+        else:
+            version_text = version or "対象外"
+        positive = str(details.get("positive_prompt") or "")
+        negative = details.get("negative_prompt")
+        negative_saved = isinstance(negative, str)
+        negative_text = negative if negative_saved else "（履歴に記録なし）"
+        original_request = details.get("request_text")
         popup = tk.Toplevel(self.root)
-        popup.title(f"生成タグ / {profile}")
-        popup.geometry("780x600")
-        popup.minsize(480, 360)
+        popup.title(("履歴" if from_history else "今回") + "の生成タグ")
+        popup.geometry("780x650")
+        popup.minsize(480, 390)
         popup.transient(self.root)
         ttk.Label(
             popup,
-            text=f"ワークフロー: {result.get('workflow_id', '?')}  /  T2I方式: {profile}",
-            style="Muted.TLabel",
-        ).pack(anchor="w", padx=12, pady=(10, 6))
-
-        def add_prompt_area(label: str, value: str):
-            frame = ttk.LabelFrame(popup, text=label, padding=8)
-            frame.pack(fill="both", expand=True, padx=12, pady=(0, 8))
-            editor = scrolledtext.ScrolledText(
-                frame, height=8, wrap="word", font=("Meiryo UI", 10),
+            text=f"ワークフロー: {details.get('workflow_id', '?')} / "
+                 f"方式: {version_text}",
+            style="Muted.TLabel", wraplength=740,
+        ).pack(anchor="w", padx=12, pady=(10, 3))
+        values = [
+            f"{label}: {details.get(key)}"
+            for key, label in (
+                ("seed", "Seed"), ("steps", "Steps"),
+                ("cfg", "CFG"), ("denoise", "Denoise"),
             )
-            editor.insert("1.0", value)
-            editor.configure(state="disabled")
-            editor.pack(fill="both", expand=True)
-            return value
+            if details.get(key) is not None
+        ]
+        if values:
+            ttk.Label(
+                popup, text="  /  ".join(values),
+                style="Muted.TLabel", wraplength=740,
+            ).pack(anchor="w", padx=12, pady=(0, 5))
 
-        add_prompt_area("Positive", positive)
-        add_prompt_area("Negative", negative)
+        def add_readonly(label: str, value: str, *, rows: int, grow: bool) -> None:
+            frame = ttk.LabelFrame(popup, text=label, padding=7)
+            frame.pack(fill="both" if grow else "x",
+                       expand=grow, padx=12, pady=(0, 7))
+            widget = scrolledtext.ScrolledText(
+                frame, height=rows, wrap="word",
+                font=("Meiryo UI", 10), padx=8, pady=6,
+            )
+            widget.insert("1.0", value)
+            widget.configure(state="disabled")
+            widget.pack(fill="both", expand=True)
+
+        if original_request is not None:
+            add_readonly("元の自然文", str(original_request), rows=3, grow=False)
+        add_readonly("Positive", positive, rows=7, grow=True)
+        add_readonly("Negative", negative_text, rows=4, grow=True)
+
         buttons = ttk.Frame(popup, padding=(12, 0, 12, 12))
         buttons.pack(fill="x")
         ttk.Button(
@@ -1345,6 +1398,7 @@ class Application:
         ttk.Button(
             buttons, text="Negativeをコピー",
             command=lambda: self._copy_to_clipboard(negative),
+            state="normal" if negative_saved else "disabled",
         ).pack(side="left")
         ttk.Button(
             buttons, text="閉じる", command=popup.destroy,
