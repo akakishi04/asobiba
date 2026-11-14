@@ -25,9 +25,8 @@ from .history import HistoryStore, HistoryEntry, HistoryError
 from .mask_editor import edit_mask
 from .lmstudio import list_models
 from .prompt_profiles import (
-    DEFAULT_T2I_PROFILE,
-    T2I_PROFILE_LABELS,
-    T2I_LABEL_TO_PROFILE,
+    DEFAULT_T2I_PROFILE, T2I_PROFILE_LABELS, T2I_LABEL_TO_PROFILE,
+    DEFAULT_I2I_PROFILE, I2I_PROFILE_LABELS, I2I_LABEL_TO_PROFILE,
 )
 from .ime_font import install_native_ime_font, sync_native_ime_font
 from .ui_theme import apply_ttk_theme, style_text_widget
@@ -55,6 +54,7 @@ def bootstrap_config() -> dict:
     )
     config["llm"].setdefault("send_reference_to_llm", False)
     config["llm"].setdefault("t2i_prompt_profile", DEFAULT_T2I_PROFILE)
+    config["llm"].setdefault("i2i_prompt_profile", DEFAULT_I2I_PROFILE)
     config.setdefault("workflows", {})
     for workflow_id, entry in example.get("workflows", {}).items():
         config["workflows"].setdefault(workflow_id, copy.deepcopy(entry))
@@ -269,6 +269,12 @@ class Application:
                 T2I_PROFILE_LABELS[DEFAULT_T2I_PROFILE],
             )
         )
+        self.i2i_profile = tk.StringVar(
+            value=I2I_PROFILE_LABELS.get(
+                llm.get("i2i_prompt_profile", DEFAULT_I2I_PROFILE),
+                I2I_PROFILE_LABELS[DEFAULT_I2I_PROFILE],
+            )
+        )
         self.free_comfy = tk.BooleanVar(value=comfy.get("free_before_llm", True))
         self.status = tk.StringVar(value="準備完了 — LM Studioのサーバーを起動してください")
         self.result_info = tk.StringVar(value="生成画像はここに表示されます")
@@ -480,9 +486,20 @@ class Application:
             row=7, column=1, columnspan=3, sticky="ew", pady=(6, 2),
         )
         ttk.Label(
-            settings, text="改善版は構図・光・質感を整理。I2Iの指示は従来どおり。",
+            settings, text="T2Iは構図と光、I2Iは維持対象と変更対象を重視。",
             style="Muted.TLabel",
         ).grid(row=8, column=0, columnspan=4, sticky="w", pady=(2, 0))
+        ttk.Label(settings, text="I2Iプロンプト").grid(
+            row=9, column=0, sticky="w", pady=(6, 2),
+        )
+        self.i2i_profile_box = ttk.Combobox(
+            settings, textvariable=self.i2i_profile,
+            values=list(I2I_PROFILE_LABELS.values()), state="readonly",
+            width=20,
+        )
+        self.i2i_profile_box.grid(
+            row=9, column=1, columnspan=3, sticky="ew", pady=(6, 2),
+        )
 
         image_row = ttk.Frame(self.options_form)
         image_row.pack(fill="x", pady=(0, 12))
@@ -852,6 +869,16 @@ class Application:
             self.strength_entry.configure(
                 state="normal" if "control_strength" in bindings else "disabled"
             )
+        if hasattr(self, "t2i_profile_box"):
+            kind = self.config["workflows"].get(workflow_id, {}).get("kind")
+            self.t2i_profile_box.configure(
+                state="readonly" if kind == "t2i" else "disabled"
+            )
+        if hasattr(self, "i2i_profile_box"):
+            kind = self.config["workflows"].get(workflow_id, {}).get("kind")
+            self.i2i_profile_box.configure(
+                state="readonly" if kind in ("i2i", "inpaint") else "disabled"
+            )
         if hasattr(self, "mask_button"):
             self.mask_button.configure(
                 state="normal" if self.reference_image.get().strip() else "disabled"
@@ -1179,6 +1206,9 @@ class Application:
         config["llm"]["send_reference_to_llm"] = self.vision_composition.get()
         config["llm"]["t2i_prompt_profile"] = T2I_LABEL_TO_PROFILE[
             self.t2i_profile.get()
+        ]
+        config["llm"]["i2i_prompt_profile"] = I2I_LABEL_TO_PROFILE[
+            self.i2i_profile.get()
         ]
         config["comfyui"]["base_url"] = self.comfy_url.get().strip()
         config["comfyui"]["free_before_llm"] = self.free_comfy.get()
