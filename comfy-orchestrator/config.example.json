@@ -248,7 +248,8 @@
     "token_env": "LMSTUDIO_API_TOKEN",
     "max_tokens": 4096,
     "inference_timeout_seconds": 600,
-    "send_reference_to_llm": false
+    "send_reference_to_llm": false,
+    "t2i_prompt_profile": "illustrious_v2"
   },
   "ui": {
     "workflow": "wai_t2i_basic",
