@@ -479,8 +479,14 @@ class LMStudio:
                     [
                         {"role": "system", "content": (
                             "You are a careful visual observer of illustrated characters. "
-                            "Fill ALL requested fields with concise, concrete visual facts "
-                            "in English suitable for later use as anime generation tags. "
+                            "Return ALL HUMAN-READABLE FIELD VALUES IN NATURAL JAPANESE, "
+                            "not English prompt tags. The JSON property names must remain "
+                            "exactly as defined by the schema (in English). "
+                            "Write clear, specific descriptions that the user can edit "
+                            "as ordinary Japanese text. Do not use comma-separated "
+                            "Danbooru tags, English keywords, or keyword stuffing. "
+                            "Keep each field concise and observational, describing "
+                            "what a person can actually see. "
                             "Focus on stable identity characteristics (hair, eye details, "
                             "distinctive face traits, body proportions, accessories). "
                             "ALSO describe the character's visible FACIAL GEOMETRY "
@@ -493,13 +499,14 @@ class LMStudio:
                             "Describe outfits as observed, not as necessarily permanent. "
                             "Never invent hidden parts, age, backstory, identity, gender "
                             "or clothes not actually visible. If a feature is unseen or "
-                            "ambiguous, write 'unknown'. Do not infer from other images "
+                            "ambiguous, write '不明'. Do not infer from other images "
                             "or from generic anime conventions."
                         )},
                         {"role": "user", "content": [
                             {"type": "text", "text": (
-                                f"Image {i} of {len(paths)}. Describe ONLY this image. "
-                                "All fields required; enter 'unknown' for invisible traits."
+                                f"参照画像{i}/{len(paths)}。この画像だけを観察してください。"
+                                "JSONのキー名は変更せず、値はすべて自然な日本語で記述。"
+                                "見えない特徴は「不明」と書き、英語タグは出力しないでください。"
                             )},
                             {"type": "image_url", "image_url": {
                                 "url": f"data:{mime};base64,{encoded}"
@@ -519,10 +526,19 @@ class LMStudio:
                         "silhouette, proportions, repeated design motifs, overall "
                         "shape language, and their relationships. Do not merely "
                         "calculate a strict intersection of exact colors or clothing. "
-                        "For each identity_hypothesis provide aspect, concrete English "
-                        "description useful for image generation, 1-based supporting_images, "
+                        "Return every human-readable text VALUE in natural, readable "
+                        "JAPANESE for a Japanese-speaking user who will directly edit "
+                        "the extracted character description. JSON property names, enum "
+                        "values, and feature/aspect identifiers must stay in their "
+                        "schema-defined English. Do not output Danbooru tags, English "
+                        "keyword lists or prompt syntax as description strings. "
+                        "For each identity_hypothesis provide aspect, a specific "
+                        "Japanese sentence about the character's visual identity in "
+                        "description, 1-based supporting_images, "
                         "conflicting_images, confidence (high/medium/low), and rationale "
-                        "explaining why the feature is robust across different drawings. "
+                        "in Japanese explaining why the feature is robust across different "
+                        "drawings. Keep all common/candidate values and variable/uncertain "
+                        "details in natural Japanese, not comma-separated tags. "
                         "An image that does NOT reveal the feature is unknown, NOT a "
                         "contradiction; explicit opposing evidence IS a contradiction. "
                         "Only claim supporting_images when their individual observations "
@@ -552,8 +568,9 @@ class LMStudio:
                         "No identity hypothesis is guaranteed; the user must verify it."
                     )},
                     {"role": "user", "content": (
-                        f"Number of images: {len(paths)}. "
-                        "Observations with image indices are:\n"
+                        f"参照画像の枚数: {len(paths)}。画像ごとの観察結果から、"
+                        "日本語の文章でキャラの核、共通点、差分を整理してください。"
+                        "キー名やenum値だけはスキーマどおりにしてください。\n"
                         + json.dumps(
                             [
                                 {"image": i, "traits": obs}
