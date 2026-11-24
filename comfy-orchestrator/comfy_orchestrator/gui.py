@@ -1600,6 +1600,7 @@ class Application:
             on_analyze=self._request_character_analysis,
             on_confirm=self._approve_character_traits,
             on_clear=self._clear_character_traits,
+            on_revise=self._request_character_revision,
         )
 
     def _request_character_analysis(
@@ -1628,6 +1629,36 @@ class Application:
                 self.messages.put(("character_analysis_done", (dialog, analysis)))
             except Exception as exc:
                 self.messages.put(("character_analysis_error", (dialog, str(exc))))
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def _request_character_revision(
+        self, current: str, instruction: str, dialog: CharacterReferenceWindow,
+    ) -> None:
+        if self.working or self.character_analysis_running:
+            dialog.finish_revision(error="他の画像生成・特徴抽出が実行中です")
+            return
+        model = self.model.get().strip()
+        if not model or model == "SELECT_IN_GUI":
+            dialog.finish_revision(error="先にLM Studioのモデルを選択してください")
+            return
+        self.character_analysis_running = True
+        settings = copy.deepcopy(self.config["llm"])
+        settings.update({
+            "base_url": self.llm_url.get().strip(),
+            "model": model,
+            "unload_after_inference": self.unload_llm.get(),
+        })
+
+        def task():
+            try:
+                revised = LMStudio(settings).revise_character_description(
+                    current, instruction,
+                    progress=lambda line: self.messages.put(("progress", line)),
+                )
+                self.messages.put(("character_revision_done", (dialog, revised)))
+            except Exception as exc:
+                self.messages.put(("character_revision_error", (dialog, str(exc))))
 
         threading.Thread(target=task, daemon=True).start()
 
@@ -1879,6 +1910,18 @@ class Application:
                     dialog.finish(error=error)
                     self._log("キャラ特徴抽出エラー: " + error)
                     self.status.set("キャラ特徴抽出に失敗しました")
+                elif kind == "character_revision_done":
+                    dialog, revised = data
+                    self.character_analysis_running = False
+                    dialog.finish_revision(revised_text=revised)
+                    self._log("自然文のキャラ説明修正案が完成（未確定）")
+                    self.status.set("キャラ説明の修正案を確認して確定してください")
+                elif kind == "character_revision_error":
+                    dialog, error = data
+                    self.character_analysis_running = False
+                    dialog.finish_revision(error=error)
+                    self._log("自然文でのキャラ説明修正エラー: " + error)
+                    self.status.set("自然文による説明修正に失敗しました")
                 elif kind == "check":
                     for line in data:
                         self._log(line)
