@@ -89,6 +89,43 @@ def validate_images(paths) -> tuple[Path, ...]:
     return tuple(valid)
 
 
+
+def add_character_image_files(
+    existing: list[Path] | tuple[Path, ...],
+    incoming: list[str] | tuple[str, ...],
+) -> tuple[Path, ...]:
+    """Validate a drag/drop or file-picker batch, atomically.
+
+    One image is allowed while building a list, but the extraction step still
+    requires 2-4 unique images. Any bad file rejects the entire new batch.
+    """
+    from .core import OrchestratorError
+
+    if not isinstance(existing, (tuple, list)) or not isinstance(incoming, (tuple, list)):
+        raise OrchestratorError("画像ファイルの指定が不正です")
+    images = [Path(item).expanduser().resolve() for item in existing]
+    if len(images) > MAX_CHARACTER_IMAGES:
+        raise OrchestratorError("キャラ参照は最大4枚までです")
+    if not incoming:
+        return tuple(images)
+    for item in incoming:
+        if not isinstance(item, (str, Path)) or not str(item).strip():
+            raise OrchestratorError("ドロップしたファイル名が不正です")
+        path = Path(item).expanduser().resolve()
+        if path in images:
+            continue
+        if path.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
+            raise OrchestratorError(f"画像はPNG/JPEG/WebPのみです: {path.name}")
+        if not path.is_file():
+            raise OrchestratorError(f"画像ファイルがありません: {path}")
+        if path.stat().st_size > 20 * 1024 * 1024:
+            raise OrchestratorError(f"画像は各20MB以下にしてください: {path.name}")
+        if len(images) >= MAX_CHARACTER_IMAGES:
+            raise OrchestratorError("キャラ参照は最大4枚までです")
+        images.append(path)
+    return tuple(images)
+
+
 def normalize_analysis(observations: list[dict], synthesis: dict) -> dict:
     """Validate evidence IDs and partition all-image vs partial-image support.
 
