@@ -237,5 +237,83 @@ class JapaneseDraftTests(unittest.TestCase):
         self.assertIn("新しい衣装で立っている", user_message)
 
 
+
+class NaturalLanguageRevisionTests(unittest.TestCase):
+    def test_text_only_japanese_revision_and_model_unload(self):
+        calls = []
+
+        def fake_request(_settings, route, payload=None):
+            calls.append((route, payload))
+            if route == "/v1/chat/completions":
+                return {"choices": [{"message": {"content": json.dumps({
+                    "description_ja": "頬に丸みがあり、黒いショートボブの髪型をしている。",
+                }, ensure_ascii=False)}}]}
+            if route == "/api/v1/models/unload":
+                return {"instance_id": "revise-model"}
+            raise AssertionError(route)
+
+        with patch.object(
+            lmstudio.LMStudio, "_ensure_loaded", return_value="revise-model"
+        ), patch.object(lmstudio, "_request", side_effect=fake_request):
+            result = lmstudio.LMStudio({
+                "model": "local", "unload_after_inference": True,
+            }).revise_character_description(
+                "頬に丸みがある。制服を着た黒髪の人物。",
+                "制服の説明を消して、髪型をショートボブと書き直して",
+            )
+        self.assertEqual(
+            result, "頬に丸みがあり、黒いショートボブの髪型をしている。",
+        )
+        self.assertEqual([name for name, _ in calls], [
+            "/v1/chat/completions", "/api/v1/models/unload",
+        ])
+        payload = calls[0][1]
+        self.assertEqual(
+            payload["response_format"]["json_schema"]["name"],
+            "comfy_character_revision_ja",
+        )
+        self.assertIn("制服の説明を消して", payload["messages"][1]["content"])
+        self.assertNotIn("image_url", payload["messages"][1]["content"])
+
+    def test_invalid_revision_instruction_is_rejected_before_loading(self):
+        local = lmstudio.LMStudio({"model": "local"})
+        for instruction in ("", " ", "あ" * 1201, None):
+            with self.subTest(instruction=instruction):
+                with patch.object(local, "_ensure_loaded") as load:
+                    with self.assertRaises(core.OrchestratorError):
+                        local.revise_character_description(
+                            "髪は黒い。", instruction,
+                        )
+                    load.assert_not_called()
+
+    def test_empty_model_revision_is_rejected_and_unloaded(self):
+        calls = []
+        def fake_request(_settings, route, payload=None):
+            calls.append(route)
+            if route == "/v1/chat/completions":
+                return {"choices": [{"message": {"content": '{"description_ja":""}'}}]}
+            if route == "/api/v1/models/unload":
+                return {"instance_id": "local"}
+            raise AssertionError(route)
+        with patch.object(
+            lmstudio.LMStudio, "_ensure_loaded", return_value="local"
+        ), patch.object(lmstudio, "_request", side_effect=fake_request):
+            with self.assertRaises(core.OrchestratorError):
+                lmstudio.LMStudio({
+                    "model": "local", "unload_after_inference": True,
+                }).revise_character_description("髪は黒い。", "髪を短くして")
+        self.assertEqual(calls[-1], "/api/v1/models/unload")
+
+    def test_revision_result_stays_unconfirmed_until_explicit_action(self):
+        import inspect
+        from comfy_orchestrator import gui
+        source = inspect.getsource(CharacterReferenceWindow.finish_revision)
+        self.assertIn('self.editor.insert("1.0", revised_text)', source)
+        self.assertNotIn("self.on_confirm(", source)
+        self.assertIn(
+            "character_revision_done",
+            inspect.getsource(gui.Application._consume_messages),
+        )
+
 if __name__ == "__main__":
     unittest.main()
