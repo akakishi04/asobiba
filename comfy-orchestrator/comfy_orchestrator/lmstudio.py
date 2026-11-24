@@ -170,6 +170,7 @@ class LMStudio:
         self, text: str, workflows: dict, image: Path | None,
         progress: Callable[[str], None] | None = None,
         reference_role: str | None = None,
+        character_traits: str | None = None,
     ) -> dict:
         if not isinstance(self.model, str) or not self.model.strip() or self.model == "SELECT_IN_GUI":
             raise OrchestratorError("LM Studioのモデルを選択してください")
@@ -238,6 +239,24 @@ class LMStudio:
         edit_profile = self.settings.get("i2i_prompt_profile", DEFAULT_I2I_PROFILE)
         system = apply_t2i_profile(system, workflows, profile)
         system = apply_i2i_profile(system, workflows, edit_profile)
+        if character_traits is not None:
+            from .character_refs import normalize_approved
+            character_traits = normalize_approved(character_traits)
+            system += (
+                "\n\nCHARACTER REFERENCE POLICY: You are given an explicitly "
+                "USER-APPROVED character feature sheet, distilled from multiple "
+                "visual references and corrected by the user. Treat ONLY the "
+                "approved traits as evidence of character appearance. "
+                "The reference pictures themselves are NOT available here "
+                "unless separately supplied as the source/composition image. "
+                "Do not borrow variable or uncertain traits from the analysis. "
+                "Include the approved traits faithfully in the positive_prompt "
+                "as concrete concise visual tags. For I2I, preserve the original "
+                "image unless the user explicitly requests modifications; "
+                "the confirmed character features guide identity, not a "
+                "redesign. An explicit newer user instruction may override a "
+                "sheet trait for this generation. Do not add other unseen traits."
+            )
         edit_enabled = (
             is_i2i_context(workflows) and edit_profile != I2I_PROFILE_LEGACY
         )
@@ -272,7 +291,12 @@ class LMStudio:
             f"Reference role: "
             f"{'composition only (LLM reference)' if composition_only else 'pose and camera only' if pose_only else no_image_role if not self._has_visual_input else 'composition of image to edit'}\n"
             f"{edit_context}"
-            f"User request: {text}"
+            + (
+                "User-confirmed character traits (not inferred by the LLM):\n"
+                + character_traits + "\n"
+                if character_traits else ""
+            )
+            + f"User request: {text}"
         )
         message: dict[str, Any] = {"role": "user", "content": user_text}
         if self._has_visual_input:
