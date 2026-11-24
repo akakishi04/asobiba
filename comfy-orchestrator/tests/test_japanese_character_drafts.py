@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from comfy_orchestrator import character_refs, core, lmstudio
+from comfy_orchestrator import character_refs, character_repair, core, lmstudio
 from comfy_orchestrator.character_ui import CharacterReferenceWindow
 
 
@@ -136,6 +136,26 @@ class JapaneseDraftTests(unittest.TestCase):
             )
             saved = character_refs.load_character_sheet(root)
             self.assertEqual(saved[2], "short black bob, blue eyes")
+
+    def test_unknown_japanese_observations_are_not_used_as_identity(self):
+        analysis = character_repair.repair_model_analysis(
+            [_observed(), _observed()],
+            {
+                "common": [
+                    {"feature": "hair_color", "value": "不明", "images": [1, 2]},
+                    {"feature": "hair_style", "value": "短いボブ", "images": [1, 2]},
+                ],
+                "candidates": [], "variable": [], "uncertain": [],
+                "identity_hypotheses": [],
+            },
+        )
+        self.assertEqual(
+            [item["value"] for item in analysis["common"]], ["短いボブ"]
+        )
+        self.assertEqual(
+            character_refs.suggested_traits(analysis), "髪型・前髪は短いボブ。"
+        )
+        self.assertTrue(any("不明情報" in msg for msg in analysis["warnings"]))
 
     def test_gui_editor_explicitly_asks_for_japanese_prose(self):
         import inspect
