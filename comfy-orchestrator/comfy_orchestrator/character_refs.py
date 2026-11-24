@@ -123,7 +123,7 @@ def normalize_analysis(observations: list[dict], synthesis: dict) -> dict:
             if not isinstance(entry, dict):
                 raise OrchestratorError("共通特徴の根拠が不正です")
             feature, value, support = entry.get("feature"), entry.get("value"), entry.get("images")
-            if feature not in FEATURES or not isinstance(value, str) or not 0 < len(value.strip()) <= 220:
+            if not isinstance(feature, str) or feature not in FEATURES or not isinstance(value, str) or not 0 < len(value.strip()) <= 220:
                 raise OrchestratorError("共通特徴の項目または内容が不正です")
             if not isinstance(support, list) or not support or any(
                 type(i) is not int or i < 1 or i > count for i in support
@@ -146,7 +146,7 @@ def normalize_analysis(observations: list[dict], synthesis: dict) -> dict:
             if not isinstance(entry, dict):
                 raise OrchestratorError("相違点の形式が不正です")
             feature, details = entry.get("feature"), entry.get("details")
-            if feature not in FEATURES or not isinstance(details, str) or not 0 < len(details.strip()) <= 1000:
+            if not isinstance(feature, str) or feature not in FEATURES or not isinstance(details, str) or not 0 < len(details.strip()) <= 1000:
                 raise OrchestratorError("相違点の内容が不正です")
             result[category].append({"feature": feature, "details": details.strip()})
     return result
@@ -183,6 +183,13 @@ def format_evidence(analysis: dict) -> str:
             lines.append(f"・{FEATURES[item['feature']]}: {item['details']}")
         if not analysis[section]:
             lines.append("・なし")
+    lines.append("\n【画像ごとの観察結果】")
+    for index, observed in enumerate(analysis["observations"], 1):
+        lines.append(f"画像{index}")
+        for key, label in FEATURES.items():
+            value = observed.get(key, "unknown")
+            if value and value.strip().lower() != "unknown":
+                lines.append(f"  {label}: {value}")
     return "\n".join(lines)
 
 
