@@ -25,6 +25,7 @@ from .history import HistoryStore, HistoryEntry, HistoryError
 from .mask_editor import edit_mask
 from .lmstudio import list_models, LMStudio
 from .character_ui import CharacterReferenceWindow
+from .file_drop import enable_native_dnd
 from .character_refs import (
     validate_images as validate_character_images,
     normalize_approved as normalize_character_traits,
@@ -1958,6 +1959,9 @@ class Application:
 
 def main() -> None:
     root = tk.Tk()
+    # Native Explorer file drops require TkDnD, installed separately.
+    # If unavailable, the existing file-picker and all generation modes work.
+    root._native_dnd_enabled = enable_native_dnd(root)
     Application(root)
     root.mainloop()
 
