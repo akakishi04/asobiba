@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext, ttk
+from tkinter import filedialog, messagebox, scrolledtext, simpledialog, ttk
 
 from .character_refs import (
     MAX_CHARACTER_IMAGES,
@@ -30,12 +30,14 @@ class CharacterReferenceWindow:
         on_analyze,
         on_confirm,
         on_clear,
+        on_revise=None,
     ) -> None:
         self.images = list(images)
         self.analysis = analysis
         self.on_analyze = on_analyze
         self.on_confirm = on_confirm
         self.on_clear = on_clear
+        self.on_revise = on_revise
         self.busy = False
         self.window = tk.Toplevel(root)
         self.window.title("キャラ参照・共通特徴の確定")
@@ -104,8 +106,12 @@ class CharacterReferenceWindow:
             action, text="キャラの特徴を抽出", command=self.analyze,
         )
         self.analyze_button.pack(side="left")
+        self.revise_button = ttk.Button(
+            action, text="日本語の指示で修正...", command=self.revise,
+        )
+        self.revise_button.pack(side="left", padx=(8, 0))
         ttk.Label(
-            action, text="画像対応モデルが必要。生成には確定した文章だけを使います。",
+            action, text="採用するのは確定した文章のみ。",
             style="Muted.TLabel",
         ).pack(side="left", padx=(10, 0))
 
@@ -161,6 +167,14 @@ class CharacterReferenceWindow:
             self.down_button, self.analyze_button,
         ):
             button.configure(state=state)
+        self.revise_button.configure(
+            state=(
+                "normal"
+                if not self.busy and self.analysis is not None
+                and self.on_revise is not None
+                else "disabled"
+            )
+        )
         self.confirm_button.configure(
             state="normal" if not self.busy and self.analysis is not None else "disabled"
         )
@@ -234,6 +248,57 @@ class CharacterReferenceWindow:
         self.status.set("LM Studioで画像を観察しています...")
         self._enable_actions()
         self.on_analyze(paths, self)
+
+    def revise(self) -> None:
+        """Request a text-only LLM rewrite, keeping manual approval required."""
+        if self.busy or self.analysis is None or self.on_revise is None:
+            return
+        try:
+            current = normalize_approved(self.editor.get("1.0", "end"))
+        except ValueError as exc:
+            messagebox.showwarning(
+                "キャラ説明", str(exc), parent=self.window,
+            )
+            return
+        instruction = simpledialog.askstring(
+            "自然文でキャラ説明を修正",
+            "修正内容を日本語で指示してください。\n"
+            "例：衣装の説明は削除し、髪型の説明を短くして",
+            parent=self.window,
+        )
+        if instruction is None:
+            return
+        instruction = instruction.strip()
+        if not instruction:
+            return
+        if len(instruction) > 1200:
+            messagebox.showwarning(
+                "キャラ説明", "修正指示は1200文字以下にしてください",
+                parent=self.window,
+            )
+            return
+        self.busy = True
+        self.status.set("LLMが自然文の修正指示を解釈中...")
+        self._enable_actions()
+        self.on_revise(current, instruction, self)
+
+    def finish_revision(
+        self, revised_text: str | None = None, error: str | None = None,
+    ) -> None:
+        """Called on Tk's main thread after a local LLM revision finishes."""
+        if not self.is_open():
+            return
+        self.busy = False
+        if error:
+            self.status.set("自然文の修正に失敗しました（元の文章は保持）")
+            messagebox.showerror("キャラ説明", error, parent=self.window)
+        elif revised_text is not None:
+            self.editor.delete("1.0", "end")
+            self.editor.insert("1.0", revised_text)
+            self.status.set(
+                "修正案を編集欄に反映しました。確認してから「修正内容を確定」を押してください"
+            )
+        self._enable_actions()
 
     def _show_analysis(self, analysis: dict) -> None:
         self.analysis = analysis
