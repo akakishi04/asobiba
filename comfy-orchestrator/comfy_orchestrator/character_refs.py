@@ -178,17 +178,27 @@ def normalize_analysis(observations: list[dict], synthesis: dict) -> dict:
         raise OrchestratorError("特徴抽出には2～4枚の画像が必要です")
     clean = []
     for index, obs in enumerate(observations, 1):
-        if not isinstance(obs, dict) or set(obs) != set(FEATURES):
+        if (
+            not isinstance(obs, dict)
+            or not set(FEATURES).issubset(obs)
+            or not set(obs).issubset(OBSERVATION_FIELDS)
+        ):
             raise OrchestratorError(f"画像{index}の特徴認識結果が不正です")
         item = {}
-        for key, value in obs.items():
+        for key in OBSERVATION_FIELDS:
+            # Old local sheets lack the four new morphology fields.
+            value = obs.get(key, "unknown")
             if not isinstance(value, str) or len(value) > 220 or not value.strip():
                 raise OrchestratorError(f"画像{index}の{key}の認識結果が不正です")
             item[key] = value.strip()
         clean.append(item)
     if not isinstance(synthesis, dict):
         raise OrchestratorError("統合結果の形式が不正です")
-    result = {"observations": clean, "common": [], "candidates": [], "variable": [], "uncertain": []}
+    result = {
+        "observations": clean,
+        "common": [], "candidates": [], "variable": [], "uncertain": [],
+        "identity_hypotheses": [],
+    }
     # A purported common feature must reference ALL inputs; all partial
     # evidence is downgraded to a candidate even if the model mislabels it.
     seen = set()
@@ -200,7 +210,7 @@ def normalize_analysis(observations: list[dict], synthesis: dict) -> dict:
             if not isinstance(entry, dict):
                 raise OrchestratorError("共通特徴の根拠が不正です")
             feature, value, support = entry.get("feature"), entry.get("value"), entry.get("images")
-            if not isinstance(feature, str) or feature not in FEATURES or not isinstance(value, str) or not 0 < len(value.strip()) <= 220:
+            if not isinstance(feature, str) or feature not in OBSERVATION_FIELDS or not isinstance(value, str) or not 0 < len(value.strip()) <= 220:
                 raise OrchestratorError("共通特徴の項目または内容が不正です")
             if not isinstance(support, list) or not support or any(
                 type(i) is not int or i < 1 or i > count for i in support
@@ -223,9 +233,62 @@ def normalize_analysis(observations: list[dict], synthesis: dict) -> dict:
             if not isinstance(entry, dict):
                 raise OrchestratorError("相違点の形式が不正です")
             feature, details = entry.get("feature"), entry.get("details")
-            if not isinstance(feature, str) or feature not in FEATURES or not isinstance(details, str) or not 0 < len(details.strip()) <= 1000:
+            if not isinstance(feature, str) or feature not in OBSERVATION_FIELDS or not isinstance(details, str) or not 0 < len(details.strip()) <= 1000:
                 raise OrchestratorError("相違点の内容が不正です")
             result[category].append({"feature": feature, "details": details.strip()})
+
+    # A hypothesis can survive absent views, unlike the exact intersection,
+    # but must not hide observations that actively contradict it.
+    hypotheses = synthesis.get("identity_hypotheses", [])
+    if not isinstance(hypotheses, list) or len(hypotheses) > 20:
+        raise OrchestratorError("抽象的キャラ特徴の形式が不正です")
+    used_hypotheses = set()
+
+    def image_indices(value):
+        if (
+            not isinstance(value, list)
+            or any(type(i) is not int or not 1 <= i <= count for i in value)
+            or len(value) != len(set(value))
+        ):
+            raise OrchestratorError("キャラ特徴の根拠画像番号が不正です")
+        return sorted(value)
+
+    for item in hypotheses:
+        if not isinstance(item, dict):
+            raise OrchestratorError("抽象的キャラ特徴が不正です")
+        aspect = item.get("aspect")
+        description = item.get("description")
+        rationale = item.get("rationale")
+        confidence = item.get("confidence")
+        if (
+            not isinstance(aspect, str) or aspect not in IDENTITY_ASPECTS
+            or not isinstance(description, str)
+            or not 0 < len(description.strip()) <= 350
+            or not isinstance(rationale, str)
+            or not 0 < len(rationale.strip()) <= 400
+            or confidence not in CONFIDENCE_LABELS
+        ):
+            raise OrchestratorError("抽象的キャラ特徴の内容が不正です")
+        support = image_indices(item.get("supporting_images"))
+        conflict = image_indices(item.get("conflicting_images"))
+        if set(support) & set(conflict):
+            raise OrchestratorError("同じ画像を根拠と反証の両方には指定できません")
+        key = (aspect, description.strip().casefold())
+        if key in used_hypotheses:
+            continue
+        used_hypotheses.add(key)
+        # Confidence is claimed by the model, not objectively calibrated.
+        # Downgrade statements backed by fewer than two explicit observations.
+        if conflict or len(support) < 2:
+            confidence = "low"
+        result["identity_hypotheses"].append({
+            "aspect": aspect,
+            "description": description.strip(),
+            "supporting_images": support,
+            "conflicting_images": conflict,
+            "confidence": confidence,
+            "rationale": rationale.strip(),
+        })
     return result
 
 
