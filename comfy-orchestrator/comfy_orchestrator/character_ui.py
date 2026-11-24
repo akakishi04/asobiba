@@ -12,11 +12,13 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from .character_refs import (
     MAX_CHARACTER_IMAGES,
+    add_character_image_files,
     validate_images,
     normalize_approved,
     suggested_traits,
     format_evidence,
 )
+from .file_drop import register_file_drop
 
 
 class CharacterReferenceWindow:
@@ -74,6 +76,11 @@ class CharacterReferenceWindow:
             top, height=4, exportselection=False, font=("Meiryo UI", 9),
         )
         self.image_list.pack(side="left", fill="both", expand=True)
+        self.drag_drop_ready = register_file_drop(
+            self.image_list, self._add_files
+        )
+        if self.drag_drop_ready:
+            top.configure(text="キャラ参照画像（ここにD&D／最大4枚）")
         button_stack = ttk.Frame(top)
         button_stack.pack(side="right", fill="y", padx=(8, 0))
         self.add_button = ttk.Button(button_stack, text="追加...", command=self.add)
@@ -168,34 +175,28 @@ class CharacterReferenceWindow:
             parent=self.window,
             filetypes=[("Images", "*.png *.jpg *.jpeg *.webp")],
         )
-        if not files:
+        self._add_files(files)
+
+    def _add_files(self, files: tuple[str, ...] | list[str]) -> None:
+        """Used by both file-picker and Explorer D&D, with identical validation."""
+        if self.busy or not files:
             return
-        existing = {path.resolve() for path in self.images}
-        additions = []
-        for name in files:
-            path = Path(name).expanduser().resolve()
-            if path in existing:
-                continue
-            if path.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
-                messagebox.showerror("キャラ参照", "画像はPNG/JPEG/WebPのみです", parent=self.window)
-                return
-            if not path.is_file() or path.stat().st_size > 20 * 1024 * 1024:
-                messagebox.showerror(
-                    "キャラ参照", "各画像は存在する20MB以下のファイルにしてください",
-                    parent=self.window,
-                )
-                return
-            existing.add(path)
-            additions.append(path)
-        if len(self.images) + len(additions) > MAX_CHARACTER_IMAGES:
-            messagebox.showwarning(
-                "キャラ参照", "画像は最大4枚です", parent=self.window,
+        try:
+            updated = add_character_image_files(self.images, files)
+        except (ValueError, OSError) as exc:
+            messagebox.showerror(
+                "キャラ参照", str(exc), parent=self.window,
             )
             return
-        if additions:
-            self.images.extend(additions)
-            self._refresh()
-            self._invalidate()
+        if len(updated) == len(self.images):
+            self.status.set("指定画像は既に登録されています")
+            return
+        self.images = list(updated)
+        self._refresh()
+        self._invalidate()
+        self.status.set(
+            f"{len(self.images)}枚を登録。共通特徴を再抽出してください"
+        )
 
     def remove(self) -> None:
         selected = self.image_list.curselection()
