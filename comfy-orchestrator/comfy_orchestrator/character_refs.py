@@ -60,7 +60,7 @@ def intersection_schema() -> dict:
     shared = {
         "type": "object",
         "properties": {
-            "feature": {"type": "string"},
+            "feature": {"type": "string", "enum": list(OBSERVATION_FIELDS)},
             "value": {"type": "string"},
             "images": {"type": "array", "items": {"type": "integer"}},
         },
@@ -70,7 +70,7 @@ def intersection_schema() -> dict:
     difference = {
         "type": "object",
         "properties": {
-            "feature": {"type": "string"},
+            "feature": {"type": "string", "enum": list(OBSERVATION_FIELDS)},
             "details": {"type": "string"},
         },
         "required": ["feature", "details"],
@@ -199,6 +199,13 @@ def normalize_analysis(observations: list[dict], synthesis: dict) -> dict:
         "common": [], "candidates": [], "variable": [], "uncertain": [],
         "identity_hypotheses": [],
     }
+    warnings = synthesis.get("warnings", [])
+    if not isinstance(warnings, list) or len(warnings) > 60 or any(
+        not isinstance(v, str) or len(v) > 450 for v in warnings
+    ):
+        raise OrchestratorError("キャラ特徴の警告データが不正です")
+    if warnings:
+        result["warnings"] = list(warnings)
     # A purported common feature must reference ALL inputs; all partial
     # evidence is downgraded to a candidate even if the model mislabels it.
     seen = set()
@@ -329,7 +336,12 @@ def suggested_traits(analysis: dict) -> str:
 
 def format_evidence(analysis: dict) -> str:
     size = len(analysis["observations"])
-    lines = ["【キャラの核：抽象的な特徴の仮説】"]
+    lines = []
+    if analysis.get("warnings"):
+        lines.append("【要確認：形式不一致で自動採用しなかった項目】")
+        lines.extend(f"・{warning}" for warning in analysis["warnings"])
+        lines.append("")
+    lines.append("【キャラの核：抽象的な特徴の仮説】")
     hypotheses = analysis.get("identity_hypotheses", [])
     for item in hypotheses:
         supported = ",".join(str(n) for n in item["supporting_images"]) or "なし"
