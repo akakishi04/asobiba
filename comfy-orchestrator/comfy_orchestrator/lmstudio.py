@@ -15,7 +15,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .core import OrchestratorError, _open_json, plan_schema
-from .character_refs import observation_schema, intersection_schema, normalize_analysis, validate_images
+from .character_refs import observation_schema, intersection_schema, validate_images
+from .character_repair import repair_model_analysis
 from .prompt_profiles import (
     DEFAULT_T2I_PROFILE, T2I_PROFILE_LEGACY,
     DEFAULT_I2I_PROFILE, I2I_PROFILE_LEGACY,
@@ -531,6 +532,16 @@ class LMStudio:
                         "Use 'overall' for a concise, distinctive COMBINATION of supported "
                         "features, not generic adjectives like 'beautiful' or 'anime girl'. "
                         "Keep the older common/candidates/variable/uncertain fields too: "
+                        "Use ONLY the exact machine field names from the JSON schema "
+                        "for feature (hair_color, hair_style, eye_color, eye_shape, "
+                        "face, body, outfit, accessories, other, facial_geometry, "
+                        "silhouette, shape_language, distinctive_motifs). Do NOT "
+                        "invent feature labels such as hair, eyes, identity, or "
+                        "colors; those are invalid here. For abstract higher-level "
+                        "hypotheses, use identity_hypotheses with aspect from the "
+                        "schema instead of inventing feature categories. "
+                        "Every common/candidate value must be a nonempty string "
+                        "no longer than 220 characters. "
                         "common requires all images, candidates have partial direct support, "
                         "variable lists changes in outfits/style/other content, uncertain "
                         "records genuinely unknowable or conflicting traits. "
@@ -552,7 +563,13 @@ class LMStudio:
                     )},
                 ], "comfy_character_intersection", intersection_schema(),
             )
-            return normalize_analysis(observations, combined)
+            analysis = repair_model_analysis(observations, combined)
+            if analysis.get("warnings"):
+                info(
+                    f"キャラ特徴: LLMの形式違い {len(analysis['warnings'])}件を "
+                    "除外または補正しました（結果画面で確認できます）"
+                )
+            return analysis
         finally:
             if instance_id and self.unload_after:
                 info("LM Studio: キャラ特徴抽出後に選択モデルをアンロード")
