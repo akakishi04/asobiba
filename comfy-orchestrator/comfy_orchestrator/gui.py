@@ -1069,6 +1069,10 @@ class Application:
             f"CFG: {p.get('cfg', '不明')} / "
             f"画像: {len(entry.images)}枚"
             + (f" / 方式: {policy_label}" if policy_label else "")
+            + (
+                f" / キャラ参照: {len(entry.character_references)}枚"
+                if entry.character_traits else ""
+            )
             + (" / 旧画像（再生成用設定なし）" if entry.legacy else "")
         )
         image = entry.first_image
@@ -1398,6 +1402,9 @@ class Application:
             "steps": params.get("steps"),
             "cfg": params.get("cfg"),
             "denoise": params.get("denoise"),
+            "character_traits": self.latest_character_traits,
+            "character_analysis": self.latest_character_analysis,
+            "character_references": self.latest_character_references,
         }, from_history=False)
 
     def _open_prompt_details(self, details: dict, *, from_history: bool) -> None:
@@ -1471,9 +1478,56 @@ class Application:
             command=lambda: self._copy_to_clipboard(negative),
             state="normal" if negative_saved else "disabled",
         ).pack(side="left")
+        if details.get("character_traits"):
+            ttk.Button(
+                buttons, text="キャラ特徴",
+                command=lambda: self._show_saved_character_features(details),
+            ).pack(side="left", padx=(6, 0))
         ttk.Button(
             buttons, text="閉じる", command=popup.destroy,
         ).pack(side="right")
+
+    def _show_saved_character_features(self, details: dict) -> None:
+        """Review the exact approved sheet and observed reference evidence."""
+        traits = details.get("character_traits")
+        if not traits:
+            return
+        popup = tk.Toplevel(self.root)
+        popup.title("キャラ参照・確定特徴")
+        popup.geometry("760x570")
+        popup.minsize(450, 300)
+        popup.transient(self.root)
+        bottom = ttk.Frame(popup, padding=(10, 3, 10, 10))
+        bottom.pack(side="bottom", fill="x")
+        ttk.Button(
+            bottom, text="確定特徴をコピー",
+            command=lambda: self._copy_to_clipboard(traits),
+        ).pack(side="left")
+        ttk.Button(bottom, text="閉じる", command=popup.destroy).pack(side="right")
+        num = len(details.get("character_references") or ())
+        ttk.Label(
+            popup, text=f"生成に採用した特徴 / 参照画像 {num}枚",
+            style="Muted.TLabel",
+        ).pack(anchor="w", padx=10, pady=(8, 4))
+        content = ttk.Panedwindow(popup, orient="vertical")
+        content.pack(fill="both", expand=True, padx=10, pady=(0, 8))
+        approved_frame = ttk.LabelFrame(content, text="ユーザー確定値")
+        content.add(approved_frame, weight=2)
+        report_frame = ttk.LabelFrame(content, text="抽出根拠（LLM推定）")
+        content.add(report_frame, weight=3)
+        for frame, value in (
+            (approved_frame, traits),
+            (report_frame, (
+                format_evidence(details["character_analysis"])
+                if details.get("character_analysis") else "記録なし"
+            )),
+        ):
+            view = scrolledtext.ScrolledText(
+                frame, wrap="word", height=7, font=("Meiryo UI", 10),
+            )
+            view.insert("1.0", value)
+            view.configure(state="disabled")
+            view.pack(fill="both", expand=True, padx=6, pady=6)
 
     def _copy_to_clipboard(self, value: str) -> None:
         self.root.clipboard_clear()
