@@ -45,6 +45,32 @@ CONFIG = ROOT / "config.json"
 EXAMPLE = ROOT / "config.example.json"
 OUTPUTS = ROOT / "outputs"
 
+# Keep the pixel dimensions authoritative: presets are just a GUI shortcut.
+CUSTOM_RESOLUTION = "カスタム"
+RESOLUTION_PRESETS = {
+    "512 × 512（軽量プレビュー）": (512, 512),
+    "768 × 768（軽量・正方形）": (768, 768),
+    "1024 × 1024（標準・正方形）": (1024, 1024),
+    "832 × 1216（縦長イラスト）": (832, 1216),
+    "1216 × 832（横長イラスト）": (1216, 832),
+    "768 × 1024（縦長 3:4）": (768, 1024),
+    "1024 × 768（横長 4:3）": (1024, 768),
+    "720 × 1280（縦長 9:16）": (720, 1280),
+    "1280 × 720（横長 16:9）": (1280, 720),
+}
+
+
+def resolution_preset_label(width: str, height: str) -> str:
+    """Infer the preset from editable dimensions, including partial input."""
+    try:
+        dimensions = (int(width), int(height))
+    except (TypeError, ValueError):
+        return CUSTOM_RESOLUTION
+    return next(
+        (label for label, size in RESOLUTION_PRESETS.items() if size == dimensions),
+        CUSTOM_RESOLUTION,
+    )
+
 
 def bootstrap_config() -> dict:
     """Create the local settings file only if missing, preserving custom settings."""
@@ -287,6 +313,11 @@ class Application:
         self.workflow = tk.StringVar(value=preferred if preferred in workflows else "自動")
         self.width = tk.StringVar(value=str(options.get("width", 768)))
         self.height = tk.StringVar(value=str(options.get("height", 768)))
+        self.resolution_preset = tk.StringVar(
+            value=resolution_preset_label(self.width.get(), self.height.get())
+        )
+        self.width.trace_add("write", self._sync_resolution_preset)
+        self.height.trace_add("write", self._sync_resolution_preset)
         self.steps = tk.StringVar(value=str(options.get("steps", 20)))
         self.cfg = tk.StringVar(value=str(options.get("cfg", 5.0)))
         self.seed = tk.StringVar(value=str(options.get("seed", "")))
@@ -490,42 +521,56 @@ class Application:
         self.workflow_box.bind(
             "<<ComboboxSelected>>", lambda _e: self._update_generation_controls()
         )
-        ttk.Label(settings, text="幅").grid(row=1, column=0, sticky="w", padx=(0, 5))
+        ttk.Label(settings, text="解像度").grid(
+            row=1, column=0, sticky="w", padx=(0, 5), pady=(0, 4),
+        )
+        self.resolution_box = ttk.Combobox(
+            settings, textvariable=self.resolution_preset,
+            values=(*RESOLUTION_PRESETS, CUSTOM_RESOLUTION),
+            state="readonly", width=20,
+        )
+        self.resolution_box.grid(
+            row=1, column=1, columnspan=3, sticky="ew", pady=(0, 4),
+        )
+        self.resolution_box.bind(
+            "<<ComboboxSelected>>", self._apply_resolution_preset,
+        )
+        ttk.Label(settings, text="幅").grid(row=2, column=0, sticky="w", padx=(0, 5))
         self.width_entry = ttk.Entry(settings, textvariable=self.width, width=8)
-        self.width_entry.grid(row=1, column=1, sticky="ew", padx=(0, 8))
-        ttk.Label(settings, text="高さ").grid(row=1, column=2, sticky="w", padx=(0, 5))
+        self.width_entry.grid(row=2, column=1, sticky="ew", padx=(0, 8))
+        ttk.Label(settings, text="高さ").grid(row=2, column=2, sticky="w", padx=(0, 5))
         self.height_entry = ttk.Entry(settings, textvariable=self.height, width=8)
-        self.height_entry.grid(row=1, column=3, sticky="ew")
+        self.height_entry.grid(row=2, column=3, sticky="ew")
 
-        ttk.Label(settings, text="Steps").grid(row=2, column=0, sticky="w")
+        ttk.Label(settings, text="Steps").grid(row=3, column=0, sticky="w")
         ttk.Entry(settings, textvariable=self.steps, width=8).grid(
-            row=2, column=1, sticky="ew", padx=(0, 8),
+            row=3, column=1, sticky="ew", padx=(0, 8),
         )
-        ttk.Label(settings, text="CFG").grid(row=2, column=2, sticky="w")
+        ttk.Label(settings, text="CFG").grid(row=3, column=2, sticky="w")
         ttk.Entry(settings, textvariable=self.cfg, width=8).grid(
-            row=2, column=3, sticky="ew",
+            row=3, column=3, sticky="ew",
         )
-        ttk.Label(settings, text="Seed").grid(row=3, column=0, sticky="w")
+        ttk.Label(settings, text="Seed").grid(row=4, column=0, sticky="w")
         ttk.Entry(settings, textvariable=self.seed).grid(
-            row=3, column=1, columnspan=3, sticky="ew",
+            row=4, column=1, columnspan=3, sticky="ew",
         )
-        ttk.Label(settings, text="Denoise (I2I)").grid(row=4, column=0, sticky="w")
+        ttk.Label(settings, text="Denoise (I2I)").grid(row=5, column=0, sticky="w")
         self.denoise_entry = ttk.Entry(settings, textvariable=self.denoise, width=8)
-        self.denoise_entry.grid(row=4, column=1, sticky="ew", padx=(0, 8))
-        ttk.Label(settings, text="ポーズ強度").grid(row=4, column=2, sticky="w")
+        self.denoise_entry.grid(row=5, column=1, sticky="ew", padx=(0, 8))
+        ttk.Label(settings, text="ポーズ強度").grid(row=5, column=2, sticky="w")
         self.strength_entry = ttk.Entry(
             settings, textvariable=self.control_strength, width=8,
         )
-        self.strength_entry.grid(row=4, column=3, sticky="ew")
+        self.strength_entry.grid(row=5, column=3, sticky="ew")
         ttk.Label(
             settings, textvariable=self.size_hint, style="Muted.TLabel",
-        ).grid(row=5, column=0, columnspan=4, sticky="w", pady=(4, 0))
+        ).grid(row=6, column=0, columnspan=4, sticky="w", pady=(4, 0))
         ttk.Label(
             settings, text="Seed空欄＝ランダム。画像なしはT2I／マスク指定は部分修正。",
             style="Muted.TLabel",
-        ).grid(row=6, column=0, columnspan=4, sticky="w", pady=(3, 0))
+        ).grid(row=7, column=0, columnspan=4, sticky="w", pady=(3, 0))
         ttk.Label(settings, text="T2Iプロンプト").grid(
-            row=7, column=0, sticky="w", pady=(6, 2),
+            row=8, column=0, sticky="w", pady=(6, 2),
         )
         self.t2i_profile_box = ttk.Combobox(
             settings, textvariable=self.t2i_profile,
@@ -533,14 +578,14 @@ class Application:
             width=20,
         )
         self.t2i_profile_box.grid(
-            row=7, column=1, columnspan=3, sticky="ew", pady=(6, 2),
+            row=8, column=1, columnspan=3, sticky="ew", pady=(6, 2),
         )
         ttk.Label(
             settings, text="T2Iは構図と光、I2Iは維持対象と変更対象を重視。",
             style="Muted.TLabel",
-        ).grid(row=8, column=0, columnspan=4, sticky="w", pady=(2, 0))
+        ).grid(row=9, column=0, columnspan=4, sticky="w", pady=(2, 0))
         ttk.Label(settings, text="I2Iプロンプト").grid(
-            row=9, column=0, sticky="w", pady=(6, 2),
+            row=10, column=0, sticky="w", pady=(6, 2),
         )
         self.i2i_profile_box = ttk.Combobox(
             settings, textvariable=self.i2i_profile,
@@ -548,7 +593,7 @@ class Application:
             width=20,
         )
         self.i2i_profile_box.grid(
-            row=9, column=1, columnspan=3, sticky="ew", pady=(6, 2),
+            row=10, column=1, columnspan=3, sticky="ew", pady=(6, 2),
         )
 
         image_row = ttk.Frame(self.options_form)
@@ -926,6 +971,20 @@ class Application:
             self.workflow.set(chosen)
         self._update_generation_controls()
 
+    def _sync_resolution_preset(self, *_args) -> None:
+        self.resolution_preset.set(
+            resolution_preset_label(self.width.get(), self.height.get())
+        )
+
+    def _apply_resolution_preset(self, _event=None) -> None:
+        dimensions = RESOLUTION_PRESETS.get(self.resolution_preset.get())
+        if dimensions is None:
+            self.width_entry.focus_set()
+            return
+        width, height = dimensions
+        self.width.set(str(width))
+        self.height.set(str(height))
+
     def _update_generation_controls(self) -> None:
         """Disable only the settings that are unsupported by the active mode."""
         workflow_id = self._active_workflow()
@@ -936,6 +995,13 @@ class Application:
         uses_source_image = "image" in bindings
         for entry in (self.width_entry, self.height_entry):
             entry.configure(state="disabled" if uses_source_image else "normal")
+        if hasattr(self, "resolution_box"):
+            supports_dimensions = (
+                not uses_source_image and {"width", "height"} <= bindings.keys()
+            )
+            self.resolution_box.configure(
+                state="readonly" if supports_dimensions else "disabled"
+            )
         self.denoise_entry.configure(
             state="normal" if "denoise" in bindings else "disabled"
         )
