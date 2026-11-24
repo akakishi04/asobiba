@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .core import OrchestratorError, _open_json, plan_schema
+from .character_refs import observation_schema, intersection_schema, normalize_analysis, validate_images
 from .prompt_profiles import (
     DEFAULT_T2I_PROFILE, T2I_PROFILE_LEGACY,
     DEFAULT_I2I_PROFILE, I2I_PROFILE_LEGACY,
@@ -397,4 +398,125 @@ class LMStudio:
                 if response.get("instance_id") != instance_id:
                     raise OrchestratorError(
                         "LM Studioのアンロード完了を確認できません。VRAM競合を避けるため生成を中止します"
+                    )
+
+    def analyze_character_references(
+        self, images: list[Path] | tuple[Path, ...],
+        progress: Callable[[str], None] | None = None,
+    ) -> dict:
+        """Observe 2-4 separate images then estimate visual intersection.
+
+        Do not produce a final character identity prompt; user approval is
+        mandatory and happens in the GUI after inspecting the evidence.
+        """
+        paths = validate_images(images)
+        if not isinstance(self.model, str) or not self.model.strip() or self.model == "SELECT_IN_GUI":
+            raise OrchestratorError("画像対応LM Studioモデルを選択してください")
+        # This dedicated action is explicitly visual even if the ordinary
+        # image-to-image composition checkbox is disabled.
+        self.settings = {**self.settings, "send_reference_to_llm": True}
+        self._has_visual_input = True
+        instance_id = None
+
+        def info(value: str) -> None:
+            if progress:
+                progress(value)
+
+        def structured(messages: list[dict], schema_name: str, schema: dict) -> dict:
+            payload = {
+                "model": instance_id,
+                "messages": messages,
+                "stream": False,
+                "temperature": 0,
+                "max_tokens": self.settings.get("max_tokens", 4096),
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {"name": schema_name, "schema": schema},
+                },
+            }
+            return read_json_reply(
+                _request(self.settings, "/v1/chat/completions", payload),
+                "キャラクター特徴抽出",
+            )
+
+        try:
+            info("LM Studio: キャラ参照用の画像対応モデルをロード")
+            instance_id = self._ensure_loaded()
+            observations = []
+            for i, path in enumerate(paths, 1):
+                info(f"キャラ特徴観察 {i}/{len(paths)}: {path.name}")
+                mime = mimetypes.guess_type(path.name)[0]
+                if mime not in ("image/png", "image/jpeg", "image/webp"):
+                    raise OrchestratorError(f"キャラ参照画像形式が不正です: {path}")
+                encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+                observations.append(structured(
+                    [
+                        {"role": "system", "content": (
+                            "You are a careful visual observer of illustrated characters. "
+                            "Fill ALL requested fields with concise, concrete visual facts "
+                            "in English suitable for later use as anime generation tags. "
+                            "Focus on stable identity characteristics (hair, eye details, "
+                            "distinctive face traits, body proportions, accessories). "
+                            "Describe outfits as observed, not as necessarily permanent. "
+                            "Never invent hidden parts, age, backstory, identity, gender "
+                            "or clothes not actually visible. If a feature is unseen or "
+                            "ambiguous, write 'unknown'. Do not infer from other images "
+                            "or from generic anime conventions."
+                        )},
+                        {"role": "user", "content": [
+                            {"type": "text", "text": (
+                                f"Image {i} of {len(paths)}. Describe ONLY this image. "
+                                "All fields required; enter 'unknown' for invisible traits."
+                            )},
+                            {"type": "image_url", "image_url": {
+                                "url": f"data:{mime};base64,{encoded}"
+                            }},
+                        ]},
+                    ], "comfy_character_observation", observation_schema(),
+                ))
+            info("キャラ特徴: 複数画像の共通点・差分・不明点を照合")
+            combined = structured(
+                [
+                    {"role": "system", "content": (
+                        "You compare individually observed visual descriptions "
+                        "of what the user says is the same illustrated character. "
+                        "Find a conservative SEMANTIC INTERSECTION. For each common "
+                        "feature, list its exact key, concise English value, and "
+                        "1-based image numbers where it is explicitly supported. "
+                        "List an item as COMMON only if all images support it. "
+                        "If only some images visibly support it, put it in candidates "
+                        "with those image numbers; unknown is NOT support. "
+                        "If values conflict, list them under variable with the "
+                        "source image numbers, without mixing into a new value. "
+                        "Put hidden or contradictory identity details under uncertain. "
+                        "For hairstyles or outfits, different camera perspectives "
+                        "are not sufficient evidence of a permanent change. "
+                        "Do not hallucinate an identity or average conflicting traits. "
+                        "All returned keys must be from the feature schema. "
+                        "Use short observations and NEVER imply guaranteed identity."
+                    )},
+                    {"role": "user", "content": (
+                        f"Number of images: {len(paths)}. "
+                        "Observations with image indices are:\n"
+                        + json.dumps(
+                            [
+                                {"image": i, "traits": obs}
+                                for i, obs in enumerate(observations, 1)
+                            ], ensure_ascii=False,
+                        )
+                    )},
+                ], "comfy_character_intersection", intersection_schema(),
+            )
+            return normalize_analysis(observations, combined)
+        finally:
+            if instance_id and self.unload_after:
+                info("LM Studio: キャラ特徴抽出後に選択モデルをアンロード")
+                response = _request(
+                    self.settings, "/api/v1/models/unload",
+                    {"instance_id": instance_id},
+                )
+                if response.get("instance_id") != instance_id:
+                    raise OrchestratorError(
+                        "LM Studioモデルのアンロードが確認できません。"
+                        "VRAM空き容量を確認してください"
                     )
