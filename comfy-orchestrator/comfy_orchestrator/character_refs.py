@@ -24,6 +24,24 @@ FEATURES = {
     "accessories": "装飾品",
     "other": "その他の見た目",
 }
+# These are observations of character DESIGN, not arbitrary image style.
+# Older saved sheets have only FEATURES; the reader accepts both versions.
+ABSTRACT_FEATURES = {
+    "facial_geometry": "顔の造形・比率",
+    "silhouette": "シルエット・形状",
+    "shape_language": "デザインの形状的傾向",
+    "distinctive_motifs": "識別的な造形・モチーフ",
+}
+OBSERVATION_FIELDS = {**FEATURES, **ABSTRACT_FEATURES}
+IDENTITY_ASPECTS = {
+    "face": "顔立ち",
+    "hair": "髪の特徴",
+    "eyes": "目元",
+    "silhouette": "輪郭・体型",
+    "design": "デザインの特徴",
+    "overall": "総合的なキャラらしさ",
+}
+CONFIDENCE_LABELS = {"high": "高", "medium": "中", "low": "低"}
 
 
 def observation_schema() -> dict:
@@ -31,9 +49,9 @@ def observation_schema() -> dict:
         "type": "object",
         "properties": {
             key: {"type": "string", "maxLength": 220}
-            for key in FEATURES
+            for key in OBSERVATION_FIELDS
         },
-        "required": list(FEATURES),
+        "required": list(OBSERVATION_FIELDS),
         "additionalProperties": False,
     }
 
@@ -58,6 +76,22 @@ def intersection_schema() -> dict:
         "required": ["feature", "details"],
         "additionalProperties": False,
     }
+    identity_hypothesis = {
+        "type": "object",
+        "properties": {
+            "aspect": {"type": "string", "enum": list(IDENTITY_ASPECTS)},
+            "description": {"type": "string", "maxLength": 350},
+            "supporting_images": {"type": "array", "items": {"type": "integer"}},
+            "conflicting_images": {"type": "array", "items": {"type": "integer"}},
+            "confidence": {"type": "string", "enum": list(CONFIDENCE_LABELS)},
+            "rationale": {"type": "string", "maxLength": 400},
+        },
+        "required": [
+            "aspect", "description", "supporting_images",
+            "conflicting_images", "confidence", "rationale",
+        ],
+        "additionalProperties": False,
+    }
     return {
         "type": "object",
         "properties": {
@@ -65,8 +99,14 @@ def intersection_schema() -> dict:
             "candidates": {"type": "array", "items": shared},
             "variable": {"type": "array", "items": difference},
             "uncertain": {"type": "array", "items": difference},
+            "identity_hypotheses": {
+                "type": "array", "items": identity_hypothesis,
+            },
         },
-        "required": ["common", "candidates", "variable", "uncertain"],
+        "required": [
+            "common", "candidates", "variable", "uncertain",
+            "identity_hypotheses",
+        ],
         "additionalProperties": False,
     }
 
