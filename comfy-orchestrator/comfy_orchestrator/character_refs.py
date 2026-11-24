@@ -266,6 +266,7 @@ def normalize_analysis(observations: list[dict], synthesis: dict) -> dict:
             or not 0 < len(description.strip()) <= 350
             or not isinstance(rationale, str)
             or not 0 < len(rationale.strip()) <= 400
+            or not isinstance(confidence, str)
             or confidence not in CONFIDENCE_LABELS
         ):
             raise OrchestratorError("抽象的キャラ特徴の内容が不正です")
@@ -318,7 +319,7 @@ def suggested_traits(analysis: dict) -> str:
     if common:
         if rows:
             rows.append("")
-        rows.append("【具体的な共通特徴】")
+            rows.append("【具体的な共通特徴】")
         rows.extend(
             f"{OBSERVATION_FIELDS[trait['feature']]}: {trait['value']}"
             for trait in common
