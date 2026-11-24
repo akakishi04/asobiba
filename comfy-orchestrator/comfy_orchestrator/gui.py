@@ -1678,6 +1678,11 @@ class Application:
     def _start(self, dry_run: bool) -> None:
         if self.working:
             return
+        if self.character_analysis_running:
+            messagebox.showwarning(
+                "キャラ参照", "キャラ特徴抽出が終了してから画像を生成してください"
+            )
+            return
         if not self._save_settings():
             return
         prompt = self.prompt.get("1.0", "end").strip()
@@ -1708,6 +1713,23 @@ class Application:
             messagebox.showerror("生成設定エラー", str(exc))
             return
         cfg = copy.deepcopy(self.config)
+        approved_traits = self.character_traits or None
+        approved_images = tuple(self.character_references) if approved_traits else ()
+        approved_analysis = (
+            copy.deepcopy(self.character_analysis) if approved_traits else None
+        )
+        if approved_traits:
+            try:
+                validate_character_images(approved_images)
+                normalize_character_traits(approved_traits)
+                if not isinstance(approved_analysis, dict):
+                    raise core.OrchestratorError("キャラ参照の承認情報がありません")
+            except (OSError, ValueError, core.OrchestratorError) as exc:
+                messagebox.showerror("キャラ参照", str(exc))
+                return
+        self.latest_character_traits = approved_traits
+        self.latest_character_references = approved_images
+        self.latest_character_analysis = approved_analysis
         self.latest_composition_report = ""
         kind = cfg["workflows"][selected]["kind"]
         self.latest_prompt_profile = (
@@ -1728,6 +1750,8 @@ class Application:
                     progress=lambda line: self.messages.put(("progress", line)),
                     cancel_event=self.stop_event, mask_image=mask, pose_image=pose,
                     composition_image=composition,
+                    **({"character_traits": approved_traits}
+                       if approved_traits else {}),
                 )
                 images = []
                 if not dry_run:
@@ -1741,6 +1765,9 @@ class Application:
                     self._record_completed_generation(
                         result, images, prompt, image, mask, pose, composition,
                         self.latest_prompt_profile,
+                        character_references=approved_images,
+                        character_traits=approved_traits,
+                        character_analysis=approved_analysis,
                     )
                     if not dry_run else None
                 )
@@ -1767,6 +1794,18 @@ class Application:
                     else:
                         self.status.set(data)
                     self._log(data)
+                elif kind == "character_analysis_done":
+                    dialog, analysis = data
+                    self.character_analysis_running = False
+                    dialog.finish(analysis=analysis)
+                    self._log("キャラ参照画像の共通特徴を抽出。編集・確定待ち")
+                    self.status.set("キャラ特徴を編集して確定してください")
+                elif kind == "character_analysis_error":
+                    dialog, error = data
+                    self.character_analysis_running = False
+                    dialog.finish(error=error)
+                    self._log("キャラ特徴抽出エラー: " + error)
+                    self.status.set("キャラ特徴抽出に失敗しました")
                 elif kind == "check":
                     for line in data:
                         self._log(line)
