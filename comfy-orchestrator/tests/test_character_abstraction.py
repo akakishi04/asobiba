@@ -81,7 +81,6 @@ class CharacterAbstractionTests(unittest.TestCase):
         )
         self.assertEqual(result["common"], [])
         self.assertEqual(result["identity_hypotheses"][0]["confidence"], "medium")
-        self.assertIn("小さ", "小さ")  # Ensure Japanese labels are available.
         draft = character_refs.suggested_traits(result)
         self.assertIn("キャラの核", draft)
         self.assertIn("small pointed chin", draft)
@@ -89,7 +88,6 @@ class CharacterAbstractionTests(unittest.TestCase):
         report = character_refs.format_evidence(result)
         self.assertIn("支持2/2", report)
         self.assertIn("根拠・変化の説明", report)
-        self.assertIn("異なる", "異なる")  # independent from particular clothing
 
     def test_missing_view_is_not_a_contradiction(self):
         result = character_refs.normalize_analysis(
