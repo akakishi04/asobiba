@@ -293,26 +293,65 @@ def normalize_analysis(observations: list[dict], synthesis: dict) -> dict:
 
 
 def suggested_traits(analysis: dict) -> str:
-    """Only all-image consensus enters the initial editable character sheet."""
-    rows = [
-        f"{FEATURES[trait['feature']]}: {trait['value']}"
-        for trait in analysis.get("common", [])
+    """Draft an editable identity sheet, not a strict set intersection.
+
+    Prefer non-contradicted medium/high-level design hypotheses backed by
+    two or more images. Low-confidence guesses and partial color specifics
+    remain in evidence rather than being silently adopted.
+    """
+    hypotheses = [
+        item for item in analysis.get("identity_hypotheses", [])
+        if (
+            item.get("confidence") in ("medium", "high")
+            and len(item.get("supporting_images", [])) >= 2
+            and not item.get("conflicting_images")
+        )
     ]
+    rows = []
+    if hypotheses:
+        rows.append("【キャラの核（抽象・要確認）】")
+        rows.extend(
+            f"{IDENTITY_ASPECTS[item['aspect']]}: {item['description']}"
+            for item in hypotheses
+        )
+    common = analysis.get("common", [])
+    if common:
+        if rows:
+            rows.append("")
+        rows.append("【具体的な共通特徴】")
+        rows.extend(
+            f"{OBSERVATION_FIELDS[trait['feature']]}: {trait['value']}"
+            for trait in common
+        )
     return "\n".join(rows)
 
 
 def format_evidence(analysis: dict) -> str:
     size = len(analysis["observations"])
-    lines = ["【共通特徴（全画像で確認できた候補）】"]
+    lines = ["【キャラの核：抽象的な特徴の仮説】"]
+    hypotheses = analysis.get("identity_hypotheses", [])
+    for item in hypotheses:
+        supported = ",".join(str(n) for n in item["supporting_images"]) or "なし"
+        conflicted = ",".join(str(n) for n in item["conflicting_images"]) or "なし"
+        lines.append(
+            f"・{IDENTITY_ASPECTS[item['aspect']]}: {item['description']}"
+            f" [確信度（推定）: {CONFIDENCE_LABELS[item['confidence']]}, "
+            f"支持{len(item['supporting_images'])}/{size} (画像{supported}), "
+            f"反証 (画像{conflicted})]"
+        )
+        lines.append(f"  根拠・変化の説明: {item['rationale']}")
+    if not hypotheses:
+        lines.append("・推定できた特徴なし（手動確認が必要）")
+    lines.append("\n【具体的な共通特徴（全画像で確認できた候補）】")
     for item in analysis["common"]:
-        lines.append(f"・{FEATURES[item['feature']]}: {item['value']} ({size}/{size})")
+        lines.append(f"・{OBSERVATION_FIELDS[item['feature']]}: {item['value']} ({size}/{size})")
     if not analysis["common"]:
         lines.append("・なし（手動で確定してください）")
     lines.append("\n【部分的に一致・候補】")
     for item in analysis["candidates"]:
         images = ",".join(str(i) for i in item["images"])
         lines.append(
-            f"・{FEATURES[item['feature']]}: {item['value']} "
+            f"・{OBSERVATION_FIELDS[item['feature']]}: {item['value']} "
             f"({len(item['images'])}/{size}, 画像{images})"
         )
     if not analysis["candidates"]:
@@ -320,13 +359,13 @@ def format_evidence(analysis: dict) -> str:
     for section, title in (("variable", "画像ごとの差分"), ("uncertain", "不明・矛盾")):
         lines.append(f"\n【{title}】")
         for item in analysis[section]:
-            lines.append(f"・{FEATURES[item['feature']]}: {item['details']}")
+            lines.append(f"・{OBSERVATION_FIELDS[item['feature']]}: {item['details']}")
         if not analysis[section]:
             lines.append("・なし")
     lines.append("\n【画像ごとの観察結果】")
     for index, observed in enumerate(analysis["observations"], 1):
         lines.append(f"画像{index}")
-        for key, label in FEATURES.items():
+        for key, label in OBSERVATION_FIELDS.items():
             value = observed.get(key, "unknown")
             if value and value.strip().lower() != "unknown":
                 lines.append(f"  {label}: {value}")
