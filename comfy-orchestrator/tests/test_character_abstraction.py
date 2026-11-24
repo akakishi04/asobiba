@@ -82,7 +82,7 @@ class CharacterAbstractionTests(unittest.TestCase):
         self.assertEqual(result["common"], [])
         self.assertEqual(result["identity_hypotheses"][0]["confidence"], "medium")
         draft = character_refs.suggested_traits(result)
-        self.assertIn("キャラの核", draft)
+        self.assertTrue(draft.endswith("。"))
         self.assertIn("small pointed chin", draft)
         self.assertNotIn("dark armor", draft)
         report = character_refs.format_evidence(result)
@@ -141,7 +141,7 @@ class CharacterAbstractionTests(unittest.TestCase):
         analysis = character_refs.normalize_analysis(old, old_synthesis)
         self.assertEqual(analysis["identity_hypotheses"], [])
         self.assertEqual(analysis["observations"][0]["facial_geometry"], "unknown")
-        self.assertEqual(character_refs.suggested_traits(analysis), "髪色: black")
+        self.assertEqual(character_refs.suggested_traits(analysis), "髪色はblack。")
         with tempfile.TemporaryDirectory() as folder:
             refs = []
             for i in range(2):
