@@ -23,7 +23,14 @@ from . import core
 from .comparison import ComparisonWindow
 from .history import HistoryStore, HistoryEntry, HistoryError
 from .mask_editor import edit_mask
-from .lmstudio import list_models
+from .lmstudio import list_models, LMStudio
+from .character_ui import CharacterReferenceWindow
+from .character_refs import (
+    validate_images as validate_character_images,
+    normalize_approved as normalize_character_traits,
+    save_character_sheet, load_character_sheet, clear_character_sheet,
+    format_evidence,
+)
 from .prompt_profiles import (
     DEFAULT_T2I_PROFILE, T2I_PROFILE_LABELS, T2I_LABEL_TO_PROFILE,
     DEFAULT_I2I_PROFILE, I2I_PROFILE_LABELS, I2I_LABEL_TO_PROFILE,
@@ -250,6 +257,11 @@ class Application:
         self.latest_prompt_plan: dict | None = None
         self.latest_prompt_profile: str | None = None
         self.latest_request_text: str | None = None
+        self.character_references, self.character_analysis, self.character_traits = (
+            load_character_sheet(ROOT)
+        )
+        self.character_analysis_running = False
+        self.character_dialog: CharacterReferenceWindow | None = None
         self._variables()
         self._build()
         self._refresh_history()
@@ -305,6 +317,10 @@ class Application:
         self.free_comfy = tk.BooleanVar(value=comfy.get("free_before_llm", True))
         self.status = tk.StringVar(value="準備完了 — LM Studioのサーバーを起動してください")
         self.result_info = tk.StringVar(value="生成画像はここに表示されます")
+        self.character_status = tk.StringVar(
+            value=f"確定: {len(self.character_references)}枚"
+            if self.character_traits else "未設定"
+        )
 
     def _build(self) -> None:
         colors = apply_ttk_theme(self.root, self.dark_mode.get())
@@ -567,6 +583,18 @@ class Application:
                  "他の参照画像がなければT2Iで生成します。",
             style="Muted.TLabel", wraplength=470,
         ).pack(anchor="w", pady=(0, 8))
+
+        character_row = ttk.Frame(self.options_form)
+        character_row.pack(fill="x", pady=(0, 7))
+        ttk.Label(character_row, text="キャラ参照").pack(side="left", padx=(0, 6))
+        ttk.Label(
+            character_row, textvariable=self.character_status,
+            style="Muted.TLabel",
+        ).pack(side="left", fill="x", expand=True)
+        ttk.Button(
+            character_row, text="画像・特徴を編集...",
+            command=self._open_character_references,
+        ).pack(side="right")
 
         mask_row = ttk.Frame(self.options_form)
         mask_row.pack(fill="x", pady=(0, 5))
@@ -1456,6 +1484,72 @@ class Application:
         ttk.Button(
             footer, text="閉じる", command=window.destroy,
         ).pack(side="right")
+
+    def _open_character_references(self) -> None:
+        if self.character_dialog is not None and self.character_dialog.is_open():
+            self.character_dialog.window.lift()
+            self.character_dialog.window.focus_force()
+            return
+        self.character_dialog = CharacterReferenceWindow(
+            self.root,
+            images=self.character_references,
+            analysis=self.character_analysis,
+            approved=self.character_traits,
+            on_analyze=self._request_character_analysis,
+            on_confirm=self._approve_character_traits,
+            on_clear=self._clear_character_traits,
+        )
+
+    def _request_character_analysis(
+        self, paths: tuple[Path, ...], dialog: CharacterReferenceWindow,
+    ) -> None:
+        if self.working or self.character_analysis_running:
+            dialog.finish(error="画像生成や別の特徴抽出が実行中です")
+            return
+        model = self.model.get().strip()
+        if not model or model == "SELECT_IN_GUI":
+            dialog.finish(error="先にLM Studioの画像対応モデルを選択してください")
+            return
+        self.character_analysis_running = True
+        settings = copy.deepcopy(self.config["llm"])
+        settings.update({
+            "base_url": self.llm_url.get().strip(),
+            "model": model,
+            "unload_after_inference": self.unload_llm.get(),
+        })
+
+        def task():
+            try:
+                analysis = LMStudio(settings).analyze_character_references(
+                    paths, progress=lambda line: self.messages.put(("progress", line)),
+                )
+                self.messages.put(("character_analysis_done", (dialog, analysis)))
+            except Exception as exc:
+                self.messages.put(("character_analysis_error", (dialog, str(exc))))
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def _approve_character_traits(
+        self, paths: tuple[Path, ...], analysis: dict, traits: str,
+    ) -> None:
+        paths = validate_character_images(paths)
+        traits = normalize_character_traits(traits)
+        # Persist first. If it fails, keep the previous accepted sheet intact.
+        save_character_sheet(ROOT, paths, analysis, traits)
+        self.character_references = paths
+        self.character_analysis = copy.deepcopy(analysis)
+        self.character_traits = traits
+        self.character_status.set(f"確定: {len(paths)}枚")
+        self.status.set("キャラ特徴を確定しました。次のT2I/I2Iから反映します")
+        self._log(f"キャラ特徴確定: {len(paths)}枚（生成プロンプトへ反映）")
+
+    def _clear_character_traits(self) -> None:
+        clear_character_sheet(ROOT)
+        self.character_references = ()
+        self.character_analysis = None
+        self.character_traits = ""
+        self.character_status.set("未設定")
+        self.status.set("キャラ特徴の使用を解除しました")
 
     def _browse_composition(self) -> None:
         picked = filedialog.askopenfilename(
