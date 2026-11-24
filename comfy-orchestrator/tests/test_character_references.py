@@ -62,7 +62,7 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual([x["feature"] for x in result["candidates"]],
                          ["eye_color"])
         self.assertEqual(character_refs.suggested_traits(result),
-                         "髪色: black\n髪型・前髪: short bob")
+                         "髪色はblack。\n髪型・前髪はshort bob。")
         report = character_refs.format_evidence(result)
         self.assertIn("2/2", report)
         self.assertIn("1/2", report)
