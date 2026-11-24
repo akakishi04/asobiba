@@ -163,6 +163,13 @@ def repair_model_analysis(observations: list[dict], synthesis: dict) -> dict:
             if len(raw_text.strip()) > allowed_length:
                 warn(f"{loc}: {feature} の内容が長すぎるため短縮")
             clean_text = raw_text.strip()[:allowed_length]
+            if (
+                category in ("common", "candidates")
+                and clean_text.lower().rstrip("。").strip()
+                in ("unknown", "不明", "不明瞭", "判断できない", "確認できない")
+            ):
+                warn(f"{loc}: {feature} は不明情報のため共通特徴へ採用しません")
+                continue
             if category in ("common", "candidates"):
                 images = _indices(entry.get("images"), count)
                 if not images:
