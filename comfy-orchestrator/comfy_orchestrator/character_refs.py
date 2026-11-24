@@ -215,6 +215,7 @@ def save_character_sheet(
     clean = normalize_approved(approved)
     if not isinstance(analysis, dict):
         raise OrchestratorError("キャラ特徴の根拠がありません")
+    analysis = normalize_analysis(analysis.get("observations", []), analysis)
     file = Path(root) / "data" / "character_sheet.json"
     file.parent.mkdir(parents=True, exist_ok=True)
     tmp = file.with_suffix(".tmp")
@@ -244,6 +245,7 @@ def load_character_sheet(root: Path) -> tuple[tuple[Path, ...], dict | None, str
         approved = normalize_approved(value["approved_traits"])
         if not isinstance(analysis, dict):
             raise ValueError("invalid analysis")
+        analysis = normalize_analysis(analysis.get("observations", []), analysis)
         return paths, analysis, approved
     except (ValueError, TypeError, KeyError, OSError, RuntimeError):
         return (), None, ""
