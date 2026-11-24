@@ -339,7 +339,7 @@ class CharacterHistoryTests(unittest.TestCase):
         self.assertIn("def analyze(", inspect.getsource(CharacterReferenceWindow))
         self.assertIn("def confirm(", inspect.getsource(CharacterReferenceWindow))
         self.assertIn("self.on_confirm(", inspect.getsource(CharacterReferenceWindow.confirm))
-        self.assertIn("character_traits=approved_traits",
+        self.assertIn('{"character_traits": approved_traits}',
                       inspect.getsource(gui.Application._start))
         self.assertIn("self._one_history()",
                       inspect.getsource(gui.Application._show_selected_history_prompt))
