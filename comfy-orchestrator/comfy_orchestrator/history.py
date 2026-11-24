@@ -37,6 +37,9 @@ class HistoryEntry:
     pose_image: Path | None = None
     composition_image: Path | None = None
     prompt_profile: str | None = None
+    character_references: tuple[Path, ...] = ()
+    character_traits: str | None = None
+    character_analysis: dict | None = None
 
     @property
     def first_image(self) -> Path | None:
@@ -75,7 +78,10 @@ class HistoryStore:
                 )
             """)
             columns = {row[1] for row in con.execute("PRAGMA table_info(generations)")}
-            for column in ("mask_file", "pose_file", "composition_file", "prompt_profile"):
+            for column in (
+                "mask_file", "pose_file", "composition_file", "prompt_profile",
+                "character_files_json", "character_data_json",
+            ):
                 if column not in columns:
                     con.execute(f"ALTER TABLE generations ADD COLUMN {column} TEXT")
             con.execute(
@@ -113,6 +119,9 @@ class HistoryStore:
         pose_image: Path | None = None,
         composition_image: Path | None = None,
         prompt_profile: str | None = None,
+        character_references: tuple[Path, ...] | list[Path] = (),
+        character_traits: str | None = None,
+        character_analysis: dict | None = None,
     ) -> HistoryEntry:
         if not isinstance(parameters, dict):
             raise HistoryError("履歴の生成設定はJSONオブジェクトである必要があります")
@@ -124,6 +133,19 @@ class HistoryStore:
             not isinstance(prompt_profile, str) or len(prompt_profile) > 64
         ):
             raise HistoryError("プロンプト方式が不正です")
+        from .character_refs import validate_images, normalize_approved
+        if character_references or character_traits is not None or character_analysis is not None:
+            if not character_references or character_traits is None or not isinstance(character_analysis, dict):
+                raise HistoryError("キャラ参照履歴には画像・確定特徴・分析結果が必要です")
+            refs = validate_images(character_references)
+            approved = normalize_approved(character_traits)
+            character_data_json = json.dumps(
+                {"approved_traits": approved, "analysis": character_analysis},
+                ensure_ascii=False,
+            )
+        else:
+            refs = ()
+            character_data_json = None
         image_names = [self._relative_output(Path(x)) for x in images]
         row_id = uuid.uuid4().hex
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -150,6 +172,17 @@ class HistoryStore:
             mask_file = snapshot_asset(mask_image, "masks")
             pose_file = snapshot_asset(pose_image, "poses")
             composition_file = snapshot_asset(composition_image, "compositions")
+            character_files = []
+            for idx, source in enumerate(refs, 1):
+                # Distinct filenames per image; avoid overwriting if the user
+                # selects several PNG files for the same character.
+                source = Path(source)
+                folder = self.data / "characters"
+                folder.mkdir(parents=True, exist_ok=True)
+                snapshot = folder / f"{row_id}_{idx}{source.suffix.lower()}"
+                shutil.copyfile(source, snapshot)
+                copied.append(snapshot)
+                character_files.append(snapshot.relative_to(self.data).as_posix())
         except Exception:
             for file in copied:
                 file.unlink(missing_ok=True)
@@ -160,14 +193,16 @@ class HistoryStore:
                 con.execute(
                     """INSERT INTO generations
                     (id,created_at,prompt_id,workflow_id,kind,request_text,
-                     parameters_json,images_json,reference_file,legacy,mask_file,pose_file,composition_file,prompt_profile)
-                    VALUES (?,?,?,?,?,?,?,?,?,0,?,?,?,?)""",
+                     parameters_json,images_json,reference_file,legacy,mask_file,pose_file,composition_file,prompt_profile,character_files_json,character_data_json)
+                    VALUES (?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?)""",
                     (
                         row_id, now, prompt_id, workflow_id, kind, request_text,
                         json.dumps(parameters, ensure_ascii=False),
                         json.dumps(image_names, ensure_ascii=False),
                         reference_file, mask_file, pose_file, composition_file,
                         prompt_profile,
+                        json.dumps(character_files) if refs else None,
+                        character_data_json,
                     ),
                 )
         except Exception:
@@ -201,6 +236,25 @@ class HistoryStore:
                 self._child_path(self.data, row["composition_file"])
                 if row["composition_file"] else None
             )
+            character_files = (
+                json.loads(row["character_files_json"])
+                if row["character_files_json"] else []
+            )
+            if not isinstance(character_files, list) or len(character_files) > 4:
+                raise ValueError("invalid character refs")
+            characters = tuple(
+                self._child_path(self.data, name) for name in character_files
+            )
+            character_data = (
+                json.loads(row["character_data_json"])
+                if row["character_data_json"] else None
+            )
+            if character_data is not None and (
+                not isinstance(character_data, dict)
+                or not isinstance(character_data.get("approved_traits"), str)
+                or not isinstance(character_data.get("analysis"), dict)
+            ):
+                raise ValueError("invalid character sheet")
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             raise HistoryError(f"保存した履歴が壊れています: {row['id']}") from exc
         return HistoryEntry(
@@ -212,6 +266,13 @@ class HistoryStore:
             mask_image=mask, pose_image=pose,
             composition_image=composition,
             prompt_profile=row["prompt_profile"] or None,
+            character_references=characters,
+            character_traits=(
+                character_data["approved_traits"] if character_data else None
+            ),
+            character_analysis=(
+                character_data["analysis"] if character_data else None
+            ),
         )
 
     def list_entries(self, limit: int = 200) -> list[HistoryEntry]:
