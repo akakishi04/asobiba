@@ -301,11 +301,11 @@ def normalize_analysis(observations: list[dict], synthesis: dict) -> dict:
 
 
 def suggested_traits(analysis: dict) -> str:
-    """Draft an editable identity sheet, not a strict set intersection.
+    """Draft a Japanese-style editable CHARACTER DESCRIPTION, not tag lists.
 
-    Prefer non-contradicted medium/high-level design hypotheses backed by
-    two or more images. Low-confidence guesses and partial color specifics
-    remain in evidence rather than being silently adopted.
+    Use only evidence-backed, non-contradicted identity hypotheses plus
+    direct all-image common traits. Keep original wording (no hallucinated
+    rewriting) and respect the editor's maximum allowed length.
     """
     hypotheses = [
         item for item in analysis.get("identity_hypotheses", [])
@@ -315,23 +315,24 @@ def suggested_traits(analysis: dict) -> str:
             and not item.get("conflicting_images")
         )
     ]
-    rows = []
-    if hypotheses:
-        rows.append("【キャラの核（抽象・要確認）】")
-        rows.extend(
-            f"{IDENTITY_ASPECTS[item['aspect']]}: {item['description']}"
-            for item in hypotheses
-        )
-    common = analysis.get("common", [])
-    if common:
-        if rows:
-            rows.append("")
-            rows.append("【具体的な共通特徴】")
-        rows.extend(
-            f"{OBSERVATION_FIELDS[trait['feature']]}: {trait['value']}"
-            for trait in common
-        )
-    return "\n".join(rows)
+    sentences: list[str] = []
+
+    def add_sentence(value: str) -> None:
+        sentence = value.strip().rstrip("。").strip() + "。"
+        current = sum(len(row) + 1 for row in sentences)
+        if sentence != "。" and current + len(sentence) <= MAX_APPROVED_CHARS:
+            sentences.append(sentence)
+
+    for item in hypotheses:
+        # New extractions produce complete Japanese descriptive sentences.
+        # Older English-only data is not silently invented into Japanese.
+        add_sentence(item["description"])
+    for item in analysis.get("common", []):
+        label = OBSERVATION_FIELDS[item["feature"]]
+        value = item["value"].strip().rstrip("。")
+        if value and value.lower() not in ("unknown", "不明", "不明瞭"):
+            add_sentence(f"{label}は{value}")
+    return "\n".join(sentences)
 
 
 def format_evidence(analysis: dict) -> str:
@@ -380,7 +381,9 @@ def format_evidence(analysis: dict) -> str:
         lines.append(f"画像{index}")
         for key, label in OBSERVATION_FIELDS.items():
             value = observed.get(key, "unknown")
-            if value and value.strip().lower() != "unknown":
+            if value and value.strip().lower().rstrip("。") not in (
+                "unknown", "不明", "不明瞭",
+            ):
                 lines.append(f"  {label}: {value}")
     return "\n".join(lines)
 
