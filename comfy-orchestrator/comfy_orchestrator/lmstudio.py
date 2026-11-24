@@ -428,10 +428,11 @@ class LMStudio:
         self, images: list[Path] | tuple[Path, ...],
         progress: Callable[[str], None] | None = None,
     ) -> dict:
-        """Observe 2-4 separate images then estimate visual intersection.
+        """Observe 2-4 images and infer evidence-backed character invariants.
 
-        Do not produce a final character identity prompt; user approval is
-        mandatory and happens in the GUI after inspecting the evidence.
+        Compare high-level character design even when the drawings, camera
+        angles or outfits differ. Never produce an approved identity directly;
+        the user reviews and confirms the proposed traits in the GUI.
         """
         paths = validate_images(images)
         if not isinstance(self.model, str) or not self.model.strip() or self.model == "SELECT_IN_GUI":
@@ -481,6 +482,13 @@ class LMStudio:
                             "in English suitable for later use as anime generation tags. "
                             "Focus on stable identity characteristics (hair, eye details, "
                             "distinctive face traits, body proportions, accessories). "
+                            "ALSO describe the character's visible FACIAL GEOMETRY "
+                            "(face outline, relative eye spacing, chin/jaw shape), "
+                            "SILHOUETTE (proportion and outline independent of pose), "
+                            "SHAPE LANGUAGE (round vs angular or directional character "
+                            "design cues), and DISTINCTIVE MOTIFS (recognizable markers). "
+                            "Do not confuse image rendering style, camera angle, "
+                            "lighting, temporary costume, or pose with character identity. "
                             "Describe outfits as observed, not as necessarily permanent. "
                             "Never invent hidden parts, age, backstory, identity, gender "
                             "or clothes not actually visible. If a feature is unseen or "
@@ -498,26 +506,39 @@ class LMStudio:
                         ]},
                     ], "comfy_character_observation", observation_schema(),
                 ))
-            info("キャラ特徴: 複数画像の共通点・差分・不明点を照合")
+            info("キャラ特徴: 造形上の共通性・相違点・同一性の仮説を統合")
             combined = structured(
                 [
                     {"role": "system", "content": (
-                        "You compare individually observed visual descriptions "
-                        "of what the user says is the same illustrated character. "
-                        "Find a conservative SEMANTIC INTERSECTION. For each common "
-                        "feature, list its exact key, concise English value, and "
-                        "1-based image numbers where it is explicitly supported. "
-                        "List an item as COMMON only if all images support it. "
-                        "If only some images visibly support it, put it in candidates "
-                        "with those image numbers; unknown is NOT support. "
-                        "If values conflict, list them under variable with the "
-                        "source image numbers, without mixing into a new value. "
-                        "Put hidden or contradictory identity details under uncertain. "
+                        "You compare descriptions of illustrations that the user "
+                        "says depict the same character, even when artwork STYLE, "
+                        "CLOTHES, LIGHTING, POSE and CAMERA VIEWPOINT vary dramatically. "
+                        "Your PRIMARY goal is to infer a VISUAL IDENTITY SIGNATURE: "
+                        "stable higher-level face geometry, eye shape/spacing, hair "
+                        "silhouette, proportions, repeated design motifs, overall "
+                        "shape language, and their relationships. Do not merely "
+                        "calculate a strict intersection of exact colors or clothing. "
+                        "For each identity_hypothesis provide aspect, concrete English "
+                        "description useful for image generation, 1-based supporting_images, "
+                        "conflicting_images, confidence (high/medium/low), and rationale "
+                        "explaining why the feature is robust across different drawings. "
+                        "An image that does NOT reveal the feature is unknown, NOT a "
+                        "contradiction; explicit opposing evidence IS a contradiction. "
+                        "Only claim supporting_images when their individual observations "
+                        "actually justify the abstract characteristic; do not turn all "
+                        "unspecified views into support. A hypothesis can be based on "
+                        "multiple images without their wording being identical. "
+                        "Use 'overall' for a concise, distinctive COMBINATION of supported "
+                        "features, not generic adjectives like 'beautiful' or 'anime girl'. "
+                        "Keep the older common/candidates/variable/uncertain fields too: "
+                        "common requires all images, candidates have partial direct support, "
+                        "variable lists changes in outfits/style/other content, uncertain "
+                        "records genuinely unknowable or conflicting traits. "
                         "For hairstyles or outfits, different camera perspectives "
                         "are not sufficient evidence of a permanent change. "
-                        "Do not hallucinate an identity or average conflicting traits. "
-                        "All returned keys must be from the feature schema. "
-                        "Use short observations and NEVER imply guaranteed identity."
+                        "Never average conflicting traits into a fictitious character. "
+                        "Never confuse a changed art style with changed character anatomy. "
+                        "No identity hypothesis is guaranteed; the user must verify it."
                     )},
                     {"role": "user", "content": (
                         f"Number of images: {len(paths)}. "
