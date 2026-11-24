@@ -82,7 +82,7 @@ class EvidenceTests(unittest.TestCase):
 
     def test_observation_schema_is_bounded_and_unknown_allowed(self):
         schema = character_refs.observation_schema()
-        self.assertEqual(set(schema["required"]), set(character_refs.FEATURES))
+        self.assertEqual(set(schema["required"]), set(character_refs.OBSERVATION_FIELDS))
         self.assertFalse(schema["additionalProperties"])
         self.assertIn("body", schema["properties"])
         self.assertIn("common", character_refs.intersection_schema()["properties"])
