@@ -195,3 +195,52 @@ def normalize_approved(text: str) -> str:
     if not clean or len(clean) > MAX_APPROVED_CHARS:
         raise OrchestratorError("確定キャラ特徴は1～3000文字で入力してください")
     return clean
+
+
+
+def save_character_sheet(
+    root: Path, images: tuple[Path, ...], analysis: dict, approved: str,
+) -> None:
+    """Persist the last explicitly approved sheet locally (not in git)."""
+    from .core import OrchestratorError
+
+    paths = validate_images(images)
+    clean = normalize_approved(approved)
+    if not isinstance(analysis, dict):
+        raise OrchestratorError("キャラ特徴の根拠がありません")
+    file = Path(root) / "data" / "character_sheet.json"
+    file.parent.mkdir(parents=True, exist_ok=True)
+    tmp = file.with_suffix(".tmp")
+    try:
+        tmp.write_text(json.dumps({
+            "version": 1,
+            "images": [str(path) for path in paths],
+            "analysis": analysis,
+            "approved_traits": clean,
+        }, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(file)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def load_character_sheet(root: Path) -> tuple[tuple[Path, ...], dict | None, str]:
+    """Return empty state if old local images have moved or data is malformed."""
+    file = Path(root) / "data" / "character_sheet.json"
+    if not file.is_file() or file.stat().st_size > 1_000_000:
+        return (), None, ""
+    try:
+        value = json.loads(file.read_text(encoding="utf-8"))
+        if not isinstance(value, dict) or value.get("version") != 1:
+            raise ValueError("unexpected version")
+        paths = validate_images(value["images"])
+        analysis = value["analysis"]
+        approved = normalize_approved(value["approved_traits"])
+        if not isinstance(analysis, dict):
+            raise ValueError("invalid analysis")
+        return paths, analysis, approved
+    except (ValueError, TypeError, KeyError, OSError):
+        return (), None, ""
+
+
+def clear_character_sheet(root: Path) -> None:
+    (Path(root) / "data" / "character_sheet.json").unlink(missing_ok=True)
