@@ -101,7 +101,7 @@ class CharacterReferenceWindow:
         action = ttk.Frame(layout)
         action.pack(fill="x", pady=(6, 7))
         self.analyze_button = ttk.Button(
-            action, text="LLMで共通特徴を抽出", command=self.analyze,
+            action, text="キャラの特徴を抽出", command=self.analyze,
         )
         self.analyze_button.pack(side="left")
         ttk.Label(
@@ -112,7 +112,7 @@ class CharacterReferenceWindow:
         review = ttk.Panedwindow(layout, orient="vertical")
         review.pack(fill="both", expand=True)
         evidence_frame = ttk.LabelFrame(
-            review, text="抽出結果（支持枚数・差分・不明点）", padding=6,
+            review, text="キャラの核・具体的な共通点・根拠", padding=6,
         )
         review.add(evidence_frame, weight=3)
         self.evidence = scrolledtext.ScrolledText(
@@ -121,7 +121,7 @@ class CharacterReferenceWindow:
         )
         self.evidence.pack(fill="both", expand=True)
         edit_frame = ttk.LabelFrame(
-            review, text="採用するキャラ特徴（自由に修正・削除・追加）", padding=6,
+            review, text="採用するキャラ特徴（仮説を修正・確定）", padding=6,
         )
         review.add(edit_frame, weight=2)
         self.editor = scrolledtext.ScrolledText(
@@ -254,7 +254,7 @@ class CharacterReferenceWindow:
         elif analysis is not None:
             self._show_analysis(analysis)
             self.status.set(
-                "共通特徴を確認し、差分・候補を踏まえて文章を修正してください"
+                "抽象的な特徴もLLMの仮説です。根拠と反証を見て修正・確定してください"
             )
         self._enable_actions()
 
