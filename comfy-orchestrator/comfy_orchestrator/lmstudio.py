@@ -606,3 +606,105 @@ class LMStudio:
                         "LM Studioモデルのアンロードが確認できません。"
                         "VRAM空き容量を確認してください"
                     )
+
+    def revise_character_description(
+        self, current: str, instruction: str,
+        progress: Callable[[str], None] | None = None,
+    ) -> str:
+        """Apply a user's Japanese editing request to the draft, without images.
+
+        The result is an unapproved suggestion. GUI keeps human confirmation
+        mandatory; this call never modifies the saved character sheet.
+        """
+        from .character_refs import normalize_approved
+
+        original = normalize_approved(current)
+        if (
+            not isinstance(instruction, str)
+            or not instruction.strip()
+            or len(instruction.strip()) > 1200
+        ):
+            raise OrchestratorError("修正指示は1～1200文字で入力してください")
+        if (
+            not isinstance(self.model, str) or not self.model.strip()
+            or self.model == "SELECT_IN_GUI"
+        ):
+            raise OrchestratorError("LM Studioモデルを選択してください")
+        # No visual reference is used in this text-only revision.
+        self._has_visual_input = False
+        instance_id = None
+        try:
+            if progress:
+                progress("LM Studio: 自然文の修正指示を適用中")
+            instance_id = self._ensure_loaded()
+            payload = {
+                "model": instance_id,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a careful Japanese-language editor for a "
+                            "character design description that will be reviewed "
+                            "by a human before image generation. The input is "
+                            "an existing user-editable character description plus "
+                            "a new editing instruction, not new image evidence. "
+                            "Follow the user's editing instruction precisely. "
+                            "Preserve all unspecified traits and their meanings; "
+                            "remove only what was asked to remove. Never fabricate "
+                            "new visual evidence, anatomy or character details. "
+                            "Do not change the character or invent another outfit. "
+                            "Write concise, natural Japanese sentences, NOT "
+                            "Danbooru tags, keyword lists, English prompts, "
+                            "markdown, bullet labels or commentary. If the user "
+                            "asks to replace an old detail, remove the old detail "
+                            "rather than listing contradictory details. "
+                            "Return only JSON according to the schema."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": json.dumps({
+                            "current_description": original,
+                            "edit_instruction": instruction.strip(),
+                        }, ensure_ascii=False),
+                    },
+                ],
+                "stream": False,
+                "temperature": 0,
+                "max_tokens": self.settings.get("max_tokens", 4096),
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "comfy_character_revision_ja",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "description_ja": {
+                                    "type": "string", "minLength": 1,
+                                    "maxLength": 3000,
+                                },
+                            },
+                            "required": ["description_ja"],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+            }
+            answer = read_json_reply(
+                _request(self.settings, "/v1/chat/completions", payload),
+                "キャラ説明の自然文修正",
+            )
+            return normalize_approved(answer.get("description_ja"))
+        finally:
+            if instance_id and self.unload_after:
+                if progress:
+                    progress("LM Studio: キャラ説明の修正後にモデルをアンロード")
+                response = _request(
+                    self.settings, "/api/v1/models/unload",
+                    {"instance_id": instance_id},
+                )
+                if response.get("instance_id") != instance_id:
+                    raise OrchestratorError(
+                        "LM Studioモデルのアンロードが確認できません。"
+                        "VRAM空き容量を確認してください"
+                    )
