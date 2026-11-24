@@ -162,6 +162,8 @@ class CharacterReferenceWindow:
 
     def _enable_actions(self) -> None:
         state = "disabled" if self.busy else "normal"
+        # Never overwrite edits typed while a model request is running.
+        self.editor.configure(state=state)
         for button in (
             self.add_button, self.remove_button, self.up_button,
             self.down_button, self.analyze_button,
@@ -289,6 +291,7 @@ class CharacterReferenceWindow:
         if not self.is_open():
             return
         self.busy = False
+        self.editor.configure(state="normal")
         if error:
             self.status.set("自然文の修正に失敗しました（元の文章は保持）")
             messagebox.showerror("キャラ説明", error, parent=self.window)
@@ -313,6 +316,7 @@ class CharacterReferenceWindow:
         if not self.is_open():
             return
         self.busy = False
+        self.editor.configure(state="normal")
         if error:
             self.status.set("特徴抽出に失敗しました")
             messagebox.showerror("特徴抽出エラー", error, parent=self.window)
