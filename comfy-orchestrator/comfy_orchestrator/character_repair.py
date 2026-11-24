@@ -138,7 +138,7 @@ def repair_model_analysis(observations: list[dict], synthesis: dict) -> dict:
         if not isinstance(entries, list):
             warn(f"{category}: 項目配列が不正なため除外")
             continue
-        for position, entry in enumerate(entries[:60], 1):
+        for position, entry in enumerate(entries[:40], 1):
             loc = f"{category}[{position}]"
             if not isinstance(entry, dict):
                 warn(f"{loc}: オブジェクトでないため除外")
@@ -174,14 +174,14 @@ def repair_model_analysis(observations: list[dict], synthesis: dict) -> dict:
                 repaired[category].append({
                     "feature": feature, "details": clean_text,
                 })
-        if len(entries) > 60:
-            warn(f"{category}: 多すぎる候補の残り{len(entries)-60}件は除外")
+        if len(entries) > 40:
+            warn(f"{category}: 多すぎる候補の残り{len(entries)-40}件は除外")
 
     hypotheses = synthesis.get("identity_hypotheses", [])
     if not isinstance(hypotheses, list):
         warn("identity_hypotheses: 項目配列が不正なため除外")
         hypotheses = []
-    for i, entry in enumerate(hypotheses[:40], 1):
+    for i, entry in enumerate(hypotheses[:20], 1):
         loc = f"identity_hypotheses[{i}]"
         if not isinstance(entry, dict):
             warn(f"{loc}: 形式不正のため除外")
@@ -218,8 +218,8 @@ def repair_model_analysis(observations: list[dict], synthesis: dict) -> dict:
             "supporting_images": supporting,
             "conflicting_images": conflicting,
         })
-    if len(hypotheses) > 40:
-        warn(f"identity_hypotheses: 残り{len(hypotheses)-40}件は除外")
+    if len(hypotheses) > 20:
+        warn(f"identity_hypotheses: 残り{len(hypotheses)-20}件は除外")
     # Existing validator checks support counts, prevents false consensus and
     # preserves the old format for already approved/persisted history.
     analysis = normalize_analysis(clean_observations, repaired)
