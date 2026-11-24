@@ -175,7 +175,7 @@ class JapaneseDraftTests(unittest.TestCase):
         first_system = requests[0][1]["messages"][0]["content"]
         final_system = requests[2][1]["messages"][0]["content"]
         self.assertIn("NATURAL JAPANESE", first_system)
-        self.assertIn("NATURAL", final_system)
+        self.assertIn("natural, readable", final_system)
         self.assertIn("schema-defined English", final_system)
         self.assertEqual(
             result["identity_hypotheses"][0]["description"],
