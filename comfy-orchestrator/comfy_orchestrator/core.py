@@ -421,6 +421,7 @@ def execute(
     overrides: dict | None = None, progress: Callable[[str], None] | None = None,
     cancel_event: Any = None, mask_image: Path | None = None, pose_image: Path | None = None,
     composition_image: Path | None = None,
+    character_traits: str | None = None,
 ) -> dict:
     """Interpret natural language, unload the chosen LLM, then run a fixed workflow.
 
@@ -433,6 +434,9 @@ def execute(
         )
     if not request.strip():
         raise OrchestratorError("自然文の指示を入力してください")
+    if character_traits is not None:
+        from .character_refs import normalize_approved
+        character_traits = normalize_approved(character_traits)
     for field, path_value in (
         ("参照画像", image), ("マスク", mask_image), ("ポーズ画像", pose_image),
         ("構図参考画像", composition_image),
@@ -519,14 +523,17 @@ def execute(
             composition_image if composition_image is not None else
             image if image is not None else pose_image
         )
+        # Keep the existing call signature unchanged without a confirmed
+        # character sheet; offline mocks and older integrations still work.
+        extra = {"character_traits": character_traits} if character_traits else {}
         if composition_image is not None:
             plan = LMStudio(settings).interpret(
                 request, workflows, vision_reference, progress=note,
-                reference_role="composition",
+                reference_role="composition", **extra,
             )
         else:
             plan = LMStudio(settings).interpret(
-                request, workflows, vision_reference, progress=note,
+                request, workflows, vision_reference, progress=note, **extra,
             )
     else:
         if composition_image is not None:
