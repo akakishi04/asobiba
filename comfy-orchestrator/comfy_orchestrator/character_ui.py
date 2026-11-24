@@ -137,6 +137,10 @@ class CharacterReferenceWindow:
             self.editor.delete("1.0", "end")
             self.editor.insert("1.0", approved)
             self.status.set("確定済み。修正する場合は再度「修正内容を確定」を押してください")
+        elif not self.drag_drop_ready:
+            self.status.set(
+                "D&Dを有効にするには tkinterdnd2 をインストールしてください"
+            )
         self._enable_actions()
 
     def is_open(self) -> bool:
@@ -183,7 +187,7 @@ class CharacterReferenceWindow:
             return
         try:
             updated = add_character_image_files(self.images, files)
-        except (ValueError, OSError) as exc:
+        except (ValueError, OSError, RuntimeError) as exc:
             messagebox.showerror(
                 "キャラ参照", str(exc), parent=self.window,
             )
