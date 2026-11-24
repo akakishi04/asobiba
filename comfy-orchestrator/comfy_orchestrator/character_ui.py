@@ -55,7 +55,7 @@ class CharacterReferenceWindow:
         # Reserve buttons before expanding panels for shorter Windows displays.
         footer = ttk.Frame(layout)
         footer.pack(side="bottom", fill="x", pady=(7, 0))
-        self.status = tk.StringVar(value="画像を2～4枚選び、特徴抽出してください")
+        self.status = tk.StringVar(value="画像を2～4枚選び、抽出後に日本語の文章を修正・確定してください")
         ttk.Label(footer, textvariable=self.status, wraplength=530).pack(
             side="left", fill="x", expand=True,
         )
@@ -121,7 +121,7 @@ class CharacterReferenceWindow:
         )
         self.evidence.pack(fill="both", expand=True)
         edit_frame = ttk.LabelFrame(
-            review, text="採用するキャラ特徴（仮説を修正・確定）", padding=6,
+            review, text="生成に使うキャラ説明（日本語の文章で自由に修正）", padding=6,
         )
         review.add(edit_frame, weight=2)
         self.editor = scrolledtext.ScrolledText(
@@ -254,7 +254,7 @@ class CharacterReferenceWindow:
         elif analysis is not None:
             self._show_analysis(analysis)
             self.status.set(
-                "抽象的な特徴もLLMの仮説です。根拠と反証を見て修正・確定してください"
+                "日本語のキャラ説明を確認・修正して「修正内容を確定」を押してください"
             )
         self._enable_actions()
 
