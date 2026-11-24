@@ -79,7 +79,11 @@ def _indices(value, count) -> list[int] | None:
     for raw in value:
         if type(raw) is int:
             index = raw
-        elif isinstance(raw, str) and raw.strip().isdigit():
+        elif (
+            isinstance(raw, str)
+            and raw.strip().isascii()
+            and raw.strip().isdigit()
+        ):
             index = int(raw.strip())
         else:
             return None
