@@ -25,7 +25,7 @@ from .history import HistoryStore, HistoryEntry, HistoryError
 from .mask_editor import edit_mask
 from .lmstudio import list_models, LMStudio
 from .character_ui import CharacterReferenceWindow
-from .file_drop import enable_native_dnd
+from .file_drop import enable_native_dnd, register_file_drop
 from .character_refs import (
     validate_images as validate_character_images,
     normalize_approved as normalize_character_traits,
@@ -593,15 +593,21 @@ class Application:
 
         character_row = ttk.Frame(self.options_form)
         character_row.pack(fill="x", pady=(0, 7))
-        ttk.Label(character_row, text="キャラ参照").pack(side="left", padx=(0, 6))
-        ttk.Label(
+        character_title = ttk.Label(character_row, text="キャラ参照")
+        character_title.pack(side="left", padx=(0, 6))
+        character_status_label = ttk.Label(
             character_row, textvariable=self.character_status,
             style="Muted.TLabel",
-        ).pack(side="left", fill="x", expand=True)
+        )
+        character_status_label.pack(side="left", fill="x", expand=True)
         ttk.Button(
             character_row, text="画像・特徴を編集...",
             command=self._open_character_references,
         ).pack(side="right")
+        # Files can also be dropped onto the main character row, which opens
+        # the editable list. The previous approved sheet remains until Confirm.
+        for target in (character_row, character_title, character_status_label):
+            register_file_drop(target, self._drop_character_files)
 
         mask_row = ttk.Frame(self.options_form)
         mask_row.pack(fill="x", pady=(0, 5))
@@ -1568,6 +1574,18 @@ class Application:
         ttk.Button(
             footer, text="閉じる", command=window.destroy,
         ).pack(side="right")
+
+    def _drop_character_files(self, files: tuple[str, ...]) -> None:
+        if not files:
+            return
+        if self.working or self.character_analysis_running:
+            messagebox.showwarning(
+                "キャラ参照", "現在の処理が終了してから画像を追加してください"
+            )
+            return
+        self._open_character_references()
+        if self.character_dialog is not None and self.character_dialog.is_open():
+            self.character_dialog._add_files(files)
 
     def _open_character_references(self) -> None:
         if self.character_dialog is not None and self.character_dialog.is_open():
