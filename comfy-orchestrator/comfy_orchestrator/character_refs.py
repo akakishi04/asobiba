@@ -238,7 +238,7 @@ def load_character_sheet(root: Path) -> tuple[tuple[Path, ...], dict | None, str
         if not isinstance(analysis, dict):
             raise ValueError("invalid analysis")
         return paths, analysis, approved
-    except (ValueError, TypeError, KeyError, OSError):
+    except (ValueError, TypeError, KeyError, OSError, RuntimeError):
         return (), None, ""
 
 
