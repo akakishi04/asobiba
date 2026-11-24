@@ -232,6 +232,9 @@ def history_prompt_details(entry: HistoryEntry | None) -> dict | None:
         "steps": entry.parameters.get("steps"),
         "cfg": entry.parameters.get("cfg"),
         "denoise": entry.parameters.get("denoise"),
+        "character_traits": entry.character_traits,
+        "character_analysis": entry.character_analysis,
+        "character_references": entry.character_references,
     }
 
 
@@ -257,6 +260,9 @@ class Application:
         self.latest_prompt_plan: dict | None = None
         self.latest_prompt_profile: str | None = None
         self.latest_request_text: str | None = None
+        self.latest_character_traits: str | None = None
+        self.latest_character_analysis: dict | None = None
+        self.latest_character_references: tuple[Path, ...] = ()
         self.character_references, self.character_analysis, self.character_traits = (
             load_character_sheet(ROOT)
         )
@@ -1132,6 +1138,14 @@ class Application:
                 variable.set(str(entry.parameters[key]))
             elif key == "seed":
                 variable.set("")
+        if hasattr(self, "character_references"):
+            self.character_references = entry.character_references
+            self.character_traits = entry.character_traits or ""
+            self.character_analysis = entry.character_analysis
+            self.character_status.set(
+                f"確定: {len(entry.character_references)}枚"
+                if self.character_traits else "未設定"
+            )
         if entry.kind == "t2i" and entry.prompt_profile in T2I_PROFILE_LABELS:
             self.t2i_profile.set(T2I_PROFILE_LABELS[entry.prompt_profile])
         elif (
@@ -1172,6 +1186,9 @@ class Application:
         pose_image: Path | None = None,
         composition_image: Path | None = None,
         prompt_profile: str | None = None,
+        character_references: tuple[Path, ...] = (),
+        character_traits: str | None = None,
+        character_analysis: dict | None = None,
     ) -> str | None:
         if not images:
             return None
@@ -1189,6 +1206,9 @@ class Application:
                 pose_image=pose_image,
                 composition_image=composition_image,
                 prompt_profile=prompt_profile,
+                character_references=character_references,
+                character_traits=character_traits,
+                character_analysis=character_analysis,
             )
             return entry.id
         except (HistoryError, OSError, ValueError, sqlite3.Error) as exc:
@@ -1229,6 +1249,9 @@ class Application:
         cfg = copy.deepcopy(self.config)
         self.latest_prompt_profile = entry.prompt_profile
         self.latest_request_text = entry.request_text
+        self.latest_character_traits = entry.character_traits
+        self.latest_character_analysis = entry.character_analysis
+        self.latest_character_references = entry.character_references
         self._set_busy("保存した設定を使って再生成中（LLMは呼び出しません）")
         self._log(
             f"再生成: {entry.workflow_id} / "
@@ -1261,6 +1284,12 @@ class Application:
                     entry.composition_image if entry.composition_image
                     and entry.composition_image.is_file() else None,
                     entry.prompt_profile,
+                    character_references=entry.character_references
+                    if all(p.is_file() for p in entry.character_references) else (),
+                    character_traits=entry.character_traits
+                    if all(p.is_file() for p in entry.character_references) else None,
+                    character_analysis=entry.character_analysis
+                    if all(p.is_file() for p in entry.character_references) else None,
                 )
                 self.messages.put(("done", (result, images, history_id)))
             except Exception as exc:
