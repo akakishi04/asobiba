@@ -309,6 +309,8 @@ def image_aware_overrides(
     for entry in candidates[1:]:
         common.intersection_update(entry["bindings"])
     result = {key: value for key, value in overrides.items() if key in common}
+    if workflow_id == core.H3_I2V_ID:
+        result.update({key: overrides[key] for key in core.H3_OPTION_KEYS if key in overrides})
     for field, raw in (("denoise", denoise), ("control_strength", control_strength)):
         if field in common:
             value = float(raw)
@@ -448,6 +450,12 @@ class Application:
         self.video_fps = tk.StringVar(value=str(options.get("video_fps", 24)))
         self.h3_size = tk.StringVar(value=str(options.get("h3_size", H3_RESOLUTIONS[0])))
         self.h3_duration = tk.StringVar(value=str(options.get("h3_duration", next(iter(H3_DURATIONS)))))
+        model_key = options.get("h3_model", "int8")
+        turbo_key = options.get("h3_turbo", "off")
+        self.h3_model = tk.StringVar(value=core.H3_MODEL_LABELS.get(model_key, "INT8 ConvRot"))
+        self.h3_turbo = tk.StringVar(value=core.H3_TURBO_LABELS.get(turbo_key, "OFF"))
+        self.h3_steps = tk.StringVar(value=str(options.get("h3_steps", options.get("steps", 20))))
+        self.h3_fixed_steps = tk.StringVar(value="")
         self.steps = tk.StringVar(value=str(options.get("steps", 20)))
         self.cfg = tk.StringVar(value=str(options.get("cfg", 5.0)))
         self.seed = tk.StringVar(value=str(options.get("seed", "")))
@@ -729,6 +737,11 @@ class Application:
                                      choices=tuple(I2I_PROFILE_LABELS.values()), span=3, width=18)
         self.h3_profile_box = field(7, 0, "プロンプト方式", self.h3_profile, "h3_profile",
                                     choices=tuple(H3_PROFILE_LABELS.values()), span=3, width=18)
+        self.h3_model_box = field(8, 0, "モデル", self.h3_model, "h3",
+                                  choices=tuple(core.H3_MODEL_LABELS.values()), span=3, width=18)
+        self.h3_turbo_box = field(9, 0, "Turbo", self.h3_turbo, "h3",
+                                  choices=tuple(core.H3_TURBO_LABELS.values()), span=3, width=18)
+        self.h3_turbo_box.bind("<<ComboboxSelected>>", self._sync_h3_steps)
         for widgets in self.parameter_widgets.values():
             for widget in widgets:
                 widget.grid_remove()
@@ -1040,6 +1053,29 @@ class Application:
         if hasattr(self, "parameter_widgets"):
             self._refresh_custom_dimensions()
 
+    def _h3_choices(self) -> dict:
+        model = next((key for key, label in core.H3_MODEL_LABELS.items() if label == self.h3_model.get()), None)
+        turbo = next((key for key, label in core.H3_TURBO_LABELS.items() if label == self.h3_turbo.get()), None)
+        if model is None or turbo is None:
+            raise core.OrchestratorError("H3モデルまたはTurbo設定が不正です")
+        return {"h3_model": model, "h3_turbo": turbo}
+
+    def _sync_h3_steps(self, _event=None) -> None:
+        if not hasattr(self, "h3_steps"):
+            return
+        is_h3 = self._active_workflow() == core.H3_I2V_ID
+        fixed = core.H3_TURBOS[self._h3_choices()["h3_turbo"]][1] if is_h3 else None
+        if fixed is not None:
+            if self.h3_fixed_steps.get() != str(fixed):
+                self.h3_fixed_steps.set(str(fixed))
+            variable = self.h3_fixed_steps
+        else:
+            variable = self.h3_steps if is_h3 else self.steps
+        key = (str(variable), fixed is not None)
+        if getattr(self, "_steps_binding_key", None) != key:
+            self.steps_entry.configure(textvariable=variable, state="readonly" if fixed is not None else "normal")
+            self._steps_binding_key = key
+
     def _update_generation_controls(self) -> None:
         """Refresh fields in place; never replace the prompt, references or result pane."""
         workflow_id = self._active_workflow()
@@ -1078,6 +1114,7 @@ class Application:
                 if getattr(self, "_steps_span", None) != span:
                     self._steps_span = span
                     self.steps_entry.grid_configure(columnspan=span, padx=0 if span == 3 else (0, 8))
+            self._sync_h3_steps()
         if hasattr(self, "reference_row"):
             for key, name in (("mask", "mask_row"), ("pose", "pose_row"),
                               ("pose", "pose_modes"), ("composition", "composition_row"),
@@ -1287,6 +1324,11 @@ class Application:
             details.append(f"{p['frames'] / p['fps']:.1f}秒")
         if "steps" in p:
             details.append(f"{p['steps']} steps")
+        if entry.workflow_id == core.H3_I2V_ID and "h3_model" in p:
+            details.append(core.H3_MODEL_LABELS.get(p["h3_model"], str(p["h3_model"])))
+            turbo = core.H3_TURBO_LABELS.get(p.get("h3_turbo", "off"), "")
+            if turbo and turbo != "OFF":
+                details.append("Turbo " + turbo)
         if policy_label:
             details.append(policy_label)
         if entry.legacy:
@@ -1364,6 +1406,11 @@ class Application:
         video_entry = entry.kind in core.VIDEO_KINDS
         if entry.workflow_id == core.H3_I2V_ID and hasattr(self, "h3_size"):
             p = entry.parameters
+            if hasattr(self, "h3_model"):
+                self.h3_model.set(core.H3_MODEL_LABELS.get(p.get("h3_model", "int8"), "INT8 ConvRot"))
+                self.h3_turbo.set(core.H3_TURBO_LABELS.get(p.get("h3_turbo", "off"), "OFF"))
+                if p.get("h3_turbo", "off") == "off" and "steps" in p:
+                    self.h3_steps.set(str(p["steps"]))
             if "width" in p and "height" in p:
                 self.h3_size.set(f"{p['width']} × {p['height']}")
             if "frames" in p:
@@ -1382,6 +1429,8 @@ class Application:
             ("denoise", self.denoise), ("seed", self.seed),
         ):
             if video_entry and key in ("width", "height"):
+                continue
+            if key == "steps" and entry.workflow_id == core.H3_I2V_ID and hasattr(self, "h3_steps"):
                 continue
             if key in entry.parameters:
                 variable.set(str(entry.parameters[key]))
@@ -1411,6 +1460,8 @@ class Application:
         if hasattr(self, "parameter_widgets"):
             self._custom_size_editing = self.resolution_preset.get() == CUSTOM_RESOLUTION
         self._update_generation_controls()
+        if hasattr(self, "h3_steps"):
+            self._sync_h3_steps()
         self.status.set("設定を復元しました")
         self._log(f"履歴の設定を復元: {entry.workflow_id} / Seed={entry.parameters.get('seed', '不明')}")
         self.prompt.focus_set()
@@ -1590,6 +1641,9 @@ class Application:
         config["ui"]["denoise"] = self.denoise.get().strip()
         config["ui"]["pose_mode"] = self.pose_mode.get()
         config["ui"]["control_strength"] = self.control_strength.get().strip()
+        if hasattr(self, "h3_model"):
+            config["ui"].update(self._h3_choices())
+            config["ui"]["h3_steps"] = self.h3_steps.get()
         for name in ("video_size", "video_frames", "video_fps", "h3_size", "h3_duration"):
             if hasattr(self, name):
                 config["ui"][name] = getattr(self, name).get()
@@ -1617,7 +1671,8 @@ class Application:
                 value = parse(variable.get())
                 core.check_param(name, value)
             except (ValueError, core.OrchestratorError):
-                if not entry or (name in bindings and not (video and name in ("width", "height"))):
+                separate_h3_steps = hasattr(self, "h3_steps") and self._active_workflow() == core.H3_I2V_ID and name == "steps"
+                if not entry or (name in bindings and not (video and name in ("width", "height")) and not separate_h3_steps):
                     raise
                 value = previous.get(name, default)
                 try:
@@ -1651,16 +1706,19 @@ class Application:
         if frames is None:
             # Restore a valid duration from a history entry made outside the GUI.
             frames = int(label.rsplit("(", 1)[1].removesuffix("f)"))
+        choices = self._h3_choices() if hasattr(self, "h3_model") else {}
+        fixed = core.H3_TURBOS[choices.get("h3_turbo", "off")][1]
+        normal = getattr(self, "h3_steps", self.steps)
         values = {
             "width": width, "height": height, "frames": frames,
-            "fps": 24, "steps": int(self.steps.get()),
+            "fps": 24, "steps": fixed if fixed is not None else int(normal.get()),
         }
         if self.seed.get().strip():
             values["seed"] = int(self.seed.get().strip())
         for name, value in values.items():
             core.check_param(name, value)
         core.validate_h3_video_parameters(values)
-        return values
+        return {**values, **choices}
 
     def _save_settings(self) -> bool:
         if self.working:

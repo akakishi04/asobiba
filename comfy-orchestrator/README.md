@@ -417,3 +417,16 @@ H3の動作が重い場合は、既存Wanを軽量プレビュー用に利用し
 - 参照や解像度の入力途中に同じレイアウトを繰り返し適用しない。キャンバス幅・スクロール範囲も値が変化したときだけ反映する。
 - 履歴のDB取得・既存画像の探索はワーカースレッドで実行し、Tk側は変更行だけ更新する。通常の生成完了時は既存ファイル全体を再探索しない。
 - 結果タブの表示中は履歴プレビューを読み込まない。同じ履歴を選択した場合の再デコードを避ける。
+
+### MiniMax H3 モデル・Turbo切替
+
+共通生成画面で MiniMax H3 を選ぶと「モデル」「Turbo」を表示します。INT8 ConvRot / W4A8 Mixed の両方で OFF / 8 Steps / 4 Steps を選べます。OFFではH3専用のStepsを入力でき、Turboでは対応するステップ数が固定されます。静止画・Wan用のStepsは変更しません。初期値は従来のINT8・OFFです。
+
+追加ファイル（既存のテキストエンコーダー・VAEは共用）:
+
+- `models/diffusion_models/minimax_h3_fl2va_pruned_w4a8_mixed.safetensors`: https://huggingface.co/Kijai/MiniMax-H3-experimental
+- `models/loras/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors`
+- `models/loras/minimax_h3_fl2v_turbo_4step_v1.3_768p_comfyui_bf16.safetensors`
+- LoRA配布元: https://huggingface.co/lightx2v/Minimax-h3-Turbo
+
+ComfyUI公式FL2VAテンプレートと同じModelOnly LoRA（strength 1.0）、simple scheduler、res_multistepを使用します。8/4ステップはLoRAの名称に合わせた固定値です。W4A8とTurboの組み合わせは実機で比較してください。未導入モデル・LoRAはLLM推論前に確認します。新規履歴はモデルとTurbo選択も保存し、同Seed/別Seed再生成は保存した組み合わせを復元します。旧履歴には未記録の設定を追記せず、従来のグラフを再利用します。GGUF・その他派生モデルはこの変更の対象外です。

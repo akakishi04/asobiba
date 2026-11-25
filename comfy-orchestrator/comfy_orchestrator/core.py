@@ -40,6 +40,77 @@ HOST_VIDEO_IDS = frozenset({WAN_I2V_ID, H3_I2V_ID})
 VIDEO_KINDS = frozenset({"i2v", "t2v"})
 IMAGE_INPUTS = frozenset({"image", "mask", "pose"})
 
+# Host-owned model/LoRA selection. These are intentionally NOT PARAMS or LLM
+# bindings: no model-supplied filename or arbitrary LoRA can enter a graph.
+H3_MODELS = {
+    "int8": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+    "w4a8": "minimax_h3_fl2va_pruned_w4a8_mixed.safetensors",
+}
+H3_TURBOS = {
+    "off": (None, None),
+    "turbo8": ("minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors", 8),
+    "turbo4": ("minimax_h3_fl2v_turbo_4step_v1.3_768p_comfyui_bf16.safetensors", 4),
+}
+H3_MODEL_LABELS = {"int8": "INT8 ConvRot", "w4a8": "W4A8 Mixed"}
+H3_TURBO_LABELS = {"off": "OFF", "turbo8": "8 Steps", "turbo4": "4 Steps"}
+H3_OPTION_KEYS = frozenset({"h3_model", "h3_turbo"})
+
+
+def split_h3_options(parameters: dict, *, enabled: bool) -> tuple[dict, dict]:
+    """Separate trusted H3 selections from ordinary API-bound parameters.
+
+    Missing selections preserve the pre-existing graph for old CLI jobs and
+    history. Explicit choices use only the shipped, allowlisted filenames.
+    """
+    inputs = dict(parameters)
+    options = {key: inputs.pop(key) for key in H3_OPTION_KEYS if key in inputs}
+    if not options:
+        return inputs, {}
+    if not enabled:
+        raise OrchestratorError("H3モデル・Turbo設定はMiniMax H3専用です")
+    model = options.get("h3_model", "int8")
+    turbo = options.get("h3_turbo", "off")
+    if not isinstance(model, str) or model not in H3_MODELS:
+        raise OrchestratorError("未対応のH3モデルです")
+    if not isinstance(turbo, str) or turbo not in H3_TURBOS:
+        raise OrchestratorError("未対応のH3 Turbo設定です")
+    return inputs, {"h3_model": model, "h3_turbo": turbo}
+
+
+def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None = None) -> dict:
+    """Patch the shipped H3 FL2VA graph before dependency checking/submission."""
+    if not options:
+        return template
+    _, options = split_h3_options(options, enabled=True)
+    model = options["h3_model"]
+    lora, steps = H3_TURBOS[options["h3_turbo"]]
+    if steps is not None and parameters is not None and parameters.get("steps") != steps:
+        raise OrchestratorError(f"H3 Turboは{steps} Steps固定です")
+    graph = copy.deepcopy(template)
+    expected = {"6": "UNETLoader", "9": "BasicScheduler", "16": "BasicGuider", "17": "KSamplerSelect"}
+    if any(graph.get(node, {}).get("class_type") != kind for node, kind in expected.items()):
+        raise OrchestratorError("H3モデル切替には標準のMiniMax H3ワークフローが必要です")
+    if any(graph[node]["inputs"].get("model") != ["6", 0] for node in ("9", "16")):
+        raise OrchestratorError("H3のモデル接続が標準ワークフローと一致しません")
+    graph["6"]["inputs"]["unet_name"] = H3_MODELS[model]
+    if lora is not None:
+        # Match the official ComfyUI FL2VA template: model-only LoRA, weight
+        # 1, both scheduler and guider receive the patched model, same sampler.
+        node = 900
+        while str(node) in graph:
+            node += 1
+        node = str(node)
+        graph[node] = {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {"model": ["6", 0], "lora_name": lora, "strength_model": 1.0},
+        }
+        for target in ("9", "16"):
+            graph[target]["inputs"]["model"] = [node, 0]
+        graph["9"]["inputs"].update(scheduler="simple", steps=steps, denoise=1)
+        graph["17"]["inputs"]["sampler_name"] = "res_multistep"
+    return graph
+
+
 
 def supplied_inputs(image=None, mask=None, pose=None) -> frozenset[str]:
     return frozenset(name for name, value in (("image", image), ("mask", mask), ("pose", pose)) if value is not None)
@@ -436,7 +507,7 @@ class ComfyUI:
         """Check native video nodes and their model choices before starting inference."""
         loaders = {
             "UNETLoader": "unet_name", "CLIPLoader": "clip_name",
-            "VAELoader": "vae_name",
+            "VAELoader": "vae_name", "LoraLoaderModelOnly": "lora_name",
         }
         required = {"Wan22ImageToVideoLatent", "MiniMaxH3ImageToVideo", "VAEDecodeAudio", "CreateVideo", "SaveVideo"}
         for class_type in sorted(required | set(loaders)):
@@ -571,6 +642,13 @@ def execute(
         if cancel_event is not None and cancel_event.is_set():
             raise OrchestratorError("生成開始前に処理を中止しました")
 
+    overrides, h3_options = split_h3_options(
+        overrides or {}, enabled=set(workflows) == {H3_I2V_ID},
+    )
+    if h3_options:
+        fixed_steps = H3_TURBOS[h3_options["h3_turbo"]][1]
+        if fixed_steps is not None:
+            overrides["steps"] = fixed_steps
     check_cancelled()
     comfy = ComfyUI(config["comfyui"])
     if not dry_run:
@@ -585,6 +663,8 @@ def execute(
                 video_template = load_workflow(
                     (config_path.resolve().parent / entry["file"]).resolve(), entry["bindings"],
                 )
+                if h3_options:
+                    video_template = prepare_h3_workflow(video_template, h3_options, overrides)
                 comfy.ensure_video_dependencies(video_template)
                 comfy.extend_video_timeout(config["comfyui"])
     if not dry_run and config["comfyui"].get("free_before_llm", True):
@@ -670,9 +750,15 @@ def execute(
     template = load_workflow(
         (config_path.resolve().parent / selection["file"]).resolve(), selection["bindings"]
     )
+    if h3_options:
+        template = prepare_h3_workflow(template, h3_options, params)
+        note("H3: " + H3_MODEL_LABELS[h3_options["h3_model"]]
+             + " / Turbo " + H3_TURBO_LABELS[h3_options["h3_turbo"]]
+             + f" / {params['steps']} Steps")
+    saved_params = {**params, **h3_options}
     note(f"ワークフロー確定: {workflow_id}")
     if dry_run:
-        return {"status": "dry_run", "workflow_id": workflow_id, "parameters": params}
+        return {"status": "dry_run", "workflow_id": workflow_id, "parameters": saved_params}
 
     check_cancelled()
     uploaded = comfy.upload_image(image) if image is not None else None
@@ -688,7 +774,7 @@ def execute(
     history = comfy.wait(prompt_id, cancel_event=cancel_event)
     note("ComfyUI: 生成完了")
     return {
-        "status": "completed", "workflow_id": workflow_id, "parameters": params,
+        "status": "completed", "workflow_id": workflow_id, "parameters": saved_params,
         "prompt_id": prompt_id, "outputs": history.get("outputs", {}),
         "comfy_status": history.get("status", {}),
     }
@@ -721,7 +807,7 @@ def execute_saved(
     if "seed" in bindings and not new_seed and "seed" not in parameters:
         raise OrchestratorError("元のSeedが履歴にありません。同条件の再生成はできません")
 
-    copied = dict(parameters)
+    copied, h3_options = split_h3_options(parameters, enabled=workflow_id == H3_I2V_ID)
     if new_seed and "seed" in bindings:
         copied["seed"] = secrets.randbits(32)
     workflow_id, params = validate_plan(
@@ -733,6 +819,8 @@ def execute_saved(
         (config_path.resolve().parent / selected["file"]).resolve(),
         bindings,
     )
+    if h3_options:
+        template = prepare_h3_workflow(template, h3_options, params)
     if cancel_event is not None and cancel_event.is_set():
         raise OrchestratorError("再生成開始前に中止しました")
 
@@ -759,7 +847,7 @@ def execute_saved(
     return {
         "status": "completed",
         "workflow_id": workflow_id,
-        "parameters": params,
+        "parameters": {**params, **h3_options},
         "prompt_id": prompt_id,
         "outputs": history.get("outputs", {}),
         "comfy_status": history.get("status", {}),
