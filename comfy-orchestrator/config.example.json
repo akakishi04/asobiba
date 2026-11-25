@@ -339,6 +339,52 @@
         "fps": 24,
         "steps": 20
       }
+    },
+    "hunyuan15_i2v_480p": {
+      "kind": "i2v",
+      "description": "HunyuanVideo 1.5 480p Step Distilled FP8。先頭画像から自然な動きを生成するローカル動画モデル。音声なし、24fps、8/12 Steps、最大121フレーム。",
+      "file": "workflows/hunyuan15_i2v_480p.api.json",
+      "bindings": {
+        "positive_prompt": {
+          "node": "44",
+          "input": "text"
+        },
+        "image": {
+          "node": "80",
+          "input": "image"
+        },
+        "width": {
+          "node": "78",
+          "input": "width"
+        },
+        "height": {
+          "node": "78",
+          "input": "height"
+        },
+        "frames": {
+          "node": "78",
+          "input": "length"
+        },
+        "fps": {
+          "node": "101",
+          "input": "fps"
+        },
+        "steps": {
+          "node": "126",
+          "input": "steps"
+        },
+        "seed": {
+          "node": "127",
+          "input": "noise_seed"
+        }
+      },
+      "defaults": {
+        "width": 848,
+        "height": 480,
+        "frames": 121,
+        "fps": 24,
+        "steps": 8
+      }
     }
   },
   "llm": {

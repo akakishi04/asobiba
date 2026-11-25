@@ -39,6 +39,7 @@ from .prompt_profiles import (
 )
 from .ime_font import install_native_ime_font, sync_native_ime_font
 from .ui_theme import apply_ttk_theme, style_text_widget
+from .video_preview import VideoPreview
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +51,7 @@ OUTPUTS = ROOT / "outputs"
 CUSTOM_RESOLUTION = "カスタム"
 VIDEO_RESOLUTIONS = ("832 × 480", "480 × 832", "640 × 640", "1280 × 704", "704 × 1280")
 VIDEO_FRAME_COUNTS = ("49", "81", "121")
+HUNYUAN_RESOLUTIONS = ("848 × 480", "480 × 848", "640 × 640")
 H3_RESOLUTIONS = ("864 × 480", "480 × 864", "640 × 640", "1056 × 608", "608 × 1056", "1344 × 768", "768 × 1344", "768 × 768")
 H3_DURATIONS = {"約5秒 (124f)": 124, "8秒 (192f)": 192, "約10秒 (243f)": 243, "約12秒 (294f)": 294, "約15秒 (362f)": 362}
 VIDEO_EXTENSIONS = frozenset({".mp4", ".webm", ".mov", ".mkv"})
@@ -233,6 +235,7 @@ WORKFLOW_NAMES = {
     "wai_pose_detect": "ポーズ参照 · 画像",
     core.H3_I2V_ID: "動画生成 · MiniMax H3",
     core.WAN_I2V_ID: "動画生成 · Wan 2.2",
+    core.HUNYUAN_I2V_ID: "動画生成 · Hunyuan 1.5 (480p)",
 }
 
 
@@ -256,14 +259,16 @@ def parameter_visibility(config: dict, workflow_id: str | None, custom_size: boo
     kind = entry.get("kind")
     video = kind in core.VIDEO_KINDS
     h3 = workflow_id == core.H3_I2V_ID
+    hunyuan = workflow_id == core.HUNYUAN_I2V_ID
     still_size = not video and "image" not in bindings and {"width", "height"} <= bindings.keys()
     return {
         "resolution": still_size,
         "custom_size": still_size and custom_size,
         "source_size": not video and "image" in bindings and not still_size,
-        "wan": video and not h3,
+        "wan": video and not h3 and not hunyuan,
         "h3": h3,
-        "steps": "steps" in bindings,
+        "hunyuan": hunyuan,
+        "steps": "steps" in bindings and not hunyuan,
         "cfg": "cfg" in bindings,
         "seed": "seed" in bindings,
         "denoise": "denoise" in bindings,
@@ -456,6 +461,9 @@ class Application:
         self.video_size = tk.StringVar(value=str(options.get("video_size", VIDEO_RESOLUTIONS[0])))
         self.video_frames = tk.StringVar(value=str(options.get("video_frames", 49)))
         self.video_fps = tk.StringVar(value=str(options.get("video_fps", 24)))
+        self.hunyuan_size = tk.StringVar(value=str(options.get("hunyuan_size", HUNYUAN_RESOLUTIONS[0])))
+        self.hunyuan_frames = tk.StringVar(value=str(options.get("hunyuan_frames", 121)))
+        self.hunyuan_steps = tk.StringVar(value=str(options.get("hunyuan_steps", 8)))
         self.h3_size = tk.StringVar(value=str(options.get("h3_size", H3_RESOLUTIONS[0])))
         self.h3_duration = tk.StringVar(value=str(options.get("h3_duration", next(iter(H3_DURATIONS)))))
         model_key = options.get("h3_model", "int8")
@@ -741,6 +749,10 @@ class Application:
         field(2, 0, "解像度", self.h3_size, "h3", choices=H3_RESOLUTIONS, span=3, width=18)
         field(3, 0, "長さ (24fps)", self.h3_duration, "h3", choices=tuple(H3_DURATIONS), span=3, width=18)
 
+        field(2, 0, "解像度", self.hunyuan_size, "hunyuan", choices=HUNYUAN_RESOLUTIONS, span=3, width=18)
+        field(3, 0, "フレーム数 (24fps)", self.hunyuan_frames, "hunyuan",
+              choices=VIDEO_FRAME_COUNTS, span=3)
+        field(4, 0, "Steps", self.hunyuan_steps, "hunyuan", choices=("8", "12"), span=3)
         self.steps_entry = field(4, 0, "Steps", self.steps, "steps")
         self.cfg_entry = field(4, 2, "CFG", self.cfg, "cfg")
         self.seed_entry = field(5, 0, "Seed", self.seed, "seed", span=2)
@@ -780,6 +792,7 @@ class Application:
         self.tabs.pack(fill="both", expand=True)
         preview_panel = ttk.Frame(self.tabs, padding=8)
         self.tabs.add(preview_panel, text="結果")
+        self.result_panel = preview_panel
         history_panel = ttk.Frame(self.tabs, padding=8)
         self.tabs.add(history_panel, text="履歴")
         self.history_panel = history_panel
@@ -796,6 +809,7 @@ class Application:
         history_meta.pack(side="bottom", fill="x", pady=(5, 0))
         self.image_label = ttk.Label(preview_panel, text="生成結果なし", anchor="center")
         self.image_label.pack(fill="both", expand=True)
+        self.result_video = VideoPreview(preview_panel, height=240)
         ttk.Label(preview_meta, textvariable=self.result_info, wraplength=350).pack(anchor="w", pady=(3, 4))
         self.images_list = tk.Listbox(
             preview_meta, height=2, exportselection=False, font=("Meiryo UI", 9),
@@ -854,6 +868,7 @@ class Application:
             history_meta, text="履歴画像", anchor="center",
         )
         self.history_image.pack(fill="x", pady=(0, 4))
+        self.history_video = VideoPreview(history_meta, height=180)
         first_row = ttk.Frame(history_actions)
         first_row.pack(fill="x", pady=(2, 4))
         for col in range(4):
@@ -888,7 +903,7 @@ class Application:
         ttk.Button(self.history_tools, text="I2Vに使用", command=self._history_output_to_i2v, style="Compact.TButton").grid(
             row=0, column=1, sticky="ew")
 
-        self.tabs.bind("<<NotebookTabChanged>>", self._history_selection_changed)
+        self.tabs.bind("<<NotebookTabChanged>>", self._output_tab_changed)
         self._switch_theme()
         self._update_generation_controls()
         install_native_ime_font(self.prompt)
@@ -1280,6 +1295,38 @@ class Application:
         selected = self._selected_history()
         return selected[0] if len(selected) == 1 else None
 
+    def _output_tab_changed(self, _event=None) -> None:
+        # Only a visible pane may own an active decoder.
+        if self.tabs.select() != str(self.result_panel):
+            self.result_video.stop()
+        if self.tabs.select() != str(self.history_panel):
+            self.history_video.stop()
+        self._history_selection_changed()
+
+    def _set_result_video(self, path: Path | None) -> None:
+        if not hasattr(self, "result_video"):
+            return
+        self.result_video.set_source(path)
+        if path is not None:
+            self.image_label.pack_forget()
+            self.result_video.pack(fill="both", expand=True)
+        else:
+            self.result_video.pack_forget()
+            if not self.image_label.winfo_manager():
+                self.image_label.pack(fill="both", expand=True)
+
+    def _set_history_video(self, path: Path | None) -> None:
+        if not hasattr(self, "history_video"):
+            return
+        self.history_video.set_source(path)
+        if path is not None:
+            self.history_image.pack_forget()
+            self.history_video.pack(fill="x", pady=(0, 4))
+        else:
+            self.history_video.pack_forget()
+            if not self.history_image.winfo_manager():
+                self.history_image.pack(fill="x", pady=(0, 4))
+
     def _history_selection_changed(self, _event=None) -> None:
         # The Result tab does not need hidden history thumbnails or file checks.
         if hasattr(self, "history_panel") and self.tabs.select() != str(self.history_panel):
@@ -1326,12 +1373,16 @@ class Application:
             else:
                 self.history_tools.pack_forget()
         if not selected:
+            if hasattr(self, "history_video"):
+                self._set_history_video(None)
             self._history_preview_key = None
             self.history_details.set("")
             self.history_image.configure(image="", text="")
             self.history_preview_photo = None
             return
         if len(selected) > 1:
+            if hasattr(self, "history_video"):
+                self._set_history_video(None)
             self._history_preview_key = None
             self.history_details.set(f"{len(selected)}件選択中")
             self.history_image.configure(image="", text="")
@@ -1377,6 +1428,8 @@ class Application:
         if getattr(self, "_history_preview_key", None) == preview_key:
             return
         self._history_preview_key = preview_key
+        if hasattr(self, "history_video"):
+            self._set_history_video(image if exists and is_video_output(image) else None)
         if not exists:
             self.history_preview_photo = None
             self.history_image.configure(image="", text="画像ファイルが見つかりません")
@@ -1475,6 +1528,14 @@ class Application:
                 self.h3_size.set(f"{p['width']} × {p['height']}")
             if "frames" in p:
                 self.h3_duration.set(next((label for label, count in H3_DURATIONS.items() if count == p["frames"]), f"{p['frames'] / 24:.2f}秒 ({p['frames']}f)"))
+        elif entry.workflow_id == core.HUNYUAN_I2V_ID and hasattr(self, "hunyuan_size"):
+            p = entry.parameters
+            if "width" in p and "height" in p:
+                self.hunyuan_size.set(f"{p['width']} × {p['height']}")
+            if "frames" in p:
+                self.hunyuan_frames.set(str(p["frames"]))
+            if "steps" in p:
+                self.hunyuan_steps.set(str(p["steps"]))
         elif video_entry and hasattr(self, "video_size"):
             p = entry.parameters
             if "width" in p and "height" in p:
@@ -1490,7 +1551,10 @@ class Application:
         ):
             if video_entry and key in ("width", "height"):
                 continue
-            if key == "steps" and entry.workflow_id == core.H3_I2V_ID and hasattr(self, "h3_steps"):
+            if key == "steps" and (
+                (entry.workflow_id == core.H3_I2V_ID and hasattr(self, "h3_steps"))
+                or (entry.workflow_id == core.HUNYUAN_I2V_ID and hasattr(self, "hunyuan_steps"))
+            ):
                 continue
             if key in entry.parameters:
                 variable.set(str(entry.parameters[key]))
@@ -1589,6 +1653,9 @@ class Application:
     def _set_busy(self, label: str) -> None:
         self.stop_event.clear()
         self.working = True
+        for name in ("result_video", "history_video"):
+            if hasattr(self, name):
+                getattr(self, name).set_enabled(False)
         self.run_button.configure(state="disabled")
         self.preview_button.configure(state="disabled")
         self.cancel_button.configure(state="normal")
@@ -1708,7 +1775,8 @@ class Application:
         if hasattr(self, "h3_model"):
             config["ui"].update(self._h3_choices())
             config["ui"]["h3_steps"] = self.h3_steps.get()
-        for name in ("video_size", "video_frames", "video_fps", "h3_size", "h3_duration"):
+        for name in ("video_size", "video_frames", "video_fps", "h3_size", "h3_duration",
+                     "hunyuan_size", "hunyuan_frames", "hunyuan_steps"):
             if hasattr(self, name):
                 config["ui"][name] = getattr(self, name).get()
             elif name in self.config.get("ui", {}):
@@ -1735,8 +1803,11 @@ class Application:
                 value = parse(variable.get())
                 core.check_param(name, value)
             except (ValueError, core.OrchestratorError):
-                separate_h3_steps = hasattr(self, "h3_steps") and self._active_workflow() == core.H3_I2V_ID and name == "steps"
-                if not entry or (name in bindings and not (video and name in ("width", "height")) and not separate_h3_steps):
+                separate_video_steps = name == "steps" and (
+                    (hasattr(self, "h3_steps") and self._active_workflow() == core.H3_I2V_ID)
+                    or (hasattr(self, "hunyuan_steps") and self._active_workflow() == core.HUNYUAN_I2V_ID)
+                )
+                if not entry or (name in bindings and not (video and name in ("width", "height")) and not separate_video_steps):
                     raise
                 value = previous.get(name, default)
                 try:
@@ -1761,6 +1832,17 @@ class Application:
         for name, value in values.items():
             core.check_param(name, value)
         core.validate_wan_video_parameters(values)
+        return values
+
+    def _hunyuan_overrides(self) -> dict:
+        width, height = (int(part.strip()) for part in self.hunyuan_size.get().split("×"))
+        values = {"width": width, "height": height, "frames": int(self.hunyuan_frames.get()),
+                  "fps": 24, "steps": int(self.hunyuan_steps.get())}
+        if self.seed.get().strip():
+            values["seed"] = int(self.seed.get().strip())
+        for name, value in values.items():
+            core.check_param(name, value)
+        core.validate_hunyuan_video_parameters(values)
         return values
 
     def _h3_overrides(self) -> dict:
@@ -2299,6 +2381,7 @@ class Application:
             return
         try:
             overrides = (self._h3_overrides() if selected == core.H3_I2V_ID else
+                         self._hunyuan_overrides() if selected == core.HUNYUAN_I2V_ID else
                          self._video_overrides() if selected == core.WAN_I2V_ID else self._overrides())
             overrides = image_aware_overrides(
                 self.config, selected, image is not None,
@@ -2456,6 +2539,7 @@ class Application:
                             self._display_image(images[0])
                             self.open_button.configure(state="normal")
                         else:
+                            self._set_result_video(None)
                             self.preview_photo = None
                             self.image_label.configure(image="", text="出力なし")
                             self.result_info.set("")
@@ -2471,6 +2555,9 @@ class Application:
                     messagebox.showerror("処理エラー", data)
                 elif kind == "idle":
                     self.working = False
+                    for name in ("result_video", "history_video"):
+                        if hasattr(self, name):
+                            getattr(self, name).set_enabled(True)
                     self.run_button.configure(state="normal")
                     self.preview_button.configure(state="normal")
                     self.cancel_button.configure(state="disabled")
@@ -2489,6 +2576,8 @@ class Application:
             self._display_image(self.image_paths[selected[0]])
 
     def _display_image(self, path: Path) -> None:
+        if hasattr(self, "result_video"):
+            self._set_result_video(path if is_video_output(path) else None)
         if path.suffix.lower() in IMAGE_EXTENSIONS:
             self.result_tools.pack(fill="x", pady=(5, 0))
         else:
@@ -2535,6 +2624,9 @@ class Application:
             "実行中", "現在の操作の進捗表示は終了します。ComfyUI側の生成ジョブは停止しません。閉じますか？"
         ):
             return
+        for name in ("result_video", "history_video"):
+            if hasattr(self, name):
+                getattr(self, name).stop()
         self.root.destroy()
 
 

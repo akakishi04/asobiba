@@ -5,6 +5,9 @@ description = "Local natural-language router to fixed ComfyUI workflows"
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+video = ["python-vlc>=3.0.21203,<4"]
+
 [tool.setuptools]
 packages = ["comfy_orchestrator"]
 

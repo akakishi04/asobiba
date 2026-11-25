@@ -36,7 +36,8 @@ PARAMS = {
 ALLOWED_KINDS = {"t2i", "i2i", "t2v", "i2v", "inpaint", "pose"}
 WAN_I2V_ID = "wan22_i2v_5b"
 H3_I2V_ID = "minimax_h3_i2v"
-HOST_VIDEO_IDS = frozenset({WAN_I2V_ID, H3_I2V_ID})
+HUNYUAN_I2V_ID = "hunyuan15_i2v_480p"
+HOST_VIDEO_IDS = frozenset({WAN_I2V_ID, H3_I2V_ID, HUNYUAN_I2V_ID})
 VIDEO_KINDS = frozenset({"i2v", "t2v"})
 IMAGE_INPUTS = frozenset({"image", "mask", "pose"})
 
@@ -363,11 +364,31 @@ def validate_h3_video_parameters(parameters: dict) -> None:
         raise OrchestratorError("H3のフレーム数は107～362の17n+5にしてください")
 
 
+def validate_hunyuan_video_parameters(parameters: dict) -> None:
+    """Conservative single-GPU envelope for the 480p step-distilled checkpoint."""
+    for name in ("width", "height", "frames", "fps", "steps"):
+        if name not in parameters:
+            raise OrchestratorError(f"Hunyuan動画生成には {name} が必要です")
+        check_param(name, parameters[name])
+    width, height = parameters["width"], parameters["height"]
+    if (width % 16 or height % 16 or min(width, height) < 320
+            or max(width, height) > 848 or width * height > 640 * 640):
+        raise OrchestratorError("Hunyuan 480pは16の倍数・短辺320以上・長辺848以下・約0.4MP以下です")
+    if parameters["fps"] != 24:
+        raise OrchestratorError("HunyuanのFPSは24固定です")
+    if not 5 <= parameters["frames"] <= 121 or (parameters["frames"] - 1) % 4:
+        raise OrchestratorError("Hunyuanのフレーム数は5～121の4n+1にしてください")
+    if parameters["steps"] not in (8, 12):
+        raise OrchestratorError("Hunyuan 480p Step Distilledは8または12 Stepsを指定してください")
+
+
 def validate_video_parameters(workflow_id: str, parameters: dict) -> None:
     if workflow_id == WAN_I2V_ID:
         validate_wan_video_parameters(parameters)
     elif workflow_id == H3_I2V_ID:
         validate_h3_video_parameters(parameters)
+    elif workflow_id == HUNYUAN_I2V_ID:
+        validate_hunyuan_video_parameters(parameters)
 
 
 def load_workflow(path: Path, bindings: dict) -> dict:
@@ -574,8 +595,12 @@ class ComfyUI:
             "UNETLoader": "unet_name", "CLIPLoader": "clip_name",
             "VAELoader": "vae_name", "LoraLoaderModelOnly": "lora_name",
             "ClipProjApply": "projection",
+            "DualCLIPLoader": ("clip_name1", "clip_name2"),
+            "CLIPVisionLoader": "clip_name",
         }
-        required = {"Wan22ImageToVideoLatent", "MiniMaxH3ImageToVideo", "VAEDecodeAudio", "CreateVideo", "SaveVideo"}
+        required = {"Wan22ImageToVideoLatent", "MiniMaxH3ImageToVideo",
+                    "HunyuanVideo15ImageToVideo", "CLIPVisionEncode", "ModelSamplingSD3",
+                    "VAEDecodeAudio", "CreateVideo", "SaveVideo"}
         for class_type in sorted(required | set(loaders)):
             if not any(n.get("class_type") == class_type for n in workflow.values()):
                 continue
@@ -586,8 +611,12 @@ class ComfyUI:
                     raise KeyError(class_type)
                 if class_type not in loaders:
                     continue
-                field = loaders[class_type]
-                choices = node_info["input"]["required"][field][0]
+                fields = loaders[class_type]
+                if isinstance(fields, str):
+                    fields = (fields,)
+                choices_by_field = {
+                    field: node_info["input"]["required"][field][0] for field in fields
+                }
             except (KeyError, IndexError, TypeError, OrchestratorError) as exc:
                 if class_type == "ClipProjApply":
                     raise OrchestratorError(
@@ -597,7 +626,9 @@ class ComfyUI:
                     f"動画生成用ノード {class_type} を確認できません。ComfyUIを更新・再起動してください"
                 ) from exc
             for node in workflow.values():
-                if node.get("class_type") == class_type:
+                if node.get("class_type") != class_type:
+                    continue
+                for field, choices in choices_by_field.items():
                     wanted = node["inputs"][field]
                     if wanted not in choices:
                         if class_type == "ClipProjApply":

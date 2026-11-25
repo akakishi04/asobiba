@@ -363,7 +363,7 @@ ComfyUI標準のWan2.2 5Bワークフローを登録済みです。通常のI2I�
 1. ワークフローで `wan22_i2v_5b` を選択し、参照画像を1枚指定（または生成結果・履歴の「I2Vに使用」）。マスク、ポーズ、構図参考画像は空欄にする。
 2. 動画サイズ、フレーム数、FPS、Steps、CFG、Seedを指定。初回は832×480・49フレーム・24fps・20 Stepsを推奨。縦長は480×832、正方形は640×640。元画像と異なる縦横比では中央クロップされる場合があります。
 3. 「髪が風になびく。まばたきして微笑む。カメラは固定。」等の動きを自然文で指示。LLMは動画用の英文を作り、技術設定はGUIが決定します。
-4. 「動画生成を開始」。結果はComfyUIとアプリのoutputsにMP4として保存されます。GUIの「ファイルを開く」または履歴の「開く」でOS既定プレイヤーを起動します（GUI内の動画再生は未実装）。履歴復元・Seed再生成に対応します。
+4. 「動画生成を開始」。結果はComfyUIとアプリのoutputsにMP4として保存されます。GUIの「ファイルを開く」または履歴の「開く」でOS既定プレイヤーを起動します（内蔵プレイヤーでも再生可能）。履歴復元・Seed再生成に対応します。
 
 動画生成は静止画より大きなVRAM・RAM・時間を必要とします。16GB GPUでの動作を保証するものではありません。まず49フレームで実測してください。動画の待機上限は既定7200秒（`comfyui.video_generation_timeout_seconds`）、静止画は従来設定のままです。動画取得上限は512MiBです。LLMは従来どおり生成前にアンロードします。
 
@@ -454,3 +454,29 @@ ComfyUI ManagerからComfyUI-ClipProj 0.1.13以降を導入・再起動し、以
 - `models/clip_projections/mmh3-4b-ClipProj-v3.1.safetensors`: https://huggingface.co/NicoLab28/ClipProj-MiniMax-H3/resolve/main/mmh3-4b-ClipProj-v3.1.safetensors
 
 `clip_projections` はClipProjが実際のComfyUI本体のmodelsフォルダに作成します。共有モデルフォルダとは異なる場合があります。GUI上部の設定で「4B ClipProj (INT8)」を選び、GPUでの比較はCPU実行をOFFにします。標準CLIPLoaderのtype=krea2 → ClipProjApply → MiniMaxH3ImageToVideoを使用し、単一GPUに重みを固定するClipProj Loaderは使用しません。ノードと変換行列の存在は生成前に確認します。従来のエンコーダーやTurboの設定は維持し、履歴再生成も選択したエンコーダーを使用します。4Bは学習済み射影による代替エンコーダーであり、32Bと同品質・同速度を保証しません。
+
+### 結果・履歴の動画再生（Windows）
+
+動画を選択すると既存のプレビュー領域に再生、一時停止、停止、シーク、消音を表示します。MP4の音声もVLCで再生します。自動再生せず、タブ移動・動画切替・生成開始・終了時にはデコーダーを解放します。標準では依存パッケージを読み込まず、VLC未導入でも生成と外部プレイヤーでの「開く」は利用可能です。
+
+```powershell
+winget install --id VideoLAN.VLC -e
+py -3 -m pip install "python-vlc>=3.0.21203,<4"
+```
+
+VLCとGUIを実行するPythonは同じビット数（通常64bit）にしてください。Windows以外の内蔵再生は未対応です。
+
+### HunyuanVideo 1.5 480p Step Distilled（FP8）
+
+ワークフロー「動画生成 · Hunyuan 1.5 (480p)」を追加しました。H3とは別アーキテクチャのI2Vです。公式720p I2Vテンプレートの基礎構成に480p step-distilled checkpointを組み合わせ、公式推奨のCFG 1、shift 7、8/12 stepsを適用します。24fps固定、最大121フレーム（約5秒）、音声生成なし、アップスケールなし。初期サイズ848×480、縦長480×848、正方形640×640の3種です。16GB環境での速度・品質・VRAMは実機未確認です。
+
+モデル配置（ComfyUIの共有モデルフォルダ内）:
+
+- diffusion_models: [hunyuanvideo1.5_480p_i2v_step_distilled_fp8_scaled.safetensors](https://huggingface.co/Comfy-Org/Hunyuan-Video-1.5/resolve/main/split_files/diffusion_models/hunyuanvideo1.5_480p_i2v_step_distilled_fp8_scaled.safetensors)
+- text_encoders: [qwen_2.5_vl_7b_fp8_scaled.safetensors](https://huggingface.co/Comfy-Org/Hunyuan-Video-1.5/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors)、[byt5_small_glyphxl_fp16.safetensors](https://huggingface.co/Comfy-Org/Hunyuan-Video-1.5/resolve/main/split_files/text_encoders/byt5_small_glyphxl_fp16.safetensors)
+- clip_vision: [sigclip_vision_patch14_384.safetensors](https://huggingface.co/Comfy-Org/sigclip_vision_384/resolve/main/sigclip_vision_patch14_384.safetensors)
+- vae: [hunyuanvideo15_vae_fp16.safetensors](https://huggingface.co/Comfy-Org/Hunyuan-Video-1.5/resolve/main/split_files/vae/hunyuanvideo15_vae_fp16.safetensors)
+
+不足ファイルは生成前にチェックし、LLM処理を開始しません。ワークフローは既存のconfig.jsonにも起動時に追加されます。H3/Wanの個別設定や履歴には変更を加えません。
+
+参照: https://github.com/Comfy-Org/workflow_templates/blob/main/templates/video_hunyuan_video_1.5_720p_i2v.json ; https://github.com/Tencent-Hunyuan/HunyuanVideo-1.5
