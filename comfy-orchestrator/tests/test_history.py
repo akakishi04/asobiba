@@ -97,6 +97,9 @@ class HistoryTests(unittest.TestCase):
             )
 
     def test_legacy_outputs_are_visible_but_do_not_gain_invented_metadata(self):
+        # A legacy file predates the scan even on filesystems with coarse clocks.
+        import os
+        os.utime(self.output, (1600000000, 1600000000))
         imported = self.store.import_legacy_outputs()
         self.assertEqual(imported, 1)
         entry = self.store.list_entries()[0]

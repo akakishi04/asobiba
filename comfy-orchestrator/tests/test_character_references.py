@@ -8,6 +8,7 @@ from __future__ import annotations
 import copy
 import json
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path
@@ -121,7 +122,7 @@ class EvidenceTests(unittest.TestCase):
             )
             character_refs.save_character_sheet(root, tuple(refs), data, "blue eyes")
             loaded_refs, loaded_data, traits = character_refs.load_character_sheet(root)
-            self.assertEqual(loaded_refs, tuple(refs))
+            self.assertEqual(loaded_refs, tuple(p.resolve() for p in refs))
             self.assertEqual(loaded_data, data)
             self.assertEqual(traits, "blue eyes")
             character_refs.clear_character_sheet(root)
@@ -313,7 +314,7 @@ class CharacterHistoryTests(unittest.TestCase):
             root = Path(folder)
             db = root / "data"
             db.mkdir()
-            with sqlite3.connect(db / "history.sqlite3") as con:
+            with closing(sqlite3.connect(db / "history.sqlite3")) as con, con:
                 con.execute("""CREATE TABLE generations (
                     id TEXT PRIMARY KEY, created_at TEXT NOT NULL,
                     prompt_id TEXT NOT NULL UNIQUE, workflow_id TEXT NOT NULL,

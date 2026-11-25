@@ -83,7 +83,7 @@ class CharacterImageBatchTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        root = Path(self.tmp.name)
+        root = Path(self.tmp.name).resolve()
         self.images = []
         for i, suffix in enumerate((".png", ".jpg", ".webp", ".PNG", ".png")):
             p = root / f"人物 画像 {i}{suffix}"

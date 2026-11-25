@@ -6,6 +6,7 @@ import copy
 import importlib.util
 import json
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path
@@ -316,7 +317,7 @@ class HistoryInputTests(unittest.TestCase):
             root = Path(directory)
             data = root / "data"
             data.mkdir()
-            with sqlite3.connect(data / "history.sqlite3") as con:
+            with closing(sqlite3.connect(data / "history.sqlite3")) as con, con:
                 con.execute(
                     """CREATE TABLE generations (
                     id TEXT PRIMARY KEY, created_at TEXT NOT NULL,

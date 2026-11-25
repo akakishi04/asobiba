@@ -130,7 +130,7 @@ class ModelRepairTests(unittest.TestCase):
                 root, tuple(images), analysis, "black hair",
             )
             refs, reopened, approved = character_refs.load_character_sheet(root)
-            self.assertEqual(refs, tuple(images))
+            self.assertEqual(refs, tuple(p.resolve() for p in images))
             self.assertEqual(approved, "black hair")
             self.assertEqual(reopened["warnings"], analysis["warnings"])
             self.assertIn("dark bob", character_refs.format_evidence(reopened))

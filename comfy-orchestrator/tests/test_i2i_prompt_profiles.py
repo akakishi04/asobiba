@@ -8,6 +8,7 @@ from __future__ import annotations
 import copy
 import json
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path
@@ -304,6 +305,8 @@ class SavedHistoryPromptTests(unittest.TestCase):
     def test_legacy_import_has_no_invented_prompts(self):
         other = self.store.outputs / "old.png"
         other.write_bytes(b"old")
+        import os
+        os.utime(other, (1600000000, 1600000000))
         self.store.import_legacy_outputs()
         entries = self.store.list_entries()
         old = next(entry for entry in entries if entry.legacy)
@@ -326,7 +329,7 @@ class SavedHistoryPromptTests(unittest.TestCase):
             root = Path(directory)
             db_folder = root / "data"
             db_folder.mkdir()
-            with sqlite3.connect(db_folder / "history.sqlite3") as con:
+            with closing(sqlite3.connect(db_folder / "history.sqlite3")) as con, con:
                 con.execute("""CREATE TABLE generations (
                     id TEXT PRIMARY KEY, created_at TEXT NOT NULL,
                     prompt_id TEXT NOT NULL UNIQUE, workflow_id TEXT NOT NULL,

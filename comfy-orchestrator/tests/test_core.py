@@ -146,9 +146,11 @@ class ConfigFixture(unittest.TestCase):
                 core.http_json("http://127.0.0.1:8188", "/queue")
 
     def test_busy_queue_does_not_unload_or_invoke_llm(self):
+        image = self.root / "person.png"
+        image.write_bytes(b"fake png")
         with patch.object(core, "http_json", return_value={"queue_running": [[1]], "queue_pending": []}) as api:
             with self.assertRaisesRegex(core.OrchestratorError, "他の実行"):
-                core.execute(core.load_config(self.config_path), self.config_path, "picture")
+                core.execute(core.load_config(self.config_path), self.config_path, "picture", image)
         self.assertEqual(api.call_count, 1)
 
     def test_dry_run_never_contacts_comfyui(self):
