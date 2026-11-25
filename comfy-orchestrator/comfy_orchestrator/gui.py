@@ -351,6 +351,14 @@ def preview_subsample(
     )
 
 
+def history_request_text(entry: HistoryEntry | None) -> str | None:
+    """Return the original editable request, never invented text or generated tags."""
+    if entry is None or entry.legacy:
+        return None
+    text = entry.request_text
+    return text if isinstance(text, str) and text.strip() else None
+
+
 def history_prompt_details(entry: HistoryEntry | None) -> dict | None:
     """Expose only the literal prompts and metadata stored for this exact run.
 
@@ -852,14 +860,16 @@ class Application:
             first_row.columnconfigure(col, weight=1)
         self.history_open_button = ttk.Button(first_row, text="開く", command=self._open_history_output, style="Compact.TButton")
         self.history_open_button.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        self.history_request_button = ttk.Button(first_row, text="プロンプト復元",
+            command=self._restore_selected_history_request, state="disabled", style="Compact.TButton")
+        self.history_request_button.grid(row=0, column=1, sticky="ew", padx=(0, 4))
         self.history_restore_button = ttk.Button(first_row, text="設定復元", command=self._restore_selected_history, style="Compact.TButton")
-        self.history_restore_button.grid(row=0, column=1, sticky="ew", padx=(0, 4))
+        self.history_restore_button.grid(row=0, column=2, sticky="ew", padx=(0, 4))
         self.history_compare_button = ttk.Button(first_row, text="比較", command=self._compare_selected_history, style="Compact.TButton")
-        self.history_compare_button.grid(row=0, column=2, sticky="ew", padx=(0, 4))
-        ttk.Button(first_row, text="更新", command=self._refresh_history, style="Compact.TButton").grid(row=0, column=3, sticky="ew")
+        self.history_compare_button.grid(row=0, column=3, sticky="ew")
         second_row = ttk.Frame(history_actions)
         second_row.pack(fill="x")
-        for col in range(3):
+        for col in range(4):
             second_row.columnconfigure(col, weight=1)
         self.same_seed_button = ttk.Button(second_row, text="同Seed再生成",
             command=lambda: self._regenerate_selected_history(new_seed=False), state="disabled", style="Compact.TButton")
@@ -867,8 +877,9 @@ class Application:
         self.new_seed_button = ttk.Button(second_row, text="別Seed再生成",
             command=lambda: self._regenerate_selected_history(new_seed=True), state="disabled", style="Compact.TButton")
         self.new_seed_button.grid(row=0, column=1, sticky="ew", padx=(0, 4))
-        self.history_prompt_button = ttk.Button(second_row, text="プロンプト", command=self._show_selected_history_prompt, style="Compact.TButton")
-        self.history_prompt_button.grid(row=0, column=2, sticky="ew")
+        self.history_prompt_button = ttk.Button(second_row, text="詳細", command=self._show_selected_history_prompt, style="Compact.TButton")
+        self.history_prompt_button.grid(row=0, column=2, sticky="ew", padx=(0, 4))
+        ttk.Button(second_row, text="更新", command=self._refresh_history, style="Compact.TButton").grid(row=0, column=3, sticky="ew")
         self.history_tools = ttk.Frame(history_actions)
         self.history_tools.columnconfigure(0, weight=1)
         self.history_tools.columnconfigure(1, weight=1)
@@ -1306,6 +1317,10 @@ class Application:
                 (self.history_prompt_button, bool(single and history_prompt_details(single))),
             ):
                 button.configure(state="normal" if enabled else "disabled")
+            if hasattr(self, "history_request_button"):
+                self.history_request_button.configure(
+                    state="normal" if history_request_text(single) is not None and not self.working else "disabled"
+                )
             if still and not self.working:
                 self.history_tools.pack(fill="x", pady=(4, 0))
             else:
@@ -1383,6 +1398,25 @@ class Application:
             self.history_image.configure(
                 image="", text="プレビュー非対応"
             )
+
+    def _restore_selected_history_request(self) -> None:
+        """Replace only the editable request, without restoring generation settings."""
+        if self.working:
+            return
+        text = history_request_text(self._one_history())
+        if text is None:
+            return
+        # Keep this operation undoable as one edit. No generation, config
+        # writes, workflow changes, reference-image changes or LLM calls.
+        if self.prompt.get("1.0", "end-1c") != text:
+            self.prompt.edit_separator()
+            self.prompt.replace("1.0", "end-1c", text)
+            self.prompt.edit_separator()
+        self.prompt.mark_set("insert", "end-1c")
+        self.prompt.see("insert")
+        self.prompt.focus_set()
+        self.form_canvas.yview_moveto(0)
+        self.status.set("プロンプトを復元しました")
 
     def _restore_selected_history(self) -> None:
         if getattr(self, "working", False):
@@ -1562,6 +1596,8 @@ class Application:
             self.free_memory_button.configure(state="disabled")
         self.same_seed_button.configure(state="disabled")
         self.new_seed_button.configure(state="disabled")
+        if hasattr(self, "history_request_button"):
+            self.history_request_button.configure(state="disabled")
         if hasattr(self, "history_restore_button"):
             self.history_restore_button.configure(state="disabled")
             self.history_tools.pack_forget()
