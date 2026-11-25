@@ -33,6 +33,8 @@ from .h3 import (
     H3_HYBRID_FILES,
     H3_HYBRID_PREFIXES,
     H3_HYBRID_DEFAULT_STEPS,
+    H3_PERFORMANCE_LABELS,
+    H3_SOL_VAE,
     H3_REF2VA_DEFAULT_PROMPT,
     h3_hybrid_model_key,
     h3_hybrid_filename,
@@ -574,11 +576,12 @@ class ComfyUI:
             "CheckpointLoaderSimple": "ckpt_name",
             "DualCLIPLoader": ("clip_name1", "clip_name2"),
             "CLIPVisionLoader": "clip_name",
+            "ModelAttentionBackend": "attention",
         }
         required = {"Wan22ImageToVideoLatent", "MiniMaxH3ImageToVideo", "MiniMaxH3ReferenceToVideo", "MiniMaxH3SigmaShift",
                     "HunyuanVideo15ImageToVideo", "CLIPVisionEncode", "ModelSamplingSD3",
                     "VAEDecodeAudio", "CreateVideo", "SaveVideo",
-                    "ModelSamplingAuraFlow", "EmptySD3LatentImage"}
+                    "ModelSamplingAuraFlow", "EmptySD3LatentImage", "BlockSparseAttention"}
         for class_type in sorted(required | set(loaders)):
             if not any(n.get("class_type") == class_type for n in workflow.values()):
                 continue
@@ -613,6 +616,8 @@ class ComfyUI:
                 for field, choices in choices_by_field.items():
                     wanted = node["inputs"][field]
                     if wanted not in choices:
+                        if class_type == "ModelAttentionBackend":
+                            raise OrchestratorError(f"Attention backendが利用できません: {wanted}。ComfyUI/Comfy Kitchenを確認してください")
                         if class_type == "ClipProjApply":
                             raise OrchestratorError(
                                 f"ClipProj変換行列がありません: {wanted}。ComfyUI/models/clip_projectionsに配置してください"
@@ -750,7 +755,7 @@ def execute(
     reference_only = h3_ref2va_filename(h3_options.get("h3_model")) is not None
     if h3_hybrid_filename(h3_options.get("h3_model")) is not None:
         overrides.setdefault("steps", H3_HYBRID_DEFAULT_STEPS)
-        validate_h3_hybrid_steps(overrides["steps"])
+        validate_h3_hybrid_steps(overrides["steps"], h3_options.get("h3_performance", "standard"))
     if h3_options:
         fixed_steps = H3_TURBOS[h3_options["h3_turbo"]][1]
         if fixed_steps is not None:

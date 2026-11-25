@@ -517,3 +517,11 @@ ComfyUIのmodels/lorasに配置します。Ref2VA TurboはModelOnly LoRA強度1�
 モデルカードに従いLCM/simple・8～12 Steps（初期値8）、内蔵Turboのみを使用します。追加Turboは無効。既存H3と同じエンコーダー・VAEを再利用し、参考画像側はMiniMaxH3ReferenceToVideoとmatch、開始フレーム側はMiniMaxH3ImageToVideoを使用します。HybridのStepsは既存H3と独立して保存します。元ファイルと使用モードは履歴に残り、旧履歴は変更しません。まず標準ノードのみの1パスを比較するため、配布元のVSA/SLA疎Attentionや2パス・アップスケールは未導入です。画質、速度、4B ClipProjとの互換性は未検証です。
 
 参照: https://huggingface.co/TenStrip/10Eros-Max ; https://huggingface.co/LokkenJP/TenEros_Max_optimized_learned/raw/main/README.md
+
+### H3 v1 Hybrid 高速化プロファイル（任意）
+
+標準 (LCM) を維持し、Hybridのモデル選択時に「高速化」欄で Euler Dense (比較用)、Kitchen INT8、Sol Attention + VAE を選択できます。記事の比較用経路は Euler/simple、SigmaShift 12/3、Dense・Kitchen INT8 は8 Steps固定、Solは6/7/8 Steps。Solはtau=1.3、start=0.10/end=1.0、dense_blocks=0,1、min_tokens=12288、extra_tokens=256、exact_kv_and_rowsを使用し、動画デコードのみSol VAEへ切り替えます。エンコードと音声は標準VAEのままです。モデルと速度プロファイルはホスト側で検証し、履歴にも保存します。
+
+Sol用追加ファイル (1.99GB): https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_sol_vae_int8_convrot.safetensors （models/vae）。標準ComfyUI 0.45.0以降のノードを使用。モデル・ノード不足は生成前に通知します。起動引数は変更しません。記事の実測はINT8 HQのI2VA/124f/0.98MP/32B TEであり、Compact、Ref2VA、4B ClipProjや長尺への適用は未検証です。長いシーケンスはKitchenカーネルの制約やOOMの可能性があります。標準へ戻せます。
+
+出典ワークフロー: https://github.com/sepiablue-ai/minimax_h3_workflows/blob/main/10eros_max_speedup_8-7-6step.json

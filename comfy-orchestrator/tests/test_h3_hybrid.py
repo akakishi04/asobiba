@@ -76,6 +76,38 @@ class HybridTests(unittest.TestCase):
                     self.assertEqual(comfy.submit.call_args.args[0], graph)
                 llm.assert_not_called()
 
+    def test_article_profiles_keep_encoding_and_audio_vae(self):
+        for reference_only in (False, True):
+            for profile in ("euler_dense", "kitchen_int8", "sol"):
+                with self.subTest(reference_only=reference_only, profile=profile):
+                    opts = {**self.options(reference_only), "h3_performance": profile}
+                    steps = 6 if profile == "sol" else 8
+                    graph = core.prepare_h3_workflow(self.graph, opts, {"steps": steps})
+                    nodes = {n["class_type"]: n["inputs"] for n in graph.values() if n["class_type"] != "VAELoader"}
+                    self.assertEqual(nodes["MiniMaxH3SigmaShift"], {
+                        "model": ["6", 0], "shift_video": 12.0, "shift_audio": 3.0})
+                    self.assertEqual(nodes["KSamplerSelect"]["sampler_name"], "euler")
+                    self.assertEqual(nodes["BasicScheduler"]["steps"], steps)
+                    self.assertEqual(nodes["BasicScheduler"]["model"], nodes["BasicGuider"]["model"])
+                    self.assertEqual("ModelAttentionBackend" in nodes, profile != "euler_dense")
+                    self.assertEqual("BlockSparseAttention" in nodes, profile == "sol")
+                    self.assertEqual(graph["104"]["inputs"]["vae"], ["11", 0])
+                    self.assertEqual(graph["23"]["inputs"]["vae"], ["24", 0])
+                    if profile == "sol":
+                        self.assertEqual(nodes["BlockSparseAttention"]["selection.tau"], 1.3)
+                        self.assertEqual(nodes["BlockSparseAttention"]["sink_conditioning"], "exact_kv_and_rows")
+                        self.assertEqual(graph[nodes["VAEDecode"]["vae"][0]]["inputs"]["vae_name"], core.H3_SOL_VAE)
+                    else:
+                        self.assertEqual(nodes["VAEDecode"]["vae"], ["11", 0])
+        self.assertEqual(self.graph["10"]["inputs"]["vae"], ["11", 0])
+
+    def test_profile_is_host_owned_and_validated(self):
+        for mode, steps in (("sol", 12), ("kitchen_int8", 6), ("euler_dense", 7)):
+            with self.assertRaises(core.OrchestratorError):
+                core.prepare_h3_workflow(self.graph, {**self.options(False), "h3_performance": mode}, {"steps": steps})
+        with self.assertRaises(core.OrchestratorError):
+            core.split_h3_options({"h3_model": "w4a8", "h3_performance": "sol"}, enabled=True)
+
     def test_gui_choices_do_not_enable_extra_lora(self):
         var = lambda value: SimpleNamespace(get=lambda: value)
         app = SimpleNamespace(h3_model=var(core.h3_model_label(self.options(True)["h3_model"])),

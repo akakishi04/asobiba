@@ -4,6 +4,8 @@ from __future__ import annotations
 import copy
 
 from .parameters import OrchestratorError, check_param
+from .h3_performance import (H3_PERFORMANCE_LABELS, H3_SOL_VAE,
+                             apply_h3_hybrid_performance, validate_h3_hybrid_steps)
 
 
 # Host-owned model/LoRA selection. These are intentionally NOT PARAMS or LLM
@@ -38,7 +40,7 @@ H3_ENCODERS = {
 }
 H3_ENCODER_LABELS = {"nvfp4": "NVFP4 AWQ", "int4": "INT4 ConvRot", "clipproj4b": "4B ClipProj (INT8)"}
 H3_CLIPPROJ_MATRIX = "mmh3-4b-ClipProj-v3.1.safetensors"
-H3_OPTION_KEYS = frozenset({"h3_model", "h3_turbo", "h3_encoder_device", "h3_encoder_model"})
+H3_OPTION_KEYS = frozenset({"h3_model", "h3_turbo", "h3_encoder_device", "h3_encoder_model", "h3_performance"})
 H3_REF2VA_PREFIX = "ref2va:"
 H3_REF2VA_LABEL = "参考画像 · "
 # v1.0 is a hybrid with its eight-step distillation already merged.
@@ -78,11 +80,6 @@ def h3_hybrid_filename(model) -> str | None:
             if h3_hybrid_model_key(filename, reference_only=prefix == "hybrid_ref2va:") == model:
                 return filename
     return None
-
-
-def validate_h3_hybrid_steps(value) -> None:
-    if isinstance(value, bool) or not isinstance(value, int) or not 8 <= value <= 12:
-        raise OrchestratorError("10Eros-Max v1.0は8～12 Stepsで指定してください")
 
 
 def h3_ref2va_model_key(filename: str) -> str | None:
@@ -160,6 +157,11 @@ def split_h3_options(parameters: dict, *, enabled: bool) -> tuple[dict, dict]:
     if hybrid is not None and turbo != "off":
         raise OrchestratorError("10Eros-Max v1.0はTurbo内蔵です。追加TurboはOFFにしてください")
     selected = {"h3_model": model, "h3_turbo": turbo}
+    if "h3_performance" in options:
+        performance = options["h3_performance"]
+        if hybrid is None or not isinstance(performance, str) or performance not in H3_PERFORMANCE_LABELS:
+            raise OrchestratorError("未対応のH3高速化設定です")
+        selected["h3_performance"] = performance
     # Do not inject a new device into old saved jobs or legacy CLI calls.
     if "h3_encoder_device" in options:
         device = options["h3_encoder_device"]
@@ -182,10 +184,11 @@ def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None =
     model = options["h3_model"]
     ref_model = h3_ref2va_filename(model)
     hybrid = h3_hybrid_filename(model)
+    performance = options.get("h3_performance", "standard")
     hybrid_steps = H3_HYBRID_DEFAULT_STEPS
     if hybrid is not None and parameters is not None:
         hybrid_steps = parameters.get("steps", H3_HYBRID_DEFAULT_STEPS)
-        validate_h3_hybrid_steps(hybrid_steps)
+        validate_h3_hybrid_steps(hybrid_steps, performance)
     shift_video = None
     if ref_model is not None:
         lora, steps, shift_video = H3_REF2VA_TURBOS[options["h3_turbo"]]
@@ -252,10 +255,7 @@ def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None =
             }
             conditioning["inputs"]["clip"] = [node, 0]
     if hybrid is not None:
-        # Native one-pass baseline. Do not stack an external distilled adapter,
-        # force an unpublished shift, or silently depend on custom sparse nodes.
-        graph["9"]["inputs"].update(scheduler="simple", steps=hybrid_steps, denoise=1)
-        graph["17"]["inputs"]["sampler_name"] = "lcm"
+        apply_h3_hybrid_performance(graph, performance, hybrid_steps)
     if lora is not None:
         # FL2VA keeps the existing sampler. Ref2VA uses its own adapter and
         # Euler + simple with the published video/audio shift for that release.
