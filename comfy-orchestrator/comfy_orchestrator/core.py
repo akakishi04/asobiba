@@ -476,6 +476,22 @@ class Ollama:
                 raise OrchestratorError(f"Ollamaのアンロード完了を確認できません: {unloaded}")
 
 
+def combo_choices(node_info: dict, field: str) -> tuple[str, ...]:
+    """Read legacy dropdowns and V3 COMBO schemas without coercing scalars."""
+    spec = node_info["input"]["required"][field]
+    if not isinstance(spec, (list, tuple)) or not spec:
+        raise TypeError("invalid combo schema")
+    if isinstance(spec[0], (list, tuple)):
+        choices = spec[0]
+    elif spec[0] == "COMBO" and len(spec) >= 2 and isinstance(spec[1], dict):
+        choices = spec[1].get("options")
+    else:
+        raise TypeError("input is not a dropdown")
+    if not isinstance(choices, (list, tuple)) or any(not isinstance(value, str) for value in choices):
+        raise TypeError("invalid dropdown options")
+    return tuple(choices)
+
+
 class ComfyUI:
     def __init__(self, settings: dict):
         self.base = settings["base_url"]
@@ -519,9 +535,7 @@ class ComfyUI:
             return
         try:
             info = http_json(self.base, "/object_info/ControlNetLoader", timeout=self.timeout)
-            model_choices = (
-                info["ControlNetLoader"]["input"]["required"]["control_net_name"][0]
-            )
+            model_choices = combo_choices(info["ControlNetLoader"], "control_net_name")
         except (KeyError, IndexError, TypeError, OrchestratorError) as exc:
             raise OrchestratorError(
                 "ComfyUIのControlNetLoaderを確認できません。ComfyUIを更新・再起動してください"
@@ -559,10 +573,7 @@ class ComfyUI:
                 inventory[class_type] = ()
                 continue
             try:
-                choices = info[class_type]["input"]["required"][field][0]
-                if not isinstance(choices, (list, tuple)):
-                    raise TypeError("model dropdown is not a list")
-                inventory[class_type] = tuple(value for value in choices if isinstance(value, str))
+                inventory[class_type] = combo_choices(info[class_type], field)
             except (KeyError, IndexError, TypeError) as exc:
                 raise OrchestratorError(f"モデル一覧を取得できません: {class_type}") from exc
         return inventory
@@ -597,7 +608,7 @@ class ComfyUI:
                 if isinstance(fields, str):
                     fields = (fields,)
                 choices_by_field = {
-                    field: node_info["input"]["required"][field][0] for field in fields
+                    field: combo_choices(node_info, field) for field in fields
                 }
             except (KeyError, IndexError, TypeError, OrchestratorError) as exc:
                 if class_type == "ClipProjApply":
