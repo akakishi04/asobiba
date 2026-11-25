@@ -11,10 +11,11 @@ import json
 import shutil
 import sqlite3
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 
 class HistoryError(ValueError):
@@ -56,10 +57,16 @@ class HistoryStore:
         self.outputs.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
-    def _connection(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connection(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(self.database, timeout=15)
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            # sqlite3's own context manager commits/rolls back but does not close.
+            conn.close()
 
     def _initialize(self) -> None:
         with self._connection() as con:

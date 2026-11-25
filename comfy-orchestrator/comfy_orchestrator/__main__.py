@@ -19,6 +19,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("text", help="日本語などの自然文指示")
     run.add_argument("--image", type=Path, help="参照画像。画像対応Ollamaモデルとimageバインディングが必要")
     run.add_argument("--dry-run", action="store_true", help="LLM解釈まで実行しComfyUIには投入しない")
+    run.add_argument("--workflow", help="固定ワークフローを明示指定（例: wan22_i2v_5b）")
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config)
@@ -27,7 +28,7 @@ def main(argv: list[str] | None = None) -> int:
             if not config["workflows"]:
                 print("ワークフロー未登録。登録後に再検証してください")
         else:
-            result = execute(config, args.config, args.text, args.image, args.dry_run)
+            result = execute(config, args.config, args.text, args.image, args.dry_run, selected_workflow=args.workflow)
             print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except (OrchestratorError, OSError) as exc:

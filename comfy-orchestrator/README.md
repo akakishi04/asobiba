@@ -345,3 +345,23 @@ Windows GUI、LM Studioモデルの実ロード/解放、ComfyUIの実画像生�
 - 他人のComfyUIジョブを削除・中断しません。複数実行する場合はGPU・VRAMの競合に注意してください。
 - LM Studioの選択モデルを確実にアンロードできなければ生成を開始しません（アンロード設定ON時）。
 - 出力プレビューはTkinterで表示できる形式を優先し、対応外の画像は保存ファイルを開いてください。
+
+
+## I2V：静止画から動画を生成（Wan2.2 TI2V 5B）
+
+ComfyUI標準のWan2.2 5Bワークフローを登録済みです。通常のI2Iとは明示的に切り替えます。最新のComfyUIが必要です。モデルは以下の3ファイルをComfyUIのmodels以下に配置してから再起動してください。既存モデルは削除しません。
+
+| 保存フォルダ | ダウンロード |
+| --- | --- |
+| diffusion_models | [wan2.2_ti2v_5B_fp16.safetensors](https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors) |
+| text_encoders | [umt5_xxl_fp8_e4m3fn_scaled.safetensors](https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors) |
+| vae | [wan2.2_vae.safetensors](https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan2.2_vae.safetensors) |
+
+公式参考: [Wan2.2 5B workflow](https://github.com/Comfy-Org/workflow_templates/blob/main/templates/video_wan2_2_5B_ti2v.json) / [ComfyUI documentation](https://docs.comfy.org/tutorials/video/wan/wan2_2).
+
+1. ワークフローで `wan22_i2v_5b` を選択し、参照画像を1枚指定（または生成結果・履歴の「I2Vに使用」）。マスク、ポーズ、構図参考画像は空欄にする。
+2. 動画サイズ、フレーム数、FPS、Steps、CFG、Seedを指定。初回は832×480・49フレーム・24fps・20 Stepsを推奨。縦長は480×832、正方形は640×640。元画像と異なる縦横比では中央クロップされる場合があります。
+3. 「髪が風になびく。まばたきして微笑む。カメラは固定。」等の動きを自然文で指示。LLMは動画用の英文を作り、技術設定はGUIが決定します。
+4. 「動画生成を開始」。結果はComfyUIとアプリのoutputsにMP4として保存されます。GUIの「ファイルを開く」または履歴の「開く」でOS既定プレイヤーを起動します（GUI内の動画再生は未実装）。履歴復元・Seed再生成に対応します。
+
+動画生成は静止画より大きなVRAM・RAM・時間を必要とします。16GB GPUでの動作を保証するものではありません。まず49フレームで実測してください。動画の待機上限は既定7200秒（`comfyui.video_generation_timeout_seconds`）、静止画は従来設定のままです。動画取得上限は512MiBです。LLMは従来どおり生成前にアンロードします。

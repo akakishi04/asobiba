@@ -34,6 +34,8 @@ PARAMS = {
     "control_strength": ("number", 0, 2),
 }
 ALLOWED_KINDS = {"t2i", "i2i", "t2v", "i2v", "inpaint", "pose"}
+WAN_I2V_ID = "wan22_i2v_5b"
+VIDEO_KINDS = frozenset({"i2v", "t2v"})
 IMAGE_INPUTS = frozenset({"image", "mask", "pose"})
 
 
@@ -189,6 +191,18 @@ def check_param(name: str, value: Any) -> None:
         raise OrchestratorError(f"{name} は8の倍数にしてください")
 
 
+def validate_wan_video_parameters(parameters: dict) -> None:
+    """Wan 2.2 5B uses a spatial stride of 32 and temporal stride of 4."""
+    for name in ("width", "height", "frames", "fps"):
+        if name not in parameters:
+            raise OrchestratorError(f"動画生成には {name} が必要です")
+        check_param(name, parameters[name])
+    if any(parameters[name] % 32 for name in ("width", "height")):
+        raise OrchestratorError("Wan 2.2の動画の幅・高さは32の倍数にしてください")
+    if parameters["frames"] < 5 or (parameters["frames"] - 1) % 4:
+        raise OrchestratorError("Wan 2.2のフレーム数は5以上の4n+1にしてください")
+
+
 def load_workflow(path: Path, bindings: dict) -> dict:
     try:
         workflow = json.loads(path.read_text(encoding="utf-8"))
@@ -211,7 +225,7 @@ def plan_schema(workflows: dict) -> dict:
     for name, (typ, lo, hi) in PARAMS.items():
         # Seed belongs to the user/host, not to the language model.
         # LLMs may emit negative, oversized or imprecise seed values.
-        if name == "seed":
+        if name == "seed" or (set(workflows) == {WAN_I2V_ID} and name not in ("positive_prompt", "negative_prompt")):
             continue
         if any(name in entry["bindings"] for entry in workflows.values()):
             spec = {"type": typ}
@@ -387,6 +401,44 @@ class ComfyUI:
                     "ComfyUI Managerでインストールして再起動してください"
                 ) from exc
 
+    def ensure_video_dependencies(self, workflow: dict) -> None:
+        """Check native video nodes and their model choices before starting inference."""
+        loaders = {
+            "UNETLoader": "unet_name", "CLIPLoader": "clip_name",
+            "VAELoader": "vae_name",
+        }
+        required = {"Wan22ImageToVideoLatent", "CreateVideo", "SaveVideo"}
+        for class_type in sorted(required | set(loaders)):
+            if not any(n.get("class_type") == class_type for n in workflow.values()):
+                continue
+            try:
+                info = http_json(self.base, "/object_info/" + class_type, timeout=self.timeout)
+                node_info = info[class_type]
+                if not isinstance(node_info, dict):
+                    raise KeyError(class_type)
+                if class_type not in loaders:
+                    continue
+                field = loaders[class_type]
+                choices = node_info["input"]["required"][field][0]
+            except (KeyError, IndexError, TypeError, OrchestratorError) as exc:
+                raise OrchestratorError(
+                    f"動画生成用ノード {class_type} を確認できません。ComfyUIを更新・再起動してください"
+                ) from exc
+            for node in workflow.values():
+                if node.get("class_type") == class_type:
+                    wanted = node["inputs"][field]
+                    if wanted not in choices:
+                        raise OrchestratorError(
+                            f"動画生成モデルがありません: {wanted}。READMEのI2V導入手順を確認してください"
+                        )
+
+    def extend_video_timeout(self, settings: dict) -> None:
+        self.wait_timeout = max(
+            self.wait_timeout,
+            _positive_number(settings.get("video_generation_timeout_seconds"),
+                             "comfyui.video_generation_timeout_seconds", 7200),
+        )
+
     def submit(self, workflow: dict) -> str:
         result = http_json(self.base, "/prompt", {"prompt": workflow}, self.timeout)
         prompt_id = result.get("prompt_id")
@@ -464,6 +516,11 @@ def execute(
             raise OrchestratorError(f"登録されていないワークフローです: {selected_workflow}")
         workflows = {selected_workflow: workflows[selected_workflow]}
     workflows = compatible_workflows(workflows, image, mask_image, pose_image)
+    if selected_workflow is None:
+        # Ordinary image generation must never switch into a costly video job.
+        still = {key: entry for key, entry in workflows.items() if entry.get("kind") not in VIDEO_KINDS}
+        if still:
+            workflows = still
     if not workflows:
         if selected_workflow is not None:
             raise OrchestratorError(
@@ -493,6 +550,12 @@ def execute(
                     (config_path.resolve().parent / entry["file"]).resolve(), entry["bindings"],
                 )
                 comfy.ensure_pose_dependencies(pose_template)
+            elif entry.get("kind") in VIDEO_KINDS:
+                video_template = load_workflow(
+                    (config_path.resolve().parent / entry["file"]).resolve(), entry["bindings"],
+                )
+                comfy.ensure_video_dependencies(video_template)
+                comfy.extend_video_timeout(config["comfyui"])
     if not dry_run and config["comfyui"].get("free_before_llm", True):
         note("ComfyUI: キューを確認して前回の生成モデルの解放を要求")
         comfy.free_if_idle()
@@ -547,6 +610,12 @@ def execute(
         if "seed" in plan["parameters"]:
             note("LLMが返したSeedは使用せず、GUI指定または乱数で設定します")
         plan = {**plan, "parameters": {k: v for k, v in plan["parameters"].items() if k != "seed"}}
+    if set(workflows) == {WAN_I2V_ID} and isinstance(plan, dict) and isinstance(plan.get("parameters"), dict):
+        # Video dimensions, length, FPS and sampler settings belong to the host.
+        plan = {**plan, "parameters": {
+            k: v for k, v in plan["parameters"].items()
+            if k in ("positive_prompt", "negative_prompt")
+        }}
     workflow_id, params = validate_plan(plan, workflows, image is not None)
     selection = workflows[workflow_id]
     if overrides:
@@ -559,6 +628,8 @@ def execute(
         # Seed empty in the GUI => an independent reproducible 32-bit seed.
         # Never silently inherit the fixed seed from the template JSON.
         params["seed"] = secrets.randbits(32)
+    if workflow_id == WAN_I2V_ID:
+        validate_wan_video_parameters(params)
     template = load_workflow(
         (config_path.resolve().parent / selection["file"]).resolve(), selection["bindings"]
     )
@@ -620,6 +691,8 @@ def execute_saved(
         {"workflow_id": workflow_id, "parameters": copied},
         {workflow_id: selected}, has_image,
     )
+    if workflow_id == WAN_I2V_ID:
+        validate_wan_video_parameters(params)
     template = load_workflow(
         (config_path.resolve().parent / selected["file"]).resolve(),
         bindings,
@@ -630,6 +703,9 @@ def execute_saved(
     comfy = ComfyUI(config["comfyui"])
     if selected.get("kind") == "pose":
         comfy.ensure_pose_dependencies(template)
+    elif selected.get("kind") in VIDEO_KINDS:
+        comfy.ensure_video_dependencies(template)
+        comfy.extend_video_timeout(config["comfyui"])
     if progress:
         progress("保存済みのプロンプトと生成設定を復元（LLMは使用しません）")
     uploaded = comfy.upload_image(reference_image) if has_image else None

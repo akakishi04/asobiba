@@ -47,6 +47,16 @@ OUTPUTS = ROOT / "outputs"
 
 # Keep the pixel dimensions authoritative: presets are just a GUI shortcut.
 CUSTOM_RESOLUTION = "カスタム"
+VIDEO_RESOLUTIONS = ("832 × 480", "480 × 832", "640 × 640", "1280 × 704", "704 × 1280")
+VIDEO_FRAME_COUNTS = ("49", "81", "121")
+VIDEO_EXTENSIONS = frozenset({".mp4", ".webm", ".mov", ".mkv"})
+IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp"})
+
+
+def is_video_output(path: Path) -> bool:
+    return path.suffix.lower() in VIDEO_EXTENSIONS
+
+
 RESOLUTION_PRESETS = {
     "512 × 512（軽量プレビュー）": (512, 512),
     "768 × 768（軽量・正方形）": (768, 768),
@@ -109,42 +119,69 @@ def bootstrap_config() -> dict:
     return config
 
 
-def output_images(result: dict) -> list[dict]:
-    images: list[dict] = []
+def output_media(result: dict) -> list[dict]:
+    """Native SaveVideo uses images + animated; also support videos/gifs metadata."""
+    media = []
+    seen = set()
     outputs = result.get("outputs", {})
     if not isinstance(outputs, dict):
-        return images
+        return media
     for node_output in outputs.values():
         if not isinstance(node_output, dict):
             continue
-        for entry in node_output.get("images", []):
-            if isinstance(entry, dict) and isinstance(entry.get("filename"), str):
-                images.append({
-                    "filename": entry["filename"],
-                    "subfolder": str(entry.get("subfolder", "")),
-                    "type": str(entry.get("type", "output")),
-                })
-    return images
+        for key in ("images", "videos", "gifs"):
+            entries = node_output.get(key, [])
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                if not isinstance(entry, dict) or not isinstance(entry.get("filename"), str):
+                    continue
+                name = entry["filename"]
+                if Path(name).suffix.lower() not in IMAGE_EXTENSIONS | VIDEO_EXTENSIONS:
+                    continue
+                subfolder = str(entry.get("subfolder", ""))
+                kind = str(entry.get("type", "output"))
+                identity = (name, subfolder, kind)
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                media.append({"filename": name, "subfolder": subfolder, "type": kind})
+    return media
+
+
+def output_images(result: dict) -> list[dict]:
+    return [m for m in output_media(result) if Path(m["filename"]).suffix.lower() in IMAGE_EXTENSIONS]
 
 
 def save_output_image(base_url: str, metadata: dict, prompt_id: str) -> Path:
-    """Download only a bounded image into the ignored local output directory."""
-    parameters = {
-        "filename": metadata["filename"],
-        "subfolder": metadata["subfolder"],
-        "type": metadata["type"],
-    }
-    url = base_url.rstrip("/") + "/view?" + urllib.parse.urlencode(parameters)
-    with urllib.request.urlopen(url, timeout=45) as response:
-        payload = response.read(40 * 1024 * 1024 + 1)
-    if not payload or len(payload) > 40 * 1024 * 1024:
-        raise core.OrchestratorError("画像の取得に失敗しました（40MB超過または空ファイル）")
+    """Download a bounded image or video atomically into the local outputs directory."""
+    parameters = {key: metadata[key] for key in ("filename", "subfolder", "type")}
     safe_name = Path(metadata["filename"].replace("\\", "/")).name
-    if not safe_name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-        raise core.OrchestratorError("未対応の出力画像形式です")
+    suffix = Path(safe_name).suffix.lower()
+    if suffix not in IMAGE_EXTENSIONS | VIDEO_EXTENSIONS:
+        raise core.OrchestratorError("未対応の出力形式です")
+    limit = (512 if suffix in VIDEO_EXTENSIONS else 40) * 1024 * 1024
+    url = base_url.rstrip("/") + "/view?" + urllib.parse.urlencode(parameters)
     OUTPUTS.mkdir(parents=True, exist_ok=True)
-    destination = OUTPUTS / (prompt_id[:16] + "_" + safe_name)
-    destination.write_bytes(payload)
+    prefix = "".join(c for c in prompt_id[:16] if c.isalnum() or c in "-_") or "output"
+    destination = OUTPUTS / (prefix + "_" + safe_name)
+    temporary = destination.with_suffix(destination.suffix + ".part")
+    total = 0
+    try:
+        with urllib.request.urlopen(url, timeout=90) as response, temporary.open("wb") as out:
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > limit:
+                    raise core.OrchestratorError("出力ファイルがサイズ上限を超えました")
+                out.write(chunk)
+        if total == 0:
+            raise core.OrchestratorError("出力ファイルが空です")
+        temporary.replace(destination)
+    finally:
+        temporary.unlink(missing_ok=True)
     return destination
 
 
@@ -153,13 +190,19 @@ def resolve_generation_workflow(
     has_mask: bool = False, has_pose: bool = False,
     pose_mode: str = "skeleton",
 ) -> str | None:
-    """Route by available input type: no images always means plain T2I."""
+    """Route still images automatically; video requires an explicit selection."""
+    registered = config.get("workflows", {})
+    if registered.get(chosen, {}).get("kind") == "i2v":
+        # Keep I2V selected while the user is still choosing the first frame.
+        # _start validates required inputs before contacting the model.
+        return chosen
     candidates = core.compatible_workflows(
         config.get("workflows", {}),
         image=True if has_image else None,
         mask=True if has_mask else None,
         pose=True if has_pose else None,
     )
+    candidates = {key: entry for key, entry in candidates.items() if entry.get("kind") not in core.VIDEO_KINDS}
     if not candidates:
         return None
     if has_pose:
@@ -318,6 +361,9 @@ class Application:
         )
         self.width.trace_add("write", self._sync_resolution_preset)
         self.height.trace_add("write", self._sync_resolution_preset)
+        self.video_size = tk.StringVar(value=str(options.get("video_size", VIDEO_RESOLUTIONS[0])))
+        self.video_frames = tk.StringVar(value=str(options.get("video_frames", 49)))
+        self.video_fps = tk.StringVar(value=str(options.get("video_fps", 24)))
         self.steps = tk.StringVar(value=str(options.get("steps", 20)))
         self.cfg = tk.StringVar(value=str(options.get("cfg", 5.0)))
         self.seed = tk.StringVar(value=str(options.get("seed", "")))
@@ -596,6 +642,27 @@ class Application:
             row=10, column=1, columnspan=3, sticky="ew", pady=(6, 2),
         )
 
+        self.video_controls = ttk.Frame(settings)
+        self.video_controls.grid(row=11, column=0, columnspan=4, sticky="ew", pady=(5, 0))
+        self.video_controls.columnconfigure(1, weight=1)
+        self.video_controls.columnconfigure(3, weight=1)
+        ttk.Label(self.video_controls, text="動画サイズ").grid(row=0, column=0, sticky="w")
+        ttk.Combobox(
+            self.video_controls, textvariable=self.video_size,
+            values=VIDEO_RESOLUTIONS, state="readonly", width=14,
+        ).grid(row=0, column=1, columnspan=3, sticky="ew", pady=(0, 4))
+        ttk.Label(self.video_controls, text="フレーム数").grid(row=1, column=0, sticky="w")
+        ttk.Combobox(
+            self.video_controls, textvariable=self.video_frames,
+            values=VIDEO_FRAME_COUNTS, state="readonly", width=7,
+        ).grid(row=1, column=1, sticky="ew", padx=(0, 8))
+        ttk.Label(self.video_controls, text="FPS").grid(row=1, column=2, sticky="w")
+        ttk.Combobox(
+            self.video_controls, textvariable=self.video_fps,
+            values=("16", "24", "30"), state="readonly", width=5,
+        ).grid(row=1, column=3, sticky="ew")
+        self.video_controls.grid_remove()
+
         image_row = ttk.Frame(self.options_form)
         image_row.pack(fill="x", pady=(0, 12))
         ttk.Label(image_row, text="参照画像").pack(side="left", padx=(0, 8))
@@ -604,7 +671,7 @@ class Application:
         ttk.Button(image_row, text="消去", command=lambda: self.reference_image.set("")).pack(side="left", padx=(5, 0))
         ttk.Label(
             self.options_form,
-            text="I2Iでは参照画像が必要です。画像はComfyUIに送ります。LLMの画像認識は初期設定でOFF。",
+            text="I2I / I2Vでは参照画像が必要です。画像はComfyUIに送ります。LLMの画像認識は初期設定でOFF。",
             wraplength=460, style="Muted.TLabel",
         ).pack(anchor="w", pady=(0, 10))
         self.reference_image.trace_add(
@@ -756,13 +823,16 @@ class Application:
         self.images_list.bind("<<ListboxSelect>>", self._show_selected_image)
         row = ttk.Frame(preview_actions)
         row.pack(fill="x")
-        self.open_button = ttk.Button(row, text="画像を開く", command=self._open_image, state="disabled")
+        self.open_button = ttk.Button(row, text="ファイルを開く", command=self._open_image, state="disabled")
         self.open_button.pack(side="left", padx=(0, 6))
         ttk.Button(row, text="保存先を開く", command=self._open_outputs).pack(side="left")
         result_tools = ttk.Frame(preview_actions)
         result_tools.pack(fill="x", pady=(5, 0))
         ttk.Button(
             result_tools, text="この画像からI2I", command=self._current_output_to_i2i,
+        ).pack(side="left", fill="x", expand=True, padx=(0, 4))
+        ttk.Button(
+            result_tools, text="I2Vに使用", command=self._current_output_to_i2v,
         ).pack(side="left", fill="x", expand=True, padx=(0, 4))
         ttk.Button(
             result_tools, text="生成タグを見る", command=self._show_prompt_preview,
@@ -818,6 +888,9 @@ class Application:
         ).pack(side="left", padx=(0, 6))
         ttk.Button(
             first_row, text="履歴更新", command=self._refresh_history,
+        ).pack(side="left", padx=(0, 6))
+        ttk.Button(
+            first_row, text="開く", command=self._open_history_output,
         ).pack(side="left")
         second_row = ttk.Frame(history_actions)
         second_row.pack(fill="x")
@@ -842,6 +915,9 @@ class Application:
         ttk.Button(
             history_tools, text="この画像からI2I",
             command=self._history_output_to_i2i,
+        ).pack(side="left", fill="x", expand=True, padx=(0, 4))
+        ttk.Button(
+            history_tools, text="I2Vに使用", command=self._history_output_to_i2v,
         ).pack(side="left", fill="x", expand=True)
 
         self._switch_theme()
@@ -993,6 +1069,14 @@ class Application:
             self.workflow.set(workflow_id)
         bindings = self.config["workflows"].get(workflow_id, {}).get("bindings", {})
         uses_source_image = "image" in bindings
+        is_video = self.config["workflows"].get(workflow_id, {}).get("kind") == "i2v"
+        if hasattr(self, "video_controls"):
+            if is_video:
+                self.video_controls.grid()
+            else:
+                self.video_controls.grid_remove()
+        if hasattr(self, "run_button"):
+            self.run_button.configure(text="動画生成を開始" if is_video else "画像生成を開始")
         for entry in (self.width_entry, self.height_entry):
             entry.configure(state="disabled" if uses_source_image else "normal")
         if hasattr(self, "resolution_box"):
@@ -1033,6 +1117,7 @@ class Application:
                 state="normal" if has_visual_reference else "disabled"
             )
         hint = (
+            "I2V：参照画像を先頭フレームに使用" if is_video else
             "ポーズを参照して生成" if "pose" in bindings else
             "マスクの白い部分だけ変更" if "mask" in bindings else
             "I2Iは元画像サイズ" if uses_source_image else
@@ -1140,7 +1225,7 @@ class Application:
             f"Seed: {p.get('seed', '不明')} / "
             f"Steps: {p.get('steps', '不明')} / "
             f"CFG: {p.get('cfg', '不明')} / "
-            f"画像: {len(entry.images)}枚"
+            + (f"動画: {len(entry.images)}件 / {p.get('frames', '?')}f @ {p.get('fps', '?')}fps" if entry.kind in core.VIDEO_KINDS else f"画像: {len(entry.images)}枚")
             + (f" / 方式: {policy_label}" if policy_label else "")
             + (
                 f" / キャラ参照: {len(entry.character_references)}枚"
@@ -1152,6 +1237,10 @@ class Application:
         if image is None or not image.is_file():
             self.history_preview_photo = None
             self.history_image.configure(image="", text="画像ファイルが見つかりません")
+            return
+        if is_video_output(image):
+            self.history_preview_photo = None
+            self.history_image.configure(image="", text=f"動画: {image.name}\n「開く」で再生")
             return
         try:
             photo = tk.PhotoImage(file=str(image))
@@ -1206,11 +1295,22 @@ class Application:
             self._last_reference_image = self.reference_image.get()
         finally:
             self._source_change_lock = False
+        video_entry = entry.kind in core.VIDEO_KINDS
+        if video_entry and hasattr(self, "video_size"):
+            p = entry.parameters
+            if "width" in p and "height" in p:
+                self.video_size.set(f"{p['width']} × {p['height']}")
+            if "frames" in p:
+                self.video_frames.set(str(p["frames"]))
+            if "fps" in p:
+                self.video_fps.set(str(p["fps"]))
         for key, variable in (
             ("width", self.width), ("height", self.height),
             ("steps", self.steps), ("cfg", self.cfg),
             ("denoise", self.denoise), ("seed", self.seed),
         ):
+            if video_entry and key in ("width", "height"):
+                continue
             if key in entry.parameters:
                 variable.set(str(entry.parameters[key]))
             elif key == "seed":
@@ -1237,6 +1337,9 @@ class Application:
 
     def _compare_selected_history(self) -> None:
         entries = self._selected_history()
+        if any(e.first_image is not None and is_video_output(e.first_image) for e in entries):
+            messagebox.showinfo("画像比較", "動画は履歴の「開く」で再生してください")
+            return
         if len(entries) == 2:
             left, right = (e.first_image for e in entries)
             titles = ("生成結果 A", "生成結果 B")
@@ -1346,7 +1449,7 @@ class Application:
                     mask_image=entry.mask_image, pose_image=entry.pose_image,
                 )
                 images = []
-                for item in output_images(result):
+                for item in output_media(result):
                     try:
                         images.append(
                             save_output_image(
@@ -1354,7 +1457,9 @@ class Application:
                             )
                         )
                     except Exception as exc:
-                        self.messages.put(("progress", f"画像取得エラー: {exc}"))
+                        self.messages.put(("progress", f"出力取得エラー: {exc}"))
+                if entry.kind in core.VIDEO_KINDS and not any(is_video_output(p) for p in images):
+                    raise core.OrchestratorError("動画を取得できません。ComfyUIのoutput/videoを確認してください")
                 history_id = self._record_completed_generation(
                     result, images, entry.request_text, entry.reference_image,
                     entry.mask_image, entry.pose_image,
@@ -1401,6 +1506,9 @@ class Application:
         config["ui"]["denoise"] = self.denoise.get().strip()
         config["ui"]["pose_mode"] = self.pose_mode.get()
         config["ui"]["control_strength"] = self.control_strength.get().strip()
+        config["ui"]["video_size"] = self.video_size.get()
+        config["ui"]["video_frames"] = self.video_frames.get()
+        config["ui"]["video_fps"] = self.video_fps.get()
         return config
 
     def _overrides(self) -> dict:
@@ -1414,6 +1522,20 @@ class Application:
             values["seed"] = int(self.seed.get().strip())
         for name, value in values.items():
             core.check_param(name, value)
+        return values
+
+    def _video_overrides(self) -> dict:
+        width, height = (int(part.strip()) for part in self.video_size.get().split("×"))
+        values = {
+            "width": width, "height": height,
+            "frames": int(self.video_frames.get()), "fps": int(self.video_fps.get()),
+            "steps": int(self.steps.get()), "cfg": float(self.cfg.get()),
+        }
+        if self.seed.get().strip():
+            values["seed"] = int(self.seed.get().strip())
+        for name, value in values.items():
+            core.check_param(name, value)
+        core.validate_wan_video_parameters(values)
         return values
 
     def _save_settings(self) -> bool:
@@ -1778,27 +1900,30 @@ class Application:
             self._log(f"部分修正マスクを保存: {result.name}")
             self.status.set("修正範囲を指定しました。自然文を入力して生成してください")
 
-    def _use_as_i2i_source(self, path: Path | None) -> None:
+    def _use_as_i2i_source(self, path: Path | None, workflow_id: str = "wai_i2i_basic") -> None:
+        label = "I2V" if workflow_id == core.WAN_I2V_ID else "I2I"
         if self.working:
-            messagebox.showwarning("I2I", "現在の処理が終了してから画像を指定してください")
+            messagebox.showwarning(label, "現在の処理が終了してから画像を指定してください")
             return
-        if path is None or not path.is_file():
-            messagebox.showerror("I2I", "使用する画像ファイルが見つかりません")
+        if path is None or not path.is_file() or path.suffix.lower() not in IMAGE_EXTENSIONS:
+            messagebox.showerror(label, "静止画像を選択してください")
             return
         self._source_change_lock = True
         try:
             self.mask_image.set("")
             self.pose_image.set("")
             self._last_reference_image = ""
+            if workflow_id == core.WAN_I2V_ID:
+                self.composition_image.set("")
             self.reference_image.set(str(path))
         finally:
             self._source_change_lock = False
         self._on_reference_image_changed()
-        self.workflow.set("wai_i2i_basic")
+        self.workflow.set(workflow_id)
         self._update_generation_controls()
         self.tabs.select(0)
         self.prompt.focus_set()
-        self.status.set("生成結果をI2Iの参照画像に設定しました")
+        self.status.set(f"生成結果を{label}の参照画像に設定しました")
 
     def _current_output_to_i2i(self) -> None:
         selected = self.images_list.curselection()
@@ -1813,6 +1938,25 @@ class Application:
             messagebox.showinfo("I2I", "画像を1件選択してください")
             return
         self._use_as_i2i_source(entry.first_image)
+
+    def _current_output_to_i2v(self) -> None:
+        selected = self.images_list.curselection()
+        index = selected[0] if selected else 0
+        self._use_as_i2i_source(
+            self.image_paths[index] if index < len(self.image_paths) else None,
+            core.WAN_I2V_ID,
+        )
+
+    def _history_output_to_i2v(self) -> None:
+        entry = self._one_history()
+        self._use_as_i2i_source(entry.first_image if entry else None, core.WAN_I2V_ID)
+
+    def _open_history_output(self) -> None:
+        entry = self._one_history()
+        if entry and entry.first_image and entry.first_image.is_file():
+            self._open_path(entry.first_image)
+        else:
+            messagebox.showinfo("履歴", "保存済みファイルを1件選択してください")
 
     def _refresh_models(self) -> None:
         settings = copy.deepcopy(self.config["llm"])
@@ -1873,8 +2017,13 @@ class Application:
         if selected is None:
             messagebox.showerror("生成設定エラー", "画像・マスク・ポーズの指定に対応するワークフローがありません")
             return
+        is_video = self.config["workflows"][selected]["kind"] == "i2v"
+        if is_video and (image is None or image.suffix.lower() not in IMAGE_EXTENSIONS
+                         or mask is not None or pose is not None or composition is not None):
+            messagebox.showerror("I2V", "参照画像を1枚指定し、マスク・ポーズ・構図参考画像は空欄にしてください")
+            return
         try:
-            overrides = self._overrides()
+            overrides = self._video_overrides() if selected == core.WAN_I2V_ID else self._overrides()
             overrides = image_aware_overrides(
                 self.config, selected, image is not None,
                 overrides, self.denoise.get(), self.control_strength.get(),
@@ -1910,7 +2059,7 @@ class Application:
         )
         self.latest_request_text = prompt
         self._set_busy("解釈テスト中..." if dry_run else "生成準備中...")
-        self._log("開始: " + ("解釈のみテスト" if dry_run else "画像生成") + f" / model={cfg['llm']['model']}")
+        self._log("開始: " + ("解釈のみテスト" if dry_run else "動画生成" if is_video else "画像生成") + f" / model={cfg['llm']['model']}")
 
         def task():
             try:
@@ -1925,12 +2074,14 @@ class Application:
                 )
                 images = []
                 if not dry_run:
-                    for item in output_images(result):
+                    for item in output_media(result):
                         try:
                             path = save_output_image(cfg["comfyui"]["base_url"], item, result["prompt_id"])
                             images.append(path)
                         except Exception as exc:
-                            self.messages.put(("progress", f"画像取得エラー: {exc}"))
+                            self.messages.put(("progress", f"出力取得エラー: {exc}"))
+                if not dry_run and is_video and not any(is_video_output(p) for p in images):
+                    raise core.OrchestratorError("動画を取得できません。ComfyUIのoutput/videoを確認してください")
                 history_id = (
                     self._record_completed_generation(
                         result, images, prompt, image, mask, pose, composition,
@@ -2017,10 +2168,10 @@ class Application:
                             self._display_image(images[0])
                             self.open_button.configure(state="normal")
                         self.result_info.set(
-                            f"生成完了: {len(images)}画像保存 / prompt_id={result['prompt_id']}"
+                            f"生成完了: {len(images)}ファイル保存 / prompt_id={result['prompt_id']}"
                         )
                         self._log("生成完了: " + json.dumps(result.get("parameters", {}), ensure_ascii=False))
-                        self.status.set("画像生成完了")
+                        self.status.set("動画生成完了" if any(is_video_output(p) for p in images) else "画像生成完了")
                         self._refresh_history(select_id=history_id)
                         self.tabs.select(0)
                 elif kind == "error":
@@ -2045,6 +2196,11 @@ class Application:
             self._display_image(self.image_paths[selected[0]])
 
     def _display_image(self, path: Path) -> None:
+        if is_video_output(path):
+            self.preview_photo = None
+            self.image_label.configure(image="", text="動画を保存しました。\n「ファイルを開く」で再生")
+            self.result_info.set(path.name)
+            return
         try:
             photo = tk.PhotoImage(file=str(path))
             scale = preview_subsample(

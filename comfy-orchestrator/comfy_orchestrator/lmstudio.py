@@ -14,7 +14,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
-from .core import OrchestratorError, _open_json, plan_schema
+from .core import OrchestratorError, _open_json, plan_schema, WAN_I2V_ID
 from .character_refs import observation_schema, intersection_schema, validate_images
 from .character_repair import repair_model_analysis
 from .prompt_profiles import (
@@ -179,6 +179,9 @@ class LMStudio:
         self._has_visual_input = (
             image is not None and self.settings.get("send_reference_to_llm", False)
         )
+        video_only = bool(workflows) and all(
+            entry.get("kind") == "i2v" for entry in workflows.values()
+        )
         pose_only = bool(workflows) and all(
             entry.get("kind") == "pose" for entry in workflows.values()
         )
@@ -194,6 +197,7 @@ class LMStudio:
              "parameters": [
                  name for name in entry["bindings"]
                  if name not in ("image", "mask", "pose", "seed")
+                 and (key != WAN_I2V_ID or name in ("positive_prompt", "negative_prompt"))
              ],
              "required_inputs": [
                  name for name in ("image", "mask", "pose")
@@ -236,6 +240,19 @@ class LMStudio:
                 if self._has_visual_input else ""
             )
         )
+        if video_only:
+            system += (
+                "\n\nIMAGE-TO-VIDEO POLICY (overrides still-image/tag/edit instructions): "
+                "The source image is the initial frame, not an image to redraw. "
+                "Write coherent natural English sentences describing only requested motion, "
+                "timing, subject action, secondary motion, camera movement and scene continuity. "
+                "Preserve character identity, art style and scene unless explicitly changed. "
+                "Do not add new objects, cuts, camera moves or unseen details without request. "
+                "A stationary camera is valid. Do not repeat static SDXL tags or redesign the source. "
+                "If no image is visible to you, describe the user's requested movement without "
+                "pretending to have observed the image. Only return positive_prompt and optional "
+                "negative_prompt; video resolution, frame count, FPS and seed are host settings."
+            )
         profile = self.settings.get("t2i_prompt_profile", DEFAULT_T2I_PROFILE)
         edit_profile = self.settings.get("i2i_prompt_profile", DEFAULT_I2I_PROFILE)
         system = apply_t2i_profile(system, workflows, profile)
@@ -257,6 +274,12 @@ class LMStudio:
                 "the confirmed character features guide identity, not a "
                 "redesign. An explicit newer user instruction may override a "
                 "sheet trait for this generation. Do not add other unseen traits."
+            )
+        if video_only and character_traits is not None:
+            system += (
+                "\nFor I2V the first frame defines appearance: the confirmed character "
+                "sheet may help identify the moving subject, but do not convert the "
+                "sheet into a static tag list or use it to redraw the subject."
             )
         edit_enabled = (
             is_i2i_context(workflows) and edit_profile != I2I_PROFILE_LEGACY
@@ -290,7 +313,7 @@ class LMStudio:
             f"Reference image visible to the LLM: "
             f"{'yes' if self._has_visual_input else 'no'}\n"
             f"Reference role: "
-            f"{'composition only (LLM reference)' if composition_only else 'pose and camera only' if pose_only else no_image_role if not self._has_visual_input else 'composition of image to edit'}\n"
+            f"{'composition only (LLM reference)' if composition_only else 'pose and camera only' if pose_only else 'first frame of video' if video_only else no_image_role if not self._has_visual_input else 'composition of image to edit'}\n"
             f"{edit_context}"
             + (
                 "User-confirmed character traits (not inferred by the LLM):\n"
@@ -379,8 +402,7 @@ class LMStudio:
                     user_text
                     + "\nVisual observations (model-estimated; unknown means not visible):\n"
                     + json.dumps(observed, ensure_ascii=False)
-                    + "\nTranslate only well-supported observations into tags. "
-                      "Never fabricate the location of hidden joints."
+                    + ("\nUse these facts only to support the requested motion in natural English sentences. Do not invent hidden details." if video_only else "\nTranslate only well-supported observations into tags. Never fabricate the location of hidden joints.")
                 )
             if progress and is_t2i_context(workflows):
                 progress(
