@@ -2184,12 +2184,6 @@ class Application:
         if not self._save_settings():
             return
         prompt = self.prompt.get("1.0", "end").strip()
-        if not prompt:
-            messagebox.showwarning("入力が必要です", "生成内容を入力してください。")
-            return
-        if self.model.get().strip() in ("", "SELECT_IN_GUI"):
-            messagebox.showwarning("モデル未設定", "「モデルを更新」からLM Studioのモデルを選択してください。")
-            return
         image = Path(self.reference_image.get()).expanduser() if self.reference_image.get() else None
         composition = (
             Path(self.composition_image.get()).expanduser()
@@ -2205,6 +2199,17 @@ class Application:
         if is_video and (image is None or image.suffix.lower() not in IMAGE_EXTENSIONS
                          or mask is not None or pose is not None or composition is not None):
             messagebox.showerror("I2V", "参照画像を1枚指定し、マスク・ポーズ・構図参考画像は空欄にしてください")
+            return
+        if not prompt and not core.supports_empty_i2v_request(
+            self.config, selected, image, mask, pose, composition,
+        ):
+            messagebox.showwarning("入力が必要です", "生成内容を入力してください。")
+            return
+        use_prompt_llm = core.needs_prompt_llm(
+            self.config, prompt, self.character_traits, composition,
+        )
+        if use_prompt_llm and self.model.get().strip() in ("", "SELECT_IN_GUI"):
+            messagebox.showwarning("モデル未設定", "「モデル更新」からLM Studioのモデルを選択してください。")
             return
         try:
             overrides = (self._h3_overrides() if selected == core.H3_I2V_ID else
@@ -2237,6 +2242,7 @@ class Application:
         self.latest_composition_report = ""
         kind = cfg["workflows"][selected]["kind"]
         self.latest_prompt_profile = (
+            None if not use_prompt_llm else
             cfg["llm"].get("t2i_prompt_profile", DEFAULT_T2I_PROFILE)
             if kind == "t2i" else
             cfg["llm"].get("i2i_prompt_profile", DEFAULT_I2I_PROFILE)
@@ -2246,7 +2252,8 @@ class Application:
         )
         self.latest_request_text = prompt
         self._set_busy("解釈テスト中..." if dry_run else "生成準備中...")
-        self._log("開始: " + ("解釈のみテスト" if dry_run else "動画生成" if is_video else "画像生成") + f" / model={cfg['llm']['model']}")
+        self._log("開始: " + ("解釈のみテスト" if dry_run else "動画生成" if is_video else "画像生成")
+                  + (f" / model={cfg['llm']['model']}" if use_prompt_llm else " / LLMなし"))
 
         def task():
             try:

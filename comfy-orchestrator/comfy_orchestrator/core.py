@@ -40,6 +40,29 @@ HOST_VIDEO_IDS = frozenset({WAN_I2V_ID, H3_I2V_ID})
 VIDEO_KINDS = frozenset({"i2v", "t2v"})
 IMAGE_INPUTS = frozenset({"image", "mask", "pose"})
 
+# Image-only I2V still needs valid text conditioning. This neutral fallback
+# makes motion possible without inventing characters, actions or a camera move.
+I2V_DEFAULT_PROMPT = "Natural, coherent motion while preserving the reference image's subject appearance and visual style."
+I2V_DEFAULT_REQUEST = "参照画像の人物・物体の外見と画風を維持し、自然で一貫した動きの動画にする。"
+
+
+def supports_empty_i2v_request(config: dict, workflow_id: str | None,
+                               image=None, mask=None, pose=None, composition=None) -> bool:
+    entry = config.get("workflows", {}).get(workflow_id, {})
+    return (
+        entry.get("kind") == "i2v"
+        and IMAGE_INPUTS.intersection(entry.get("bindings", {})) == {"image"}
+        and image is not None and mask is None and pose is None and composition is None
+    )
+
+
+def needs_prompt_llm(config: dict, request: str, character_traits=None,
+                     composition_image=None) -> bool:
+    """Image-only requests bypass LLM unless explicit visual/character context is enabled."""
+    return bool(request.strip() or character_traits or composition_image
+                or config.get("llm", {}).get("send_reference_to_llm", False))
+
+
 # Host-owned model/LoRA selection. These are intentionally NOT PARAMS or LLM
 # bindings: no model-supplied filename or arbitrary LoRA can enter a graph.
 H3_MODELS = {
@@ -586,8 +609,14 @@ def execute(
         raise OrchestratorError(
             "workflowsが空です。先にAPI形式JSONを配置してconfig.jsonへ登録してください"
         )
-    if not request.strip():
-        raise OrchestratorError("自然文の指示を入力してください")
+    empty_request = not request.strip()
+    if empty_request and not supports_empty_i2v_request(
+        config, selected_workflow, image, mask_image, pose_image, composition_image,
+    ):
+        raise OrchestratorError("自然文の指示を入力してください（I2Vの参照画像のみ指定時は省略できます）")
+    use_prompt_llm = needs_prompt_llm(config, request, character_traits, composition_image)
+    if empty_request and use_prompt_llm:
+        request = I2V_DEFAULT_REQUEST
     if character_traits is not None:
         from .character_refs import normalize_approved
         character_traits = normalize_approved(character_traits)
@@ -675,7 +704,14 @@ def execute(
     llm_key = "llm" if "llm" in config else "ollama"
     settings = config[llm_key]
     provider = settings.get("provider", "lmstudio" if llm_key == "llm" else "ollama")
-    if provider == "lmstudio":
+    if not use_prompt_llm:
+        # The image is the primary conditioning; avoid a needless LLM load.
+        note("I2V: 参照画像のみ（LLMを使用しません）")
+        plan = {
+            "workflow_id": selected_workflow,
+            "parameters": {"positive_prompt": I2V_DEFAULT_PROMPT},
+        }
+    elif provider == "lmstudio":
         from .lmstudio import LMStudio
         from .prompt_profiles import is_i2i_context
         # An edit-strength hint is provided to the prompt designer only.
