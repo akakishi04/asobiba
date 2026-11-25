@@ -76,7 +76,7 @@ H3_TURBOS = {
 }
 H3_MODEL_LABELS = {"int8": "INT8 ConvRot", "w4a8": "W4A8 Mixed"}
 H3_TURBO_LABELS = {"off": "OFF", "turbo8": "8 Steps", "turbo4": "4 Steps"}
-H3_OPTION_KEYS = frozenset({"h3_model", "h3_turbo"})
+H3_OPTION_KEYS = frozenset({"h3_model", "h3_turbo", "h3_encoder_device"})
 
 
 def split_h3_options(parameters: dict, *, enabled: bool) -> tuple[dict, dict]:
@@ -97,7 +97,14 @@ def split_h3_options(parameters: dict, *, enabled: bool) -> tuple[dict, dict]:
         raise OrchestratorError("未対応のH3モデルです")
     if not isinstance(turbo, str) or turbo not in H3_TURBOS:
         raise OrchestratorError("未対応のH3 Turbo設定です")
-    return inputs, {"h3_model": model, "h3_turbo": turbo}
+    selected = {"h3_model": model, "h3_turbo": turbo}
+    # Do not inject a new device into old saved jobs or legacy CLI calls.
+    if "h3_encoder_device" in options:
+        device = options["h3_encoder_device"]
+        if not isinstance(device, str) or device not in ("cpu", "default"):
+            raise OrchestratorError("H3テキストエンコーダーのデバイスが不正です")
+        selected["h3_encoder_device"] = device
+    return inputs, selected
 
 
 def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None = None) -> dict:
@@ -116,6 +123,11 @@ def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None =
     if any(graph[node]["inputs"].get("model") != ["6", 0] for node in ("9", "16")):
         raise OrchestratorError("H3のモデル接続が標準ワークフローと一致しません")
     graph["6"]["inputs"]["unet_name"] = H3_MODELS[model]
+    if "h3_encoder_device" in options:
+        encoder = graph.get("13", {})
+        if encoder.get("class_type") != "CLIPLoader" or "device" not in encoder.get("inputs", {}):
+            raise OrchestratorError("H3テキストエンコーダーの標準ノードが見つかりません")
+        encoder["inputs"]["device"] = options["h3_encoder_device"]
     if lora is not None:
         # Match the official ComfyUI FL2VA template: model-only LoRA, weight
         # 1, both scheduler and guider receive the patched model, same sampler.
@@ -790,7 +802,8 @@ def execute(
         template = prepare_h3_workflow(template, h3_options, params)
         note("H3: " + H3_MODEL_LABELS[h3_options["h3_model"]]
              + " / Turbo " + H3_TURBO_LABELS[h3_options["h3_turbo"]]
-             + f" / {params['steps']} Steps")
+             + f" / {params['steps']} Steps"
+             + (f" / Text encoder={h3_options['h3_encoder_device']}" if "h3_encoder_device" in h3_options else ""))
     saved_params = {**params, **h3_options}
     note(f"ワークフロー確定: {workflow_id}")
     if dry_run:

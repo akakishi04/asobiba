@@ -370,6 +370,7 @@
     "h3_duration": "約5秒 (124f)",
     "h3_model": "int8",
     "h3_turbo": "off",
-    "h3_steps": 20
+    "h3_steps": 20,
+    "h3_encoder_device": "cpu"
   }
 }

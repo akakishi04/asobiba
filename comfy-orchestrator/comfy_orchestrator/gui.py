@@ -454,6 +454,7 @@ class Application:
         turbo_key = options.get("h3_turbo", "off")
         self.h3_model = tk.StringVar(value=core.H3_MODEL_LABELS.get(model_key, "INT8 ConvRot"))
         self.h3_turbo = tk.StringVar(value=core.H3_TURBO_LABELS.get(turbo_key, "OFF"))
+        self.h3_encoder_cpu = tk.BooleanVar(value=options.get("h3_encoder_device", "cpu") == "cpu")
         self.h3_steps = tk.StringVar(value=str(options.get("h3_steps", options.get("steps", 20))))
         self.h3_fixed_steps = tk.StringVar(value="")
         self.steps = tk.StringVar(value=str(options.get("steps", 20)))
@@ -530,8 +531,10 @@ class Application:
                         variable=self.unload_llm).grid(row=0, column=0, sticky="w", padx=(0, 12))
         ttk.Checkbutton(options_frame, text="解釈前にComfyUIを解放",
                         variable=self.free_comfy).grid(row=0, column=1, sticky="w")
+        ttk.Checkbutton(connection, text="H3テキストエンコーダーをCPUで実行",
+                        variable=self.h3_encoder_cpu).grid(row=3, column=0, columnspan=2, sticky="w", pady=(2, 2))
         settings_actions = ttk.Frame(connection)
-        settings_actions.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        settings_actions.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(4, 0))
         ttk.Checkbutton(settings_actions, text="ダーク表示", variable=self.dark_mode,
                         command=self._switch_theme).pack(side="left")
         ttk.Button(settings_actions, text="保存", command=self._save_settings).pack(side="right")
@@ -1058,7 +1061,10 @@ class Application:
         turbo = next((key for key, label in core.H3_TURBO_LABELS.items() if label == self.h3_turbo.get()), None)
         if model is None or turbo is None:
             raise core.OrchestratorError("H3モデルまたはTurbo設定が不正です")
-        return {"h3_model": model, "h3_turbo": turbo}
+        options = {"h3_model": model, "h3_turbo": turbo}
+        if hasattr(self, "h3_encoder_cpu"):
+            options["h3_encoder_device"] = "cpu" if self.h3_encoder_cpu.get() else "default"
+        return options
 
     def _sync_h3_steps(self, _event=None) -> None:
         if not hasattr(self, "h3_steps"):
@@ -1409,6 +1415,8 @@ class Application:
             if hasattr(self, "h3_model"):
                 self.h3_model.set(core.H3_MODEL_LABELS.get(p.get("h3_model", "int8"), "INT8 ConvRot"))
                 self.h3_turbo.set(core.H3_TURBO_LABELS.get(p.get("h3_turbo", "off"), "OFF"))
+                if hasattr(self, "h3_encoder_cpu"):
+                    self.h3_encoder_cpu.set(p.get("h3_encoder_device", "default") == "cpu")
                 if p.get("h3_turbo", "off") == "off" and "steps" in p:
                     self.h3_steps.set(str(p["steps"]))
             if "width" in p and "height" in p:

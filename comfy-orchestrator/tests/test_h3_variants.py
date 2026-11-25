@@ -50,6 +50,20 @@ class H3VariantTests(unittest.TestCase):
         self.assertEqual(self.graph["9"]["inputs"]["model"], ["6", 0])
         self.assertIs(core.prepare_h3_workflow(self.graph, {}), self.graph)
 
+    def test_cpu_encoder_is_scoped_to_h3_and_preserves_old_jobs(self):
+        options = {"h3_model": "w4a8", "h3_turbo": "turbo8", "h3_encoder_device": "cpu"}
+        graph = core.prepare_h3_workflow(self.graph, options, {"steps": 8})
+        self.assertEqual(graph["13"]["inputs"]["device"], "cpu")
+        self.assertEqual(graph["6"]["inputs"]["unet_name"], core.H3_MODELS["w4a8"])
+        self.assertEqual(graph["9"]["inputs"]["steps"], 8)
+        self.assertEqual(self.graph["13"]["inputs"]["device"], "default")
+        self.assertEqual(core.prepare_h3_workflow(self.graph, {"h3_model": "int8"})["13"]["inputs"]["device"], "default")
+        self.assertEqual(core.prepare_h3_workflow(self.graph, {**options, "h3_encoder_device": "default"})["13"]["inputs"]["device"], "default")
+        with self.assertRaises(core.OrchestratorError):
+            core.split_h3_options({"h3_encoder_device": "cuda:1"}, enabled=True)
+        with self.assertRaises(core.OrchestratorError):
+            core.split_h3_options({"h3_encoder_device": "cpu"}, enabled=False)
+
     def test_invalid_options_and_turbo_steps(self):
         for bad in ({"h3_model": "../arbitrary.safetensors"}, {"h3_turbo": ["turbo8"]}):
             with self.assertRaises(core.OrchestratorError):
@@ -62,11 +76,13 @@ class H3VariantTests(unittest.TestCase):
     def test_gui_choices_are_retained_and_steps_are_independent(self):
         fake = SimpleNamespace(h3_size=Var("864 × 480"), h3_duration=Var("約5秒 (124f)"),
                                steps=Var("20"), h3_steps=Var("17"), seed=Var("7"),
-                               h3_model=Var("W4A8 Mixed"), h3_turbo=Var("8 Steps"))
+                               h3_model=Var("W4A8 Mixed"), h3_turbo=Var("8 Steps"),
+                               h3_encoder_cpu=Var(True))
         fake._h3_choices = lambda: gui.Application._h3_choices(fake)
         params = gui.Application._h3_overrides(fake)
         self.assertEqual(params["steps"], 8)
         self.assertEqual(params["h3_model"], "w4a8")
+        self.assertEqual(params["h3_encoder_device"], "cpu")
         self.assertEqual(gui.image_aware_overrides(self.config, core.H3_I2V_ID, True, params, "0.53"), params)
         fake.h3_turbo.set("OFF")
         self.assertEqual(gui.Application._h3_overrides(fake)["steps"], 17)
@@ -106,7 +122,7 @@ class H3VariantTests(unittest.TestCase):
 
     def test_replay_restores_saved_variant_not_current_gui(self):
         params = dict(self.entry["defaults"], positive_prompt="Hair moves.", seed=7, steps=4,
-                      h3_model="w4a8", h3_turbo="turbo4")
+                      h3_model="w4a8", h3_turbo="turbo4", h3_encoder_device="cpu")
         with tempfile.TemporaryDirectory() as directory:
             image = Path(directory) / "first.png"
             image.write_bytes(b"image")
@@ -120,6 +136,7 @@ class H3VariantTests(unittest.TestCase):
                 checked = comfy.ensure_video_dependencies.call_args.args[0]
                 self.assertEqual(checked["6"]["inputs"]["unet_name"], core.H3_MODELS["w4a8"])
                 self.assertEqual(rendered["9"]["inputs"]["steps"], 4)
+                self.assertEqual(rendered["13"]["inputs"]["device"], "cpu")
                 self.assertEqual(rendered["900"]["inputs"]["lora_name"], core.H3_TURBOS["turbo4"][0])
                 self.assertEqual(result["parameters"], params)
                 self.assertEqual(rendered["15"]["inputs"]["noise_seed"], 7)
