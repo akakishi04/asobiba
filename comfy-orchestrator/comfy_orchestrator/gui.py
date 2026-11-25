@@ -236,6 +236,8 @@ WORKFLOW_NAMES = {
     core.H3_I2V_ID: "動画生成 · MiniMax H3",
     core.WAN_I2V_ID: "動画生成 · Wan 2.2",
     core.HUNYUAN_I2V_ID: "動画生成 · Hunyuan 1.5 (480p)",
+    core.QWEN_T2I_ID: "画像生成 · Qwen-Image 2512",
+    core.QWEN_LIGHTNING_ID: "画像生成 · Qwen-Image 2512 (4 Steps)",
 }
 
 
@@ -260,6 +262,7 @@ def parameter_visibility(config: dict, workflow_id: str | None, custom_size: boo
     video = kind in core.VIDEO_KINDS
     h3 = workflow_id == core.H3_I2V_ID
     hunyuan = workflow_id == core.HUNYUAN_I2V_ID
+    qwen = workflow_id in core.QWEN_IDS
     still_size = not video and "image" not in bindings and {"width", "height"} <= bindings.keys()
     return {
         "resolution": still_size,
@@ -268,12 +271,15 @@ def parameter_visibility(config: dict, workflow_id: str | None, custom_size: boo
         "wan": video and not h3 and not hunyuan,
         "h3": h3,
         "hunyuan": hunyuan,
-        "steps": "steps" in bindings and not hunyuan,
-        "cfg": "cfg" in bindings,
+        "checkpoint": workflow_id in core.SDXL_WORKFLOW_IDS,
+        "qwen_steps": workflow_id == core.QWEN_T2I_ID,
+        "qwen_fixed": workflow_id == core.QWEN_LIGHTNING_ID,
+        "steps": "steps" in bindings and not hunyuan and not qwen,
+        "cfg": "cfg" in bindings and not qwen,
         "seed": "seed" in bindings,
         "denoise": "denoise" in bindings,
         "strength": "control_strength" in bindings,
-        "t2i_profile": kind == "t2i",
+        "t2i_profile": kind == "t2i" and not qwen,
         "i2i_profile": kind in ("i2i", "inpaint"),
         "h3_profile": h3,
     }
@@ -432,6 +438,7 @@ class Application:
         self.character_dialog: CharacterReferenceWindow | None = None
         self._variables()
         self._build()
+        self._refresh_generation_models()
         self._refresh_history()
         self.root.after(100, self._consume_messages)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -469,6 +476,12 @@ class Application:
         model_key = options.get("h3_model", "int8")
         turbo_key = options.get("h3_turbo", "off")
         self.h3_model = tk.StringVar(value=core.H3_MODEL_LABELS.get(model_key, "INT8 ConvRot"))
+        self.generation_inventory = None
+        self.checkpoint_model = tk.StringVar(value=options.get("checkpoint_model", core.DEFAULT_SDXL_CHECKPOINT))
+        self.qwen_steps = tk.StringVar(value=str(options.get("qwen_steps", 50)))
+        self.qwen_cfg = tk.StringVar(value=str(options.get("qwen_cfg", 4)))
+        self.qwen_fixed_steps = tk.StringVar(value="4")
+        self.qwen_fixed_cfg = tk.StringVar(value="1")
         self.h3_turbo = tk.StringVar(value=core.H3_TURBO_LABELS.get(turbo_key, "OFF"))
         self.h3_encoder_cpu = tk.BooleanVar(value=options.get("h3_encoder_device", "cpu") == "cpu")
         self.h3_encoder_model = tk.StringVar(value=core.H3_ENCODER_LABELS.get(
@@ -755,6 +768,10 @@ class Application:
         field(4, 0, "Steps", self.hunyuan_steps, "hunyuan", choices=("8", "12"), span=3)
         self.steps_entry = field(4, 0, "Steps", self.steps, "steps")
         self.cfg_entry = field(4, 2, "CFG", self.cfg, "cfg")
+        field(4, 0, "Steps", self.qwen_steps, "qwen_steps")
+        field(4, 2, "CFG", self.qwen_cfg, "qwen_steps")
+        field(4, 0, "Steps", self.qwen_fixed_steps, "qwen_fixed").configure(state="readonly")
+        field(4, 2, "CFG", self.qwen_fixed_cfg, "qwen_fixed").configure(state="readonly")
         self.seed_entry = field(5, 0, "Seed", self.seed, "seed", span=2)
         self.random_seed_button = ttk.Button(settings, text="ランダム", style="Compact.TButton",
                                              command=lambda: self.seed.set(""))
@@ -768,10 +785,14 @@ class Application:
                                      choices=tuple(I2I_PROFILE_LABELS.values()), span=3, width=18)
         self.h3_profile_box = field(7, 0, "プロンプト方式", self.h3_profile, "h3_profile",
                                     choices=tuple(H3_PROFILE_LABELS.values()), span=3, width=18)
+        self.checkpoint_box = field(8, 0, "モデル", self.checkpoint_model, "checkpoint",
+                                    choices=(self.checkpoint_model.get(),), span=3, width=18)
+        self.checkpoint_box.bind("<<ComboboxSelected>>", self._sync_h3_steps)
         self.h3_model_box = field(8, 0, "モデル", self.h3_model, "h3",
                                   choices=tuple(core.H3_MODEL_LABELS.values()), span=3, width=18)
         self.h3_turbo_box = field(9, 0, "Turbo", self.h3_turbo, "h3",
                                   choices=tuple(core.H3_TURBO_LABELS.values()), span=3, width=18)
+        self.h3_model_box.bind("<<ComboboxSelected>>", self._on_h3_model_choice)
         self.h3_turbo_box.bind("<<ComboboxSelected>>", self._sync_h3_steps)
         for widgets in self.parameter_widgets.values():
             for widget in widgets:
@@ -1106,11 +1127,29 @@ class Application:
             options["h3_encoder_model"] = encoder
         return options
 
+    def _on_h3_model_choice(self, _event=None) -> None:
+        # Different merged/quantized weights have not been validated with Turbo.
+        # Start their comparison without an additional LoRA; user may opt in.
+        if self._h3_choices()["h3_model"] not in ("int8", "w4a8"):
+            self.h3_turbo.set("OFF")
+        self._sync_h3_steps()
+
+    def _sdxl_turbo_active(self) -> bool:
+        return (self._active_workflow() == "wai_t2i_basic"
+                and hasattr(self, "checkpoint_model")
+                and core.sdxl_checkpoint_kind(self.checkpoint_model.get()) == "turbo")
+
     def _sync_h3_steps(self, _event=None) -> None:
         if not hasattr(self, "h3_steps"):
             return
         is_h3 = self._active_workflow() == core.H3_I2V_ID
-        fixed = core.H3_TURBOS[self._h3_choices()["h3_turbo"]][1] if is_h3 else None
+        turbo_checkpoint = (self._sdxl_turbo_active() if hasattr(self, "checkpoint_model") else False)
+        fixed = core.H3_TURBOS[self._h3_choices()["h3_turbo"]][1] if is_h3 else 4 if turbo_checkpoint else None
+        if hasattr(self, "checkpoint_model") and hasattr(self, "cfg_entry"):
+            entry = self.config["workflows"].get(self._active_workflow(), {})
+            cfg_variable = self.qwen_fixed_cfg if turbo_checkpoint else self.cfg
+            self.cfg_entry.configure(textvariable=cfg_variable, state="readonly" if turbo_checkpoint
+                                     else "normal" if "cfg" in entry.get("bindings", {}) else "disabled")
         if fixed is not None:
             if self.h3_fixed_steps.get() != str(fixed):
                 self.h3_fixed_steps.set(str(fixed))
@@ -1180,7 +1219,10 @@ class Application:
         if hasattr(self, "strength_entry"):
             self.strength_entry.configure(state="normal" if state["strength"] else "disabled")
         if hasattr(self, "cfg_entry"):
-            self.cfg_entry.configure(state="normal" if state["cfg"] else "disabled")
+            self.cfg_entry.configure(state="readonly" if hasattr(self, "checkpoint_model") and self._sdxl_turbo_active()
+                                     else "normal" if state["cfg"] else "disabled")
+        if hasattr(self, "checkpoint_box"):
+            self._apply_generation_model_choices()
         if hasattr(self, "t2i_profile_box"):
             self.t2i_profile_box.configure(state="readonly" if state["t2i_profile"] else "disabled")
         if hasattr(self, "i2i_profile_box"):
@@ -1412,6 +1454,8 @@ class Application:
             details.append(f"{p['frames'] / p['fps']:.1f}秒")
         if "steps" in p:
             details.append(f"{p['steps']} steps")
+        if "checkpoint_model" in p:
+            details.append(Path(p["checkpoint_model"].replace("\\", "/")).stem)
         if entry.workflow_id == core.H3_I2V_ID and "h3_model" in p:
             details.append(core.H3_MODEL_LABELS.get(p["h3_model"], str(p["h3_model"])))
             turbo = core.H3_TURBO_LABELS.get(p.get("h3_turbo", "off"), "")
@@ -1513,6 +1557,12 @@ class Application:
         finally:
             self._source_change_lock = False
         video_entry = entry.kind in core.VIDEO_KINDS
+        if entry.workflow_id in core.SDXL_WORKFLOW_IDS and hasattr(self, "checkpoint_model"):
+            self.checkpoint_model.set(entry.parameters.get("checkpoint_model", core.DEFAULT_SDXL_CHECKPOINT))
+        if entry.workflow_id in core.QWEN_IDS and hasattr(self, "qwen_steps"):
+            if entry.workflow_id == core.QWEN_T2I_ID:
+                self.qwen_steps.set(str(entry.parameters.get("steps", 50)))
+                self.qwen_cfg.set(str(entry.parameters.get("cfg", 4)))
         if entry.workflow_id == core.H3_I2V_ID and hasattr(self, "h3_size"):
             p = entry.parameters
             if hasattr(self, "h3_model"):
@@ -1550,6 +1600,9 @@ class Application:
             ("denoise", self.denoise), ("seed", self.seed),
         ):
             if video_entry and key in ("width", "height"):
+                continue
+            if key in ("steps", "cfg") and (entry.workflow_id in core.QWEN_IDS or
+                    core.sdxl_checkpoint_kind(entry.parameters.get("checkpoint_model", "")) == "turbo"):
                 continue
             if key == "steps" and (
                 (entry.workflow_id == core.H3_I2V_ID and hasattr(self, "h3_steps"))
@@ -1776,7 +1829,8 @@ class Application:
             config["ui"].update(self._h3_choices())
             config["ui"]["h3_steps"] = self.h3_steps.get()
         for name in ("video_size", "video_frames", "video_fps", "h3_size", "h3_duration",
-                     "hunyuan_size", "hunyuan_frames", "hunyuan_steps"):
+                     "hunyuan_size", "hunyuan_frames", "hunyuan_steps",
+                     "checkpoint_model", "qwen_steps", "qwen_cfg"):
             if hasattr(self, name):
                 config["ui"][name] = getattr(self, name).get()
             elif name in self.config.get("ui", {}):
@@ -1803,11 +1857,12 @@ class Application:
                 value = parse(variable.get())
                 core.check_param(name, value)
             except (ValueError, core.OrchestratorError):
+                separate_qwen = entry.get("kind") == "t2i" and self._active_workflow() in core.QWEN_IDS and name in ("steps", "cfg")
                 separate_video_steps = name == "steps" and (
                     (hasattr(self, "h3_steps") and self._active_workflow() == core.H3_I2V_ID)
                     or (hasattr(self, "hunyuan_steps") and self._active_workflow() == core.HUNYUAN_I2V_ID)
                 )
-                if not entry or (name in bindings and not (video and name in ("width", "height")) and not separate_video_steps):
+                if not entry or (name in bindings and not (video and name in ("width", "height")) and not separate_video_steps and not separate_qwen):
                     raise
                 value = previous.get(name, default)
                 try:
@@ -1832,6 +1887,19 @@ class Application:
         for name, value in values.items():
             core.check_param(name, value)
         core.validate_wan_video_parameters(values)
+        return values
+
+    def _qwen_overrides(self, workflow_id: str) -> dict:
+        fast = workflow_id == core.QWEN_LIGHTNING_ID
+        values = {"width": int(self.width.get()), "height": int(self.height.get()),
+                  "steps": 4 if fast else int(self.qwen_steps.get()),
+                  "cfg": 1 if fast else float(self.qwen_cfg.get())}
+        if self.seed.get().strip():
+            values["seed"] = int(self.seed.get().strip())
+        for name, value in values.items():
+            core.check_param(name, value)
+        if values["width"] % 16 or values["height"] % 16:
+            raise core.OrchestratorError("Qwen-Imageの幅・高さは16の倍数にしてください")
         return values
 
     def _hunyuan_overrides(self) -> dict:
@@ -2286,7 +2354,38 @@ class Application:
         else:
             messagebox.showinfo("履歴", "保存済みファイルを1件選択してください")
 
+    def _apply_generation_model_choices(self) -> None:
+        if self.generation_inventory is None:
+            return
+        choices = core.installed_model_choices(self.generation_inventory)
+        # Preserve selected values even when a model was removed: never silently
+        # change the actual generation weights on refresh or history restore.
+        h3 = [core.H3_MODEL_LABELS[key] for key in choices["h3"]]
+        current = self.h3_model.get()
+        if current not in h3:
+            h3.append(current)
+        self.h3_model_box.configure(values=h3)
+        checkpoint = [name for name in choices["sdxl"]
+                      if self._active_workflow() == "wai_t2i_basic" or core.sdxl_checkpoint_kind(name) != "turbo"]
+        current = self.checkpoint_model.get()
+        if current not in checkpoint:
+            checkpoint.append(current)
+        self.checkpoint_box.configure(values=checkpoint)
+
+    def _refresh_generation_models(self) -> None:
+        settings = copy.deepcopy(self.config["comfyui"])
+        settings["base_url"] = self.comfy_url.get().strip()
+        def task():
+            try:
+                inventory = core.ComfyUI(settings).list_generation_models()
+                self.messages.put(("generation_models", (settings["base_url"], inventory)))
+            except Exception as exc:
+                self.messages.put(("generation_models_error", str(exc)))
+        threading.Thread(target=task, daemon=True).start()
+
     def _refresh_models(self) -> None:
+        if hasattr(self, "checkpoint_box"):
+            self._refresh_generation_models()
         settings = copy.deepcopy(self.config["llm"])
         settings["base_url"] = self.llm_url.get().strip()
         def task():
@@ -2382,11 +2481,17 @@ class Application:
         try:
             overrides = (self._h3_overrides() if selected == core.H3_I2V_ID else
                          self._hunyuan_overrides() if selected == core.HUNYUAN_I2V_ID else
-                         self._video_overrides() if selected == core.WAN_I2V_ID else self._overrides())
+                         self._video_overrides() if selected == core.WAN_I2V_ID else
+                         self._qwen_overrides(selected) if selected in core.QWEN_IDS else self._overrides())
             overrides = image_aware_overrides(
                 self.config, selected, image is not None,
                 overrides, self.denoise.get(), self.control_strength.get(),
             )
+            if selected in core.SDXL_WORKFLOW_IDS and hasattr(self, "checkpoint_model"):
+                overrides["checkpoint_model"] = self.checkpoint_model.get()
+                core.split_checkpoint_option(overrides, {selected})
+                if self._sdxl_turbo_active():
+                    overrides.update(steps=4, cfg=1)
         except (ValueError, core.OrchestratorError) as exc:
             messagebox.showerror("生成設定エラー", str(exc))
             return
@@ -2507,6 +2612,15 @@ class Application:
                     for line in data:
                         self._log(line)
                     self.status.set("接続確認が完了しました")
+                elif kind == "generation_models":
+                    url, inventory = data
+                    if url == self.comfy_url.get().strip():
+                        self.generation_inventory = inventory
+                        self._apply_generation_model_choices()
+                        choices = core.installed_model_choices(inventory)
+                        self._log(f"ComfyUIモデル: SDXL {len(choices['sdxl'])}件 / H3 {len(choices['h3'])}件")
+                elif kind == "generation_models_error":
+                    self._log("ComfyUIモデル一覧を更新できません: " + data)
                 elif kind == "models":
                     names = [item["key"] for item in data]
                     self.model_box.configure(values=names)

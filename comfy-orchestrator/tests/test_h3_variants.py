@@ -35,6 +35,9 @@ class H3VariantTests(unittest.TestCase):
                     opts = {"h3_model": model, "h3_turbo": turbo}
                     graph = core.prepare_h3_workflow(self.graph, opts, {"steps": steps or 20})
                     self.assertEqual(graph["6"]["inputs"]["unet_name"], core.H3_MODELS[model])
+                    self.assertEqual(graph["6"]["class_type"], "UnetLoaderGGUF" if model == "gguf_u16g" else "UNETLoader")
+                    if model == "gguf_u16g":
+                        self.assertNotIn("weight_dtype", graph["6"]["inputs"])
                     loras = [(key, n) for key, n in graph.items() if n["class_type"] == "LoraLoaderModelOnly"]
                     if filename:
                         self.assertEqual(len(loras), 1)

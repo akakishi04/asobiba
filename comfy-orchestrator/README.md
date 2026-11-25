@@ -480,3 +480,11 @@ VLCとGUIを実行するPythonは同じビット数（通常64bit）にしてく
 不足ファイルは生成前にチェックし、LLM処理を開始しません。ワークフローは既存のconfig.jsonにも起動時に追加されます。H3/Wanの個別設定や履歴には変更を加えません。
 
 参照: https://github.com/Comfy-Org/workflow_templates/blob/main/templates/video_hunyuan_video_1.5_720p_i2v.json ; https://github.com/Tencent-Hunyuan/HunyuanVideo-1.5
+
+### 導入済みのモデル選択
+
+起動時および上部「モデル更新」で、ComfyUIの各ローダーの実際のモデル一覧を取得します（モデルはロードしません）。H3欄では既存INT8/W4A8に加え、手元にあるPinkCherry INT8 v0.5、S3 Raw W4A8、H3 GGUF U16Gを選択できます。U16Gはmolbal版ComfyUI-GGUFのLegacyローダーを使用します。派生モデルへ切り替える際はTurboをOFFから比較し、必要な場合のみ手動で有効にしてください。各派生モデルとTurboの互換性・速度は未検証です。
+
+静止画の既存SDXLワークフローでは、導入済みのIllustrious系チェックポイントを選べます。SDXL TurboはT2Iのみ・4 Steps/CFG 1・euler_ancestralで使用します。モデル名から既知の系統に絞り込んでおり、任意アーキテクチャを自動対応する機能ではありません。選択は履歴に保存し、再生成時も復元します。ファイルがなくなった選択を黙って別モデルへ切り替えず、生成前に不足を通知します。
+
+「画像生成 · Qwen-Image 2512」と「画像生成 · Qwen-Image 2512 (4 Steps)」は専用のT2Iワークフローです。導入済みのqwen_image_2512_fp8_e4m3fn.safetensors、qwen_2.5_vl_7b_fp8_scaled.safetensors、qwen_image_vae.safetensorsを利用し、高速版はQwen-Image-2512-Lightning-4steps-V1.0-fp32.safetensorsを使用します。標準版はSteps/CFGを個別に設定可能、高速版は4/1固定です。画像編集専用Qwen-Image-Editは別モデルのため今回は追加していません。標準のSDXL自動選択は維持します。

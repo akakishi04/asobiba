@@ -385,6 +385,90 @@
         "fps": 24,
         "steps": 8
       }
+    },
+    "qwen_image_2512_t2i": {
+      "kind": "t2i",
+      "description": "Qwen-Image-2512 FP8。自然な英文で静止画を生成する。標準50 Steps、CFG 4。",
+      "file": "workflows/qwen_image_2512_t2i.api.json",
+      "bindings": {
+        "positive_prompt": {
+          "node": "227",
+          "input": "text"
+        },
+        "negative_prompt": {
+          "node": "228",
+          "input": "text"
+        },
+        "width": {
+          "node": "232",
+          "input": "width"
+        },
+        "height": {
+          "node": "232",
+          "input": "height"
+        },
+        "steps": {
+          "node": "230",
+          "input": "steps"
+        },
+        "cfg": {
+          "node": "230",
+          "input": "cfg"
+        },
+        "seed": {
+          "node": "230",
+          "input": "seed"
+        }
+      },
+      "defaults": {
+        "negative_prompt": "low quality, blurry, distorted anatomy, text artifacts",
+        "width": 1328,
+        "height": 1328,
+        "steps": 50,
+        "cfg": 4
+      }
+    },
+    "qwen_image_2512_lightning_t2i": {
+      "kind": "t2i",
+      "description": "Qwen-Image-2512 FP8。自然な英文で静止画を生成する。専用Lightning LoRAによる4 Steps・CFG 1固定。",
+      "file": "workflows/qwen_image_2512_lightning_t2i.api.json",
+      "bindings": {
+        "positive_prompt": {
+          "node": "227",
+          "input": "text"
+        },
+        "negative_prompt": {
+          "node": "228",
+          "input": "text"
+        },
+        "width": {
+          "node": "232",
+          "input": "width"
+        },
+        "height": {
+          "node": "232",
+          "input": "height"
+        },
+        "steps": {
+          "node": "230",
+          "input": "steps"
+        },
+        "cfg": {
+          "node": "230",
+          "input": "cfg"
+        },
+        "seed": {
+          "node": "230",
+          "input": "seed"
+        }
+      },
+      "defaults": {
+        "negative_prompt": "low quality, blurry, distorted anatomy, text artifacts",
+        "width": 1328,
+        "height": 1328,
+        "steps": 4,
+        "cfg": 1
+      }
     }
   },
   "llm": {

@@ -14,7 +14,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
-from .core import OrchestratorError, _open_json, plan_schema, HOST_VIDEO_IDS, H3_I2V_ID
+from .core import OrchestratorError, _open_json, plan_schema, HOST_VIDEO_IDS, H3_I2V_ID, QWEN_IDS
 from .character_refs import observation_schema, intersection_schema, validate_images
 from .character_repair import repair_model_analysis
 from .prompt_profiles import (
@@ -268,6 +268,13 @@ class LMStudio:
         edit_profile = self.settings.get("i2i_prompt_profile", DEFAULT_I2I_PROFILE)
         system = apply_t2i_profile(system, workflows, profile)
         system = apply_i2i_profile(system, workflows, edit_profile)
+        if workflows and workflows.keys() <= QWEN_IDS:
+            system += (
+                "\\nQwen-Image 2512: Write coherent, descriptive natural English sentences "
+                "for the requested still image, composition, materials, pose, lighting and art style. "
+                "Do not use Danbooru tag lists or describe motion over time. Preserve requested "
+                "illustration style and do not invent unwanted details."
+            )
         if character_traits is not None:
             from .character_refs import normalize_approved
             character_traits = normalize_approved(character_traits)

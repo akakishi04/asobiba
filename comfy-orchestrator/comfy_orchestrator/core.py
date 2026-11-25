@@ -6,6 +6,7 @@ import base64
 import copy
 import json
 import mimetypes
+import re
 import secrets
 import time
 import urllib.error
@@ -37,6 +38,12 @@ ALLOWED_KINDS = {"t2i", "i2i", "t2v", "i2v", "inpaint", "pose"}
 WAN_I2V_ID = "wan22_i2v_5b"
 H3_I2V_ID = "minimax_h3_i2v"
 HUNYUAN_I2V_ID = "hunyuan15_i2v_480p"
+QWEN_T2I_ID = "qwen_image_2512_t2i"
+QWEN_LIGHTNING_ID = "qwen_image_2512_lightning_t2i"
+QWEN_IDS = frozenset({QWEN_T2I_ID, QWEN_LIGHTNING_ID})
+SDXL_WORKFLOW_IDS = frozenset({"wai_t2i_basic", "wai_i2i_basic", "wai_inpaint_basic",
+                               "wai_pose_skeleton", "wai_pose_detect"})
+DEFAULT_SDXL_CHECKPOINT = "waiIllustriousSDXL_v170.safetensors"
 HOST_VIDEO_IDS = frozenset({WAN_I2V_ID, H3_I2V_ID, HUNYUAN_I2V_ID})
 VIDEO_KINDS = frozenset({"i2v", "t2v"})
 IMAGE_INPUTS = frozenset({"image", "mask", "pose"})
@@ -68,13 +75,18 @@ def needs_prompt_llm(config: dict, request: str, character_traits=None,
 H3_MODELS = {
     "int8": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
     "w4a8": "minimax_h3_fl2va_pruned_w4a8_mixed.safetensors",
+    "gguf_u16g": "minimax_h3_fl2va_pruned_fp8_U16G.gguf",
+    "pinkcherry": "PinkCherry_h3_fl2va_pruned_int8_v0.5-alpha.safetensors",
+    "s3_raw": "s3_raw_w4a8.safetensors",
 }
 H3_TURBOS = {
     "off": (None, None),
     "turbo8": ("minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors", 8),
     "turbo4": ("minimax_h3_fl2v_turbo_4step_v1.3_768p_comfyui_bf16.safetensors", 4),
 }
-H3_MODEL_LABELS = {"int8": "INT8 ConvRot", "w4a8": "W4A8 Mixed"}
+H3_MODEL_LABELS = {"int8": "INT8 ConvRot", "w4a8": "W4A8 Mixed",
+                   "gguf_u16g": "H3 GGUF U16G", "pinkcherry": "PinkCherry INT8 v0.5",
+                   "s3_raw": "S3 Raw W4A8"}
 H3_TURBO_LABELS = {"off": "OFF", "turbo8": "8 Steps", "turbo4": "4 Steps"}
 H3_ENCODERS = {
     "nvfp4": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
@@ -134,7 +146,13 @@ def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None =
         raise OrchestratorError("H3モデル切替には標準のMiniMax H3ワークフローが必要です")
     if any(graph[node]["inputs"].get("model") != ["6", 0] for node in ("9", "16")):
         raise OrchestratorError("H3のモデル接続が標準ワークフローと一致しません")
-    graph["6"]["inputs"]["unet_name"] = H3_MODELS[model]
+    if model == "gguf_u16g":
+        # The current backend uses legacy VRAM management. U16G needs the
+        # compatible molbal fork; do not pass GGUF to the native UNETLoader.
+        graph["6"] = {"class_type": "UnetLoaderGGUF",
+                      "inputs": {"unet_name": H3_MODELS[model]}}
+    else:
+        graph["6"]["inputs"]["unet_name"] = H3_MODELS[model]
     if "h3_encoder_device" in options or "h3_encoder_model" in options:
         encoder = graph.get("13", {})
         if encoder.get("class_type") != "CLIPLoader" or not {"device", "clip_name"} <= encoder.get("inputs", {}).keys():
@@ -176,6 +194,68 @@ def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None =
         graph["17"]["inputs"]["sampler_name"] = "res_multistep"
     return graph
 
+
+
+def sdxl_checkpoint_kind(name: str) -> str | None:
+    """Recognize the supported checkpoint families without loading unknown weights."""
+    if not isinstance(name, str) or not name or len(name) > 1024:
+        return None
+    parts = name.replace("\\", "/").split("/")
+    if any(not part or part in (".", "..") or ":" in part for part in parts):
+        return None
+    filename = parts[-1].lower()
+    if not filename.endswith((".safetensors", ".ckpt")):
+        return None
+    stem = re.sub(r"[^a-z0-9]", "", filename.rsplit(".", 1)[0])
+    if "illustrious" in stem:
+        return "illustrious"
+    if "sdxlturbo" in stem or "stablediffusionxlturbo" in stem:
+        return "turbo"
+    return None
+
+
+def split_checkpoint_option(parameters: dict, workflow_ids) -> tuple[dict, dict]:
+    """Model filenames are host-owned, not an LLM parameter."""
+    inputs = dict(parameters)
+    if "checkpoint_model" not in inputs:
+        return inputs, {}
+    name = inputs.pop("checkpoint_model")
+    kind = sdxl_checkpoint_kind(name)
+    ids = set(workflow_ids)
+    if not ids or not ids <= SDXL_WORKFLOW_IDS or kind is None:
+        raise OrchestratorError("このワークフローに対応しないSDXLチェックポイントです")
+    if kind == "turbo" and ids != {"wai_t2i_basic"}:
+        raise OrchestratorError("SDXL Turboは画像生成（T2I）を選択してください")
+    return inputs, {"checkpoint_model": name}
+
+
+def prepare_checkpoint_workflow(template: dict, options: dict) -> dict:
+    if not options:
+        return template
+    graph = copy.deepcopy(template)
+    loader = graph.get("2", {})
+    if loader.get("class_type") != "CheckpointLoaderSimple" or "ckpt_name" not in loader.get("inputs", {}):
+        raise OrchestratorError("標準SDXLチェックポイントノードが見つかりません")
+    name = options["checkpoint_model"]
+    loader["inputs"]["ckpt_name"] = name
+    if sdxl_checkpoint_kind(name) == "turbo":
+        sampler = graph.get("11", {})
+        if sampler.get("class_type") != "KSampler":
+            raise OrchestratorError("SDXL Turbo用サンプラーが見つかりません")
+        sampler["inputs"].update(sampler_name="euler_ancestral", scheduler="normal", steps=4, cfg=1)
+    return graph
+
+
+def installed_model_choices(inventory: dict) -> dict:
+    """Only show registered architectures and installed filenames."""
+    native = inventory.get("UNETLoader", ())
+    gguf = inventory.get("UnetLoaderGGUF", ())
+    return {
+        "h3": tuple(key for key, name in H3_MODELS.items()
+                    if name in (gguf if name.endswith(".gguf") else native)),
+        "sdxl": tuple(name for name in inventory.get("CheckpointLoaderSimple", ())
+                      if sdxl_checkpoint_kind(name) is not None),
+    }
 
 
 def supplied_inputs(image=None, mask=None, pose=None) -> frozenset[str]:
@@ -589,18 +669,41 @@ class ComfyUI:
                     "ComfyUI Managerでインストールして再起動してください"
                 ) from exc
 
+    def list_generation_models(self) -> dict:
+        """Read dropdown choices without loading a model or submitting a prompt."""
+        inventory = {}
+        for class_type, field in (
+            ("CheckpointLoaderSimple", "ckpt_name"), ("UNETLoader", "unet_name"),
+            ("UnetLoaderGGUF", "unet_name"),
+        ):
+            info = http_json(self.base, "/object_info/" + class_type, timeout=min(self.timeout, 12))
+            if class_type == "UnetLoaderGGUF" and class_type not in info:
+                inventory[class_type] = ()
+                continue
+            try:
+                choices = info[class_type]["input"]["required"][field][0]
+                if not isinstance(choices, (list, tuple)):
+                    raise TypeError("model dropdown is not a list")
+                inventory[class_type] = tuple(value for value in choices if isinstance(value, str))
+            except (KeyError, IndexError, TypeError) as exc:
+                raise OrchestratorError(f"モデル一覧を取得できません: {class_type}") from exc
+        return inventory
+
     def ensure_video_dependencies(self, workflow: dict) -> None:
-        """Check native video nodes and their model choices before starting inference."""
+        """Check generation nodes and model choices before starting inference."""
         loaders = {
             "UNETLoader": "unet_name", "CLIPLoader": "clip_name",
             "VAELoader": "vae_name", "LoraLoaderModelOnly": "lora_name",
             "ClipProjApply": "projection",
+            "UnetLoaderGGUF": "unet_name",
+            "CheckpointLoaderSimple": "ckpt_name",
             "DualCLIPLoader": ("clip_name1", "clip_name2"),
             "CLIPVisionLoader": "clip_name",
         }
         required = {"Wan22ImageToVideoLatent", "MiniMaxH3ImageToVideo",
                     "HunyuanVideo15ImageToVideo", "CLIPVisionEncode", "ModelSamplingSD3",
-                    "VAEDecodeAudio", "CreateVideo", "SaveVideo"}
+                    "VAEDecodeAudio", "CreateVideo", "SaveVideo",
+                    "ModelSamplingAuraFlow", "EmptySD3LatentImage"}
         for class_type in sorted(required | set(loaders)):
             if not any(n.get("class_type") == class_type for n in workflow.values()):
                 continue
@@ -622,8 +725,12 @@ class ComfyUI:
                     raise OrchestratorError(
                         "ClipProj Applyを確認できません。ComfyUI-ClipProj 0.1.13以降をManagerで導入・更新し、ComfyUIを再起動してください"
                     ) from exc
+                if class_type == "UnetLoaderGGUF":
+                    raise OrchestratorError(
+                        "H3 U16G対応のGGUFローダーがありません。molbal版ComfyUI-GGUFを確認してください"
+                    ) from exc
                 raise OrchestratorError(
-                    f"動画生成用ノード {class_type} を確認できません。ComfyUIを更新・再起動してください"
+                    f"生成用ノード {class_type} を確認できません。ComfyUIを更新・再起動してください"
                 ) from exc
             for node in workflow.values():
                 if node.get("class_type") != class_type:
@@ -737,7 +844,8 @@ def execute(
     workflows = compatible_workflows(workflows, image, mask_image, pose_image)
     if selected_workflow is None:
         # Ordinary image generation must never switch into a costly video job.
-        still = {key: entry for key, entry in workflows.items() if entry.get("kind") not in VIDEO_KINDS}
+        still = {key: entry for key, entry in workflows.items()
+                 if entry.get("kind") not in VIDEO_KINDS and key not in QWEN_IDS}
         if still:
             workflows = still
     if not workflows:
@@ -768,11 +876,22 @@ def execute(
         fixed_steps = H3_TURBOS[h3_options["h3_turbo"]][1]
         if fixed_steps is not None:
             overrides["steps"] = fixed_steps
+    overrides, checkpoint_options = split_checkpoint_option(overrides, workflows)
+    if sdxl_checkpoint_kind(checkpoint_options.get("checkpoint_model", "")) == "turbo":
+        overrides.update(steps=4, cfg=1)
+    if set(workflows) == {QWEN_LIGHTNING_ID}:
+        overrides.update(steps=4, cfg=1)
     check_cancelled()
     comfy = ComfyUI(config["comfyui"])
     if not dry_run:
         # Fail early on uninstalled pose models without spending VRAM on an LLM.
-        for entry in workflows.values():
+        for candidate_id, entry in workflows.items():
+            if candidate_id in QWEN_IDS or checkpoint_options:
+                graph = load_workflow(
+                    (config_path.resolve().parent / entry["file"]).resolve(), entry["bindings"],
+                )
+                graph = prepare_checkpoint_workflow(graph, checkpoint_options)
+                comfy.ensure_video_dependencies(graph)
             if entry.get("kind") == "pose":
                 pose_template = load_workflow(
                     (config_path.resolve().parent / entry["file"]).resolve(), entry["bindings"],
@@ -888,7 +1007,12 @@ def execute(
              + f" / {params['steps']} Steps"
              + (f" / Text encoder={h3_options['h3_encoder_device']}" if "h3_encoder_device" in h3_options else "")
              + (f" / TE model={H3_ENCODER_LABELS[h3_options['h3_encoder_model']]}" if "h3_encoder_model" in h3_options else ""))
-    saved_params = {**params, **h3_options}
+    if workflow_id in QWEN_IDS and any(params[name] % 16 for name in ("width", "height")):
+        raise OrchestratorError("Qwen-Imageの幅・高さは16の倍数にしてください")
+    template = prepare_checkpoint_workflow(template, checkpoint_options)
+    if checkpoint_options:
+        note("SDXL: " + checkpoint_options["checkpoint_model"])
+    saved_params = {**params, **h3_options, **checkpoint_options}
     note(f"ワークフロー確定: {workflow_id}")
     if dry_run:
         return {"status": "dry_run", "workflow_id": workflow_id, "parameters": saved_params}
@@ -941,6 +1065,11 @@ def execute_saved(
         raise OrchestratorError("元のSeedが履歴にありません。同条件の再生成はできません")
 
     copied, h3_options = split_h3_options(parameters, enabled=workflow_id == H3_I2V_ID)
+    copied, checkpoint_options = split_checkpoint_option(copied, {workflow_id})
+    fixed_turbo = sdxl_checkpoint_kind(checkpoint_options.get("checkpoint_model", "")) == "turbo"
+    if fixed_turbo or workflow_id == QWEN_LIGHTNING_ID:
+        if copied.get("steps") != 4 or copied.get("cfg") != 1:
+            raise OrchestratorError("高速蒸留モデルの履歴には4 Steps、CFG 1が必要です")
     if new_seed and "seed" in bindings:
         copied["seed"] = secrets.randbits(32)
     workflow_id, params = validate_plan(
@@ -954,10 +1083,15 @@ def execute_saved(
     )
     if h3_options:
         template = prepare_h3_workflow(template, h3_options, params)
+    if workflow_id in QWEN_IDS and any(params[name] % 16 for name in ("width", "height")):
+        raise OrchestratorError("Qwen-Imageの幅・高さは16の倍数にしてください")
+    template = prepare_checkpoint_workflow(template, checkpoint_options)
     if cancel_event is not None and cancel_event.is_set():
         raise OrchestratorError("再生成開始前に中止しました")
 
     comfy = ComfyUI(config["comfyui"])
+    if workflow_id in QWEN_IDS or checkpoint_options:
+        comfy.ensure_video_dependencies(template)
     if selected.get("kind") == "pose":
         comfy.ensure_pose_dependencies(template)
     elif selected.get("kind") in VIDEO_KINDS:
@@ -980,7 +1114,7 @@ def execute_saved(
     return {
         "status": "completed",
         "workflow_id": workflow_id,
-        "parameters": {**params, **h3_options},
+        "parameters": {**params, **h3_options, **checkpoint_options},
         "prompt_id": prompt_id,
         "outputs": history.get("outputs", {}),
         "comfy_status": history.get("status", {}),
