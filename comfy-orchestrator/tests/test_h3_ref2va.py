@@ -52,9 +52,55 @@ class Ref2VATests(unittest.TestCase):
         self.assertEqual(self.graph["104"]["class_type"], "MiniMaxH3ImageToVideo")
         self.assertEqual(self.graph["104"]["inputs"]["first_frame"], ["114", 0])
 
-    def test_ref_rejects_fl2va_turbo(self):
-        with self.assertRaisesRegex(core.OrchestratorError, "FL2VA"):
-            core.prepare_h3_workflow(self.graph, {**self.options, "h3_turbo": "turbo8"})
+    def test_ref_turbo_uses_dedicated_adapter_and_shift(self):
+        for turbo, expected_steps, expected_shift in (("turbo4", 4, 12.0), ("turbo8", 8, 6.0)):
+            with self.subTest(turbo=turbo):
+                options = {**self.options, "h3_turbo": turbo}
+                graph = core.prepare_h3_workflow(self.graph, options)
+                lora = graph["900"]["inputs"]
+                self.assertIn("ref2v_turbo_", lora["lora_name"])
+                self.assertNotEqual(lora["lora_name"], core.H3_TURBOS[turbo][0])
+                self.assertEqual(lora["model"], ["6", 0])
+                self.assertEqual(lora["strength_model"], 1.0)
+                self.assertEqual(graph["902"]["class_type"], "MiniMaxH3SigmaShift")
+                self.assertEqual(graph["902"]["inputs"], {
+                    "model": ["900", 0], "shift_video": expected_shift, "shift_audio": 3.0,
+                })
+                self.assertEqual(graph["9"]["inputs"]["model"], ["902", 0])
+                self.assertEqual(graph["16"]["inputs"]["model"], ["902", 0])
+                self.assertEqual(graph["9"]["inputs"]["steps"], expected_steps)
+                self.assertEqual(graph["9"]["inputs"]["scheduler"], "simple")
+                self.assertEqual(graph["17"]["inputs"]["sampler_name"], "euler")
+                self.assertEqual(graph["104"]["inputs"]["ref_images.ref_image_0"], ["114", 0])
+                self.assertEqual(graph["104"]["inputs"]["clip"], ["901", 0])
+                with self.assertRaisesRegex(core.OrchestratorError, "Steps"):
+                    core.prepare_h3_workflow(self.graph, options, {"steps": 20})
+        self.assertNotIn("900", self.graph)
+        self.assertNotIn("902", self.graph)
+
+    def test_ref_turbo_saved_replay_and_fixed_steps(self):
+        with tempfile.TemporaryDirectory() as folder:
+            image = Path(folder) / "reference.png"
+            image.write_bytes(b"image")
+            with patch.object(lmstudio.LMStudio, "interpret") as llm, patch.object(core, "ComfyUI") as factory:
+                comfy = factory.return_value
+                comfy.upload_image.return_value = "ref.png"
+                comfy.submit.return_value = "id"
+                comfy.wait.return_value = {"outputs": {}}
+                for turbo, steps in (("turbo4", 4), ("turbo8", 8)):
+                    with self.subTest(turbo=turbo):
+                        result = core.execute(self.config, CONFIG, "", image=image,
+                                              selected_workflow=core.H3_I2V_ID,
+                                              overrides={**self.options, "h3_turbo": turbo,
+                                                         "steps": 20, "seed": 7})
+                        original = comfy.submit.call_args.args[0]
+                        self.assertEqual(result["parameters"]["steps"], steps)
+                        self.assertEqual(result["parameters"]["h3_turbo"], turbo)
+                        self.assertEqual(original["900"]["inputs"]["lora_name"], core.H3_REF2VA_TURBOS[turbo][0])
+                        core.execute_saved(self.config, CONFIG, core.H3_I2V_ID,
+                                           result["parameters"], reference_image=image)
+                        self.assertEqual(comfy.submit.call_args.args[0], original)
+                llm.assert_not_called()
 
     def test_blank_reference_prompt_and_saved_replay(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -107,7 +153,7 @@ class Ref2VATests(unittest.TestCase):
         var = lambda value: SimpleNamespace(get=lambda: value)
         app = SimpleNamespace(h3_model=var(core.h3_model_label(MODEL)), h3_turbo=var("8 Steps"),
                               h3_encoder_model=var("4B ClipProj (INT8)"), h3_encoder_cpu=var(False))
-        self.assertEqual(gui.Application._h3_choices(app), self.options)
+        self.assertEqual(gui.Application._h3_choices(app), {**self.options, "h3_turbo": "turbo8"})
 
     def test_missing_reference_node_fails_preflight(self):
         graph = core.prepare_h3_workflow(self.graph, self.options)

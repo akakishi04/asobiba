@@ -493,8 +493,19 @@ VLCとGUIを実行するPythonは同じビット数（通常64bit）にしてく
 
 Ref2VAのsafetensorsをComfyUIの`models/diffusion_models/`に配置し、アプリの「モデル更新」を押してください。標準UNETLoaderの一覧からファイル名に`ref2va`が含まれるsafetensorsを検出し、MiniMax H3のモデル欄に「参考画像 · 実ファイル名」を表示します。Sulphur 3のW4A8派生版や純正MiniMax H3 Ref2VAを同じ方式で選択できます。ファイル名の推測による固定登録は行いません。
 
-参考画像モードでは、既存のH3グラフを`MiniMaxH3ReferenceToVideo`へ差し替え、1枚の参照を`ref_images.ref_image_0`に接続します。`ref_image_size=match`で縦横比を維持しつつ参照トークン数を抑制、出力サイズは独立して設定します。サンプラーres_multistep、scheduler beta、24fps、FL2VA用Turboは無効です。既存の4B ClipProj（INT8）・32BエンコーダーとVAEを再利用します。プロンプトの`<Picture 1>`は必要な場合のみ自動補完し、空の依頼ではRef2VA専用の自然文を使います。画像を最初のフレームに固定しません。
+参考画像モードでは、既存のH3グラフを`MiniMaxH3ReferenceToVideo`へ差し替え、1枚の参照を`ref_images.ref_image_0`に接続します。`ref_image_size=match`で縦横比を維持しつつ参照トークン数を抑制、出力サイズは独立して設定します。通常時はサンプラーres_multistep、scheduler beta、24fpsです。Ref2VAのTurbo選択ではFL2VA用LoRAを流用せず専用LoRAを使用します。既存の4B ClipProj（INT8）・32BエンコーダーとVAEを再利用します。プロンプトの`<Picture 1>`は必要な場合のみ自動補完し、空の依頼ではRef2VA専用の自然文を使います。画像を最初のフレームに固定しません。
 
 ファイル名とモードは履歴のh3_modelに記録され、再生成時は同じモデルと実際のプロンプトを復元します。新しいワークフローIDやDB移行は不要です。通常のFL2VAと既存履歴の挙動は変えません。Sulphur 3 Ref2VAはRef2VA専用の追加学習をしていない派生版のため、実機で品質を確認してください。モデルファイル自体の互換性・速度は未検証です。
 
 参照: https://github.com/Comfy-Org/workflow_templates/blob/main/templates/video_minimax_h3_r2v.json ; https://huggingface.co/SulphurAI/Sulphur-3
+
+#### Ref2VA Turboの比較
+
+H3のモデル欄でRef2VAを選択後、TurboのOFF / 4 Steps / 8 Stepsを選べます。4 StepsはLightX2V Ref2VA v0.1（544p学習）、8 StepsはRef2VA v1.0 768pです。既存FL2VAとは別のLoRAを自動で選択します。
+
+- 4 Steps: https://huggingface.co/lightx2v/Minimax-h3-Turbo/resolve/main/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors
+- 8 Steps: https://huggingface.co/lightx2v/Minimax-h3-Turbo/resolve/main/minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors
+
+ComfyUIのmodels/lorasに配置します。Ref2VA TurboはModelOnly LoRA強度1、Euler/simple、MiniMaxH3SigmaShift（video/audio: 4 Steps=12/3、8 Steps=6/3）を使用し、scheduler/guiderは同じshift済みモデルに接続します。4/8 Stepsはホストで固定。依存ノード・LoRAの存在は生成前に確認します。通常のRef2VA、FL2VAと旧履歴の設定は変更しません。Sulphur 3との互換性は未検証であり、同じ参照画像・Seed・プロンプト・解像度・長さでOFF/4/8を比較してください。
+
+参照: https://github.com/ModelTC/Minimax-H3-Turbo/blob/main/example_workflows/video_minimax_h3_ref2v_lightx2v_turbo.json

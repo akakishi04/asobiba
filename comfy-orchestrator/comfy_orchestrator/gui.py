@@ -1114,8 +1114,7 @@ class Application:
 
     def _h3_choices(self) -> dict:
         model = core.h3_model_from_label(self.h3_model.get())
-        turbo = ("off" if core.h3_ref2va_filename(model) is not None else
-                 next((key for key, label in core.H3_TURBO_LABELS.items() if label == self.h3_turbo.get()), None))
+        turbo = next((key for key, label in core.H3_TURBO_LABELS.items() if label == self.h3_turbo.get()), None)
         if model is None or turbo is None:
             raise core.OrchestratorError("H3モデルまたはTurbo設定が不正です")
         options = {"h3_model": model, "h3_turbo": turbo}
@@ -1147,11 +1146,8 @@ class Application:
         is_h3 = self._active_workflow() == core.H3_I2V_ID
         turbo_checkpoint = (self._sdxl_turbo_active() if hasattr(self, "checkpoint_model") else False)
         h3_choices = self._h3_choices() if is_h3 else {}
-        reference_only = core.h3_ref2va_filename(h3_choices.get("h3_model")) is not None
         if is_h3 and hasattr(self, "h3_turbo_box"):
-            if reference_only and self.h3_turbo.get() != "OFF":
-                self.h3_turbo.set("OFF")
-            self.h3_turbo_box.configure(state="disabled" if reference_only else "readonly")
+            self.h3_turbo_box.configure(state="readonly")
         fixed = core.H3_TURBOS[h3_choices["h3_turbo"]][1] if is_h3 else 4 if turbo_checkpoint else None
         if hasattr(self, "checkpoint_model") and hasattr(self, "cfg_entry"):
             entry = self.config["workflows"].get(self._active_workflow(), {})

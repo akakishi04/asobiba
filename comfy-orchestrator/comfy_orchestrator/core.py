@@ -84,6 +84,13 @@ H3_TURBOS = {
     "turbo8": ("minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors", 8),
     "turbo4": ("minimax_h3_fl2v_turbo_4step_v1.3_768p_comfyui_bf16.safetensors", 4),
 }
+# Task-specific distilled adapters: do not apply FL2VA weights to Ref2VA.
+# The shifts are the published training shifts for these exact releases.
+H3_REF2VA_TURBOS = {
+    "off": (None, None, None),
+    "turbo8": ("minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors", 8, 6.0),
+    "turbo4": ("minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors", 4, 12.0),
+}
 H3_MODEL_LABELS = {"int8": "INT8 ConvRot", "w4a8": "W4A8 Mixed",
                    "gguf_u16g": "H3 GGUF U16G", "pinkcherry": "PinkCherry INT8 v0.5",
                    "s3_raw": "S3 Raw W4A8"}
@@ -167,8 +174,6 @@ def split_h3_options(parameters: dict, *, enabled: bool) -> tuple[dict, dict]:
         raise OrchestratorError("未対応のH3モデルです")
     if not isinstance(turbo, str) or turbo not in H3_TURBOS:
         raise OrchestratorError("未対応のH3 Turbo設定です")
-    if ref_model is not None and turbo != "off":
-        raise OrchestratorError("参考画像（Ref2VA）ではFL2VA用Turboを使用できません")
     selected = {"h3_model": model, "h3_turbo": turbo}
     # Do not inject a new device into old saved jobs or legacy CLI calls.
     if "h3_encoder_device" in options:
@@ -190,7 +195,12 @@ def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None =
         return template
     _, options = split_h3_options(options, enabled=True)
     model = options["h3_model"]
-    lora, steps = H3_TURBOS[options["h3_turbo"]]
+    ref_model = h3_ref2va_filename(model)
+    shift_video = None
+    if ref_model is not None:
+        lora, steps, shift_video = H3_REF2VA_TURBOS[options["h3_turbo"]]
+    else:
+        lora, steps = H3_TURBOS[options["h3_turbo"]]
     if steps is not None and parameters is not None and parameters.get("steps") != steps:
         raise OrchestratorError(f"H3 Turboは{steps} Steps固定です")
     graph = copy.deepcopy(template)
@@ -199,7 +209,6 @@ def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None =
         raise OrchestratorError("H3モデル切替には標準のMiniMax H3ワークフローが必要です")
     if any(graph[node]["inputs"].get("model") != ["6", 0] for node in ("9", "16")):
         raise OrchestratorError("H3のモデル接続が標準ワークフローと一致しません")
-    ref_model = h3_ref2va_filename(model)
     if ref_model is not None:
         conditioning = graph.get("104", {})
         inputs = conditioning.get("inputs", {})
@@ -251,8 +260,8 @@ def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None =
             }
             conditioning["inputs"]["clip"] = [node, 0]
     if lora is not None:
-        # Match the official ComfyUI FL2VA template: model-only LoRA, weight
-        # 1, both scheduler and guider receive the patched model, same sampler.
+        # FL2VA keeps the existing sampler. Ref2VA uses its own adapter and
+        # Euler + simple with the published video/audio shift for that release.
         node = 900
         while str(node) in graph:
             node += 1
@@ -261,10 +270,21 @@ def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None =
             "class_type": "LoraLoaderModelOnly",
             "inputs": {"model": ["6", 0], "lora_name": lora, "strength_model": 1.0},
         }
+        model_output = [node, 0]
+        if ref_model is not None:
+            shift_node = 902
+            while str(shift_node) in graph:
+                shift_node += 1
+            shift_node = str(shift_node)
+            graph[shift_node] = {
+                "class_type": "MiniMaxH3SigmaShift",
+                "inputs": {"model": model_output, "shift_video": shift_video, "shift_audio": 3.0},
+            }
+            model_output = [shift_node, 0]
         for target in ("9", "16"):
-            graph[target]["inputs"]["model"] = [node, 0]
+            graph[target]["inputs"]["model"] = model_output.copy()
         graph["9"]["inputs"].update(scheduler="simple", steps=steps, denoise=1)
-        graph["17"]["inputs"]["sampler_name"] = "res_multistep"
+        graph["17"]["inputs"]["sampler_name"] = "euler" if ref_model is not None else "res_multistep"
     return graph
 
 
@@ -775,7 +795,7 @@ class ComfyUI:
             "DualCLIPLoader": ("clip_name1", "clip_name2"),
             "CLIPVisionLoader": "clip_name",
         }
-        required = {"Wan22ImageToVideoLatent", "MiniMaxH3ImageToVideo", "MiniMaxH3ReferenceToVideo",
+        required = {"Wan22ImageToVideoLatent", "MiniMaxH3ImageToVideo", "MiniMaxH3ReferenceToVideo", "MiniMaxH3SigmaShift",
                     "HunyuanVideo15ImageToVideo", "CLIPVisionEncode", "ModelSamplingSD3",
                     "VAEDecodeAudio", "CreateVideo", "SaveVideo",
                     "ModelSamplingAuraFlow", "EmptySD3LatentImage"}
