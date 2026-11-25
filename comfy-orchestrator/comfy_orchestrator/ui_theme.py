@@ -61,6 +61,7 @@ def apply_ttk_theme(root: tk.Tk, dark: bool = True) -> dict[str, str]:
     style.configure("TLabel", background=p["surface"], foreground=p["text"])
     style.configure("Muted.TLabel", background=p["surface"], foreground=p["muted"])
     style.configure("Heading.TLabel", font=("Meiryo UI", 17, "bold"), background=p["surface"], foreground=p["text"])
+    style.configure("FieldHeading.TLabel", font=("Meiryo UI", 10, "bold"), background=p["surface"], foreground=p["text"])
     style.configure("TLabelframe", background=p["surface"], borderwidth=1, bordercolor=p["border"], relief="solid")
     style.configure("TLabelframe.Label", background=p["surface"], foreground=p["text"], font=("Meiryo UI", 10, "bold"))
     style.configure("Section.TLabelframe.Label", background=p["surface"], foreground=p["text"], font=("Meiryo UI", 10, "bold"))
@@ -123,6 +124,7 @@ def apply_ttk_theme(root: tk.Tk, dark: bool = True) -> dict[str, str]:
         background=[("active", p["button_hover"]), ("pressed", p["accent_hover"])],
         foreground=[("disabled", p["disabled"])],
     )
+    style.configure("Compact.TButton", font=("Meiryo UI", 10), padding=(7, 4))
     style.configure(
         "Run.TButton", font=("Meiryo UI", 10, "bold"), padding=(14, 9),
         background=p["accent"], foreground="#FFFFFF", bordercolor=p["accent"],

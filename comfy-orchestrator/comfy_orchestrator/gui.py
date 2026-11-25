@@ -225,6 +225,66 @@ def resolve_generation_workflow(
     return next(iter(candidates)) if len(candidates) == 1 else None
 
 
+WORKFLOW_NAMES = {
+    "wai_t2i_basic": "画像生成 · T2I",
+    "wai_i2i_basic": "画像編集 · I2I",
+    "wai_inpaint_basic": "部分修正",
+    "wai_pose_skeleton": "ポーズ参照 · 骨格",
+    "wai_pose_detect": "ポーズ参照 · 画像",
+    core.H3_I2V_ID: "動画生成 · MiniMax H3",
+    core.WAN_I2V_ID: "動画生成 · Wan 2.2",
+}
+
+
+def workflow_display_names(config: dict) -> dict[str, str]:
+    """Stable IDs for execution; readable labels for the shared form."""
+    labels = {"自動": "自動"}
+    for key in config.get("workflows", {}):
+        label = WORKFLOW_NAMES.get(key, key)
+        if label in labels.values():
+            label = f"{label} ({key})"
+            while label in labels.values():
+                label += " "
+        labels[key] = label
+    return labels
+
+
+def parameter_visibility(config: dict, workflow_id: str | None, custom_size: bool = False) -> dict:
+    """All workflows share the same grid. Only the individual fields vary."""
+    entry = config.get("workflows", {}).get(workflow_id, {})
+    bindings = entry.get("bindings", {})
+    kind = entry.get("kind")
+    video = kind in core.VIDEO_KINDS
+    h3 = workflow_id == core.H3_I2V_ID
+    still_size = not video and "image" not in bindings and {"width", "height"} <= bindings.keys()
+    return {
+        "resolution": still_size,
+        "custom_size": still_size and custom_size,
+        "source_size": not video and "image" in bindings and not still_size,
+        "wan": video and not h3,
+        "h3": h3,
+        "steps": "steps" in bindings,
+        "cfg": "cfg" in bindings,
+        "seed": "seed" in bindings,
+        "denoise": "denoise" in bindings,
+        "strength": "control_strength" in bindings,
+        "t2i_profile": kind == "t2i",
+        "i2i_profile": kind in ("i2i", "inpaint"),
+        "h3_profile": h3,
+    }
+
+
+def reference_visibility(*, video: bool, expanded: bool, reference: bool,
+                         mask: bool, pose: bool, composition: bool) -> dict:
+    """Never hide selected references, so incompatible inputs can be cleared."""
+    return {
+        "mask": mask or (reference and not video),
+        "pose": pose or (expanded and not video),
+        "composition": composition or (expanded and not video),
+        "vision": reference or pose or composition,
+    }
+
+
 def image_aware_overrides(
     config: dict, workflow_id: str | None, has_image: bool,
     overrides: dict, denoise: str,
@@ -358,11 +418,16 @@ class Application:
         workflows = list(self.config.get("workflows", {}))
         preferred = options.get("workflow", workflows[0] if workflows else "自動")
         self.workflow = tk.StringVar(value=preferred if preferred in workflows else "自動")
+        self.workflow_names = workflow_display_names(self.config)
+        self.workflow_choice = tk.StringVar(value=self.workflow_names.get(self.workflow.get(), "自動"))
+        self.workflow.trace_add("write", self._sync_workflow_choice)
+        self._extra_references = False
         self.width = tk.StringVar(value=str(options.get("width", 768)))
         self.height = tk.StringVar(value=str(options.get("height", 768)))
         self.resolution_preset = tk.StringVar(
             value=resolution_preset_label(self.width.get(), self.height.get())
         )
+        self._custom_size_editing = self.resolution_preset.get() == CUSTOM_RESOLUTION
         self.width.trace_add("write", self._sync_resolution_preset)
         self.height.trace_add("write", self._sync_resolution_preset)
         self.video_size = tk.StringVar(value=str(options.get("video_size", VIDEO_RESOLUTIONS[0])))
@@ -374,7 +439,6 @@ class Application:
         self.cfg = tk.StringVar(value=str(options.get("cfg", 5.0)))
         self.seed = tk.StringVar(value=str(options.get("seed", "")))
         self.denoise = tk.StringVar(value=str(options.get("denoise", 0.53)))
-        self.size_hint = tk.StringVar(value="")
         self.reference_image = tk.StringVar(value="")
         self.composition_image = tk.StringVar(value="")
         self.mask_image = tk.StringVar(value="")
@@ -411,11 +475,11 @@ class Application:
             )
         )
         self.free_comfy = tk.BooleanVar(value=comfy.get("free_before_llm", True))
-        self.status = tk.StringVar(value="準備完了 — LM Studioのサーバーを起動してください")
-        self.result_info = tk.StringVar(value="生成画像はここに表示されます")
+        self.status = tk.StringVar(value="準備完了")
+        self.result_info = tk.StringVar(value="")
         self.character_status = tk.StringVar(
-            value=f"確定: {len(self.character_references)}枚"
-            if self.character_traits else "未設定"
+            value=f"キャラ参照 · {len(self.character_references)}枚"
+            if self.character_traits else "キャラ参照"
         )
 
     def _build(self) -> None:
@@ -423,48 +487,34 @@ class Application:
 
         layout = ttk.Frame(self.root, padding=10)
         layout.pack(fill="both", expand=True)
-        title_row = ttk.Frame(layout)
-        title_row.pack(fill="x")
-        ttk.Label(title_row, text="Comfy Orchestrator", style="Heading.TLabel").pack(side="left")
-        ttk.Checkbutton(
-            title_row, text="ダーク表示", variable=self.dark_mode,
-            command=self._switch_theme,
-        ).pack(side="right", padx=(10, 0))
-        ttk.Label(
-            layout,
-            text="自然文 → LM Studioで解釈 → LLMアンロード → ComfyUI画像生成",
-            style="Muted.TLabel",
-        ).pack(anchor="w", pady=(1, 6))
+        self.topbar = ttk.Frame(layout)
+        self.topbar.pack(fill="x")
+        ttk.Label(self.topbar, text="LLM").pack(side="left", padx=(0, 6))
+        self.model_box = ttk.Combobox(self.topbar, textvariable=self.model, state="normal", width=18)
+        self.model_box.pack(side="left", fill="x", expand=True)
+        ttk.Button(self.topbar, text="モデル更新", command=self._refresh_models).pack(side="left", padx=(6, 0))
+        self.connection_toggle = ttk.Button(self.topbar, text="設定 ▸", command=self._toggle_connection_settings)
+        self.connection_toggle.pack(side="left", padx=(6, 0))
 
-        connection = ttk.LabelFrame(layout, text="接続・モデル", padding=10, style="Section.TLabelframe")
-        connection.pack(fill="x")
+        self.connection_visible = False
+        self.connection_panel = connection = ttk.Frame(layout, padding=(0, 6, 0, 0))
         connection.columnconfigure(1, weight=1)
-        connection.columnconfigure(3, weight=1)
         ttk.Label(connection, text="LM Studio").grid(row=0, column=0, sticky="w", padx=(0, 7), pady=3)
-        ttk.Entry(connection, textvariable=self.llm_url).grid(row=0, column=1, sticky="ew", padx=(0, 12))
-        ttk.Label(connection, text="ComfyUI").grid(row=0, column=2, sticky="w", padx=(0, 7))
-        ttk.Entry(connection, textvariable=self.comfy_url).grid(row=0, column=3, sticky="ew")
-        ttk.Label(connection, text="解釈用モデル").grid(row=1, column=0, sticky="w", pady=(6, 3))
-        self.model_box = ttk.Combobox(connection, textvariable=self.model, state="normal")
-        self.model_box.grid(row=1, column=1, sticky="ew", pady=(6, 3), padx=(0, 12))
-        ttk.Button(connection, text="モデルを更新", command=self._refresh_models).grid(
-            row=1, column=2, sticky="ew", padx=(0, 7), pady=(6, 3)
-        )
-        ttk.Button(connection, text="接続確認", command=self._check_connections).grid(
-            row=1, column=3, sticky="w", pady=(6, 3)
-        )
-
+        ttk.Entry(connection, textvariable=self.llm_url).grid(row=0, column=1, sticky="ew", pady=3)
+        ttk.Label(connection, text="ComfyUI").grid(row=1, column=0, sticky="w", padx=(0, 7), pady=3)
+        ttk.Entry(connection, textvariable=self.comfy_url).grid(row=1, column=1, sticky="ew", pady=3)
         options_frame = ttk.Frame(connection)
-        options_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(6, 0))
-        ttk.Checkbutton(
-            options_frame, text="解釈後にLLMを解放（推奨）",
-            variable=self.unload_llm
-        ).pack(side="left", padx=(0, 22))
-        ttk.Checkbutton(
-            options_frame, text="解釈前にComfyUIを解放",
-            variable=self.free_comfy
-        ).pack(side="left")
-        ttk.Button(options_frame, text="設定を保存", command=self._save_settings).pack(side="right")
+        options_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(4, 2))
+        ttk.Checkbutton(options_frame, text="解釈後にLLMを解放",
+                        variable=self.unload_llm).grid(row=0, column=0, sticky="w", padx=(0, 12))
+        ttk.Checkbutton(options_frame, text="解釈前にComfyUIを解放",
+                        variable=self.free_comfy).grid(row=0, column=1, sticky="w")
+        settings_actions = ttk.Frame(connection)
+        settings_actions.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        ttk.Checkbutton(settings_actions, text="ダーク表示", variable=self.dark_mode,
+                        command=self._switch_theme).pack(side="left")
+        ttk.Button(settings_actions, text="保存", command=self._save_settings).pack(side="right")
+        ttk.Button(settings_actions, text="接続確認", command=self._check_connections).pack(side="right", padx=(0, 6))
 
         # The footer is laid out before the resizable main panes to guarantee
         # that status and the optional log never fall below the visible screen.
@@ -498,7 +548,7 @@ class Application:
         main.add(left, weight=3)
         main.add(right, weight=2)
 
-        prompt_panel = ttk.LabelFrame(left, text="自然文・生成設定（下へスクロール可能）", padding=8, style="Section.TLabelframe")
+        prompt_panel = ttk.LabelFrame(left, text="生成", padding=8, style="Section.TLabelframe")
         prompt_panel.pack(fill="both", expand=True, padx=(0, 6))
 
         # Reserve space for actions FIRST so a short screen never hides "Generate".
@@ -533,311 +583,160 @@ class Application:
         self.root.bind("<Button-4>", self._on_form_mousewheel, add="+")
         self.root.bind("<Button-5>", self._on_form_mousewheel, add="+")
 
+        # One shared work surface: mode, prompt, references, parameters, actions.
+        workflow_row = ttk.Frame(self.options_form)
+        workflow_row.pack(fill="x", pady=(0, 8))
+        ttk.Label(workflow_row, text="ワークフロー").pack(side="left", padx=(0, 6))
+        self.workflow_box = ttk.Combobox(
+            workflow_row, textvariable=self.workflow_choice,
+            values=tuple(self.workflow_names.values()), state="readonly", width=18,
+        )
+        self.workflow_box.pack(side="left", fill="x", expand=True)
+        self.workflow_box.bind("<<ComboboxSelected>>", self._on_workflow_choice)
+
         editor_toolbar = ttk.Frame(self.options_form)
-        editor_toolbar.pack(fill="x", pady=(0, 7))
-        ttk.Label(
-            editor_toolbar,
-            text="日本語で指示を入力。LLMが生成向けのプロンプトに変換します。",
-            style="Muted.TLabel",
-        ).pack(side="left", fill="x", expand=True)
-        ttk.Button(
-            editor_toolbar, text="A+", width=4, command=lambda: self._change_editor_font(1),
-        ).pack(side="right", padx=(4, 0))
-        ttk.Button(
-            editor_toolbar, text="A−", width=4, command=lambda: self._change_editor_font(-1),
-        ).pack(side="right", padx=(4, 0))
+        editor_toolbar.pack(fill="x", pady=(0, 4))
+        ttk.Label(editor_toolbar, text="プロンプト", style="FieldHeading.TLabel").pack(side="left")
+        ttk.Button(editor_toolbar, text="A+", width=3, command=lambda: self._change_editor_font(1),
+                   style="Compact.TButton").pack(side="right", padx=(4, 0))
+        ttk.Button(editor_toolbar, text="A−", width=3, command=lambda: self._change_editor_font(-1),
+                   style="Compact.TButton").pack(side="right")
         self.prompt = scrolledtext.ScrolledText(
             self.options_form, height=6, wrap="word",
             font=("Meiryo UI", self.editor_font_size.get()),
             undo=True, autoseparators=True, maxundo=100,
             padx=14, pady=12, spacing1=3, spacing3=3,
         )
-        self.prompt.insert("1.0", "夕暮れの海辺に立つ銀髪の少女。アニメ調で、風になびく髪を自然に描いて。")
-        # Never stretch the editor into a huge empty white area. It remains
-        # scrollable for longer prompts; IME composition is handled natively.
-        self.prompt.pack(fill="x", expand=False, pady=(0, 10))
+        self.prompt.pack(fill="x", expand=False, pady=(0, 8))
 
-        settings = ttk.LabelFrame(
-            self.options_form, text="生成パラメータ", padding=8,
-        )
-        settings.pack(fill="x", pady=(0, 8))
-        # Two setting pairs per row fit narrow split panes much better than six columns.
+        inputs = ttk.Frame(self.options_form)
+        inputs.pack(fill="x", pady=(0, 6))
+        inputs.columnconfigure(0, weight=1)
+
+        def input_row(row, label, variable, command, *, button_text="選択", editable=False):
+            frame = ttk.Frame(inputs)
+            frame.grid(row=row, column=0, sticky="ew", pady=(0, 4))
+            frame.columnconfigure(1, weight=1)
+            ttk.Label(frame, text=label, width=11, anchor="w").grid(row=0, column=0, sticky="w", padx=(0, 5))
+            entry = ttk.Entry(frame, textvariable=variable, width=8,
+                              state="normal" if editable else "readonly")
+            entry.grid(row=0, column=1, sticky="ew")
+            button = ttk.Button(frame, text=button_text, command=command, style="Compact.TButton")
+            button.grid(row=0, column=2, padx=(5, 0))
+            ttk.Button(frame, text="解除", command=lambda: variable.set(""),
+                       style="Compact.TButton").grid(row=0, column=3, padx=(4, 0))
+            return frame, button
+
+        self.reference_row, _ = input_row(0, "参照画像", self.reference_image, self._browse_image, editable=True)
+        self.mask_row, self.mask_button = input_row(1, "修正範囲", self.mask_image, self._edit_mask, button_text="範囲を塗る")
+
+        reference_tools = ttk.Frame(inputs)
+        reference_tools.grid(row=2, column=0, sticky="ew", pady=(0, 4))
+        self.extra_button = ttk.Button(reference_tools, text="追加参照 ▸",
+                                       command=self._toggle_extra_references, style="Compact.TButton")
+        self.extra_button.pack(side="left")
+        self.character_button = ttk.Button(reference_tools, textvariable=self.character_status,
+                                           command=self._open_character_references, style="Compact.TButton")
+        self.character_button.pack(side="left", padx=(6, 0))
+        for target in (reference_tools, self.character_button):
+            register_file_drop(target, self._drop_character_files)
+        self.composition_row, _ = input_row(3, "構図参考", self.composition_image, self._browse_composition)
+        self.pose_row, _ = input_row(4, "ポーズ画像", self.pose_image, self._browse_pose)
+        self.pose_modes = ttk.Frame(inputs)
+        self.pose_modes.grid(row=5, column=0, sticky="ew", pady=(0, 5))
+        ttk.Radiobutton(self.pose_modes, text="骨格PNG", variable=self.pose_mode,
+                        value="skeleton", command=self._on_pose_image_changed).pack(side="left", padx=(0, 14))
+        ttk.Radiobutton(self.pose_modes, text="画像から骨格検出", variable=self.pose_mode,
+                        value="photo", command=self._on_pose_image_changed).pack(side="left")
+        self.vision_row = ttk.Frame(inputs)
+        self.vision_row.grid(row=6, column=0, sticky="ew", pady=(0, 4))
+        self.vision_checkbox = ttk.Checkbutton(self.vision_row, text="LLMで画像を解析",
+                                              variable=self.vision_composition)
+        self.vision_checkbox.pack(side="left")
+        ttk.Button(self.vision_row, text="認識結果", command=self._show_composition_report,
+                   style="Compact.TButton").pack(side="right")
+        self.reference_image.trace_add("write", lambda *_args: self._on_reference_image_changed())
+        self.mask_image.trace_add("write", lambda *_args: self._on_mask_image_changed())
+        self.pose_image.trace_add("write", lambda *_args: self._on_pose_image_changed())
+        self.composition_image.trace_add("write", self._on_composition_image_changed)
+
+        settings = ttk.Frame(self.options_form)
+        settings.pack(fill="x", pady=(0, 4))
         for col in (1, 3):
             settings.columnconfigure(col, weight=1)
+        ttk.Separator(settings).grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 8))
+        ttk.Label(settings, text="生成設定", style="FieldHeading.TLabel").grid(
+            row=1, column=0, columnspan=4, sticky="w", pady=(0, 6),
+        )
+        self.parameter_widgets = {}
 
-        ttk.Label(settings, text="ワークフロー").grid(
-            row=0, column=0, sticky="w", padx=(0, 6)
-        )
-        self.workflow_box = ttk.Combobox(
-            settings, textvariable=self.workflow,
-            values=["自動", *self.config.get("workflows", {}).keys()],
-            state="readonly",
-        )
-        self.workflow_box.grid(
-            row=0, column=1, columnspan=3, sticky="ew", pady=4,
-        )
-        self.workflow_box.bind(
-            "<<ComboboxSelected>>", lambda _e: self._update_generation_controls()
-        )
-        ttk.Label(settings, text="解像度").grid(
-            row=1, column=0, sticky="w", padx=(0, 5), pady=(0, 4),
-        )
-        self.resolution_box = ttk.Combobox(
-            settings, textvariable=self.resolution_preset,
-            values=(*RESOLUTION_PRESETS, CUSTOM_RESOLUTION),
-            state="readonly", width=20,
-        )
-        self.resolution_box.grid(
-            row=1, column=1, columnspan=3, sticky="ew", pady=(0, 4),
-        )
-        self.resolution_box.bind(
-            "<<ComboboxSelected>>", self._apply_resolution_preset,
-        )
-        ttk.Label(settings, text="幅").grid(row=2, column=0, sticky="w", padx=(0, 5))
-        self.width_entry = ttk.Entry(settings, textvariable=self.width, width=8)
-        self.width_entry.grid(row=2, column=1, sticky="ew", padx=(0, 8))
-        ttk.Label(settings, text="高さ").grid(row=2, column=2, sticky="w", padx=(0, 5))
-        self.height_entry = ttk.Entry(settings, textvariable=self.height, width=8)
-        self.height_entry.grid(row=2, column=3, sticky="ew")
+        def field(row, column, label, variable, key, *, choices=None, span=1, width=8):
+            title = ttk.Label(settings, text=label)
+            title.grid(row=row, column=column, sticky="w", padx=(0, 6), pady=3)
+            if choices is None:
+                widget = ttk.Entry(settings, textvariable=variable, width=width)
+            else:
+                widget = ttk.Combobox(settings, textvariable=variable, values=choices,
+                                      state="readonly", width=width)
+            widget.grid(row=row, column=column+1, columnspan=span, sticky="ew",
+                        padx=(0, 8) if span == 1 and column == 0 else 0, pady=3)
+            self.parameter_widgets.setdefault(key, []).extend((title, widget))
+            return widget
 
-        ttk.Label(settings, text="Steps").grid(row=3, column=0, sticky="w")
-        ttk.Entry(settings, textvariable=self.steps, width=8).grid(
-            row=3, column=1, sticky="ew", padx=(0, 8),
-        )
-        ttk.Label(settings, text="CFG").grid(row=3, column=2, sticky="w")
-        self.cfg_entry = ttk.Entry(settings, textvariable=self.cfg, width=8)
-        self.cfg_entry.grid(row=3, column=3, sticky="ew")
-        ttk.Label(settings, text="Seed").grid(row=4, column=0, sticky="w")
-        ttk.Entry(settings, textvariable=self.seed).grid(
-            row=4, column=1, columnspan=3, sticky="ew",
-        )
-        ttk.Label(settings, text="Denoise (I2I)").grid(row=5, column=0, sticky="w")
-        self.denoise_entry = ttk.Entry(settings, textvariable=self.denoise, width=8)
-        self.denoise_entry.grid(row=5, column=1, sticky="ew", padx=(0, 8))
-        ttk.Label(settings, text="ポーズ強度").grid(row=5, column=2, sticky="w")
-        self.strength_entry = ttk.Entry(
-            settings, textvariable=self.control_strength, width=8,
-        )
-        self.strength_entry.grid(row=5, column=3, sticky="ew")
-        ttk.Label(
-            settings, textvariable=self.size_hint, style="Muted.TLabel",
-        ).grid(row=6, column=0, columnspan=4, sticky="w", pady=(4, 0))
-        ttk.Label(
-            settings, text="Seed空欄＝ランダム。画像なしはT2I／マスク指定は部分修正。",
-            style="Muted.TLabel",
-        ).grid(row=7, column=0, columnspan=4, sticky="w", pady=(3, 0))
-        ttk.Label(settings, text="T2Iプロンプト").grid(
-            row=8, column=0, sticky="w", pady=(6, 2),
-        )
-        self.t2i_profile_box = ttk.Combobox(
-            settings, textvariable=self.t2i_profile,
-            values=list(T2I_PROFILE_LABELS.values()), state="readonly",
-            width=20,
-        )
-        self.t2i_profile_box.grid(
-            row=8, column=1, columnspan=3, sticky="ew", pady=(6, 2),
-        )
-        ttk.Label(
-            settings, text="T2Iは構図と光、I2Iは維持対象と変更対象を重視。",
-            style="Muted.TLabel",
-        ).grid(row=9, column=0, columnspan=4, sticky="w", pady=(2, 0))
-        ttk.Label(settings, text="I2Iプロンプト").grid(
-            row=10, column=0, sticky="w", pady=(6, 2),
-        )
-        self.i2i_profile_box = ttk.Combobox(
-            settings, textvariable=self.i2i_profile,
-            values=list(I2I_PROFILE_LABELS.values()), state="readonly",
-            width=20,
-        )
-        self.i2i_profile_box.grid(
-            row=10, column=1, columnspan=3, sticky="ew", pady=(6, 2),
-        )
+        # Resolution always occupies the same row, irrespective of workflow.
+        self.resolution_box = field(2, 0, "解像度", self.resolution_preset, "resolution",
+                                    choices=(*RESOLUTION_PRESETS, CUSTOM_RESOLUTION), span=3, width=18)
+        self.resolution_box.bind("<<ComboboxSelected>>", self._apply_resolution_preset)
+        self.width_entry = field(3, 0, "幅", self.width, "custom_size")
+        self.height_entry = field(3, 2, "高さ", self.height, "custom_size")
+        source_title = ttk.Label(settings, text="解像度")
+        source_title.grid(row=2, column=0, sticky="w", padx=(0, 6), pady=3)
+        source_value = ttk.Label(settings, text="元画像サイズ")
+        source_value.grid(row=2, column=1, columnspan=3, sticky="w", pady=3)
+        self.parameter_widgets["source_size"] = [source_title, source_value]
 
-        self.video_controls = ttk.Frame(settings)
-        self.video_controls.grid(row=11, column=0, columnspan=4, sticky="ew", pady=(5, 0))
-        self.video_controls.columnconfigure(1, weight=1)
-        self.video_controls.columnconfigure(3, weight=1)
-        ttk.Label(self.video_controls, text="動画サイズ").grid(row=0, column=0, sticky="w")
-        ttk.Combobox(
-            self.video_controls, textvariable=self.video_size,
-            values=VIDEO_RESOLUTIONS, state="readonly", width=14,
-        ).grid(row=0, column=1, columnspan=3, sticky="ew", pady=(0, 4))
-        ttk.Label(self.video_controls, text="フレーム数").grid(row=1, column=0, sticky="w")
-        ttk.Combobox(
-            self.video_controls, textvariable=self.video_frames,
-            values=VIDEO_FRAME_COUNTS, state="readonly", width=7,
-        ).grid(row=1, column=1, sticky="ew", padx=(0, 8))
-        ttk.Label(self.video_controls, text="FPS").grid(row=1, column=2, sticky="w")
-        ttk.Combobox(
-            self.video_controls, textvariable=self.video_fps,
-            values=("16", "24", "30"), state="readonly", width=5,
-        ).grid(row=1, column=3, sticky="ew")
-        self.video_controls.grid_remove()
+        field(2, 0, "解像度", self.video_size, "wan", choices=VIDEO_RESOLUTIONS, span=3, width=18)
+        field(3, 0, "フレーム数", self.video_frames, "wan", choices=VIDEO_FRAME_COUNTS)
+        field(3, 2, "FPS", self.video_fps, "wan", choices=("16", "24", "30"), width=5)
+        field(2, 0, "解像度", self.h3_size, "h3", choices=H3_RESOLUTIONS, span=3, width=18)
+        field(3, 0, "長さ (24fps)", self.h3_duration, "h3", choices=tuple(H3_DURATIONS), span=3, width=18)
 
-        self.h3_controls = ttk.Frame(settings)
-        self.h3_controls.grid(row=11, column=0, columnspan=4, sticky="ew", pady=(5, 0))
-        self.h3_controls.columnconfigure(1, weight=1)
-        ttk.Label(self.h3_controls, text="H3動画サイズ").grid(row=0, column=0, sticky="w", padx=(0, 6))
-        ttk.Combobox(
-            self.h3_controls, textvariable=self.h3_size, values=H3_RESOLUTIONS,
-            state="readonly", width=16,
-        ).grid(row=0, column=1, sticky="ew", pady=(0, 4))
-        ttk.Label(self.h3_controls, text="動画の長さ").grid(row=1, column=0, sticky="w")
-        ttk.Combobox(
-            self.h3_controls, textvariable=self.h3_duration, values=tuple(H3_DURATIONS),
-            state="readonly", width=16,
-        ).grid(row=1, column=1, sticky="ew")
-        ttk.Label(self.h3_controls, text="プロンプト方式").grid(row=2, column=0, sticky="w", padx=(0, 6), pady=(4, 0))
-        self.h3_profile_box = ttk.Combobox(
-            self.h3_controls, textvariable=self.h3_profile,
-            values=tuple(H3_PROFILE_LABELS.values()), state="readonly", width=16,
-        )
-        self.h3_profile_box.grid(row=2, column=1, sticky="ew", pady=(4, 0))
-        ttk.Label(
-            self.h3_controls, text="24fps / 音声付き / CFGなし",
-            style="Muted.TLabel",
-        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(3, 0))
-        self.h3_controls.grid_remove()
+        self.steps_entry = field(4, 0, "Steps", self.steps, "steps")
+        self.cfg_entry = field(4, 2, "CFG", self.cfg, "cfg")
+        self.seed_entry = field(5, 0, "Seed", self.seed, "seed", span=2)
+        self.random_seed_button = ttk.Button(settings, text="ランダム", style="Compact.TButton",
+                                             command=lambda: self.seed.set(""))
+        self.random_seed_button.grid(row=5, column=3, sticky="ew", pady=3)
+        self.parameter_widgets["seed"].append(self.random_seed_button)
+        self.denoise_entry = field(6, 0, "Denoise", self.denoise, "denoise", span=3)
+        self.strength_entry = field(6, 0, "ポーズ強度", self.control_strength, "strength", span=3)
+        self.t2i_profile_box = field(7, 0, "プロンプト方式", self.t2i_profile, "t2i_profile",
+                                     choices=tuple(T2I_PROFILE_LABELS.values()), span=3, width=18)
+        self.i2i_profile_box = field(7, 0, "プロンプト方式", self.i2i_profile, "i2i_profile",
+                                     choices=tuple(I2I_PROFILE_LABELS.values()), span=3, width=18)
+        self.h3_profile_box = field(7, 0, "プロンプト方式", self.h3_profile, "h3_profile",
+                                    choices=tuple(H3_PROFILE_LABELS.values()), span=3, width=18)
+        for widgets in self.parameter_widgets.values():
+            for widget in widgets:
+                widget.grid_remove()
 
-        image_row = ttk.Frame(self.options_form)
-        image_row.pack(fill="x", pady=(0, 12))
-        ttk.Label(image_row, text="参照画像").pack(side="left", padx=(0, 8))
-        ttk.Entry(image_row, textvariable=self.reference_image, width=8).pack(side="left", fill="x", expand=True)
-        ttk.Button(image_row, text="参照...", command=self._browse_image).pack(side="left", padx=(5, 0))
-        ttk.Button(image_row, text="消去", command=lambda: self.reference_image.set("")).pack(side="left", padx=(5, 0))
-        ttk.Label(
-            self.options_form,
-            text="I2I / I2Vでは参照画像が必要です。画像はComfyUIに送ります。LLMの画像認識は初期設定でOFF。",
-            wraplength=460, style="Muted.TLabel",
-        ).pack(anchor="w", pady=(0, 10))
-        self.reference_image.trace_add(
-            "write", lambda *_args: self._on_reference_image_changed()
-        )
-        composition_row = ttk.Frame(self.options_form)
-        composition_row.pack(fill="x", pady=(0, 5))
-        ttk.Label(composition_row, text="構図参考（LLMのみ）").pack(
-            side="left", padx=(0, 6),
-        )
-        ttk.Entry(
-            composition_row, textvariable=self.composition_image,
-            state="readonly", width=8,
-        ).pack(side="left", fill="x", expand=True)
-        ttk.Button(
-            composition_row, text="参照...", command=self._browse_composition,
-        ).pack(side="left", padx=(5, 0))
-        ttk.Button(
-            composition_row, text="消去",
-            command=lambda: self.composition_image.set(""),
-        ).pack(side="left", padx=(5, 0))
-        self.composition_image.trace_add(
-            "write", lambda *_args: self._update_generation_controls(),
-        )
-        ttk.Label(
-            self.options_form,
-            text="この画像はComfyUIへ送らず、LLMの構図説明だけに使います。"
-                 "他の参照画像がなければT2Iで生成します。",
-            style="Muted.TLabel", wraplength=470,
-        ).pack(anchor="w", pady=(0, 8))
-
-        character_row = ttk.Frame(self.options_form)
-        character_row.pack(fill="x", pady=(0, 7))
-        character_title = ttk.Label(character_row, text="キャラ参照")
-        character_title.pack(side="left", padx=(0, 6))
-        character_status_label = ttk.Label(
-            character_row, textvariable=self.character_status,
-            style="Muted.TLabel",
-        )
-        character_status_label.pack(side="left", fill="x", expand=True)
-        ttk.Button(
-            character_row, text="画像・特徴を編集...",
-            command=self._open_character_references,
-        ).pack(side="right")
-        # Files can also be dropped onto the main character row, which opens
-        # the editable list. The previous approved sheet remains until Confirm.
-        for target in (character_row, character_title, character_status_label):
-            register_file_drop(target, self._drop_character_files)
-
-        mask_row = ttk.Frame(self.options_form)
-        mask_row.pack(fill="x", pady=(0, 5))
-        ttk.Label(mask_row, text="部分修正").pack(side="left", padx=(0, 9))
-        ttk.Entry(mask_row, textvariable=self.mask_image, state="readonly", width=8).pack(
-            side="left", fill="x", expand=True
-        )
-        self.mask_button = ttk.Button(
-            mask_row, text="範囲を塗る...", command=self._edit_mask,
-        )
-        self.mask_button.pack(side="left", padx=(5, 0))
-        ttk.Button(
-            mask_row, text="消去", command=lambda: self.mask_image.set(""),
-        ).pack(side="left", padx=(5, 0))
-        self.mask_image.trace_add(
-            "write", lambda *_args: self._on_mask_image_changed()
-        )
-
-        pose_row = ttk.Frame(self.options_form)
-        pose_row.pack(fill="x", pady=(0, 5))
-        ttk.Label(pose_row, text="ポーズ参照").pack(side="left", padx=(0, 5))
-        ttk.Entry(pose_row, textvariable=self.pose_image, state="readonly", width=8).pack(
-            side="left", fill="x", expand=True
-        )
-        ttk.Button(pose_row, text="参照...", command=self._browse_pose).pack(
-            side="left", padx=(5, 0)
-        )
-        ttk.Button(
-            pose_row, text="消去", command=lambda: self.pose_image.set(""),
-        ).pack(side="left", padx=(5, 0))
-        self.pose_image.trace_add(
-            "write", lambda *_args: self._on_pose_image_changed()
-        )
-        pose_modes = ttk.Frame(self.options_form)
-        pose_modes.pack(fill="x", pady=(0, 6))
-        ttk.Radiobutton(
-            pose_modes, text="骨格PNGを直接利用", variable=self.pose_mode,
-            value="skeleton", command=self._on_pose_image_changed,
-        ).pack(anchor="w")
-        ttk.Radiobutton(
-            pose_modes, text="通常画像から骨格検出（DWPose）", variable=self.pose_mode,
-            value="photo", command=self._on_pose_image_changed,
-        ).pack(anchor="w", pady=(2, 0))
-        ttk.Label(
-            self.options_form, text="ポーズ参照はT2Iと別の入力です。通常画像モードは追加ControlNet・DWPoseが必要。",
-            style="Muted.TLabel", wraplength=470,
-        ).pack(anchor="w", pady=(0, 6))
-        vision_row = ttk.Frame(self.options_form)
-        vision_row.pack(fill="x", pady=(2, 2))
-        self.vision_checkbox = ttk.Checkbutton(
-            vision_row,
-            text="画像をLLMで構図解析し、プロンプトに反映",
-            variable=self.vision_composition,
-        )
-        self.vision_checkbox.pack(side="left")
-        ttk.Button(
-            vision_row, text="認識結果...", command=self._show_composition_report,
-        ).pack(side="right", padx=(6, 0))
-        ttk.Label(
-            self.options_form,
-            text="画像対応VLMが必要。人物の位置・視点・ポーズを英文タグに変換します。"
-                 "厳密な構図固定はControlNetを利用。",
-            style="Muted.TLabel", wraplength=470,
-        ).pack(anchor="w", pady=(0, 8))
-
-        self.preview_button = ttk.Button(action_row, text="解釈のみテスト", command=lambda: self._start(True))
-        self.preview_button.pack(side="left", padx=(0, 8))
         self.run_button = ttk.Button(
-            action_row, text="画像生成を開始", style="Run.TButton", command=lambda: self._start(False)
+            action_row, text="画像生成", style="Run.TButton", command=lambda: self._start(False)
         )
-        self.run_button.pack(side="left", padx=(0, 8))
+        self.run_button.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        self.preview_button = ttk.Button(action_row, text="解釈テスト", command=lambda: self._start(True))
+        self.preview_button.pack(side="left", padx=(0, 6))
         self.cancel_button = ttk.Button(
-            action_row, text="待機を中止", command=self._request_cancel, state="disabled"
+            action_row, text="待機中止", command=self._request_cancel, state="disabled"
         )
         self.cancel_button.pack(side="left")
 
         self.tabs = ttk.Notebook(right)
         self.tabs.pack(fill="both", expand=True)
         preview_panel = ttk.Frame(self.tabs, padding=8)
-        self.tabs.add(preview_panel, text="今回の結果")
+        self.tabs.add(preview_panel, text="結果")
         history_panel = ttk.Frame(self.tabs, padding=8)
-        self.tabs.add(history_panel, text="生成履歴")
+        self.tabs.add(history_panel, text="履歴")
 
         # Output and history actions are packed before expanding previews/lists.
         # They remain visible even when the window is shorter than requested.
@@ -849,36 +748,31 @@ class Application:
         history_actions.pack(side="bottom", fill="x", pady=(5, 0))
         history_meta = ttk.Frame(history_panel)
         history_meta.pack(side="bottom", fill="x", pady=(5, 0))
-        self.image_label = ttk.Label(preview_panel, text="生成画像のプレビュー", anchor="center")
+        self.image_label = ttk.Label(preview_panel, text="生成結果なし", anchor="center")
         self.image_label.pack(fill="both", expand=True)
         ttk.Label(preview_meta, textvariable=self.result_info, wraplength=350).pack(anchor="w", pady=(3, 4))
         self.images_list = tk.Listbox(
-            preview_meta, height=3, exportselection=False, font=("Meiryo UI", 9),
+            preview_meta, height=2, exportselection=False, font=("Meiryo UI", 9),
         )
-        self.images_list.pack(fill="x", pady=(0, 5))
+        # Show a file chooser only when multiple outputs exist.
         self.images_list.bind("<<ListboxSelect>>", self._show_selected_image)
         row = ttk.Frame(preview_actions)
         row.pack(fill="x")
-        self.open_button = ttk.Button(row, text="ファイルを開く", command=self._open_image, state="disabled")
-        self.open_button.pack(side="left", padx=(0, 6))
-        ttk.Button(row, text="保存先を開く", command=self._open_outputs).pack(side="left")
-        result_tools = ttk.Frame(preview_actions)
-        result_tools.pack(fill="x", pady=(5, 0))
-        ttk.Button(
-            result_tools, text="この画像からI2I", command=self._current_output_to_i2i,
-        ).pack(side="left", fill="x", expand=True, padx=(0, 4))
-        ttk.Button(
-            result_tools, text="I2Vに使用", command=self._current_output_to_i2v,
-        ).pack(side="left", fill="x", expand=True, padx=(0, 4))
-        ttk.Button(
-            result_tools, text="生成タグを見る", command=self._show_prompt_preview,
-        ).pack(side="left", fill="x", expand=True)
+        for col in range(3):
+            row.columnconfigure(col, weight=1)
+        self.open_button = ttk.Button(row, text="開く", command=self._open_image, state="disabled")
+        self.open_button.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(row, text="保存先", command=self._open_outputs).grid(row=0, column=1, sticky="ew", padx=(0, 4))
+        self.result_prompt_button = ttk.Button(row, text="プロンプト", command=self._show_prompt_preview, state="disabled")
+        self.result_prompt_button.grid(row=0, column=2, sticky="ew")
+        self.result_tools = ttk.Frame(preview_actions)
+        self.result_tools.columnconfigure(0, weight=1)
+        self.result_tools.columnconfigure(1, weight=1)
+        ttk.Button(self.result_tools, text="I2Iに使用", command=self._current_output_to_i2i).grid(
+            row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(self.result_tools, text="I2Vに使用", command=self._current_output_to_i2v).grid(
+            row=0, column=1, sticky="ew")
 
-        ttk.Label(
-            history_panel,
-            text="履歴を選択して設定を復元。Ctrl+クリックで2件選択すると比較できます。",
-            style="Muted.TLabel", wraplength=410,
-        ).pack(anchor="w", pady=(1, 7))
         history_columns = ("date", "workflow", "seed")
         table_holder = ttk.Frame(history_panel)
         table_holder.pack(fill="both", expand=True)
@@ -886,14 +780,14 @@ class Application:
             table_holder, columns=history_columns, show="tree headings",
             selectmode="extended", height=6,
         )
-        self.history_table.heading("#0", text="指示 / 生成内容")
-        self.history_table.column("#0", width=230, minwidth=130, stretch=True)
+        self.history_table.heading("#0", text="プロンプト")
+        self.history_table.column("#0", width=160, minwidth=90, stretch=True)
         self.history_table.heading("date", text="日時")
-        self.history_table.column("date", width=126, minwidth=105, stretch=False)
+        self.history_table.column("date", width=94, minwidth=80, stretch=False)
         self.history_table.heading("workflow", text="種別")
-        self.history_table.column("workflow", width=85, minwidth=70, stretch=False)
+        self.history_table.column("workflow", width=62, minwidth=54, stretch=False)
         self.history_table.heading("seed", text="Seed")
-        self.history_table.column("seed", width=93, minwidth=70, stretch=False)
+        self.history_table.column("seed", width=82, minwidth=65, stretch=False)
         history_y = ttk.Scrollbar(table_holder, orient="vertical", command=self.history_table.yview)
         history_x = ttk.Scrollbar(table_holder, orient="horizontal", command=self.history_table.xview)
         self.history_table.configure(yscrollcommand=history_y.set, xscrollcommand=history_x.set)
@@ -905,7 +799,7 @@ class Application:
         self.history_table.bind("<<TreeviewSelect>>", self._history_selection_changed)
         self.history_table.bind("<Double-1>", lambda _e: self._restore_selected_history())
 
-        self.history_details = tk.StringVar(value="履歴を選択してください")
+        self.history_details = tk.StringVar(value="")
         ttk.Label(
             history_meta, textvariable=self.history_details,
             wraplength=420, style="Muted.TLabel",
@@ -916,45 +810,34 @@ class Application:
         self.history_image.pack(fill="x", pady=(0, 4))
         first_row = ttk.Frame(history_actions)
         first_row.pack(fill="x", pady=(2, 4))
-        ttk.Button(
-            first_row, text="設定を復元", command=self._restore_selected_history,
-        ).pack(side="left", padx=(0, 6))
-        ttk.Button(
-            first_row, text="比較", command=self._compare_selected_history,
-        ).pack(side="left", padx=(0, 6))
-        ttk.Button(
-            first_row, text="履歴更新", command=self._refresh_history,
-        ).pack(side="left", padx=(0, 6))
-        ttk.Button(
-            first_row, text="開く", command=self._open_history_output,
-        ).pack(side="left")
+        for col in range(4):
+            first_row.columnconfigure(col, weight=1)
+        self.history_open_button = ttk.Button(first_row, text="開く", command=self._open_history_output, style="Compact.TButton")
+        self.history_open_button.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        self.history_restore_button = ttk.Button(first_row, text="設定復元", command=self._restore_selected_history, style="Compact.TButton")
+        self.history_restore_button.grid(row=0, column=1, sticky="ew", padx=(0, 4))
+        self.history_compare_button = ttk.Button(first_row, text="比較", command=self._compare_selected_history, style="Compact.TButton")
+        self.history_compare_button.grid(row=0, column=2, sticky="ew", padx=(0, 4))
+        ttk.Button(first_row, text="更新", command=self._refresh_history, style="Compact.TButton").grid(row=0, column=3, sticky="ew")
         second_row = ttk.Frame(history_actions)
         second_row.pack(fill="x")
-        self.same_seed_button = ttk.Button(
-            second_row, text="同じSeedで再生成",
-            command=lambda: self._regenerate_selected_history(new_seed=False),
-            state="disabled",
-        )
-        self.same_seed_button.pack(side="left", padx=(0, 6))
-        self.new_seed_button = ttk.Button(
-            second_row, text="別Seedで再生成",
-            command=lambda: self._regenerate_selected_history(new_seed=True),
-            state="disabled",
-        )
-        self.new_seed_button.pack(side="left")
-        history_tools = ttk.Frame(history_actions)
-        history_tools.pack(fill="x", pady=(6, 0))
-        ttk.Button(
-            history_tools, text="生成タグを見る",
-            command=self._show_selected_history_prompt,
-        ).pack(side="left", fill="x", expand=True, padx=(0, 5))
-        ttk.Button(
-            history_tools, text="この画像からI2I",
-            command=self._history_output_to_i2i,
-        ).pack(side="left", fill="x", expand=True, padx=(0, 4))
-        ttk.Button(
-            history_tools, text="I2Vに使用", command=self._history_output_to_i2v,
-        ).pack(side="left", fill="x", expand=True)
+        for col in range(3):
+            second_row.columnconfigure(col, weight=1)
+        self.same_seed_button = ttk.Button(second_row, text="同Seed再生成",
+            command=lambda: self._regenerate_selected_history(new_seed=False), state="disabled", style="Compact.TButton")
+        self.same_seed_button.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        self.new_seed_button = ttk.Button(second_row, text="別Seed再生成",
+            command=lambda: self._regenerate_selected_history(new_seed=True), state="disabled", style="Compact.TButton")
+        self.new_seed_button.grid(row=0, column=1, sticky="ew", padx=(0, 4))
+        self.history_prompt_button = ttk.Button(second_row, text="プロンプト", command=self._show_selected_history_prompt, style="Compact.TButton")
+        self.history_prompt_button.grid(row=0, column=2, sticky="ew")
+        self.history_tools = ttk.Frame(history_actions)
+        self.history_tools.columnconfigure(0, weight=1)
+        self.history_tools.columnconfigure(1, weight=1)
+        ttk.Button(self.history_tools, text="I2Iに使用", command=self._history_output_to_i2i, style="Compact.TButton").grid(
+            row=0, column=0, sticky="ew", padx=(0, 4))
+        ttk.Button(self.history_tools, text="I2Vに使用", command=self._history_output_to_i2v, style="Compact.TButton").grid(
+            row=0, column=1, sticky="ew")
 
         self._switch_theme()
         self._update_generation_controls()
@@ -999,6 +882,30 @@ class Application:
             amount = -3 if delta > 0 else 3
         self.form_canvas.yview_scroll(amount, "units")
         return "break"
+
+    def _toggle_connection_settings(self) -> None:
+        if self.connection_visible:
+            self.connection_panel.pack_forget()
+        else:
+            self.connection_panel.pack(fill="x", after=self.topbar)
+        self.connection_visible = not self.connection_visible
+        self.connection_toggle.configure(text="設定 ▾" if self.connection_visible else "設定 ▸")
+
+    def _toggle_extra_references(self) -> None:
+        self._extra_references = not self._extra_references
+        self._update_generation_controls()
+
+    def _sync_workflow_choice(self, *_args) -> None:
+        self.workflow_choice.set(self.workflow_names.get(self.workflow.get(), self.workflow.get()))
+
+    def _on_workflow_choice(self, _event=None) -> None:
+        by_label = {label: key for key, label in self.workflow_names.items()}
+        self.workflow.set(by_label.get(self.workflow_choice.get(), "自動"))
+        self._update_generation_controls()
+
+    def _on_composition_image_changed(self, *_args) -> None:
+        if not self._source_change_lock:
+            self._update_generation_controls()
 
     def _toggle_logs(self) -> None:
         if self.logs_visible:
@@ -1087,90 +994,83 @@ class Application:
         self.resolution_preset.set(
             resolution_preset_label(self.width.get(), self.height.get())
         )
+        if hasattr(self, "parameter_widgets"):
+            self._refresh_custom_dimensions()
+
+    def _refresh_custom_dimensions(self) -> None:
+        visible = parameter_visibility(
+            self.config, self._active_workflow(),
+            self._custom_size_editing or self.resolution_preset.get() == CUSTOM_RESOLUTION,
+        )["custom_size"]
+        for widget in self.parameter_widgets["custom_size"]:
+            widget.grid() if visible else widget.grid_remove()
 
     def _apply_resolution_preset(self, _event=None) -> None:
         dimensions = RESOLUTION_PRESETS.get(self.resolution_preset.get())
+        self._custom_size_editing = dimensions is None
         if dimensions is None:
+            if hasattr(self, "parameter_widgets"):
+                self._refresh_custom_dimensions()
             self.width_entry.focus_set()
             return
         width, height = dimensions
         self.width.set(str(width))
         self.height.set(str(height))
+        if hasattr(self, "parameter_widgets"):
+            self._refresh_custom_dimensions()
 
     def _update_generation_controls(self) -> None:
-        """Disable only the settings that are unsupported by the active mode."""
+        """Refresh fields in place; never replace the prompt, references or result pane."""
         workflow_id = self._active_workflow()
-        # Keep the combobox honest: a missing reference always shows plain T2I.
         if workflow_id and self.workflow.get() not in ("自動", workflow_id):
             self.workflow.set(workflow_id)
-        bindings = self.config["workflows"].get(workflow_id, {}).get("bindings", {})
-        uses_source_image = "image" in bindings
-        is_video = self.config["workflows"].get(workflow_id, {}).get("kind") == "i2v"
-        is_h3 = workflow_id == core.H3_I2V_ID
-        if hasattr(self, "video_controls"):
-            if is_video and not is_h3:
-                self.video_controls.grid()
-            else:
-                self.video_controls.grid_remove()
-        if hasattr(self, "h3_controls"):
-            if is_h3:
-                self.h3_controls.grid()
-            else:
-                self.h3_controls.grid_remove()
-        if hasattr(self, "cfg_entry"):
-            self.cfg_entry.configure(state="disabled" if is_h3 else "normal")
+        entry = self.config["workflows"].get(workflow_id, {})
+        is_video = entry.get("kind") in core.VIDEO_KINDS
+        state = parameter_visibility(
+            self.config, workflow_id,
+            getattr(self, "_custom_size_editing", False)
+            or (hasattr(self, "resolution_preset") and self.resolution_preset.get() == CUSTOM_RESOLUTION),
+        )
+        if hasattr(self, "parameter_widgets"):
+            for key, widgets in self.parameter_widgets.items():
+                for widget in widgets:
+                    widget.grid() if state[key] else widget.grid_remove()
+            if state["steps"]:
+                self.steps_entry.grid_configure(columnspan=3 if not state["cfg"] else 1,
+                                               padx=0 if not state["cfg"] else (0, 8))
+        has = lambda name: bool(getattr(self, name, None) and getattr(self, name).get().strip())
+        if hasattr(self, "reference_row"):
+            refs = reference_visibility(
+                video=is_video, expanded=self._extra_references,
+                reference=has("reference_image"), mask=has("mask_image"),
+                pose=has("pose_image"), composition=has("composition_image"),
+            )
+            for key, name in (("mask", "mask_row"), ("pose", "pose_row"),
+                              ("pose", "pose_modes"), ("composition", "composition_row"),
+                              ("vision", "vision_row")):
+                widget = getattr(self, name)
+                widget.grid() if refs[key] else widget.grid_remove()
+            self.extra_button.configure(text="追加参照 ▾" if self._extra_references else "追加参照 ▸",
+                                        state="disabled" if is_video else "normal")
         if hasattr(self, "run_button"):
-            self.run_button.configure(text="動画生成を開始" if is_video else "画像生成を開始")
-        for entry in (self.width_entry, self.height_entry):
-            entry.configure(state="disabled" if uses_source_image else "normal")
+            self.run_button.configure(text="動画生成" if is_video else "画像生成")
+        for widget in (self.width_entry, self.height_entry):
+            widget.configure(state="normal" if state["resolution"] else "disabled")
         if hasattr(self, "resolution_box"):
-            supports_dimensions = (
-                not uses_source_image and {"width", "height"} <= bindings.keys()
-            )
-            self.resolution_box.configure(
-                state="readonly" if supports_dimensions else "disabled"
-            )
-        self.denoise_entry.configure(
-            state="normal" if "denoise" in bindings else "disabled"
-        )
+            self.resolution_box.configure(state="readonly" if state["resolution"] else "disabled")
+        self.denoise_entry.configure(state="normal" if state["denoise"] else "disabled")
         if hasattr(self, "strength_entry"):
-            self.strength_entry.configure(
-                state="normal" if "control_strength" in bindings else "disabled"
-            )
+            self.strength_entry.configure(state="normal" if state["strength"] else "disabled")
+        if hasattr(self, "cfg_entry"):
+            self.cfg_entry.configure(state="normal" if state["cfg"] else "disabled")
         if hasattr(self, "t2i_profile_box"):
-            kind = self.config["workflows"].get(workflow_id, {}).get("kind")
-            self.t2i_profile_box.configure(
-                state="readonly" if kind == "t2i" else "disabled"
-            )
+            self.t2i_profile_box.configure(state="readonly" if state["t2i_profile"] else "disabled")
         if hasattr(self, "i2i_profile_box"):
-            kind = self.config["workflows"].get(workflow_id, {}).get("kind")
-            self.i2i_profile_box.configure(
-                state="readonly" if kind in ("i2i", "inpaint") else "disabled"
-            )
+            self.i2i_profile_box.configure(state="readonly" if state["i2i_profile"] else "disabled")
         if hasattr(self, "mask_button"):
-            self.mask_button.configure(
-                state="normal" if self.reference_image.get().strip() else "disabled"
-            )
+            self.mask_button.configure(state="normal" if has("reference_image") and not is_video else "disabled")
         if hasattr(self, "vision_checkbox"):
-            has_visual_reference = bool(
-                self.reference_image.get().strip()
-                or self.pose_image.get().strip()
-                or self.composition_image.get().strip()
-            )
-            self.vision_checkbox.configure(
-                state="normal" if has_visual_reference else "disabled"
-            )
-        hint = (
-            "MiniMax H3：参照画像を先頭フレームに使用" if is_h3 else
-            "I2V：参照画像を先頭フレームに使用" if is_video else
-            "ポーズを参照して生成" if "pose" in bindings else
-            "マスクの白い部分だけ変更" if "mask" in bindings else
-            "I2Iは元画像サイズ" if uses_source_image else
-            "構図画像をLLMで解析→T2I" if self.composition_image.get().strip() else
-            "参照画像なし：自動でT2I"
-        )
-        self.size_hint.set(hint)
-
+            self.vision_checkbox.configure(state="normal" if has("reference_image") or has("pose_image") or has("composition_image") else "disabled")
 
     def _log(self, text: str) -> None:
         self.log.configure(state="normal")
@@ -1240,16 +1140,32 @@ class Application:
         self.same_seed_button.configure(state=state)
         self.new_seed_button.configure(state=state)
 
+        if hasattr(self, "history_open_button"):
+            single = selected[0] if len(selected) == 1 else None
+            output = single.first_image if single else None
+            exists = bool(output and output.is_file())
+            still = exists and not is_video_output(output)
+            restorable = bool(single and not single.legacy and single.workflow_id in self.config["workflows"] and not self.working)
+            comparable = ((len(selected) == 2 and all(e.first_image and e.first_image.is_file() and not is_video_output(e.first_image) for e in selected))
+                          or bool(still and single.reference_image and single.reference_image.is_file()))
+            for button, enabled in (
+                (self.history_open_button, exists), (self.history_restore_button, restorable),
+                (self.history_compare_button, comparable),
+                (self.history_prompt_button, bool(single and history_prompt_details(single))),
+            ):
+                button.configure(state="normal" if enabled else "disabled")
+            if still and not self.working:
+                self.history_tools.pack(fill="x", pady=(4, 0))
+            else:
+                self.history_tools.pack_forget()
         if not selected:
-            self.history_details.set("履歴を選択してください")
-            self.history_image.configure(image="", text="履歴画像")
+            self.history_details.set("")
+            self.history_image.configure(image="", text="")
             self.history_preview_photo = None
             return
         if len(selected) > 1:
-            self.history_details.set(
-                f"{len(selected)}件選択中。2件を比較するには「比較」を押してください。"
-            )
-            self.history_image.configure(image="", text="2件選択中")
+            self.history_details.set(f"{len(selected)}件選択中")
+            self.history_image.configure(image="", text="")
             self.history_preview_photo = None
             return
 
@@ -1269,19 +1185,18 @@ class Application:
             )
         else:
             policy_label = None
-        self.history_details.set(
-            f"ワークフロー: {entry.workflow_id} / "
-            f"Seed: {p.get('seed', '不明')} / "
-            f"Steps: {p.get('steps', '不明')} / "
-            f"CFG: {p.get('cfg', '不明')} / "
-            + (f"動画: {len(entry.images)}件 / {p.get('frames', '?')}f @ {p.get('fps', '?')}fps" if entry.kind in core.VIDEO_KINDS else f"画像: {len(entry.images)}枚")
-            + (f" / 方式: {policy_label}" if policy_label else "")
-            + (
-                f" / キャラ参照: {len(entry.character_references)}枚"
-                if entry.character_traits else ""
-            )
-            + (" / 旧画像（再生成用設定なし）" if entry.legacy else "")
-        )
+        details = [WORKFLOW_NAMES.get(entry.workflow_id, entry.workflow_id)]
+        if "width" in p and "height" in p:
+            details.append(f"{p['width']}×{p['height']}")
+        if entry.kind in core.VIDEO_KINDS and isinstance(p.get("fps"), (int, float)) and p["fps"] > 0 and isinstance(p.get("frames"), int):
+            details.append(f"{p['frames'] / p['fps']:.1f}秒")
+        if "steps" in p:
+            details.append(f"{p['steps']} steps")
+        if policy_label:
+            details.append(policy_label)
+        if entry.legacy:
+            details = ["旧履歴"]
+        self.history_details.set("  ·  ".join(details))
         image = entry.first_image
         if image is None or not image.is_file():
             self.history_preview_photo = None
@@ -1289,7 +1204,7 @@ class Application:
             return
         if is_video_output(image):
             self.history_preview_photo = None
-            self.history_image.configure(image="", text=f"動画: {image.name}\n「開く」で再生")
+            self.history_image.configure(image="", text="動画")
             return
         try:
             photo = tk.PhotoImage(file=str(image))
@@ -1302,10 +1217,12 @@ class Application:
         except (tk.TclError, OSError):
             self.history_preview_photo = None
             self.history_image.configure(
-                image="", text="プレビューできない形式です。比較画面で確認してください"
+                image="", text="プレビュー非対応"
             )
 
     def _restore_selected_history(self) -> None:
+        if getattr(self, "working", False):
+            return
         entry = self._one_history()
         if entry is None:
             messagebox.showinfo("履歴", "復元する履歴を1件選択してください")
@@ -1376,7 +1293,7 @@ class Application:
             self.character_analysis = entry.character_analysis
             self.character_status.set(
                 f"確定: {len(entry.character_references)}枚"
-                if self.character_traits else "未設定"
+                if self.character_traits else "キャラ参照"
             )
         if entry.kind == "t2i" and entry.prompt_profile in T2I_PROFILE_LABELS:
             self.t2i_profile.set(T2I_PROFILE_LABELS[entry.prompt_profile])
@@ -1391,8 +1308,10 @@ class Application:
             self.h3_profile.set(H3_PROFILE_LABELS.get(
                 entry.prompt_profile, H3_PROFILE_LABELS[H3_PROFILE_GENERAL]
             ))
+        if hasattr(self, "parameter_widgets"):
+            self._custom_size_editing = self.resolution_preset.get() == CUSTOM_RESOLUTION
         self._update_generation_controls()
-        self.status.set("履歴から設定を復元しました。自然文を編集して生成できます")
+        self.status.set("設定を復元しました")
         self._log(f"履歴の設定を復元: {entry.workflow_id} / Seed={entry.parameters.get('seed', '不明')}")
         self.prompt.focus_set()
 
@@ -1464,6 +1383,9 @@ class Application:
         self.cancel_button.configure(state="normal")
         self.same_seed_button.configure(state="disabled")
         self.new_seed_button.configure(state="disabled")
+        if hasattr(self, "history_restore_button"):
+            self.history_restore_button.configure(state="disabled")
+            self.history_tools.pack_forget()
         self.progress_bar.start(12)
         self.status.set(label)
 
@@ -1576,16 +1498,36 @@ class Application:
         return config
 
     def _overrides(self) -> dict:
-        values = {
-            "width": int(self.width.get()),
-            "height": int(self.height.get()),
-            "steps": int(self.steps.get()),
-            "cfg": float(self.cfg.get()),
-        }
+        # Still-image dimensions and H3's unused CFG should not block a job
+        # merely because an earlier edit left a hidden entry unfinished.
+        entry = {}
+        if hasattr(self, "parameter_widgets"):
+            entry = self.config.get("workflows", {}).get(self._active_workflow(), {})
+        bindings = entry.get("bindings", {})
+        video = entry.get("kind") in core.VIDEO_KINDS
+        previous = self.config.get("ui", {}) if entry else {}
+        values = {}
+        for name, variable, parse, default in (
+            ("width", self.width, int, 768),
+            ("height", self.height, int, 768),
+            ("steps", self.steps, int, 20),
+            ("cfg", self.cfg, float, 5.0),
+        ):
+            try:
+                value = parse(variable.get())
+                core.check_param(name, value)
+            except (ValueError, core.OrchestratorError):
+                if not entry or (name in bindings and not (video and name in ("width", "height"))):
+                    raise
+                value = previous.get(name, default)
+                try:
+                    core.check_param(name, value)
+                except core.OrchestratorError:
+                    value = default
+            values[name] = value
         if self.seed.get().strip():
             values["seed"] = int(self.seed.get().strip())
-        for name, value in values.items():
-            core.check_param(name, value)
+            core.check_param("seed", values["seed"])
         return values
 
     def _video_overrides(self) -> dict:
@@ -1944,7 +1886,7 @@ class Application:
         self.character_references = paths
         self.character_analysis = copy.deepcopy(analysis)
         self.character_traits = traits
-        self.character_status.set(f"確定: {len(paths)}枚")
+        self.character_status.set(f"キャラ参照 · {len(paths)}枚")
         self.status.set("キャラ特徴を確定しました。次のT2I/I2Iから反映します")
         self._log(f"キャラ特徴確定: {len(paths)}枚（生成プロンプトへ反映）")
 
@@ -1953,7 +1895,7 @@ class Application:
         self.character_references = ()
         self.character_analysis = None
         self.character_traits = ""
-        self.character_status.set("未設定")
+        self.character_status.set("キャラ参照")
         self.status.set("キャラ特徴の使用を解除しました")
 
     def _browse_composition(self) -> None:
@@ -2240,6 +2182,7 @@ class Application:
                 elif kind == "done":
                     result, images, history_id = data
                     self.latest_prompt_plan = result
+                    self.result_prompt_button.configure(state="normal")
                     if result["status"] == "dry_run":
                         self._log("解釈結果:\n" + json.dumps(result, ensure_ascii=False, indent=2))
                         self.status.set("解釈テスト完了（ComfyUI未実行）")
@@ -2250,13 +2193,20 @@ class Application:
                         self.images_list.delete(0, "end")
                         for file in images:
                             self.images_list.insert("end", file.name)
+                        if len(images) > 1:
+                            self.images_list.pack(fill="x", pady=(0, 5))
+                        else:
+                            self.images_list.pack_forget()
                         if images:
                             self.images_list.selection_set(0)
                             self._display_image(images[0])
                             self.open_button.configure(state="normal")
-                        self.result_info.set(
-                            f"生成完了: {len(images)}ファイル保存 / prompt_id={result['prompt_id']}"
-                        )
+                        else:
+                            self.preview_photo = None
+                            self.image_label.configure(image="", text="出力なし")
+                            self.result_info.set("")
+                            self.result_tools.pack_forget()
+                            self.open_button.configure(state="disabled")
                         self._log("生成完了: " + json.dumps(result.get("parameters", {}), ensure_ascii=False))
                         self.status.set("動画生成完了" if any(is_video_output(p) for p in images) else "画像生成完了")
                         self._refresh_history(select_id=history_id)
@@ -2283,10 +2233,14 @@ class Application:
             self._display_image(self.image_paths[selected[0]])
 
     def _display_image(self, path: Path) -> None:
+        if path.suffix.lower() in IMAGE_EXTENSIONS:
+            self.result_tools.pack(fill="x", pady=(5, 0))
+        else:
+            self.result_tools.pack_forget()
         if is_video_output(path):
             self.preview_photo = None
-            self.image_label.configure(image="", text="動画を保存しました。\n「ファイルを開く」で再生")
-            self.result_info.set(path.name)
+            self.image_label.configure(image="", text="動画")
+            self.result_info.set(path.name if len(self.image_paths) == 1 else "")
             return
         try:
             photo = tk.PhotoImage(file=str(path))
@@ -2298,13 +2252,14 @@ class Application:
             self.image_label.configure(image=self.preview_photo, text="")
         except tk.TclError:
             self.preview_photo = None
-            self.image_label.configure(image="", text="プレビュー非対応の画像です。ファイルを開いてください。")
-        self.result_info.set(path.name)
+            self.image_label.configure(image="", text="プレビュー非対応")
+        self.result_info.set(path.name if len(self.image_paths) == 1 else "")
 
     def _open_image(self) -> None:
         selected = self.images_list.curselection()
-        if selected and selected[0] < len(self.image_paths):
-            self._open_path(self.image_paths[selected[0]])
+        index = selected[0] if selected else 0
+        if index < len(self.image_paths):
+            self._open_path(self.image_paths[index])
 
     def _open_outputs(self) -> None:
         OUTPUTS.mkdir(parents=True, exist_ok=True)
