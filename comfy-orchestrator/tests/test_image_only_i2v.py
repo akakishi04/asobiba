@@ -50,19 +50,58 @@ class ImageOnlyI2VTests(unittest.TestCase):
                 self.assertEqual(graph["9"]["inputs"]["steps"], 8)
                 self.assertEqual(result["parameters"]["h3_turbo"], "turbo8")
 
-    def test_vision_requested_uses_llm_even_without_text(self):
+    def test_still_image_analysis_options_never_trigger_llm_on_empty_i2v(self):
         self.config["llm"]["send_reference_to_llm"] = True
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / "source.png"
             source.write_bytes(b"image")
-            with patch.object(lmstudio.LMStudio, "interpret", return_value={
+            for workflow in (core.H3_I2V_ID, core.WAN_I2V_ID):
+                with self.subTest(workflow=workflow), patch.object(lmstudio.LMStudio, "interpret") as llm:
+                    result = core.execute(
+                        self.config, CONFIG, "", image=source, dry_run=True,
+                        selected_workflow=workflow,
+                        character_traits="still-image character description",
+                        composition_image=Path(folder) / "missing-still-composition.png",
+                    )
+                    llm.assert_not_called()
+                    self.assertEqual(result["parameters"]["positive_prompt"], core.I2V_DEFAULT_PROMPT)
+        self.assertTrue(self.config["llm"]["send_reference_to_llm"])
+
+    def test_nonempty_i2v_passes_only_text_to_lmstudio(self):
+        self.config["llm"]["send_reference_to_llm"] = True
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "source.png"
+            source.write_bytes(b"image")
+            for workflow in (core.H3_I2V_ID, core.WAN_I2V_ID):
+                with self.subTest(workflow=workflow), patch.object(lmstudio, "LMStudio") as factory:
+                    llm = factory.return_value
+                    llm.interpret.return_value = {
+                        "workflow_id": workflow,
+                        "parameters": {"positive_prompt": "Hair moves gently."},
+                    }
+                    result = core.execute(
+                        self.config, CONFIG, "髪を揺らす", image=source, dry_run=True,
+                        selected_workflow=workflow, character_traits="still-image traits",
+                    )
+                    self.assertFalse(factory.call_args.args[0]["send_reference_to_llm"])
+                    self.assertEqual(llm.interpret.call_args.args[0], "髪を揺らす")
+                    self.assertIsNone(llm.interpret.call_args.args[2])
+                    self.assertNotIn("character_traits", llm.interpret.call_args.kwargs)
+                    self.assertEqual(result["parameters"]["positive_prompt"], "Hair moves gently.")
+        self.assertTrue(self.config["llm"]["send_reference_to_llm"])
+
+    def test_ollama_i2v_also_uses_text_only(self):
+        self.config["llm"]["provider"] = "ollama"
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "source.png"
+            source.write_bytes(b"image")
+            with patch.object(core.Ollama, "interpret", return_value={
                 "workflow_id": core.H3_I2V_ID,
-                "parameters": {"positive_prompt": "A gentle motion."},
+                "parameters": {"positive_prompt": "Motion."},
             }) as llm:
-                result = core.execute(self.config, CONFIG, "", image=source, dry_run=True,
-                                      selected_workflow=core.H3_I2V_ID)
-                self.assertEqual(llm.call_args.args[0], core.I2V_DEFAULT_REQUEST)
-                self.assertEqual(result["parameters"]["positive_prompt"], "A gentle motion.")
+                core.execute(self.config, CONFIG, "動かす", image=source, dry_run=True,
+                             selected_workflow=core.H3_I2V_ID)
+                self.assertIsNone(llm.call_args.args[2])
 
     def test_still_and_missing_reference_do_not_accept_blank(self):
         for workflow, image in (("wai_t2i_basic", None), (core.H3_I2V_ID, None),
@@ -77,6 +116,10 @@ class ImageOnlyI2VTests(unittest.TestCase):
         self.assertFalse(core.needs_prompt_llm(self.config, " "))
         self.assertTrue(core.needs_prompt_llm(self.config, "髪を揺らす"))
         self.assertTrue(core.needs_prompt_llm(self.config, "", "character traits"))
+        self.config["llm"]["send_reference_to_llm"] = True
+        self.assertFalse(core.needs_prompt_llm(self.config, " ", "character traits",
+                                               workflow_id=core.H3_I2V_ID))
+        self.assertTrue(core.needs_prompt_llm(self.config, "動かす", workflow_id=core.WAN_I2V_ID))
 
 
 if __name__ == "__main__":

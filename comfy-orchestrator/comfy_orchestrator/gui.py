@@ -286,8 +286,8 @@ def reference_visibility(*, video: bool, expanded: bool, reference: bool,
     return {
         "mask": mask or (reference and not video),
         "pose": pose or (expanded and not video),
-        "composition": composition or (expanded and not video),
-        "vision": reference or pose or composition,
+        "composition": not video and (composition or expanded),
+        "vision": not video and (reference or pose or composition),
     }
 
 
@@ -654,7 +654,7 @@ class Application:
         self.reference_row, _ = input_row(0, "参照画像", self.reference_image, self._browse_image, editable=True)
         self.mask_row, self.mask_button = input_row(1, "修正範囲", self.mask_image, self._edit_mask, button_text="範囲を塗る")
 
-        reference_tools = ttk.Frame(inputs)
+        self.reference_tools = reference_tools = ttk.Frame(inputs)
         reference_tools.grid(row=2, column=0, sticky="ew", pady=(0, 4))
         self.extra_button = ttk.Button(reference_tools, text="追加参照 ▸",
                                        command=self._toggle_extra_references, style="Compact.TButton")
@@ -1122,6 +1122,8 @@ class Application:
                     self.steps_entry.grid_configure(columnspan=span, padx=0 if span == 3 else (0, 8))
             self._sync_h3_steps()
         if hasattr(self, "reference_row"):
+            if hasattr(self, "reference_tools"):
+                set_grid_visible(self.reference_tools, not is_video)
             for key, name in (("mask", "mask_row"), ("pose", "pose_row"),
                               ("pose", "pose_modes"), ("composition", "composition_row"),
                               ("vision", "vision_row")):
@@ -1146,7 +1148,7 @@ class Application:
         if hasattr(self, "mask_button"):
             self.mask_button.configure(state="normal" if has("reference_image") and not is_video else "disabled")
         if hasattr(self, "vision_checkbox"):
-            self.vision_checkbox.configure(state="normal" if has("reference_image") or has("pose_image") or has("composition_image") else "disabled")
+            self.vision_checkbox.configure(state="normal" if refs["vision"] else "disabled")
 
     def _log(self, text: str) -> None:
         self.log.configure(state="normal")
@@ -2105,8 +2107,6 @@ class Application:
             self.mask_image.set("")
             self.pose_image.set("")
             self._last_reference_image = ""
-            if workflow_id in core.HOST_VIDEO_IDS:
-                self.composition_image.set("")
             self.reference_image.set(str(path))
         finally:
             self._source_change_lock = False
@@ -2204,9 +2204,13 @@ class Application:
             messagebox.showerror("生成設定エラー", "画像・マスク・ポーズの指定に対応するワークフローがありません")
             return
         is_video = self.config["workflows"][selected]["kind"] == "i2v"
+        if is_video:
+            # Keep still-image composition and character selections intact,
+            # without letting them trigger a VLM or block video generation.
+            composition = None
         if is_video and (image is None or image.suffix.lower() not in IMAGE_EXTENSIONS
-                         or mask is not None or pose is not None or composition is not None):
-            messagebox.showerror("I2V", "参照画像を1枚指定し、マスク・ポーズ・構図参考画像は空欄にしてください")
+                         or mask is not None or pose is not None):
+            messagebox.showerror("I2V", "参照画像を1枚指定し、マスク・ポーズ画像は空欄にしてください")
             return
         if not prompt and not core.supports_empty_i2v_request(
             self.config, selected, image, mask, pose, composition,
@@ -2214,7 +2218,7 @@ class Application:
             messagebox.showwarning("入力が必要です", "生成内容を入力してください。")
             return
         use_prompt_llm = core.needs_prompt_llm(
-            self.config, prompt, self.character_traits, composition,
+            self.config, prompt, self.character_traits, composition, workflow_id=selected,
         )
         if use_prompt_llm and self.model.get().strip() in ("", "SELECT_IN_GUI"):
             messagebox.showwarning("モデル未設定", "「モデル更新」からLM Studioのモデルを選択してください。")
@@ -2230,7 +2234,7 @@ class Application:
             messagebox.showerror("生成設定エラー", str(exc))
             return
         cfg = copy.deepcopy(self.config)
-        approved_traits = self.character_traits or None
+        approved_traits = None if is_video else (self.character_traits or None)
         approved_images = tuple(self.character_references) if approved_traits else ()
         approved_analysis = (
             copy.deepcopy(self.character_analysis) if approved_traits else None

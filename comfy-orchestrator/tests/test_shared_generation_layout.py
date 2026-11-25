@@ -48,7 +48,10 @@ class SharedLayoutTests(unittest.TestCase):
         self.assertTrue(gui.reference_visibility(**dict(flags, expanded=True))["pose"])
         self.assertTrue(gui.reference_visibility(**dict(flags, reference=True))["mask"])
         state = gui.reference_visibility(**dict(flags, video=True, mask=True, pose=True, composition=True))
-        self.assertTrue(all(state.values()))
+        self.assertTrue(state["mask"] and state["pose"])
+        self.assertFalse(state["vision"] or state["composition"])
+        self.assertFalse(gui.reference_visibility(**dict(flags, video=True, reference=True))["vision"])
+        self.assertTrue(gui.reference_visibility(**dict(flags, reference=True))["vision"])
 
     def test_display_labels_round_trip_internal_workflow_id(self):
         names = gui.workflow_display_names(self.config)

@@ -43,9 +43,6 @@ IMAGE_INPUTS = frozenset({"image", "mask", "pose"})
 # Image-only I2V still needs valid text conditioning. This neutral fallback
 # makes motion possible without inventing characters, actions or a camera move.
 I2V_DEFAULT_PROMPT = "Natural, coherent motion while preserving the reference image's subject appearance and visual style."
-I2V_DEFAULT_REQUEST = "参照画像の人物・物体の外見と画風を維持し、自然で一貫した動きの動画にする。"
-
-
 def supports_empty_i2v_request(config: dict, workflow_id: str | None,
                                image=None, mask=None, pose=None, composition=None) -> bool:
     entry = config.get("workflows", {}).get(workflow_id, {})
@@ -57,8 +54,10 @@ def supports_empty_i2v_request(config: dict, workflow_id: str | None,
 
 
 def needs_prompt_llm(config: dict, request: str, character_traits=None,
-                     composition_image=None) -> bool:
-    """Image-only requests bypass LLM unless explicit visual/character context is enabled."""
+                     composition_image=None, *, workflow_id: str | None = None) -> bool:
+    """I2V uses the reference directly, with text-only LLM assistance if requested."""
+    if config.get("workflows", {}).get(workflow_id, {}).get("kind") == "i2v":
+        return bool(request.strip())
     return bool(request.strip() or character_traits or composition_image
                 or config.get("llm", {}).get("send_reference_to_llm", False))
 
@@ -621,14 +620,20 @@ def execute(
         raise OrchestratorError(
             "workflowsが空です。先にAPI形式JSONを配置してconfig.jsonへ登録してください"
         )
+    # Still-image analysis settings do not apply to I2V. Preserve their
+    # persistent configuration, but exclude them from this generation job.
+    explicit_i2v = workflows.get(selected_workflow, {}).get("kind") == "i2v"
+    if explicit_i2v:
+        composition_image = None
+        character_traits = None
     empty_request = not request.strip()
     if empty_request and not supports_empty_i2v_request(
         config, selected_workflow, image, mask_image, pose_image, composition_image,
     ):
         raise OrchestratorError("自然文の指示を入力してください（I2Vの参照画像のみ指定時は省略できます）")
-    use_prompt_llm = needs_prompt_llm(config, request, character_traits, composition_image)
-    if empty_request and use_prompt_llm:
-        request = I2V_DEFAULT_REQUEST
+    use_prompt_llm = needs_prompt_llm(
+        config, request, character_traits, composition_image, workflow_id=selected_workflow,
+    )
     if character_traits is not None:
         from .character_refs import normalize_approved
         character_traits = normalize_approved(character_traits)
@@ -675,6 +680,8 @@ def execute(
             "ポーズ生成はポーズ画像を指定してください"
         )
 
+    i2v_only = all(entry.get("kind") == "i2v" for entry in workflows.values())
+
     def note(message: str) -> None:
         if progress:
             progress(message)
@@ -715,6 +722,8 @@ def execute(
 
     llm_key = "llm" if "llm" in config else "ollama"
     settings = config[llm_key]
+    if i2v_only:
+        settings = {**settings, "send_reference_to_llm": False}
     provider = settings.get("provider", "lmstudio" if llm_key == "llm" else "ollama")
     if not use_prompt_llm:
         # The image is the primary conditioning; avoid a needless LLM load.
@@ -748,13 +757,14 @@ def execute(
         # same image used by pose ControlNet, while ComfyUI still receives it
         # through the separate "pose" binding. In I2I, prefer the source image.
         vision_reference = (
+            None if i2v_only else
             composition_image if composition_image is not None else
             image if image is not None else pose_image
         )
         # Keep the existing call signature unchanged without a confirmed
         # character sheet; offline mocks and older integrations still work.
-        extra = {"character_traits": character_traits} if character_traits else {}
-        if composition_image is not None:
+        extra = {"character_traits": character_traits} if character_traits and not i2v_only else {}
+        if composition_image is not None and not i2v_only:
             plan = LMStudio(settings).interpret(
                 request, workflows, vision_reference, progress=note,
                 reference_role="composition", **extra,
@@ -764,10 +774,10 @@ def execute(
                 request, workflows, vision_reference, progress=note, **extra,
             )
     else:
-        if composition_image is not None:
+        if composition_image is not None and not i2v_only:
             raise OrchestratorError("LLM専用の構図参考画像は現在LM Studio接続で利用してください")
         note("Ollama: 自然文を解釈しモデルをアンロード")
-        plan = Ollama(settings).interpret(request, workflows, image)
+        plan = Ollama(settings).interpret(request, workflows, None if i2v_only else image)
     check_cancelled()
     # Treat an LLM-proposed seed as untrusted and ignore it, even if the model
     # disregards the schema. An explicit GUI/CLI override always takes priority.
