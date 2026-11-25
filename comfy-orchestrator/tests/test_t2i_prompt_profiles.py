@@ -221,7 +221,8 @@ class PromptProfileTests(unittest.TestCase):
         source = inspect.getsource(gui.Application._build)
         self.assertIn("self.t2i_profile_box", source)
         self.assertIn("state=\"readonly\"", source)
-        self.assertIn('text="生成タグを見る"', source)
+        self.assertIn('self.result_prompt_button', source)
+        self.assertIn('command=self._show_prompt_preview', source)
         self.assertTrue(
             callable(getattr(gui.Application, "_show_prompt_preview", None))
         )

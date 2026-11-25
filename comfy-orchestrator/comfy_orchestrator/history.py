@@ -305,6 +305,10 @@ class HistoryStore:
         """
         if not 1 <= limit <= 2000:
             raise HistoryError("インポート上限は1～2000です")
+        # Only scan files already present when the import began. Normal output
+        # downloads create files with a later mtime and record them separately.
+        import time
+        scan_started = time.time()
         extensions = {".png", ".jpg", ".jpeg", ".webp"}
         with self._connection() as con:
             previous = con.execute("SELECT images_json FROM generations").fetchall()
@@ -315,14 +319,23 @@ class HistoryStore:
             except (ValueError, TypeError):
                 continue
         imported = 0
-        candidates = sorted(
-            (f for f in self.outputs.iterdir() if f.is_file() and f.suffix.lower() in extensions),
-            key=lambda f: f.stat().st_mtime,
-            reverse=True,
-        )
+        candidates = []
+        for f in self.outputs.iterdir():
+            # Already indexed direct children need no stat/resolve operation.
+            if f.name in indexed or f.suffix.lower() not in extensions:
+                continue
+            try:
+                if not f.is_file():
+                    continue
+                modified = f.stat().st_mtime
+            except FileNotFoundError:
+                continue
+            if modified < scan_started:
+                candidates.append((modified, f))
+        candidates.sort(key=lambda item: item[0], reverse=True)
         # One database transaction instead of hundreds of fsyncs at GUI launch.
         with self._connection() as con:
-            for image in candidates:
+            for modified, image in candidates:
                 if imported >= limit:
                     break
                 relative = self._relative_output(image)
@@ -336,7 +349,7 @@ class HistoryStore:
                     VALUES (?,?,?,?,?,?,?,?,?,1)""",
                     (
                         row_id,
-                        datetime.fromtimestamp(image.stat().st_mtime, timezone.utc).isoformat(timespec="seconds"),
+                        datetime.fromtimestamp(modified, timezone.utc).isoformat(timespec="seconds"),
                         "legacy:" + row_id,
                         "unknown", "legacy", "以前の生成画像（設定情報なし）",
                         "{}", json.dumps([relative]), None,

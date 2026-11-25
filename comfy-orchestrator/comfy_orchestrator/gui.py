@@ -274,6 +274,12 @@ def parameter_visibility(config: dict, workflow_id: str | None, custom_size: boo
     }
 
 
+def set_grid_visible(widget, visible: bool) -> None:
+    """Avoid no-op geometry requests (including while parent is unmapped)."""
+    if (widget.winfo_manager() == "grid") != visible:
+        widget.grid() if visible else widget.grid_remove()
+
+
 def reference_visibility(*, video: bool, expanded: bool, reference: bool,
                          mask: bool, pose: bool, composition: bool) -> dict:
     """Never hide selected references, so incompatible inputs can be cleared."""
@@ -389,6 +395,13 @@ class Application:
         self.config = bootstrap_config()
         self.history_store = HistoryStore(ROOT)
         self.history_entries: dict[str, HistoryEntry] = {}
+        self._history_refresh_running = False
+        self._history_refresh_pending: tuple[str | None, bool] | None = None
+        self._history_selection_key = None
+        self._history_preview_key = None
+        self._generation_ui_key = None
+        self._form_width = None
+        self._form_bounds = None
         self.history_preview_photo: tk.PhotoImage | None = None
         self.latest_composition_report = ""
         self.latest_prompt_plan: dict | None = None
@@ -737,6 +750,7 @@ class Application:
         self.tabs.add(preview_panel, text="結果")
         history_panel = ttk.Frame(self.tabs, padding=8)
         self.tabs.add(history_panel, text="履歴")
+        self.history_panel = history_panel
 
         # Output and history actions are packed before expanding previews/lists.
         # They remain visible even when the window is shorter than requested.
@@ -839,6 +853,7 @@ class Application:
         ttk.Button(self.history_tools, text="I2Vに使用", command=self._history_output_to_i2v, style="Compact.TButton").grid(
             row=0, column=1, sticky="ew")
 
+        self.tabs.bind("<<NotebookTabChanged>>", self._history_selection_changed)
         self._switch_theme()
         self._update_generation_controls()
         install_native_ime_font(self.prompt)
@@ -847,12 +862,16 @@ class Application:
 
     def _size_form_to_canvas(self, width: int) -> None:
         """Match the scrollable form to its viewport without growing the window."""
-        self.form_canvas.itemconfigure(self.form_window, width=max(1, width))
+        width = max(1, width)
+        if getattr(self, "_form_width", None) != width:
+            self._form_width = width
+            self.form_canvas.itemconfigure(self.form_window, width=width)
         self._sync_form_scrollregion()
 
     def _sync_form_scrollregion(self) -> None:
         bounds = self.form_canvas.bbox("all")
-        if bounds:
+        if bounds and bounds != getattr(self, "_form_bounds", None):
+            self._form_bounds = bounds
             self.form_canvas.configure(scrollregion=bounds)
 
     def _on_form_mousewheel(self, event):
@@ -896,7 +915,9 @@ class Application:
         self._update_generation_controls()
 
     def _sync_workflow_choice(self, *_args) -> None:
-        self.workflow_choice.set(self.workflow_names.get(self.workflow.get(), self.workflow.get()))
+        label = self.workflow_names.get(self.workflow.get(), self.workflow.get())
+        if self.workflow_choice.get() != label:
+            self.workflow_choice.set(label)
 
     def _on_workflow_choice(self, _event=None) -> None:
         by_label = {label: key for key, label in self.workflow_names.items()}
@@ -955,14 +976,14 @@ class Application:
             source = self.reference_image.get().strip()
             previous = getattr(self, "_last_reference_image", "")
             self._last_reference_image = source
-            if hasattr(self, "mask_image") and source != previous:
+            if hasattr(self, "mask_image") and source != previous and self.mask_image.get():
                 self.mask_image.set("")
-            if source and hasattr(self, "pose_image"):
+            if source and hasattr(self, "pose_image") and self.pose_image.get():
                 self.pose_image.set("")
         finally:
             self._source_change_lock = False
         chosen = self._active_workflow()
-        if chosen:
+        if chosen and chosen != self.workflow.get():
             self.workflow.set(chosen)
         self._update_generation_controls()
 
@@ -978,7 +999,7 @@ class Application:
         finally:
             self._source_change_lock = False
         chosen = self._active_workflow()
-        if chosen:
+        if chosen and chosen != self.workflow.get():
             self.workflow.set(chosen)
         self._update_generation_controls()
 
@@ -986,14 +1007,14 @@ class Application:
         if self._source_change_lock:
             return
         chosen = self._active_workflow()
-        if chosen:
+        if chosen and chosen != self.workflow.get():
             self.workflow.set(chosen)
         self._update_generation_controls()
 
     def _sync_resolution_preset(self, *_args) -> None:
-        self.resolution_preset.set(
-            resolution_preset_label(self.width.get(), self.height.get())
-        )
+        label = resolution_preset_label(self.width.get(), self.height.get())
+        if self.resolution_preset.get() != label:
+            self.resolution_preset.set(label)
         if hasattr(self, "parameter_widgets"):
             self._refresh_custom_dimensions()
 
@@ -1003,7 +1024,7 @@ class Application:
             self._custom_size_editing or self.resolution_preset.get() == CUSTOM_RESOLUTION,
         )["custom_size"]
         for widget in self.parameter_widgets["custom_size"]:
-            widget.grid() if visible else widget.grid_remove()
+            set_grid_visible(widget, visible)
 
     def _apply_resolution_preset(self, _event=None) -> None:
         dimensions = RESOLUTION_PRESETS.get(self.resolution_preset.get())
@@ -1031,26 +1052,38 @@ class Application:
             getattr(self, "_custom_size_editing", False)
             or (hasattr(self, "resolution_preset") and self.resolution_preset.get() == CUSTOM_RESOLUTION),
         )
+        has = lambda name: bool(getattr(self, name, None) and getattr(self, name).get().strip())
+        reference = has("reference_image")
+        pose = has("pose_image")
+        composition = has("composition_image")
+        expanded = getattr(self, "_extra_references", False)
+        refs = reference_visibility(
+            video=is_video, expanded=expanded,
+            reference=reference, mask=has("mask_image"),
+            pose=pose, composition=composition,
+        )
+        # Source path edits may emit dozens of traces with identical visibility.
+        # Never issue geometry/configure writes when the effective UI is unchanged.
+        ui_key = (workflow_id, tuple(state.items()), tuple(refs.items()), expanded,
+                  reference, pose, composition)
+        if getattr(self, "_generation_ui_key", None) == ui_key:
+            return
+        self._generation_ui_key = ui_key
         if hasattr(self, "parameter_widgets"):
             for key, widgets in self.parameter_widgets.items():
                 for widget in widgets:
-                    widget.grid() if state[key] else widget.grid_remove()
+                    set_grid_visible(widget, state[key])
             if state["steps"]:
-                self.steps_entry.grid_configure(columnspan=3 if not state["cfg"] else 1,
-                                               padx=0 if not state["cfg"] else (0, 8))
-        has = lambda name: bool(getattr(self, name, None) and getattr(self, name).get().strip())
+                span = 3 if not state["cfg"] else 1
+                if getattr(self, "_steps_span", None) != span:
+                    self._steps_span = span
+                    self.steps_entry.grid_configure(columnspan=span, padx=0 if span == 3 else (0, 8))
         if hasattr(self, "reference_row"):
-            refs = reference_visibility(
-                video=is_video, expanded=self._extra_references,
-                reference=has("reference_image"), mask=has("mask_image"),
-                pose=has("pose_image"), composition=has("composition_image"),
-            )
             for key, name in (("mask", "mask_row"), ("pose", "pose_row"),
                               ("pose", "pose_modes"), ("composition", "composition_row"),
                               ("vision", "vision_row")):
-                widget = getattr(self, name)
-                widget.grid() if refs[key] else widget.grid_remove()
-            self.extra_button.configure(text="追加参照 ▾" if self._extra_references else "追加参照 ▸",
+                set_grid_visible(getattr(self, name), refs[key])
+            self.extra_button.configure(text="追加参照 ▾" if expanded else "追加参照 ▸",
                                         state="disabled" if is_video else "normal")
         if hasattr(self, "run_button"):
             self.run_button.configure(text="動画生成" if is_video else "画像生成")
@@ -1078,37 +1111,90 @@ class Application:
         self.log.see("end")
         self.log.configure(state="disabled")
 
-    def _refresh_history(self, select_id: str | None = None) -> None:
-        """Show latest saved images, including older outputs with unknown parameters."""
-        try:
-            self.history_store.import_legacy_outputs(limit=500)
-            entries = self.history_store.list_entries(limit=500)
-        except (HistoryError, OSError, ValueError, sqlite3.Error) as exc:
-            self._log(f"履歴の読み込みに失敗: {exc}")
-            return
-        old_selected = set(self.history_table.selection())
-        self.history_entries = {entry.id: entry for entry in entries}
-        for item in self.history_table.get_children():
-            self.history_table.delete(item)
-        for entry in entries:
-            short = entry.request_text.replace("\n", " ").strip()[:80]
-            title = short or "(プロンプトなし)"
-            timestamp = entry.created_at
-            try:
-                from datetime import datetime
-                timestamp = datetime.fromisoformat(entry.created_at).astimezone().strftime("%m/%d %H:%M")
-            except (ValueError, OverflowError):
-                timestamp = entry.created_at[:16]
-            seed = str(entry.parameters.get("seed", "—"))
-            self.history_table.insert(
-                "", "end", iid=entry.id, text=title,
-                values=(timestamp, entry.kind.upper(), seed),
+    def _refresh_history(self, select_id: str | None = None, *, scan_legacy: bool = True) -> None:
+        """Read SQLite and enumerate files off the Tk event loop."""
+        scan_legacy = scan_legacy and not self.working
+        if self._history_refresh_running:
+            previous = self._history_refresh_pending
+            self._history_refresh_pending = (
+                select_id if select_id is not None else (previous[0] if previous else None),
+                scan_legacy or bool(previous and previous[1]),
             )
-        requested = {select_id} if select_id else old_selected
-        available = [entry_id for entry_id in requested if entry_id in self.history_entries]
-        if available:
-            self.history_table.selection_set(*available)
-            self.history_table.see(available[0])
+            return
+        self._history_refresh_running = True
+        store = self.history_store
+        messages = self.messages
+
+        def task():
+            try:
+                if scan_legacy:
+                    store.import_legacy_outputs(limit=500)
+                entries = store.list_entries(limit=500)
+                messages.put(("history_loaded", (entries, select_id, None)))
+            except Exception as exc:
+                messages.put(("history_loaded", (None, select_id, str(exc))))
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def _finish_history_refresh(self, entries, select_id, error) -> None:
+        self._history_refresh_running = False
+        if error is not None:
+            self._log("履歴の読み込みに失敗: " + error)
+        pending = self._history_refresh_pending
+        self._history_refresh_pending = None
+        if pending is not None:
+            # A completion/refresh arrived during the read. Fetch the newer
+            # snapshot rather than rendering two consecutive full snapshots.
+            self._refresh_history(
+                select_id=pending[0] if pending[0] is not None else select_id,
+                scan_legacy=pending[1],
+            )
+        elif entries is not None:
+            self._apply_history_entries(entries, select_id)
+
+    @staticmethod
+    def _history_row(entry: HistoryEntry) -> tuple:
+        short = entry.request_text.replace("\n", " ").strip()[:80]
+        timestamp = entry.created_at
+        try:
+            from datetime import datetime
+            timestamp = datetime.fromisoformat(timestamp).astimezone().strftime("%m/%d %H:%M")
+        except (ValueError, OverflowError):
+            timestamp = timestamp[:16]
+        return (short or "(プロンプトなし)",
+                (timestamp, entry.kind.upper(), str(entry.parameters.get("seed", "—"))))
+
+    def _apply_history_entries(self, entries, select_id: str | None = None) -> None:
+        """Apply only changed rows; preserve scroll/selection on normal refresh."""
+        table = self.history_table
+        old_selected = tuple(table.selection())
+        old_entries = self.history_entries
+        new_entries = {entry.id: entry for entry in entries}
+        self.history_entries = new_entries
+        obsolete = [item for item in table.get_children() if item not in new_entries]
+        if obsolete:
+            table.delete(*obsolete)
+        for entry in entries:
+            old = old_entries.get(entry.id)
+            if old is not None and old == entry:
+                continue
+            title, values = self._history_row(entry)
+            if old is None:
+                table.insert("", "end", iid=entry.id, text=title, values=values)
+            else:
+                table.item(entry.id, text=title, values=values)
+        ordered = tuple(new_entries)
+        if tuple(table.get_children()) != ordered:
+            table.set_children("", *ordered)
+        requested = (select_id,) if select_id else old_selected
+        available = tuple(entry_id for entry_id in requested if entry_id in new_entries)
+        if available != tuple(table.selection()):
+            table.selection_set(*available)
+        if select_id and available:
+            table.see(available[0])
+        if (old_selected != available or any(old_entries.get(key) != new_entries.get(key) for key in available)):
+            self._history_selection_key = None
+            self._history_preview_key = None
         self._history_selection_changed()
         if not entries:
             self.history_details.set("まだ保存された生成結果がありません")
@@ -1125,7 +1211,14 @@ class Application:
         return selected[0] if len(selected) == 1 else None
 
     def _history_selection_changed(self, _event=None) -> None:
+        # The Result tab does not need hidden history thumbnails or file checks.
+        if hasattr(self, "history_panel") and self.tabs.select() != str(self.history_panel):
+            return
         selected = self._selected_history()
+        selection_key = (tuple(entry.id for entry in selected), self.working)
+        if getattr(self, "_history_selection_key", None) == selection_key:
+            return
+        self._history_selection_key = selection_key
         can_replay = (
             len(selected) == 1
             and not selected[0].legacy
@@ -1159,11 +1252,13 @@ class Application:
             else:
                 self.history_tools.pack_forget()
         if not selected:
+            self._history_preview_key = None
             self.history_details.set("")
             self.history_image.configure(image="", text="")
             self.history_preview_photo = None
             return
         if len(selected) > 1:
+            self._history_preview_key = None
             self.history_details.set(f"{len(selected)}件選択中")
             self.history_image.configure(image="", text="")
             self.history_preview_photo = None
@@ -1198,7 +1293,12 @@ class Application:
             details = ["旧履歴"]
         self.history_details.set("  ·  ".join(details))
         image = entry.first_image
-        if image is None or not image.is_file():
+        exists = image is not None and image.is_file()
+        preview_key = (entry.id, image, exists)
+        if getattr(self, "_history_preview_key", None) == preview_key:
+            return
+        self._history_preview_key = preview_key
+        if not exists:
             self.history_preview_photo = None
             self.history_image.configure(image="", text="画像ファイルが見つかりません")
             return
@@ -2135,7 +2235,8 @@ class Application:
 
     def _consume_messages(self) -> None:
         try:
-            while True:
+            # Yield between bursts of worker events instead of monopolizing Tk.
+            for _ in range(24):
                 kind, data = self.messages.get_nowait()
                 if kind == "progress":
                     if data.startswith("【構図認識結果】\n"):
@@ -2179,6 +2280,8 @@ class Application:
                         self.model.set(names[0])
                     self._log(f"LM Studioモデル: {len(names)}件。必要なモデルを選択して設定を保存してください。")
                     self.status.set(f"モデル一覧を更新: {len(names)}件")
+                elif kind == "history_loaded":
+                    self._finish_history_refresh(*data)
                 elif kind == "done":
                     result, images, history_id = data
                     self.latest_prompt_plan = result
@@ -2209,8 +2312,8 @@ class Application:
                             self.open_button.configure(state="disabled")
                         self._log("生成完了: " + json.dumps(result.get("parameters", {}), ensure_ascii=False))
                         self.status.set("動画生成完了" if any(is_video_output(p) for p in images) else "画像生成完了")
-                        self._refresh_history(select_id=history_id)
                         self.tabs.select(0)
+                        self._refresh_history(select_id=history_id, scan_legacy=False)
                 elif kind == "error":
                     self._log("ERROR: " + data)
                     self.status.set("エラー: " + data[:110])
@@ -2225,7 +2328,7 @@ class Application:
         except queue.Empty:
             pass
         if self.root.winfo_exists():
-            self.root.after(100, self._consume_messages)
+            self.root.after(15 if not self.messages.empty() else 100, self._consume_messages)
 
     def _show_selected_image(self, _event=None) -> None:
         selected = self.images_list.curselection()
