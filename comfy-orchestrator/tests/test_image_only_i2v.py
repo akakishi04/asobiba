@@ -44,11 +44,29 @@ class ImageOnlyI2VTests(unittest.TestCase):
                     overrides={"h3_model": "w4a8", "h3_turbo": "turbo8", "seed": 17},
                 )
                 llm.assert_not_called()
+                comfy.free_if_idle.assert_not_called()
                 graph = comfy.submit.call_args.args[0]
                 self.assertEqual(graph["104"]["inputs"]["prompt"], core.I2V_DEFAULT_PROMPT)
                 self.assertEqual(graph["6"]["inputs"]["unet_name"], core.H3_MODELS["w4a8"])
                 self.assertEqual(graph["9"]["inputs"]["steps"], 8)
                 self.assertEqual(result["parameters"]["h3_turbo"], "turbo8")
+
+    def test_text_i2v_still_releases_before_llm(self):
+        self.config["comfyui"]["free_before_llm"] = True
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "source.png"
+            source.write_bytes(b"image")
+            with patch.object(lmstudio.LMStudio, "interpret", return_value={
+                "workflow_id": core.H3_I2V_ID,
+                "parameters": {"positive_prompt": "Motion."},
+            }), patch.object(core, "ComfyUI") as factory:
+                comfy = factory.return_value
+                comfy.upload_image.return_value = "source.png"
+                comfy.submit.return_value = "id"
+                comfy.wait.return_value = {"outputs": {}}
+                core.execute(self.config, CONFIG, "動かす", image=source,
+                             selected_workflow=core.H3_I2V_ID)
+                comfy.free_if_idle.assert_called_once()
 
     def test_still_image_analysis_options_never_trigger_llm_on_empty_i2v(self):
         self.config["llm"]["send_reference_to_llm"] = True

@@ -436,3 +436,11 @@ I2V（MiniMax H3 / Wan 2.2）では、参照画像のみ指定して自然文を
 ### H3が Model Initializing で止まる場合
 
 H3のNVFP4テキストエンコーダーとDynamicVRAMの組み合わせではAda GPUで初期化停止の報告があります（https://github.com/Comfy-Org/ComfyUI/issues/15628）。上部「設定」の「H3テキストエンコーダーをCPUで実行」を初期値ONにし、CLIPLoaderのdeviceだけをcpuへ変更します。既存のモデルファイルを使い、拡散モデルとVAEの実行方式は変更しません。CPUのテキスト処理は長くなる可能性があり、初期化停止の解消は実機検証が必要です。過去の履歴のデバイス指定がない場合は従来のグラフを使います。改善しない場合はComfyUIの完全再起動後、起動引数 `--disable-dynamic-vram` を単独で試してください。
+
+### H3テキストエンコーダーの比較
+
+上部「設定」のH3エンコーダーで従来のNVFP4 AWQまたはINT4 ConvRotを選択します。CPU実行のチェックは独立しています（従来設定を維持）。INT4版はRTX 40系でGPU処理を比較するための候補で、速度や停止回避は未検証です。既存のW4A8/INT8の拡散モデル・VAE・Turboはそのまま利用できます。
+
+追加ファイル: `models/text_encoders/qwen3vl_32b_minimax_h3_int4_convrot.safetensors` (15 GB): https://huggingface.co/Merserk/MiniMax-H3-INT4-ConvRot/resolve/main/qwen3vl_32b_minimax_h3_int4_convrot.safetensors
+
+エンコーダーのモデルとデバイスも履歴に保存します。旧履歴は従来のエンコーダーを維持します。LLMを使わないI2Vは生成前のモデル解放を省略します。手動解放は上部「設定」の「生成モデル解放」から行い、実行・待機ジョブがある場合は拒否します。APIは解放要求の受付のみを確認します。

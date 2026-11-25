@@ -371,6 +371,7 @@
     "h3_model": "int8",
     "h3_turbo": "off",
     "h3_steps": 20,
-    "h3_encoder_device": "cpu"
+    "h3_encoder_device": "cpu",
+    "h3_encoder_model": "nvfp4"
   }
 }

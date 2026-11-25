@@ -75,7 +75,12 @@ H3_TURBOS = {
 }
 H3_MODEL_LABELS = {"int8": "INT8 ConvRot", "w4a8": "W4A8 Mixed"}
 H3_TURBO_LABELS = {"off": "OFF", "turbo8": "8 Steps", "turbo4": "4 Steps"}
-H3_OPTION_KEYS = frozenset({"h3_model", "h3_turbo", "h3_encoder_device"})
+H3_ENCODERS = {
+    "nvfp4": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+    "int4": "qwen3vl_32b_minimax_h3_int4_convrot.safetensors",
+}
+H3_ENCODER_LABELS = {"nvfp4": "NVFP4 AWQ", "int4": "INT4 ConvRot"}
+H3_OPTION_KEYS = frozenset({"h3_model", "h3_turbo", "h3_encoder_device", "h3_encoder_model"})
 
 
 def split_h3_options(parameters: dict, *, enabled: bool) -> tuple[dict, dict]:
@@ -103,6 +108,11 @@ def split_h3_options(parameters: dict, *, enabled: bool) -> tuple[dict, dict]:
         if not isinstance(device, str) or device not in ("cpu", "default"):
             raise OrchestratorError("H3テキストエンコーダーのデバイスが不正です")
         selected["h3_encoder_device"] = device
+    if "h3_encoder_model" in options:
+        encoder = options["h3_encoder_model"]
+        if not isinstance(encoder, str) or encoder not in H3_ENCODERS:
+            raise OrchestratorError("未対応のH3テキストエンコーダーです")
+        selected["h3_encoder_model"] = encoder
     return inputs, selected
 
 
@@ -122,11 +132,14 @@ def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None =
     if any(graph[node]["inputs"].get("model") != ["6", 0] for node in ("9", "16")):
         raise OrchestratorError("H3のモデル接続が標準ワークフローと一致しません")
     graph["6"]["inputs"]["unet_name"] = H3_MODELS[model]
-    if "h3_encoder_device" in options:
+    if "h3_encoder_device" in options or "h3_encoder_model" in options:
         encoder = graph.get("13", {})
-        if encoder.get("class_type") != "CLIPLoader" or "device" not in encoder.get("inputs", {}):
+        if encoder.get("class_type") != "CLIPLoader" or not {"device", "clip_name"} <= encoder.get("inputs", {}).keys():
             raise OrchestratorError("H3テキストエンコーダーの標準ノードが見つかりません")
-        encoder["inputs"]["device"] = options["h3_encoder_device"]
+        if "h3_encoder_device" in options:
+            encoder["inputs"]["device"] = options["h3_encoder_device"]
+        if "h3_encoder_model" in options:
+            encoder["inputs"]["clip_name"] = H3_ENCODERS[options["h3_encoder_model"]]
     if lora is not None:
         # Match the official ComfyUI FL2VA template: model-only LoRA, weight
         # 1, both scheduler and guider receive the patched model, same sampler.
@@ -715,9 +728,11 @@ def execute(
                     video_template = prepare_h3_workflow(video_template, h3_options, overrides)
                 comfy.ensure_video_dependencies(video_template)
                 comfy.extend_video_timeout(config["comfyui"])
-    if not dry_run and config["comfyui"].get("free_before_llm", True):
+    if not dry_run and use_prompt_llm and config["comfyui"].get("free_before_llm", True):
         note("ComfyUI: キューを確認して前回の生成モデルの解放を要求")
         comfy.free_if_idle()
+    elif not dry_run and not use_prompt_llm:
+        note("ComfyUI: LLMを使用しないためモデルキャッシュを維持")
     check_cancelled()
 
     llm_key = "llm" if "llm" in config else "ollama"
@@ -813,7 +828,8 @@ def execute(
         note("H3: " + H3_MODEL_LABELS[h3_options["h3_model"]]
              + " / Turbo " + H3_TURBO_LABELS[h3_options["h3_turbo"]]
              + f" / {params['steps']} Steps"
-             + (f" / Text encoder={h3_options['h3_encoder_device']}" if "h3_encoder_device" in h3_options else ""))
+             + (f" / Text encoder={h3_options['h3_encoder_device']}" if "h3_encoder_device" in h3_options else "")
+             + (f" / TE model={H3_ENCODER_LABELS[h3_options['h3_encoder_model']]}" if "h3_encoder_model" in h3_options else ""))
     saved_params = {**params, **h3_options}
     note(f"ワークフロー確定: {workflow_id}")
     if dry_run:

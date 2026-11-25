@@ -455,6 +455,8 @@ class Application:
         self.h3_model = tk.StringVar(value=core.H3_MODEL_LABELS.get(model_key, "INT8 ConvRot"))
         self.h3_turbo = tk.StringVar(value=core.H3_TURBO_LABELS.get(turbo_key, "OFF"))
         self.h3_encoder_cpu = tk.BooleanVar(value=options.get("h3_encoder_device", "cpu") == "cpu")
+        self.h3_encoder_model = tk.StringVar(value=core.H3_ENCODER_LABELS.get(
+            options.get("h3_encoder_model", "nvfp4"), "NVFP4 AWQ"))
         self.h3_steps = tk.StringVar(value=str(options.get("h3_steps", options.get("steps", 20))))
         self.h3_fixed_steps = tk.StringVar(value="")
         self.steps = tk.StringVar(value=str(options.get("steps", 20)))
@@ -531,14 +533,20 @@ class Application:
                         variable=self.unload_llm).grid(row=0, column=0, sticky="w", padx=(0, 12))
         ttk.Checkbutton(options_frame, text="解釈前にComfyUIを解放",
                         variable=self.free_comfy).grid(row=0, column=1, sticky="w")
-        ttk.Checkbutton(connection, text="H3テキストエンコーダーをCPUで実行",
-                        variable=self.h3_encoder_cpu).grid(row=3, column=0, columnspan=2, sticky="w", pady=(2, 2))
+        encoder_row = ttk.Frame(connection)
+        encoder_row.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(2, 2))
+        ttk.Label(encoder_row, text="H3エンコーダー").pack(side="left", padx=(0, 6))
+        ttk.Combobox(encoder_row, textvariable=self.h3_encoder_model,
+                     values=tuple(core.H3_ENCODER_LABELS.values()), state="readonly", width=18).pack(side="left")
+        ttk.Checkbutton(encoder_row, text="CPU実行", variable=self.h3_encoder_cpu).pack(side="left", padx=(10, 0))
         settings_actions = ttk.Frame(connection)
         settings_actions.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(4, 0))
         ttk.Checkbutton(settings_actions, text="ダーク表示", variable=self.dark_mode,
                         command=self._switch_theme).pack(side="left")
         ttk.Button(settings_actions, text="保存", command=self._save_settings).pack(side="right")
         ttk.Button(settings_actions, text="接続確認", command=self._check_connections).pack(side="right", padx=(0, 6))
+        self.free_memory_button = ttk.Button(settings_actions, text="生成モデル解放", command=self._release_comfy_memory)
+        self.free_memory_button.pack(side="right", padx=(0, 6))
 
         # The footer is laid out before the resizable main panes to guarantee
         # that status and the optional log never fall below the visible screen.
@@ -1064,6 +1072,12 @@ class Application:
         options = {"h3_model": model, "h3_turbo": turbo}
         if hasattr(self, "h3_encoder_cpu"):
             options["h3_encoder_device"] = "cpu" if self.h3_encoder_cpu.get() else "default"
+        if hasattr(self, "h3_encoder_model"):
+            encoder = next((key for key, label in core.H3_ENCODER_LABELS.items()
+                            if label == self.h3_encoder_model.get()), None)
+            if encoder is None:
+                raise core.OrchestratorError("H3テキストエンコーダーの選択が不正です")
+            options["h3_encoder_model"] = encoder
         return options
 
     def _sync_h3_steps(self, _event=None) -> None:
@@ -1419,6 +1433,8 @@ class Application:
                 self.h3_turbo.set(core.H3_TURBO_LABELS.get(p.get("h3_turbo", "off"), "OFF"))
                 if hasattr(self, "h3_encoder_cpu"):
                     self.h3_encoder_cpu.set(p.get("h3_encoder_device", "default") == "cpu")
+                if hasattr(self, "h3_encoder_model"):
+                    self.h3_encoder_model.set(core.H3_ENCODER_LABELS.get(p.get("h3_encoder_model", "nvfp4"), "NVFP4 AWQ"))
                 if p.get("h3_turbo", "off") == "off" and "steps" in p:
                     self.h3_steps.set(str(p["steps"]))
             if "width" in p and "height" in p:
@@ -1542,6 +1558,8 @@ class Application:
         self.run_button.configure(state="disabled")
         self.preview_button.configure(state="disabled")
         self.cancel_button.configure(state="normal")
+        if hasattr(self, "free_memory_button"):
+            self.free_memory_button.configure(state="disabled")
         self.same_seed_button.configure(state="disabled")
         self.new_seed_button.configure(state="disabled")
         if hasattr(self, "history_restore_button"):
@@ -2162,6 +2180,26 @@ class Application:
         threading.Thread(target=task, daemon=True).start()
         self._log("LM Studioのモデル一覧を取得中...")
 
+    def _release_comfy_memory(self) -> None:
+        """Request memory release off the GUI thread, only with an empty queue."""
+        if self.working:
+            return
+        settings = copy.deepcopy(self.config["comfyui"])
+        settings["base_url"] = self.comfy_url.get().strip()
+        self._set_busy("生成モデルの解放を要求中")
+        self.cancel_button.configure(state="disabled")
+
+        def task():
+            try:
+                core.ComfyUI(settings).free_if_idle()
+                self.messages.put(("progress", "ComfyUI: メモリ解放要求を送信しました"))
+            except Exception as exc:
+                self.messages.put(("error", str(exc)))
+            finally:
+                self.messages.put(("idle", None))
+
+        threading.Thread(target=task, daemon=True).start()
+
     def _check_connections(self) -> None:
         llm = copy.deepcopy(self.config["llm"])
         llm["base_url"] = self.llm_url.get().strip()
@@ -2400,6 +2438,8 @@ class Application:
                     self.run_button.configure(state="normal")
                     self.preview_button.configure(state="normal")
                     self.cancel_button.configure(state="disabled")
+                    if hasattr(self, "free_memory_button"):
+                        self.free_memory_button.configure(state="normal")
                     self.progress_bar.stop()
                     self._history_selection_changed()
         except queue.Empty:
