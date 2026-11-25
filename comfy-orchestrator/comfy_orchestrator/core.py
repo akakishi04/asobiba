@@ -96,13 +96,63 @@ H3_ENCODERS = {
 H3_ENCODER_LABELS = {"nvfp4": "NVFP4 AWQ", "int4": "INT4 ConvRot", "clipproj4b": "4B ClipProj (INT8)"}
 H3_CLIPPROJ_MATRIX = "mmh3-4b-ClipProj-v3.1.safetensors"
 H3_OPTION_KEYS = frozenset({"h3_model", "h3_turbo", "h3_encoder_device", "h3_encoder_model"})
+H3_REF2VA_PREFIX = "ref2va:"
+H3_REF2VA_LABEL = "参考画像 · "
+H3_REF2VA_DEFAULT_PROMPT = (
+    "Use <Picture 1> as a reference for the subject's appearance and visual style. "
+    "Create a coherent video with natural motion and independent framing."
+)
+
+
+def h3_ref2va_model_key(filename: str) -> str | None:
+    """Recognize explicit Ref2VA checkpoints listed by the native UNETLoader.
+
+    Keep the real loader filename (including its subfolder) in the history;
+    do not guess the filename of a community quantization.
+    """
+    if not isinstance(filename, str) or not filename or len(filename) > 1024:
+        return None
+    parts = filename.replace("\\", "/").split("/")
+    if any(not part or part in (".", "..") or ":" in part or "\x00" in part for part in parts):
+        return None
+    basename = parts[-1].lower()
+    if not basename.endswith(".safetensors") or "ref2va" not in basename or "fl2va" in basename:
+        return None
+    return H3_REF2VA_PREFIX + filename
+
+
+def h3_ref2va_filename(model) -> str | None:
+    if isinstance(model, str) and model.startswith(H3_REF2VA_PREFIX):
+        filename = model[len(H3_REF2VA_PREFIX):]
+        if h3_ref2va_model_key(filename) == model:
+            return filename
+    return None
+
+
+def h3_model_label(model) -> str:
+    filename = h3_ref2va_filename(model)
+    return H3_REF2VA_LABEL + filename if filename else H3_MODEL_LABELS.get(model, "INT8 ConvRot")
+
+
+def h3_model_from_label(label: str) -> str | None:
+    if label.startswith(H3_REF2VA_LABEL):
+        return h3_ref2va_model_key(label[len(H3_REF2VA_LABEL):])
+    return next((key for key, value in H3_MODEL_LABELS.items() if value == label), None)
+
+
+def ensure_h3_reference_prompt(prompt: str) -> str:
+    if "<Picture 1>" not in prompt:
+        prompt = "Use <Picture 1> as a visual reference, not as the first frame. " + prompt
+    check_param("positive_prompt", prompt)
+    return prompt
 
 
 def split_h3_options(parameters: dict, *, enabled: bool) -> tuple[dict, dict]:
     """Separate trusted H3 selections from ordinary API-bound parameters.
 
     Missing selections preserve the pre-existing graph for old CLI jobs and
-    history. Explicit choices use only the shipped, allowlisted filenames.
+    history. FL2VA choices are fixed; Ref2VA choices store the exact filename
+    discovered through the native loader and are checked before inference.
     """
     inputs = dict(parameters)
     options = {key: inputs.pop(key) for key in H3_OPTION_KEYS if key in inputs}
@@ -112,10 +162,13 @@ def split_h3_options(parameters: dict, *, enabled: bool) -> tuple[dict, dict]:
         raise OrchestratorError("H3モデル・Turbo設定はMiniMax H3専用です")
     model = options.get("h3_model", "int8")
     turbo = options.get("h3_turbo", "off")
-    if not isinstance(model, str) or model not in H3_MODELS:
+    ref_model = h3_ref2va_filename(model)
+    if not isinstance(model, str) or (model not in H3_MODELS and ref_model is None):
         raise OrchestratorError("未対応のH3モデルです")
     if not isinstance(turbo, str) or turbo not in H3_TURBOS:
         raise OrchestratorError("未対応のH3 Turbo設定です")
+    if ref_model is not None and turbo != "off":
+        raise OrchestratorError("参考画像（Ref2VA）ではFL2VA用Turboを使用できません")
     selected = {"h3_model": model, "h3_turbo": turbo}
     # Do not inject a new device into old saved jobs or legacy CLI calls.
     if "h3_encoder_device" in options:
@@ -132,7 +185,7 @@ def split_h3_options(parameters: dict, *, enabled: bool) -> tuple[dict, dict]:
 
 
 def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None = None) -> dict:
-    """Patch the shipped H3 FL2VA graph before dependency checking/submission."""
+    """Prepare FL2VA or Ref2VA while retaining the shared H3 parameter bindings."""
     if not options:
         return template
     _, options = split_h3_options(options, enabled=True)
@@ -146,7 +199,26 @@ def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None =
         raise OrchestratorError("H3モデル切替には標準のMiniMax H3ワークフローが必要です")
     if any(graph[node]["inputs"].get("model") != ["6", 0] for node in ("9", "16")):
         raise OrchestratorError("H3のモデル接続が標準ワークフローと一致しません")
-    if model == "gguf_u16g":
+    ref_model = h3_ref2va_filename(model)
+    if ref_model is not None:
+        conditioning = graph.get("104", {})
+        inputs = conditioning.get("inputs", {})
+        if (conditioning.get("class_type") != "MiniMaxH3ImageToVideo"
+                or inputs.get("first_frame") != ["114", 0]
+                or inputs.get("clip") != ["13", 0]
+                or inputs.get("vae") != ["11", 0]
+                or "last_frame" in inputs
+                or graph.get("24", {}).get("class_type") != "VAELoader"):
+            raise OrchestratorError("Ref2VAには標準H3ワークフローが必要です")
+        graph["6"]["inputs"]["unet_name"] = ref_model
+        conditioning["class_type"] = "MiniMaxH3ReferenceToVideo"
+        inputs["ref_images.ref_image_0"] = inputs.pop("first_frame")
+        inputs["audio_vae"] = ["24", 0]
+        # Match preserves reference aspect ratio and limits extra reference tokens.
+        inputs["ref_image_size"] = "match"
+        graph["9"]["inputs"]["scheduler"] = "beta"
+        graph["17"]["inputs"]["sampler_name"] = "res_multistep"
+    elif model == "gguf_u16g":
         # The current backend uses legacy VRAM management. U16G needs the
         # compatible molbal fork; do not pass GGUF to the native UNETLoader.
         graph["6"] = {"class_type": "UnetLoaderGGUF",
@@ -163,7 +235,8 @@ def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None =
             encoder["inputs"]["clip_name"] = H3_ENCODERS[options["h3_encoder_model"]]
         if options.get("h3_encoder_model") == "clipproj4b":
             conditioning = graph.get("104", {})
-            if conditioning.get("class_type") != "MiniMaxH3ImageToVideo" or conditioning.get("inputs", {}).get("clip") != ["13", 0]:
+            if (conditioning.get("class_type") not in ("MiniMaxH3ImageToVideo", "MiniMaxH3ReferenceToVideo")
+                    or conditioning.get("inputs", {}).get("clip") != ["13", 0]):
                 raise OrchestratorError("H3 ClipProjには標準の画像→動画ノードが必要です")
             # Stock CLIPLoader manages CPU offload. Do not use the resident
             # all-in-one ClipProj loader, which pins memory on a single GPU.
@@ -251,8 +324,10 @@ def installed_model_choices(inventory: dict) -> dict:
     native = inventory.get("UNETLoader", ())
     gguf = inventory.get("UnetLoaderGGUF", ())
     return {
-        "h3": tuple(key for key, name in H3_MODELS.items()
-                    if name in (gguf if name.endswith(".gguf") else native)),
+        "h3": (tuple(key for key, name in H3_MODELS.items()
+                     if name in (gguf if name.endswith(".gguf") else native))
+               + tuple(dict.fromkeys(key for name in native
+                                     if (key := h3_ref2va_model_key(name)) is not None))),
         "sdxl": tuple(name for name in inventory.get("CheckpointLoaderSimple", ())
                       if sdxl_checkpoint_kind(name) is not None),
     }
@@ -700,7 +775,7 @@ class ComfyUI:
             "DualCLIPLoader": ("clip_name1", "clip_name2"),
             "CLIPVisionLoader": "clip_name",
         }
-        required = {"Wan22ImageToVideoLatent", "MiniMaxH3ImageToVideo",
+        required = {"Wan22ImageToVideoLatent", "MiniMaxH3ImageToVideo", "MiniMaxH3ReferenceToVideo",
                     "HunyuanVideo15ImageToVideo", "CLIPVisionEncode", "ModelSamplingSD3",
                     "VAEDecodeAudio", "CreateVideo", "SaveVideo",
                     "ModelSamplingAuraFlow", "EmptySD3LatentImage"}
@@ -872,6 +947,7 @@ def execute(
     overrides, h3_options = split_h3_options(
         overrides or {}, enabled=set(workflows) == {H3_I2V_ID},
     )
+    reference_only = h3_ref2va_filename(h3_options.get("h3_model")) is not None
     if h3_options:
         fixed_steps = H3_TURBOS[h3_options["h3_turbo"]][1]
         if fixed_steps is not None:
@@ -916,13 +992,22 @@ def execute(
     settings = config[llm_key]
     if i2v_only:
         settings = {**settings, "send_reference_to_llm": False}
+    if reference_only:
+        settings = {**settings, "_h3_reference_only": True}
+        # Keep the existing binding schema and ID; only replace the job's
+        # descriptive catalog so the LLM sees the actual conditioning mode.
+        workflows = {key: {**entry, "description":
+                           "MiniMax H3 Ref2VA: reference image <Picture 1> is a visual guide, "
+                           "not an initial frame. Generate the requested new scene and motion with "
+                           "independent framing and synchronized audio."}
+                     for key, entry in workflows.items()}
     provider = settings.get("provider", "lmstudio" if llm_key == "llm" else "ollama")
     if not use_prompt_llm:
         # The image is the primary conditioning; avoid a needless LLM load.
         note("I2V: 参照画像のみ（LLMを使用しません）")
         plan = {
             "workflow_id": selected_workflow,
-            "parameters": {"positive_prompt": I2V_DEFAULT_PROMPT},
+            "parameters": {"positive_prompt": H3_REF2VA_DEFAULT_PROMPT if reference_only else I2V_DEFAULT_PROMPT},
         }
     elif provider == "lmstudio":
         from .lmstudio import LMStudio
@@ -997,12 +1082,14 @@ def execute(
         # Never silently inherit the fixed seed from the template JSON.
         params["seed"] = secrets.randbits(32)
     validate_video_parameters(workflow_id, params)
+    if reference_only:
+        params["positive_prompt"] = ensure_h3_reference_prompt(params["positive_prompt"])
     template = load_workflow(
         (config_path.resolve().parent / selection["file"]).resolve(), selection["bindings"]
     )
     if h3_options:
         template = prepare_h3_workflow(template, h3_options, params)
-        note("H3: " + H3_MODEL_LABELS[h3_options["h3_model"]]
+        note("H3: " + h3_model_label(h3_options["h3_model"])
              + " / Turbo " + H3_TURBO_LABELS[h3_options["h3_turbo"]]
              + f" / {params['steps']} Steps"
              + (f" / Text encoder={h3_options['h3_encoder_device']}" if "h3_encoder_device" in h3_options else "")

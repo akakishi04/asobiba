@@ -183,6 +183,7 @@ class LMStudio:
         video_only = bool(workflows) and all(
             entry.get("kind") == "i2v" for entry in workflows.values()
         )
+        reference_only = video_only and H3_I2V_ID in workflows and self.settings.get("_h3_reference_only", False)
         pose_only = bool(workflows) and all(
             entry.get("kind") == "pose" for entry in workflows.values()
         )
@@ -241,7 +242,18 @@ class LMStudio:
                 if self._has_visual_input else ""
             )
         )
-        if video_only:
+        if reference_only:
+            system += (
+                "\n\nMiniMax H3 Ref2VA: <Picture 1> is a visual guide, not the first "
+                "frame. Write natural English sentences including the literal reference tag "
+                "<Picture 1>. Use it for requested appearance, character identity or style. "
+                "The target scene, pose, camera, composition and aspect ratio are independent; "
+                "do not require a copy of the reference or invent details you have not seen. "
+                "Follow the user's request, allowing coherent natural motion and framing. "
+                "Describe requested audio only, without adding unsolicited dialogue or music. "
+                "Only return positive_prompt; do not choose technical generation settings."
+            )
+        elif video_only:
             system += (
                 "\n\nIMAGE-TO-VIDEO POLICY (overrides still-image/tag/edit instructions): "
                 "The source image is the initial frame, not an image to redraw. "
@@ -254,7 +266,7 @@ class LMStudio:
                 "pretending to have observed the image. Only return positive_prompt and optional "
                 "negative_prompt; video resolution, frame count, FPS and seed are host settings."
             )
-        if H3_I2V_ID in workflows:
+        if H3_I2V_ID in workflows and not reference_only:
             system += (
                 "\nMiniMax H3 FL2VA: the input image is the first frame. "
                 "Describe continuous action in natural English; for a complex sequence use "
@@ -300,7 +312,7 @@ class LMStudio:
                 "sheet into a static tag list or use it to redraw the subject."
             )
         h3_profile = self.settings.get("h3_prompt_profile", DEFAULT_H3_PROFILE)
-        system = apply_h3_profile(system, workflows, h3_profile)
+        system = apply_h3_profile(system, workflows, h3_profile, reference_only=reference_only) if reference_only else apply_h3_profile(system, workflows, h3_profile)
         edit_enabled = (
             is_i2i_context(workflows) and edit_profile != I2I_PROFILE_LEGACY
         )
@@ -333,7 +345,7 @@ class LMStudio:
             f"Reference image visible to the LLM: "
             f"{'yes' if self._has_visual_input else 'no'}\n"
             f"Reference role: "
-            f"{'composition only (LLM reference)' if composition_only else 'pose and camera only' if pose_only else 'first frame of video' if video_only else no_image_role if not self._has_visual_input else 'composition of image to edit'}\n"
+            f"{'composition only (LLM reference)' if composition_only else 'pose and camera only' if pose_only else 'visual reference <Picture 1>, not first frame' if reference_only else 'first frame of video' if video_only else no_image_role if not self._has_visual_input else 'composition of image to edit'}\n"
             f"{edit_context}"
             + (
                 "User-confirmed character traits (not inferred by the LLM):\n"

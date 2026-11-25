@@ -488,3 +488,13 @@ VLCとGUIを実行するPythonは同じビット数（通常64bit）にしてく
 静止画の既存SDXLワークフローでは、導入済みのIllustrious系チェックポイントを選べます。SDXL TurboはT2Iのみ・4 Steps/CFG 1・euler_ancestralで使用します。モデル名から既知の系統に絞り込んでおり、任意アーキテクチャを自動対応する機能ではありません。選択は履歴に保存し、再生成時も復元します。ファイルがなくなった選択を黙って別モデルへ切り替えず、生成前に不足を通知します。
 
 「画像生成 · Qwen-Image 2512」と「画像生成 · Qwen-Image 2512 (4 Steps)」は専用のT2Iワークフローです。導入済みのqwen_image_2512_fp8_e4m3fn.safetensors、qwen_2.5_vl_7b_fp8_scaled.safetensors、qwen_image_vae.safetensorsを利用し、高速版はQwen-Image-2512-Lightning-4steps-V1.0-fp32.safetensorsを使用します。標準版はSteps/CFGを個別に設定可能、高速版は4/1固定です。画像編集専用Qwen-Image-Editは別モデルのため今回は追加していません。標準のSDXL自動選択は維持します。
+
+### H3 参考画像モード（Ref2VA / Sulphur 3）
+
+Ref2VAのsafetensorsをComfyUIの`models/diffusion_models/`に配置し、アプリの「モデル更新」を押してください。標準UNETLoaderの一覧からファイル名に`ref2va`が含まれるsafetensorsを検出し、MiniMax H3のモデル欄に「参考画像 · 実ファイル名」を表示します。Sulphur 3のW4A8派生版や純正MiniMax H3 Ref2VAを同じ方式で選択できます。ファイル名の推測による固定登録は行いません。
+
+参考画像モードでは、既存のH3グラフを`MiniMaxH3ReferenceToVideo`へ差し替え、1枚の参照を`ref_images.ref_image_0`に接続します。`ref_image_size=match`で縦横比を維持しつつ参照トークン数を抑制、出力サイズは独立して設定します。サンプラーres_multistep、scheduler beta、24fps、FL2VA用Turboは無効です。既存の4B ClipProj（INT8）・32BエンコーダーとVAEを再利用します。プロンプトの`<Picture 1>`は必要な場合のみ自動補完し、空の依頼ではRef2VA専用の自然文を使います。画像を最初のフレームに固定しません。
+
+ファイル名とモードは履歴のh3_modelに記録され、再生成時は同じモデルと実際のプロンプトを復元します。新しいワークフローIDやDB移行は不要です。通常のFL2VAと既存履歴の挙動は変えません。Sulphur 3 Ref2VAはRef2VA専用の追加学習をしていない派生版のため、実機で品質を確認してください。モデルファイル自体の互換性・速度は未検証です。
+
+参照: https://github.com/Comfy-Org/workflow_templates/blob/main/templates/video_minimax_h3_r2v.json ; https://huggingface.co/SulphurAI/Sulphur-3

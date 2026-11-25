@@ -475,7 +475,7 @@ class Application:
         self.h3_duration = tk.StringVar(value=str(options.get("h3_duration", next(iter(H3_DURATIONS)))))
         model_key = options.get("h3_model", "int8")
         turbo_key = options.get("h3_turbo", "off")
-        self.h3_model = tk.StringVar(value=core.H3_MODEL_LABELS.get(model_key, "INT8 ConvRot"))
+        self.h3_model = tk.StringVar(value=core.h3_model_label(model_key))
         self.generation_inventory = None
         self.checkpoint_model = tk.StringVar(value=options.get("checkpoint_model", core.DEFAULT_SDXL_CHECKPOINT))
         self.qwen_steps = tk.StringVar(value=str(options.get("qwen_steps", 50)))
@@ -789,7 +789,8 @@ class Application:
                                     choices=(self.checkpoint_model.get(),), span=3, width=18)
         self.checkpoint_box.bind("<<ComboboxSelected>>", self._sync_h3_steps)
         self.h3_model_box = field(8, 0, "モデル", self.h3_model, "h3",
-                                  choices=tuple(core.H3_MODEL_LABELS.values()), span=3, width=18)
+                                  choices=tuple(dict.fromkeys((*core.H3_MODEL_LABELS.values(), self.h3_model.get()))),
+                                  span=3, width=18)
         self.h3_turbo_box = field(9, 0, "Turbo", self.h3_turbo, "h3",
                                   choices=tuple(core.H3_TURBO_LABELS.values()), span=3, width=18)
         self.h3_model_box.bind("<<ComboboxSelected>>", self._on_h3_model_choice)
@@ -1112,8 +1113,9 @@ class Application:
             self._refresh_custom_dimensions()
 
     def _h3_choices(self) -> dict:
-        model = next((key for key, label in core.H3_MODEL_LABELS.items() if label == self.h3_model.get()), None)
-        turbo = next((key for key, label in core.H3_TURBO_LABELS.items() if label == self.h3_turbo.get()), None)
+        model = core.h3_model_from_label(self.h3_model.get())
+        turbo = ("off" if core.h3_ref2va_filename(model) is not None else
+                 next((key for key, label in core.H3_TURBO_LABELS.items() if label == self.h3_turbo.get()), None))
         if model is None or turbo is None:
             raise core.OrchestratorError("H3モデルまたはTurbo設定が不正です")
         options = {"h3_model": model, "h3_turbo": turbo}
@@ -1144,7 +1146,13 @@ class Application:
             return
         is_h3 = self._active_workflow() == core.H3_I2V_ID
         turbo_checkpoint = (self._sdxl_turbo_active() if hasattr(self, "checkpoint_model") else False)
-        fixed = core.H3_TURBOS[self._h3_choices()["h3_turbo"]][1] if is_h3 else 4 if turbo_checkpoint else None
+        h3_choices = self._h3_choices() if is_h3 else {}
+        reference_only = core.h3_ref2va_filename(h3_choices.get("h3_model")) is not None
+        if is_h3 and hasattr(self, "h3_turbo_box"):
+            if reference_only and self.h3_turbo.get() != "OFF":
+                self.h3_turbo.set("OFF")
+            self.h3_turbo_box.configure(state="disabled" if reference_only else "readonly")
+        fixed = core.H3_TURBOS[h3_choices["h3_turbo"]][1] if is_h3 else 4 if turbo_checkpoint else None
         if hasattr(self, "checkpoint_model") and hasattr(self, "cfg_entry"):
             entry = self.config["workflows"].get(self._active_workflow(), {})
             cfg_variable = self.qwen_fixed_cfg if turbo_checkpoint else self.cfg
@@ -1457,7 +1465,7 @@ class Application:
         if "checkpoint_model" in p:
             details.append(Path(p["checkpoint_model"].replace("\\", "/")).stem)
         if entry.workflow_id == core.H3_I2V_ID and "h3_model" in p:
-            details.append(core.H3_MODEL_LABELS.get(p["h3_model"], str(p["h3_model"])))
+            details.append(core.h3_model_label(p["h3_model"]))
             turbo = core.H3_TURBO_LABELS.get(p.get("h3_turbo", "off"), "")
             if turbo and turbo != "OFF":
                 details.append("Turbo " + turbo)
@@ -1566,7 +1574,7 @@ class Application:
         if entry.workflow_id == core.H3_I2V_ID and hasattr(self, "h3_size"):
             p = entry.parameters
             if hasattr(self, "h3_model"):
-                self.h3_model.set(core.H3_MODEL_LABELS.get(p.get("h3_model", "int8"), "INT8 ConvRot"))
+                self.h3_model.set(core.h3_model_label(p.get("h3_model", "int8")))
                 self.h3_turbo.set(core.H3_TURBO_LABELS.get(p.get("h3_turbo", "off"), "OFF"))
                 if hasattr(self, "h3_encoder_cpu"):
                     self.h3_encoder_cpu.set(p.get("h3_encoder_device", "default") == "cpu")
@@ -2360,7 +2368,7 @@ class Application:
         choices = core.installed_model_choices(self.generation_inventory)
         # Preserve selected values even when a model was removed: never silently
         # change the actual generation weights on refresh or history restore.
-        h3 = [core.H3_MODEL_LABELS[key] for key in choices["h3"]]
+        h3 = [core.h3_model_label(key) for key in choices["h3"]]
         current = self.h3_model.get()
         if current not in h3:
             h3.append(current)

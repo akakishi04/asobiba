@@ -295,13 +295,24 @@ def is_h3_context(workflows: dict) -> bool:
     return set(workflows) == {H3_I2V_ID} and workflows[H3_I2V_ID].get("kind") == "i2v"
 
 
-def apply_h3_profile(base_system: str, workflows: dict, profile: str) -> str:
+def apply_h3_profile(base_system: str, workflows: dict, profile: str, *, reference_only: bool = False) -> str:
     """Keep non-H3 workflows and the general baseline unchanged."""
     if profile not in H3_PROFILES:
         raise ValueError(f"unsupported H3 prompt profile: {profile!r}")
     if not is_h3_context(workflows) or profile == H3_PROFILE_GENERAL:
         return base_system
-    return (
-        base_system + "\n\n" + H3_SHARED_STYLE_INSTRUCTIONS
-        + "\n\n" + H3_PROFILE_INSTRUCTIONS[profile]
-    )
+    shared = H3_SHARED_STYLE_INSTRUCTIONS
+    if reference_only:
+        shared = shared.replace(
+            "Start from the actual first frame, preserve its identity, composition and\nstyle unless the user requests a change.",
+            "Use <Picture 1> as a visual reference, not an initial frame; maintain requested identity and style.",
+        )
+    result = base_system + "\n\n" + shared + "\n\n" + H3_PROFILE_INSTRUCTIONS[profile]
+    if reference_only:
+        result += (
+            "\n\nRef2VA override: the reference is not an initial frame. "
+            "Use the preset as style and motion guidance only; do not force the reference's "
+            "composition, pose, background, camera or framing unless explicitly requested. "
+            "The requested output aspect ratio is independent of the reference."
+        )
+    return result
