@@ -444,3 +444,12 @@ H3のNVFP4テキストエンコーダーとDynamicVRAMの組み合わせではAd
 追加ファイル: `models/text_encoders/qwen3vl_32b_minimax_h3_int4_convrot.safetensors` (15 GB): https://huggingface.co/Merserk/MiniMax-H3-INT4-ConvRot/resolve/main/qwen3vl_32b_minimax_h3_int4_convrot.safetensors
 
 エンコーダーのモデルとデバイスも履歴に保存します。旧履歴は従来のエンコーダーを維持します。LLMを使わないI2Vは生成前のモデル解放を省略します。手動解放は上部「設定」の「生成モデル解放」から行い、実行・待機ジョブがある場合は拒否します。APIは解放要求の受付のみを確認します。
+
+### H3 4B ClipProj（実験的な軽量エンコーダー）
+
+ComfyUI ManagerからComfyUI-ClipProj 0.1.13以降を導入・再起動し、以下の2ファイルを配置してください。
+
+- `models/text_encoders/qwen3vl_4b_int8_convrot.safetensors`: https://huggingface.co/Comfy-Org/Krea-2/resolve/main/text_encoders/qwen3vl_4b_int8_convrot.safetensors
+- `models/clip_projections/mmh3-4b-ClipProj-v3.1.safetensors`: https://huggingface.co/NicoLab28/ClipProj-MiniMax-H3/resolve/main/mmh3-4b-ClipProj-v3.1.safetensors
+
+`clip_projections` はClipProjが実際のComfyUI本体のmodelsフォルダに作成します。共有モデルフォルダとは異なる場合があります。GUI上部の設定で「4B ClipProj (INT8)」を選び、GPUでの比較はCPU実行をOFFにします。標準CLIPLoaderのtype=krea2 → ClipProjApply → MiniMaxH3ImageToVideoを使用し、単一GPUに重みを固定するClipProj Loaderは使用しません。ノードと変換行列の存在は生成前に確認します。従来のエンコーダーやTurboの設定は維持し、履歴再生成も選択したエンコーダーを使用します。4Bは学習済み射影による代替エンコーダーであり、32Bと同品質・同速度を保証しません。

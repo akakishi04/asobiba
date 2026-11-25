@@ -78,8 +78,10 @@ H3_TURBO_LABELS = {"off": "OFF", "turbo8": "8 Steps", "turbo4": "4 Steps"}
 H3_ENCODERS = {
     "nvfp4": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
     "int4": "qwen3vl_32b_minimax_h3_int4_convrot.safetensors",
+    "clipproj4b": "qwen3vl_4b_int8_convrot.safetensors",
 }
-H3_ENCODER_LABELS = {"nvfp4": "NVFP4 AWQ", "int4": "INT4 ConvRot"}
+H3_ENCODER_LABELS = {"nvfp4": "NVFP4 AWQ", "int4": "INT4 ConvRot", "clipproj4b": "4B ClipProj (INT8)"}
+H3_CLIPPROJ_MATRIX = "mmh3-4b-ClipProj-v3.1.safetensors"
 H3_OPTION_KEYS = frozenset({"h3_model", "h3_turbo", "h3_encoder_device", "h3_encoder_model"})
 
 
@@ -140,6 +142,22 @@ def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None =
             encoder["inputs"]["device"] = options["h3_encoder_device"]
         if "h3_encoder_model" in options:
             encoder["inputs"]["clip_name"] = H3_ENCODERS[options["h3_encoder_model"]]
+        if options.get("h3_encoder_model") == "clipproj4b":
+            conditioning = graph.get("104", {})
+            if conditioning.get("class_type") != "MiniMaxH3ImageToVideo" or conditioning.get("inputs", {}).get("clip") != ["13", 0]:
+                raise OrchestratorError("H3 ClipProjには標準の画像→動画ノードが必要です")
+            # Stock CLIPLoader manages CPU offload. Do not use the resident
+            # all-in-one ClipProj loader, which pins memory on a single GPU.
+            encoder["inputs"]["type"] = "krea2"
+            node = 901
+            while str(node) in graph:
+                node += 1
+            node = str(node)
+            graph[node] = {
+                "class_type": "ClipProjApply",
+                "inputs": {"clip": ["13", 0], "projection": H3_CLIPPROJ_MATRIX},
+            }
+            conditioning["inputs"]["clip"] = [node, 0]
     if lora is not None:
         # Match the official ComfyUI FL2VA template: model-only LoRA, weight
         # 1, both scheduler and guider receive the patched model, same sampler.
@@ -555,6 +573,7 @@ class ComfyUI:
         loaders = {
             "UNETLoader": "unet_name", "CLIPLoader": "clip_name",
             "VAELoader": "vae_name", "LoraLoaderModelOnly": "lora_name",
+            "ClipProjApply": "projection",
         }
         required = {"Wan22ImageToVideoLatent", "MiniMaxH3ImageToVideo", "VAEDecodeAudio", "CreateVideo", "SaveVideo"}
         for class_type in sorted(required | set(loaders)):
@@ -570,6 +589,10 @@ class ComfyUI:
                 field = loaders[class_type]
                 choices = node_info["input"]["required"][field][0]
             except (KeyError, IndexError, TypeError, OrchestratorError) as exc:
+                if class_type == "ClipProjApply":
+                    raise OrchestratorError(
+                        "ClipProj Applyを確認できません。ComfyUI-ClipProj 0.1.13以降をManagerで導入・更新し、ComfyUIを再起動してください"
+                    ) from exc
                 raise OrchestratorError(
                     f"動画生成用ノード {class_type} を確認できません。ComfyUIを更新・再起動してください"
                 ) from exc
@@ -577,6 +600,10 @@ class ComfyUI:
                 if node.get("class_type") == class_type:
                     wanted = node["inputs"][field]
                     if wanted not in choices:
+                        if class_type == "ClipProjApply":
+                            raise OrchestratorError(
+                                f"ClipProj変換行列がありません: {wanted}。ComfyUI/models/clip_projectionsに配置してください"
+                            )
                         raise OrchestratorError(
                             f"動画生成モデルがありません: {wanted}。READMEのI2V導入手順を確認してください"
                         )

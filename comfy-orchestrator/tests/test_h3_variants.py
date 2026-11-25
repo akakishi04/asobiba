@@ -72,6 +72,56 @@ class H3VariantTests(unittest.TestCase):
         with self.assertRaises(core.OrchestratorError):
             core.split_h3_options({"h3_encoder_device": "cpu"}, enabled=False)
 
+    def test_clipproj4b_uses_stock_loader_and_projection(self):
+        options = {"h3_model": "w4a8", "h3_turbo": "turbo8",
+                   "h3_encoder_model": "clipproj4b", "h3_encoder_device": "default"}
+        graph = core.prepare_h3_workflow(self.graph, options, {"steps": 8})
+        self.assertEqual(graph["13"]["inputs"], {
+            "clip_name": "qwen3vl_4b_int8_convrot.safetensors",
+            "type": "krea2", "device": "default",
+        })
+        self.assertEqual(graph["901"], {"class_type": "ClipProjApply", "inputs": {
+            "clip": ["13", 0], "projection": core.H3_CLIPPROJ_MATRIX,
+        }})
+        self.assertEqual(graph["104"]["inputs"]["clip"], ["901", 0])
+        self.assertEqual(graph["9"]["inputs"]["steps"], 8)
+        self.assertEqual(graph["900"]["inputs"]["lora_name"], core.H3_TURBOS["turbo8"][0])
+        self.assertEqual(self.graph["13"]["inputs"]["type"], "minimax")
+        self.assertEqual(self.graph["104"]["inputs"]["clip"], ["13", 0])
+        ordinary = core.prepare_h3_workflow(self.graph, {**options, "h3_encoder_model": "nvfp4"})
+        self.assertNotIn("901", ordinary)
+        self.assertEqual(ordinary["13"]["inputs"]["type"], "minimax")
+
+    def test_clipproj_dependency_validation(self):
+        graph = core.prepare_h3_workflow(self.graph, {
+            "h3_model": "w4a8", "h3_turbo": "off",
+            "h3_encoder_model": "clipproj4b",
+        })
+        loader_fields = {"UNETLoader": "unet_name", "CLIPLoader": "clip_name",
+                         "VAELoader": "vae_name", "ClipProjApply": "projection"}
+        def mock_info(missing):
+            def info(base, route, **kwargs):
+                node = route.rsplit("/", 1)[-1]
+                if node == "ClipProjApply" and missing == "node":
+                    return {}
+                if node not in loader_fields:
+                    return {node: {}}
+                field = loader_fields[node]
+                choices = [n["inputs"][field] for n in graph.values() if n["class_type"] == node]
+                if node == "ClipProjApply" and missing == "matrix":
+                    choices = []
+                return {node: {"input": {"required": {field: [choices]}}}}
+            return info
+        comfy = core.ComfyUI(self.config["comfyui"])
+        with patch.object(core, "http_json", side_effect=mock_info(None)):
+            comfy.ensure_video_dependencies(graph)
+        with patch.object(core, "http_json", side_effect=mock_info("node")):
+            with self.assertRaisesRegex(core.OrchestratorError, "ClipProj Apply"):
+                comfy.ensure_video_dependencies(graph)
+        with patch.object(core, "http_json", side_effect=mock_info("matrix")):
+            with self.assertRaisesRegex(core.OrchestratorError, "clip_projections"):
+                comfy.ensure_video_dependencies(graph)
+
     def test_invalid_options_and_turbo_steps(self):
         for bad in ({"h3_model": "../arbitrary.safetensors"}, {"h3_turbo": ["turbo8"]}):
             with self.assertRaises(core.OrchestratorError):
@@ -92,6 +142,9 @@ class H3VariantTests(unittest.TestCase):
         self.assertEqual(params["h3_model"], "w4a8")
         self.assertEqual(params["h3_encoder_device"], "cpu")
         self.assertEqual(params["h3_encoder_model"], "int4")
+        fake.h3_encoder_model.set("4B ClipProj (INT8)")
+        self.assertEqual(gui.Application._h3_choices(fake)["h3_encoder_model"], "clipproj4b")
+        fake.h3_encoder_model.set("INT4 ConvRot")
         self.assertEqual(gui.image_aware_overrides(self.config, core.H3_I2V_ID, True, params, "0.53"), params)
         fake.h3_turbo.set("OFF")
         self.assertEqual(gui.Application._h3_overrides(fake)["steps"], 17)
