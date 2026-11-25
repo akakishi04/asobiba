@@ -70,6 +70,7 @@ class TestTheme(unittest.TestCase):
             vision_composition=Field(True),
             t2i_profile=Field(gui.T2I_PROFILE_LABELS["illustrious_v2"]),
             i2i_profile=Field(gui.I2I_PROFILE_LABELS["preserve_edit_v1"]),
+            h3_profile=Field(gui.H3_PROFILE_LABELS["h3_cel_v1"]),
             free_comfy=Field(True),
             workflow=Field("自動"),
             dark_mode=Field(True),
@@ -87,6 +88,7 @@ class TestTheme(unittest.TestCase):
         self.assertTrue(saved["llm"]["send_reference_to_llm"])
         self.assertEqual(saved["llm"]["t2i_prompt_profile"], "illustrious_v2")
         self.assertEqual(saved["llm"]["i2i_prompt_profile"], "preserve_edit_v1")
+        self.assertEqual(saved["llm"]["h3_prompt_profile"], "h3_cel_v1")
         self.assertEqual(saved["llm"]["base_url"], "http://127.0.0.1:57317")
 
     def test_editor_font_size_has_safe_range(self):

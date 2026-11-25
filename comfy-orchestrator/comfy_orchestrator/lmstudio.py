@@ -23,6 +23,7 @@ from .prompt_profiles import (
     apply_t2i_profile, apply_i2i_profile,
     is_t2i_context, is_i2i_context,
     edit_strength_hint,
+    DEFAULT_H3_PROFILE, H3_PROFILE_LABELS, apply_h3_profile, is_h3_context,
 )
 
 
@@ -291,6 +292,8 @@ class LMStudio:
                 "sheet may help identify the moving subject, but do not convert the "
                 "sheet into a static tag list or use it to redraw the subject."
             )
+        h3_profile = self.settings.get("h3_prompt_profile", DEFAULT_H3_PROFILE)
+        system = apply_h3_profile(system, workflows, h3_profile)
         edit_enabled = (
             is_i2i_context(workflows) and edit_profile != I2I_PROFILE_LEGACY
         )
@@ -426,6 +429,8 @@ class LMStudio:
                     "I2I/部分修正プロンプト: "
                     + ("保持重視 v1" if edit_enabled else "従来版（比較用）")
                 )
+            if progress and is_h3_context(workflows):
+                progress("H3プロンプト: " + H3_PROFILE_LABELS[h3_profile])
             if progress:
                 task_label = (
                     "自然文と構図観察結果から生成プロンプトを作成"

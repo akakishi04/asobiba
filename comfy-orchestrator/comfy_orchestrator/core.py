@@ -133,6 +133,7 @@ def load_config(path: Path) -> dict:
         from .prompt_profiles import (
             DEFAULT_T2I_PROFILE, T2I_PROFILES,
             DEFAULT_I2I_PROFILE, I2I_PROFILES,
+            DEFAULT_H3_PROFILE, H3_PROFILES,
         )
         profile = config["llm"].get("t2i_prompt_profile", DEFAULT_T2I_PROFILE)
         if not isinstance(profile, str) or profile not in T2I_PROFILES:
@@ -144,6 +145,9 @@ def load_config(path: Path) -> dict:
             raise OrchestratorError(
                 "llm.i2i_prompt_profile は preserve_edit_v1 または legacy です"
             )
+        h3_profile = config["llm"].get("h3_prompt_profile", DEFAULT_H3_PROFILE)
+        if not isinstance(h3_profile, str) or h3_profile not in H3_PROFILES:
+            raise OrchestratorError("llm.h3_prompt_profile は " + ", ".join(H3_PROFILES) + " から選択してください")
         if not isinstance(config["llm"].get("send_reference_to_llm", False), bool):
             raise OrchestratorError("llm.send_reference_to_llm は真偽値です")
     for key, item in config["workflows"].items():

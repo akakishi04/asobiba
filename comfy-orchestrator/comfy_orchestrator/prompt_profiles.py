@@ -1,4 +1,4 @@
-"""Versioned T2I and I2I/inpaint prompt policies for WAI-Illustrious SDXL.
+"""Versioned image-generation and MiniMax H3 video prompt policies.
 
 Only the language-model instructions change. Workflows, ComfyUI nodes and
 numeric generation settings are not modified by the profile switches.
@@ -193,3 +193,115 @@ def edit_strength_hint(denoise: float) -> str:
     if denoise <= 0.60:
         return "balanced"
     return "transform-oriented"
+
+
+
+# H3 accepts natural language and has its own conditioning path, not SDXL tags.
+H3_PROFILE_GENERAL = "h3_general_v1"
+H3_PROFILE_ILLUSTRATION = "h3_illustration_v1"
+H3_PROFILE_CEL = "h3_cel_v1"
+H3_PROFILE_MICROMOTION = "h3_micromotion_v1"
+H3_PROFILE_ACTION = "h3_action_v1"
+DEFAULT_H3_PROFILE = H3_PROFILE_ILLUSTRATION
+
+H3_PROFILE_LABELS = {
+    H3_PROFILE_GENERAL: "汎用動画",
+    H3_PROFILE_ILLUSTRATION: "イラストの画風維持",
+    H3_PROFILE_CEL: "2Dセル画アニメ",
+    H3_PROFILE_MICROMOTION: "Live2D風の微動",
+    H3_PROFILE_ACTION: "アクションアニメ",
+}
+H3_PROFILES = tuple(H3_PROFILE_LABELS)
+H3_LABEL_TO_PROFILE = {label: key for key, label in H3_PROFILE_LABELS.items()}
+
+# General intentionally preserves the existing H3 behavior for A/B tests.
+H3_SHARED_STYLE_INSTRUCTIONS = """
+The selected H3 preset is motion and rendering guidance, not additional story
+content. Explicit user directions take precedence over preset defaults.
+Start from the actual first frame, preserve its identity, composition and
+style unless the user requests a change. If the reference was not provided
+to the LLM, refer to its existing visual features generically; never invent
+specific colors, anatomy, objects or scenery. Describe temporal continuity
+in concise natural English sentences, not Danbooru tags or quality keywords.
+Do not introduce unsolicited actions, camera moves, scene cuts, dialogue,
+music or effects. Maintain the requested audio, language and spoken words.
+Fit all motion to the host-specified duration at 24 fps: describe coherent
+continuous motion for short/simple requests, and use ordered time beats
+only when useful for a requested multi-stage action. Never place an event
+beyond the clip's duration. Express preservation and motion constraints
+inside positive_prompt; this workflow has no negative_prompt or CFG.
+""".strip()
+
+H3_PROFILE_INSTRUCTIONS = {
+    H3_PROFILE_ILLUSTRATION: """
+ILLUSTRATION PRESERVATION:
+Describe the requested motion while explicitly retaining the source
+illustration's original linework, line weight, palette, painting texture,
+shading style, facial design, hair silhouette, clothing details and background.
+Keep them temporally consistent rather than re-rendering them into a different
+medium. Maintain the source's intended two-dimensional rendering if present;
+do not add realistic skin, photographic lighting, 3D/CGI materials or a new
+rendering style. Respect changes that the user actually requests. Keep
+unaffected areas visually stable and use a fixed camera unless the user
+requests or clearly implies a different camera movement. Do not flatten an
+existing painted or painterly style into cel shading.
+""".strip(),
+    H3_PROFILE_CEL: """
+2D CEL ANIMATION:
+Describe hand-drawn 2D animation with coherent outlines, defined color areas,
+consistent cel-shadow shapes and stable character model proportions.
+Use readable key poses, purposeful timing and clear transitions between them
+when the requested action benefits from those qualities. Maintain the source
+character and scene; adapt rendering toward the selected cel-animation
+aesthetic without redesigning them. Avoid unsolicited photorealism, volumetric
+3D shading, excessive motion blur, interpolation artifacts or arbitrary
+cuts. Do not force choppy motion, a frame-rate change, or a specific era
+of animation; retain the host's 24 fps output.
+""".strip(),
+    H3_PROFILE_MICROMOTION: """
+LIVE2D-LIKE MICRO-MOTION:
+Use tightly bounded motion in the source illustration. Prioritize requested
+subtle motions such as breathing, blinking, gaze, tiny expression changes,
+or gentle hair and cloth motion. These are examples, not a mandatory action
+list. Keep the framing and background stationary by default, preserve the
+original drawing and silhouette, and limit changes in depth, perspective and
+body orientation. Keep motion restrained and smooth without unintended zooms,
+full-body actions, morphing, or scene changes. If the user requests a loop,
+describe motion that can return naturally to the initial pose; do not claim
+seamless looping is guaranteed. Explicitly requested larger actions still
+take precedence.
+""".strip(),
+    H3_PROFILE_ACTION: """
+ACTION ANIMATION:
+Translate the requested action into a continuous, physically readable
+sequence of anticipation, weight shift, acceleration, main movement and
+follow-through when appropriate. Preserve character identity, anatomy,
+silhouette, outfit, spatial orientation and the source's rendering style
+through motion. Keep limb trajectories and contacts coherent; use clear
+key poses and readable camera framing. Match tempo to the requested action
+and available duration. Secondary hair and clothing motion should follow
+the main movement naturally. Do not invent additional attacks, explosions,
+other characters, camera cuts, speed lines or effects merely to increase
+excitement. Use dynamic camera movement only when requested or clearly
+implied, and avoid uncontrolled shaking that obscures the action.
+""".strip(),
+}
+
+
+def is_h3_context(workflows: dict) -> bool:
+    """Apply H3 profiles only to the registered local FL2VA workflow."""
+    from .core import H3_I2V_ID
+
+    return set(workflows) == {H3_I2V_ID} and workflows[H3_I2V_ID].get("kind") == "i2v"
+
+
+def apply_h3_profile(base_system: str, workflows: dict, profile: str) -> str:
+    """Keep non-H3 workflows and the general baseline unchanged."""
+    if profile not in H3_PROFILES:
+        raise ValueError(f"unsupported H3 prompt profile: {profile!r}")
+    if not is_h3_context(workflows) or profile == H3_PROFILE_GENERAL:
+        return base_system
+    return (
+        base_system + "\n\n" + H3_SHARED_STYLE_INSTRUCTIONS
+        + "\n\n" + H3_PROFILE_INSTRUCTIONS[profile]
+    )

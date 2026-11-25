@@ -35,6 +35,7 @@ from .character_refs import (
 from .prompt_profiles import (
     DEFAULT_T2I_PROFILE, T2I_PROFILE_LABELS, T2I_LABEL_TO_PROFILE,
     DEFAULT_I2I_PROFILE, I2I_PROFILE_LABELS, I2I_LABEL_TO_PROFILE,
+    DEFAULT_H3_PROFILE, H3_PROFILE_GENERAL, H3_PROFILE_LABELS, H3_LABEL_TO_PROFILE,
 )
 from .ime_font import install_native_ime_font, sync_native_ime_font
 from .ui_theme import apply_ttk_theme, style_text_widget
@@ -101,6 +102,7 @@ def bootstrap_config() -> dict:
     config["llm"].setdefault("send_reference_to_llm", False)
     config["llm"].setdefault("t2i_prompt_profile", DEFAULT_T2I_PROFILE)
     config["llm"].setdefault("i2i_prompt_profile", DEFAULT_I2I_PROFILE)
+    config["llm"].setdefault("h3_prompt_profile", DEFAULT_H3_PROFILE)
     config.setdefault("workflows", {})
     for workflow_id, entry in example.get("workflows", {}).items():
         config["workflows"].setdefault(workflow_id, copy.deepcopy(entry))
@@ -402,6 +404,12 @@ class Application:
                 I2I_PROFILE_LABELS[DEFAULT_I2I_PROFILE],
             )
         )
+        self.h3_profile = tk.StringVar(
+            value=H3_PROFILE_LABELS.get(
+                llm.get("h3_prompt_profile", DEFAULT_H3_PROFILE),
+                H3_PROFILE_LABELS[DEFAULT_H3_PROFILE],
+            )
+        )
         self.free_comfy = tk.BooleanVar(value=comfy.get("free_before_llm", True))
         self.status = tk.StringVar(value="準備完了 — LM Studioのサーバーを起動してください")
         self.result_info = tk.StringVar(value="生成画像はここに表示されます")
@@ -679,10 +687,16 @@ class Application:
             self.h3_controls, textvariable=self.h3_duration, values=tuple(H3_DURATIONS),
             state="readonly", width=16,
         ).grid(row=1, column=1, sticky="ew")
+        ttk.Label(self.h3_controls, text="プロンプト方式").grid(row=2, column=0, sticky="w", padx=(0, 6), pady=(4, 0))
+        self.h3_profile_box = ttk.Combobox(
+            self.h3_controls, textvariable=self.h3_profile,
+            values=tuple(H3_PROFILE_LABELS.values()), state="readonly", width=16,
+        )
+        self.h3_profile_box.grid(row=2, column=1, sticky="ew", pady=(4, 0))
         ttk.Label(
             self.h3_controls, text="24fps / 音声付き / CFGなし",
             style="Muted.TLabel",
-        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(3, 0))
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(3, 0))
         self.h3_controls.grid_remove()
 
         image_row = ttk.Frame(self.options_form)
@@ -1249,6 +1263,10 @@ class Application:
             policy_label = I2I_PROFILE_LABELS.get(
                 entry.prompt_profile, entry.prompt_profile or "記録なし"
             )
+        elif entry.workflow_id == core.H3_I2V_ID:
+            policy_label = H3_PROFILE_LABELS.get(
+                entry.prompt_profile, entry.prompt_profile or "記録なし"
+            )
         else:
             policy_label = None
         self.history_details.set(
@@ -1367,6 +1385,12 @@ class Application:
             and entry.prompt_profile in I2I_PROFILE_LABELS
         ):
             self.i2i_profile.set(I2I_PROFILE_LABELS[entry.prompt_profile])
+        elif entry.workflow_id == core.H3_I2V_ID:
+            # Old H3 jobs had no preset. Restore the original general behavior,
+            # without backfilling invented metadata into the saved history.
+            self.h3_profile.set(H3_PROFILE_LABELS.get(
+                entry.prompt_profile, H3_PROFILE_LABELS[H3_PROFILE_GENERAL]
+            ))
         self._update_generation_controls()
         self.status.set("履歴から設定を復元しました。自然文を編集して生成できます")
         self._log(f"履歴の設定を復元: {entry.workflow_id} / Seed={entry.parameters.get('seed', '不明')}")
@@ -1530,6 +1554,7 @@ class Application:
         config["llm"]["i2i_prompt_profile"] = I2I_LABEL_TO_PROFILE[
             self.i2i_profile.get()
         ]
+        config["llm"]["h3_prompt_profile"] = H3_LABEL_TO_PROFILE[self.h3_profile.get()]
         config["comfyui"]["base_url"] = self.comfy_url.get().strip()
         config["comfyui"]["free_before_llm"] = self.free_comfy.get()
         opts = self._overrides()
@@ -1667,6 +1692,8 @@ class Application:
             version_text = T2I_PROFILE_LABELS.get(version, version or "記録なし")
         elif kind in ("i2i", "inpaint"):
             version_text = I2I_PROFILE_LABELS.get(version, version or "記録なし")
+        elif details.get("workflow_id") == core.H3_I2V_ID:
+            version_text = H3_PROFILE_LABELS.get(version, version or "記録なし")
         else:
             version_text = version or "対象外"
         positive = str(details.get("positive_prompt") or "")
@@ -2113,7 +2140,9 @@ class Application:
             cfg["llm"].get("t2i_prompt_profile", DEFAULT_T2I_PROFILE)
             if kind == "t2i" else
             cfg["llm"].get("i2i_prompt_profile", DEFAULT_I2I_PROFILE)
-            if kind in ("i2i", "inpaint") else None
+            if kind in ("i2i", "inpaint") else
+            cfg["llm"].get("h3_prompt_profile", DEFAULT_H3_PROFILE)
+            if selected == core.H3_I2V_ID else None
         )
         self.latest_request_text = prompt
         self._set_busy("解釈テスト中..." if dry_run else "生成準備中...")
