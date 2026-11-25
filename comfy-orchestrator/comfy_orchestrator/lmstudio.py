@@ -14,7 +14,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
-from .core import OrchestratorError, _open_json, plan_schema, WAN_I2V_ID
+from .core import OrchestratorError, _open_json, plan_schema, HOST_VIDEO_IDS, H3_I2V_ID
 from .character_refs import observation_schema, intersection_schema, validate_images
 from .character_repair import repair_model_analysis
 from .prompt_profiles import (
@@ -197,7 +197,7 @@ class LMStudio:
              "parameters": [
                  name for name in entry["bindings"]
                  if name not in ("image", "mask", "pose", "seed")
-                 and (key != WAN_I2V_ID or name in ("positive_prompt", "negative_prompt"))
+                 and (key not in HOST_VIDEO_IDS or name in ("positive_prompt", "negative_prompt"))
              ],
              "required_inputs": [
                  name for name in ("image", "mask", "pose")
@@ -252,6 +252,16 @@ class LMStudio:
                 "If no image is visible to you, describe the user's requested movement without "
                 "pretending to have observed the image. Only return positive_prompt and optional "
                 "negative_prompt; video resolution, frame count, FPS and seed are host settings."
+            )
+        if H3_I2V_ID in workflows:
+            system += (
+                "\nMiniMax H3 FL2VA: the input image is the first frame. "
+                "Describe continuous action in natural English; for a complex sequence use "
+                "ordered time beats, keeping their timing consistent with the user's requested duration. "
+                "The model generates synchronized audio. Include requested ambience, effects, "
+                "speech or music in the same prompt; do not add dialogue or music unasked. "
+                "Preserve the source illustration's style, subject and scene. "
+                "Only return positive_prompt; negative prompts and CFG are not supported by this workflow."
             )
         profile = self.settings.get("t2i_prompt_profile", DEFAULT_T2I_PROFILE)
         edit_profile = self.settings.get("i2i_prompt_profile", DEFAULT_I2I_PROFILE)
@@ -320,6 +330,7 @@ class LMStudio:
                 + character_traits + "\n"
                 if character_traits else ""
             )
+            + (f"Host video duration: {self.settings['_h3_duration_seconds']:.2f} seconds at 24 FPS.\n" if H3_I2V_ID in workflows and "_h3_duration_seconds" in self.settings else "")
             + f"User request: {text}"
         )
         message: dict[str, Any] = {"role": "user", "content": user_text}

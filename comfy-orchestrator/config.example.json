@@ -293,6 +293,52 @@
         "steps": 20,
         "cfg": 5
       }
+    },
+    "minimax_h3_i2v": {
+      "kind": "i2v",
+      "description": "MiniMax H3 FL2VA（ローカル）: 先頭画像から動きと同期音声を生成。24fps、約5～15秒。技術設定はGUI側で固定。",
+      "file": "workflows/minimax_h3_i2v.api.json",
+      "bindings": {
+        "positive_prompt": {
+          "node": "104",
+          "input": "prompt"
+        },
+        "image": {
+          "node": "114",
+          "input": "image"
+        },
+        "width": {
+          "node": "104",
+          "input": "width"
+        },
+        "height": {
+          "node": "104",
+          "input": "height"
+        },
+        "frames": {
+          "node": "104",
+          "input": "length"
+        },
+        "fps": {
+          "node": "91",
+          "input": "fps"
+        },
+        "steps": {
+          "node": "9",
+          "input": "steps"
+        },
+        "seed": {
+          "node": "15",
+          "input": "noise_seed"
+        }
+      },
+      "defaults": {
+        "width": 864,
+        "height": 480,
+        "frames": 124,
+        "fps": 24,
+        "steps": 20
+      }
     }
   },
   "llm": {
@@ -318,6 +364,8 @@
     "seed": "",
     "video_size": "832 × 480",
     "video_frames": 49,
-    "video_fps": 24
+    "video_fps": 24,
+    "h3_size": "864 × 480",
+    "h3_duration": "約5秒 (124f)"
   }
 }

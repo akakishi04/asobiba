@@ -35,6 +35,8 @@ PARAMS = {
 }
 ALLOWED_KINDS = {"t2i", "i2i", "t2v", "i2v", "inpaint", "pose"}
 WAN_I2V_ID = "wan22_i2v_5b"
+H3_I2V_ID = "minimax_h3_i2v"
+HOST_VIDEO_IDS = frozenset({WAN_I2V_ID, H3_I2V_ID})
 VIDEO_KINDS = frozenset({"i2v", "t2v"})
 IMAGE_INPUTS = frozenset({"image", "mask", "pose"})
 
@@ -203,6 +205,31 @@ def validate_wan_video_parameters(parameters: dict) -> None:
         raise OrchestratorError("Wan 2.2のフレーム数は5以上の4n+1にしてください")
 
 
+def validate_h3_video_parameters(parameters: dict) -> None:
+    """H3 FL2VA uses 24 fps and a 17k+5 temporal grid."""
+    for name in ("width", "height", "frames", "fps"):
+        if name not in parameters:
+            raise OrchestratorError(f"H3動画生成には {name} が必要です")
+        check_param(name, parameters[name])
+    width, height = parameters["width"], parameters["height"]
+    if width % 32 or height % 32 or min(width, height) < 384:
+        raise OrchestratorError("H3の幅・高さは32の倍数、短辺384以上にしてください")
+    if min(width, height) > 768 or max(width, height) > 1344:
+        raise OrchestratorError("H3の初期ワークフローは短辺768・長辺1344以下に制限しています")
+    if parameters["fps"] != 24:
+        raise OrchestratorError("H3のFPSは24固定です")
+    frames = parameters["frames"]
+    if not 107 <= frames <= 362 or (frames - 5) % 17:
+        raise OrchestratorError("H3のフレーム数は107～362の17n+5にしてください")
+
+
+def validate_video_parameters(workflow_id: str, parameters: dict) -> None:
+    if workflow_id == WAN_I2V_ID:
+        validate_wan_video_parameters(parameters)
+    elif workflow_id == H3_I2V_ID:
+        validate_h3_video_parameters(parameters)
+
+
 def load_workflow(path: Path, bindings: dict) -> dict:
     try:
         workflow = json.loads(path.read_text(encoding="utf-8"))
@@ -225,7 +252,7 @@ def plan_schema(workflows: dict) -> dict:
     for name, (typ, lo, hi) in PARAMS.items():
         # Seed belongs to the user/host, not to the language model.
         # LLMs may emit negative, oversized or imprecise seed values.
-        if name == "seed" or (set(workflows) == {WAN_I2V_ID} and name not in ("positive_prompt", "negative_prompt")):
+        if name == "seed" or (bool(workflows) and workflows.keys() <= HOST_VIDEO_IDS and name not in ("positive_prompt", "negative_prompt")):
             continue
         if any(name in entry["bindings"] for entry in workflows.values()):
             spec = {"type": typ}
@@ -407,7 +434,7 @@ class ComfyUI:
             "UNETLoader": "unet_name", "CLIPLoader": "clip_name",
             "VAELoader": "vae_name",
         }
-        required = {"Wan22ImageToVideoLatent", "CreateVideo", "SaveVideo"}
+        required = {"Wan22ImageToVideoLatent", "MiniMaxH3ImageToVideo", "VAEDecodeAudio", "CreateVideo", "SaveVideo"}
         for class_type in sorted(required | set(loaders)):
             if not any(n.get("class_type") == class_type for n in workflow.values()):
                 continue
@@ -579,6 +606,12 @@ def execute(
                 if effective_denoise is not None:
                     check_param("denoise", effective_denoise)
                     settings["_edit_denoise"] = float(effective_denoise)
+        if set(workflows) == {H3_I2V_ID}:
+            settings = dict(settings)
+            h3 = workflows[H3_I2V_ID]
+            frames = (overrides or {}).get("frames", h3.get("defaults", {}).get("frames", 124))
+            check_param("frames", frames)
+            settings["_h3_duration_seconds"] = frames / 24
         # A pose reference is also a valid vision input. The VLM receives the
         # same image used by pose ControlNet, while ComfyUI still receives it
         # through the separate "pose" binding. In I2I, prefer the source image.
@@ -610,11 +643,12 @@ def execute(
         if "seed" in plan["parameters"]:
             note("LLMが返したSeedは使用せず、GUI指定または乱数で設定します")
         plan = {**plan, "parameters": {k: v for k, v in plan["parameters"].items() if k != "seed"}}
-    if set(workflows) == {WAN_I2V_ID} and isinstance(plan, dict) and isinstance(plan.get("parameters"), dict):
+    if bool(workflows) and workflows.keys() <= HOST_VIDEO_IDS and isinstance(plan, dict) and isinstance(plan.get("parameters"), dict):
         # Video dimensions, length, FPS and sampler settings belong to the host.
         plan = {**plan, "parameters": {
             k: v for k, v in plan["parameters"].items()
             if k in ("positive_prompt", "negative_prompt")
+            and any(k in e["bindings"] for e in workflows.values())
         }}
     workflow_id, params = validate_plan(plan, workflows, image is not None)
     selection = workflows[workflow_id]
@@ -628,8 +662,7 @@ def execute(
         # Seed empty in the GUI => an independent reproducible 32-bit seed.
         # Never silently inherit the fixed seed from the template JSON.
         params["seed"] = secrets.randbits(32)
-    if workflow_id == WAN_I2V_ID:
-        validate_wan_video_parameters(params)
+    validate_video_parameters(workflow_id, params)
     template = load_workflow(
         (config_path.resolve().parent / selection["file"]).resolve(), selection["bindings"]
     )
@@ -691,8 +724,7 @@ def execute_saved(
         {"workflow_id": workflow_id, "parameters": copied},
         {workflow_id: selected}, has_image,
     )
-    if workflow_id == WAN_I2V_ID:
-        validate_wan_video_parameters(params)
+    validate_video_parameters(workflow_id, params)
     template = load_workflow(
         (config_path.resolve().parent / selected["file"]).resolve(),
         bindings,

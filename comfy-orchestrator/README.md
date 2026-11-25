@@ -365,3 +365,21 @@ ComfyUI標準のWan2.2 5Bワークフローを登録済みです。通常のI2I�
 4. 「動画生成を開始」。結果はComfyUIとアプリのoutputsにMP4として保存されます。GUIの「ファイルを開く」または履歴の「開く」でOS既定プレイヤーを起動します（GUI内の動画再生は未実装）。履歴復元・Seed再生成に対応します。
 
 動画生成は静止画より大きなVRAM・RAM・時間を必要とします。16GB GPUでの動作を保証するものではありません。まず49フレームで実測してください。動画の待機上限は既定7200秒（`comfyui.video_generation_timeout_seconds`）、静止画は従来設定のままです。動画取得上限は512MiBです。LLMは従来どおり生成前にアンロードします。
+
+
+## I2V本命：MiniMax H3 FL2VA（ローカル・音声付き）
+
+「I2Vに使用」は `minimax_h3_i2v` を選択します。従来の `wan22_i2v_5b` もワークフロー選択欄から引き続き利用できます。H3は最新のComfyUI（ネイティブH3対応に加えてINT8 ConvRot対応のPyTorch CUDA 13.0環境を推奨）が必要です。モデルのダウンロード・配置は一度だけ手動で行います。
+
+| ComfyUI/models 以下の配置先 | ファイル |
+|---|---|
+| diffusion_models | [minimax_h3_fl2va_pruned_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors) |
+| text_encoders | [qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors) |
+| vae | [minimax_h3_video_vae_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_video_vae_int8_convrot.safetensors) |
+| vae | [minimax_h3_audio_vae_fp32.safetensors](https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_audio_vae_fp32.safetensors) |
+
+公式の[ローカルI2Vテンプレート](https://github.com/Comfy-Org/workflow_templates/blob/main/templates/video_minimax_h3_i2v.json)の通常20ステップ経路をAPI形式に展開しています。Turbo LoRA、Ref2VA、終点画像入力、2K再生成は今回の対象外です。H3のNVFP4 AWQテキストエンコーダはBlackwell専用ではありません。約37.3GBのモデルを使用するため、16GB VRAMではCPUオフロードが必要です。
+
+最初は864×480、約5秒（124f）、20 steps、24fps固定を推奨します。約8、10、12、15秒も選択できます。長尺では0.4MP前後から試してください。縦横比は元画像に近いプリセットを選択してください（ネイティブのfirst_frameは指定解像度へ変形します）。CFGとnegative promptはH3のBasicGuider経路では使用しません。LM Studioには動画の長さも渡し、動き・時間展開・音の指示を自然な英文に変換します。
+
+H3の動作が重い場合は、既存Wanを軽量プレビュー用に利用してください。実機でのVRAM使用量、速度、生成品質は未確認です。詳細は[ComfyUI公式ガイド](https://docs.comfy.org/tutorials/video/minimax/minimax-h3-native)と[モデル配布元](https://huggingface.co/Comfy-Org/MiniMax-H3)を参照してください。

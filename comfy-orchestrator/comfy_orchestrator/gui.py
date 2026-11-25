@@ -49,6 +49,8 @@ OUTPUTS = ROOT / "outputs"
 CUSTOM_RESOLUTION = "カスタム"
 VIDEO_RESOLUTIONS = ("832 × 480", "480 × 832", "640 × 640", "1280 × 704", "704 × 1280")
 VIDEO_FRAME_COUNTS = ("49", "81", "121")
+H3_RESOLUTIONS = ("864 × 480", "480 × 864", "640 × 640", "1056 × 608", "608 × 1056", "1344 × 768", "768 × 1344", "768 × 768")
+H3_DURATIONS = {"約5秒 (124f)": 124, "8秒 (192f)": 192, "約10秒 (243f)": 243, "約12秒 (294f)": 294, "約15秒 (362f)": 362}
 VIDEO_EXTENSIONS = frozenset({".mp4", ".webm", ".mov", ".mkv"})
 IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp"})
 
@@ -364,6 +366,8 @@ class Application:
         self.video_size = tk.StringVar(value=str(options.get("video_size", VIDEO_RESOLUTIONS[0])))
         self.video_frames = tk.StringVar(value=str(options.get("video_frames", 49)))
         self.video_fps = tk.StringVar(value=str(options.get("video_fps", 24)))
+        self.h3_size = tk.StringVar(value=str(options.get("h3_size", H3_RESOLUTIONS[0])))
+        self.h3_duration = tk.StringVar(value=str(options.get("h3_duration", next(iter(H3_DURATIONS)))))
         self.steps = tk.StringVar(value=str(options.get("steps", 20)))
         self.cfg = tk.StringVar(value=str(options.get("cfg", 5.0)))
         self.seed = tk.StringVar(value=str(options.get("seed", "")))
@@ -593,9 +597,8 @@ class Application:
             row=3, column=1, sticky="ew", padx=(0, 8),
         )
         ttk.Label(settings, text="CFG").grid(row=3, column=2, sticky="w")
-        ttk.Entry(settings, textvariable=self.cfg, width=8).grid(
-            row=3, column=3, sticky="ew",
-        )
+        self.cfg_entry = ttk.Entry(settings, textvariable=self.cfg, width=8)
+        self.cfg_entry.grid(row=3, column=3, sticky="ew")
         ttk.Label(settings, text="Seed").grid(row=4, column=0, sticky="w")
         ttk.Entry(settings, textvariable=self.seed).grid(
             row=4, column=1, columnspan=3, sticky="ew",
@@ -662,6 +665,25 @@ class Application:
             values=("16", "24", "30"), state="readonly", width=5,
         ).grid(row=1, column=3, sticky="ew")
         self.video_controls.grid_remove()
+
+        self.h3_controls = ttk.Frame(settings)
+        self.h3_controls.grid(row=11, column=0, columnspan=4, sticky="ew", pady=(5, 0))
+        self.h3_controls.columnconfigure(1, weight=1)
+        ttk.Label(self.h3_controls, text="H3動画サイズ").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        ttk.Combobox(
+            self.h3_controls, textvariable=self.h3_size, values=H3_RESOLUTIONS,
+            state="readonly", width=16,
+        ).grid(row=0, column=1, sticky="ew", pady=(0, 4))
+        ttk.Label(self.h3_controls, text="動画の長さ").grid(row=1, column=0, sticky="w")
+        ttk.Combobox(
+            self.h3_controls, textvariable=self.h3_duration, values=tuple(H3_DURATIONS),
+            state="readonly", width=16,
+        ).grid(row=1, column=1, sticky="ew")
+        ttk.Label(
+            self.h3_controls, text="24fps / 音声付き / CFGなし",
+            style="Muted.TLabel",
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(3, 0))
+        self.h3_controls.grid_remove()
 
         image_row = ttk.Frame(self.options_form)
         image_row.pack(fill="x", pady=(0, 12))
@@ -1070,11 +1092,19 @@ class Application:
         bindings = self.config["workflows"].get(workflow_id, {}).get("bindings", {})
         uses_source_image = "image" in bindings
         is_video = self.config["workflows"].get(workflow_id, {}).get("kind") == "i2v"
+        is_h3 = workflow_id == core.H3_I2V_ID
         if hasattr(self, "video_controls"):
-            if is_video:
+            if is_video and not is_h3:
                 self.video_controls.grid()
             else:
                 self.video_controls.grid_remove()
+        if hasattr(self, "h3_controls"):
+            if is_h3:
+                self.h3_controls.grid()
+            else:
+                self.h3_controls.grid_remove()
+        if hasattr(self, "cfg_entry"):
+            self.cfg_entry.configure(state="disabled" if is_h3 else "normal")
         if hasattr(self, "run_button"):
             self.run_button.configure(text="動画生成を開始" if is_video else "画像生成を開始")
         for entry in (self.width_entry, self.height_entry):
@@ -1117,6 +1147,7 @@ class Application:
                 state="normal" if has_visual_reference else "disabled"
             )
         hint = (
+            "MiniMax H3：参照画像を先頭フレームに使用" if is_h3 else
             "I2V：参照画像を先頭フレームに使用" if is_video else
             "ポーズを参照して生成" if "pose" in bindings else
             "マスクの白い部分だけ変更" if "mask" in bindings else
@@ -1296,7 +1327,13 @@ class Application:
         finally:
             self._source_change_lock = False
         video_entry = entry.kind in core.VIDEO_KINDS
-        if video_entry and hasattr(self, "video_size"):
+        if entry.workflow_id == core.H3_I2V_ID and hasattr(self, "h3_size"):
+            p = entry.parameters
+            if "width" in p and "height" in p:
+                self.h3_size.set(f"{p['width']} × {p['height']}")
+            if "frames" in p:
+                self.h3_duration.set(next((label for label, count in H3_DURATIONS.items() if count == p["frames"]), f"{p['frames'] / 24:.2f}秒 ({p['frames']}f)"))
+        elif video_entry and hasattr(self, "video_size"):
             p = entry.parameters
             if "width" in p and "height" in p:
                 self.video_size.set(f"{p['width']} × {p['height']}")
@@ -1506,9 +1543,11 @@ class Application:
         config["ui"]["denoise"] = self.denoise.get().strip()
         config["ui"]["pose_mode"] = self.pose_mode.get()
         config["ui"]["control_strength"] = self.control_strength.get().strip()
-        config["ui"]["video_size"] = self.video_size.get()
-        config["ui"]["video_frames"] = self.video_frames.get()
-        config["ui"]["video_fps"] = self.video_fps.get()
+        for name in ("video_size", "video_frames", "video_fps", "h3_size", "h3_duration"):
+            if hasattr(self, name):
+                config["ui"][name] = getattr(self, name).get()
+            elif name in self.config.get("ui", {}):
+                config["ui"][name] = self.config["ui"][name]
         return config
 
     def _overrides(self) -> dict:
@@ -1536,6 +1575,24 @@ class Application:
         for name, value in values.items():
             core.check_param(name, value)
         core.validate_wan_video_parameters(values)
+        return values
+
+    def _h3_overrides(self) -> dict:
+        width, height = (int(part.strip()) for part in self.h3_size.get().split("×"))
+        label = self.h3_duration.get()
+        frames = H3_DURATIONS.get(label)
+        if frames is None:
+            # Restore a valid duration from a history entry made outside the GUI.
+            frames = int(label.rsplit("(", 1)[1].removesuffix("f)"))
+        values = {
+            "width": width, "height": height, "frames": frames,
+            "fps": 24, "steps": int(self.steps.get()),
+        }
+        if self.seed.get().strip():
+            values["seed"] = int(self.seed.get().strip())
+        for name, value in values.items():
+            core.check_param(name, value)
+        core.validate_h3_video_parameters(values)
         return values
 
     def _save_settings(self) -> bool:
@@ -1901,7 +1958,7 @@ class Application:
             self.status.set("修正範囲を指定しました。自然文を入力して生成してください")
 
     def _use_as_i2i_source(self, path: Path | None, workflow_id: str = "wai_i2i_basic") -> None:
-        label = "I2V" if workflow_id == core.WAN_I2V_ID else "I2I"
+        label = "I2V" if workflow_id in core.HOST_VIDEO_IDS else "I2I"
         if self.working:
             messagebox.showwarning(label, "現在の処理が終了してから画像を指定してください")
             return
@@ -1913,7 +1970,7 @@ class Application:
             self.mask_image.set("")
             self.pose_image.set("")
             self._last_reference_image = ""
-            if workflow_id == core.WAN_I2V_ID:
+            if workflow_id in core.HOST_VIDEO_IDS:
                 self.composition_image.set("")
             self.reference_image.set(str(path))
         finally:
@@ -1944,12 +2001,12 @@ class Application:
         index = selected[0] if selected else 0
         self._use_as_i2i_source(
             self.image_paths[index] if index < len(self.image_paths) else None,
-            core.WAN_I2V_ID,
+            core.H3_I2V_ID,
         )
 
     def _history_output_to_i2v(self) -> None:
         entry = self._one_history()
-        self._use_as_i2i_source(entry.first_image if entry else None, core.WAN_I2V_ID)
+        self._use_as_i2i_source(entry.first_image if entry else None, core.H3_I2V_ID)
 
     def _open_history_output(self) -> None:
         entry = self._one_history()
@@ -2023,7 +2080,8 @@ class Application:
             messagebox.showerror("I2V", "参照画像を1枚指定し、マスク・ポーズ・構図参考画像は空欄にしてください")
             return
         try:
-            overrides = self._video_overrides() if selected == core.WAN_I2V_ID else self._overrides()
+            overrides = (self._h3_overrides() if selected == core.H3_I2V_ID else
+                         self._video_overrides() if selected == core.WAN_I2V_ID else self._overrides())
             overrides = image_aware_overrides(
                 self.config, selected, image is not None,
                 overrides, self.denoise.get(), self.control_strength.get(),
