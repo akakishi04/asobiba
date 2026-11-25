@@ -509,3 +509,11 @@ H3のモデル欄でRef2VAを選択後、TurboのOFF / 4 Steps / 8 Stepsを選�
 ComfyUIのmodels/lorasに配置します。Ref2VA TurboはModelOnly LoRA強度1、Euler/simple、MiniMaxH3SigmaShift（video/audio: 4 Steps=12/3、8 Steps=6/3）を使用し、scheduler/guiderは同じshift済みモデルに接続します。4/8 Stepsはホストで固定。依存ノード・LoRAの存在は生成前に確認します。通常のRef2VA、FL2VAと旧履歴の設定は変更しません。Sulphur 3との互換性は未検証であり、同じ参照画像・Seed・プロンプト・解像度・長さでOFF/4/8を比較してください。
 
 参照: https://github.com/ModelTC/Minimax-H3-Turbo/blob/main/example_workflows/video_minimax_h3_ref2v_lightx2v_turbo.json
+
+### 10Eros-Max v1.0 Hybrid（開始フレーム・参考画像）
+
+ダウンロードしたv1.0の拡散モデルをComfyUIのmodels/diffusion_modelsに置き、「モデル更新」を押します。H3のモデル欄に同じファイルの「Hybrid 開始フレーム」「Hybrid 参考画像」が表示されます。公開済みv1.0 BF16、INT8 HQ、LokkenJPのHQ・Compact・Microの実ファイル名を認識します。MicroはW3A8/W5A8対応のComfyUI nightlyとComfy Kitchen 0.2.42以降が必要です。
+
+モデルカードに従いLCM/simple・8～12 Steps（初期値8）、内蔵Turboのみを使用します。追加Turboは無効。既存H3と同じエンコーダー・VAEを再利用し、参考画像側はMiniMaxH3ReferenceToVideoとmatch、開始フレーム側はMiniMaxH3ImageToVideoを使用します。HybridのStepsは既存H3と独立して保存します。元ファイルと使用モードは履歴に残り、旧履歴は変更しません。まず標準ノードのみの1パスを比較するため、配布元のVSA/SLA疎Attentionや2パス・アップスケールは未導入です。画質、速度、4B ClipProjとの互換性は未検証です。
+
+参照: https://huggingface.co/TenStrip/10Eros-Max ; https://huggingface.co/LokkenJP/TenEros_Max_optimized_learned/raw/main/README.md

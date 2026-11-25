@@ -487,6 +487,7 @@ class Application:
         self.h3_encoder_model = tk.StringVar(value=core.H3_ENCODER_LABELS.get(
             options.get("h3_encoder_model", "nvfp4"), "NVFP4 AWQ"))
         self.h3_steps = tk.StringVar(value=str(options.get("h3_steps", options.get("steps", 20))))
+        self.h3_hybrid_steps = tk.StringVar(value=str(options.get("h3_hybrid_steps", core.H3_HYBRID_DEFAULT_STEPS)))
         self.h3_fixed_steps = tk.StringVar(value="")
         self.steps = tk.StringVar(value=str(options.get("steps", 20)))
         self.cfg = tk.StringVar(value=str(options.get("cfg", 5.0)))
@@ -791,7 +792,7 @@ class Application:
         self.h3_model_box = field(8, 0, "モデル", self.h3_model, "h3",
                                   choices=tuple(dict.fromkeys((*core.H3_MODEL_LABELS.values(), self.h3_model.get()))),
                                   span=3, width=18)
-        self.h3_turbo_box = field(9, 0, "Turbo", self.h3_turbo, "h3",
+        self.h3_turbo_box = field(9, 0, "追加Turbo", self.h3_turbo, "h3",
                                   choices=tuple(core.H3_TURBO_LABELS.values()), span=3, width=18)
         self.h3_model_box.bind("<<ComboboxSelected>>", self._on_h3_model_choice)
         self.h3_turbo_box.bind("<<ComboboxSelected>>", self._sync_h3_steps)
@@ -1114,7 +1115,8 @@ class Application:
 
     def _h3_choices(self) -> dict:
         model = core.h3_model_from_label(self.h3_model.get())
-        turbo = next((key for key, label in core.H3_TURBO_LABELS.items() if label == self.h3_turbo.get()), None)
+        turbo = ("off" if core.h3_hybrid_filename(model) is not None else
+                 next((key for key, label in core.H3_TURBO_LABELS.items() if label == self.h3_turbo.get()), None))
         if model is None or turbo is None:
             raise core.OrchestratorError("H3モデルまたはTurbo設定が不正です")
         options = {"h3_model": model, "h3_turbo": turbo}
@@ -1146,8 +1148,11 @@ class Application:
         is_h3 = self._active_workflow() == core.H3_I2V_ID
         turbo_checkpoint = (self._sdxl_turbo_active() if hasattr(self, "checkpoint_model") else False)
         h3_choices = self._h3_choices() if is_h3 else {}
+        hybrid = core.h3_hybrid_filename(h3_choices.get("h3_model")) is not None
         if is_h3 and hasattr(self, "h3_turbo_box"):
-            self.h3_turbo_box.configure(state="readonly")
+            if hybrid:
+                self.h3_turbo.set("OFF")
+            self.h3_turbo_box.configure(state="disabled" if hybrid else "readonly")
         fixed = core.H3_TURBOS[h3_choices["h3_turbo"]][1] if is_h3 else 4 if turbo_checkpoint else None
         if hasattr(self, "checkpoint_model") and hasattr(self, "cfg_entry"):
             entry = self.config["workflows"].get(self._active_workflow(), {})
@@ -1159,7 +1164,7 @@ class Application:
                 self.h3_fixed_steps.set(str(fixed))
             variable = self.h3_fixed_steps
         else:
-            variable = self.h3_steps if is_h3 else self.steps
+            variable = self.h3_hybrid_steps if hybrid else self.h3_steps if is_h3 else self.steps
         key = (str(variable), fixed is not None)
         if getattr(self, "_steps_binding_key", None) != key:
             self.steps_entry.configure(textvariable=variable, state="readonly" if fixed is not None else "normal")
@@ -1577,7 +1582,9 @@ class Application:
                 if hasattr(self, "h3_encoder_model"):
                     self.h3_encoder_model.set(core.H3_ENCODER_LABELS.get(p.get("h3_encoder_model", "nvfp4"), "NVFP4 AWQ"))
                 if p.get("h3_turbo", "off") == "off" and "steps" in p:
-                    self.h3_steps.set(str(p["steps"]))
+                    variable = (self.h3_hybrid_steps if core.h3_hybrid_filename(p.get("h3_model")) is not None
+                                and hasattr(self, "h3_hybrid_steps") else self.h3_steps)
+                    variable.set(str(p["steps"]))
             if "width" in p and "height" in p:
                 self.h3_size.set(f"{p['width']} × {p['height']}")
             if "frames" in p:
@@ -1832,6 +1839,8 @@ class Application:
         if hasattr(self, "h3_model"):
             config["ui"].update(self._h3_choices())
             config["ui"]["h3_steps"] = self.h3_steps.get()
+            if hasattr(self, "h3_hybrid_steps"):
+                config["ui"]["h3_hybrid_steps"] = self.h3_hybrid_steps.get()
         for name in ("video_size", "video_frames", "video_fps", "h3_size", "h3_duration",
                      "hunyuan_size", "hunyuan_frames", "hunyuan_steps",
                      "checkpoint_model", "qwen_steps", "qwen_cfg"):
@@ -1926,7 +1935,8 @@ class Application:
             frames = int(label.rsplit("(", 1)[1].removesuffix("f)"))
         choices = self._h3_choices() if hasattr(self, "h3_model") else {}
         fixed = core.H3_TURBOS[choices.get("h3_turbo", "off")][1]
-        normal = getattr(self, "h3_steps", self.steps)
+        hybrid = core.h3_hybrid_filename(choices.get("h3_model")) is not None
+        normal = self.h3_hybrid_steps if hybrid else getattr(self, "h3_steps", self.steps)
         values = {
             "width": width, "height": height, "frames": frames,
             "fps": 24, "steps": fixed if fixed is not None else int(normal.get()),
@@ -1936,6 +1946,8 @@ class Application:
         for name, value in values.items():
             core.check_param(name, value)
         core.validate_h3_video_parameters(values)
+        if hybrid:
+            core.validate_h3_hybrid_steps(values["steps"])
         return {**values, **choices}
 
     def _save_settings(self) -> bool:

@@ -105,10 +105,48 @@ H3_CLIPPROJ_MATRIX = "mmh3-4b-ClipProj-v3.1.safetensors"
 H3_OPTION_KEYS = frozenset({"h3_model", "h3_turbo", "h3_encoder_device", "h3_encoder_model"})
 H3_REF2VA_PREFIX = "ref2va:"
 H3_REF2VA_LABEL = "参考画像 · "
+# v1.0 is a hybrid with its eight-step distillation already merged.
+H3_HYBRID_FILES = frozenset(name.lower() for name in (
+    "10Eros_Max_8stepTurbo_v1.0_hybrid.safetensors",
+    "10Eros_Max_8stepTurbo_v1.0_hybrid-int8_HQ.safetensors",
+    "10Eros_Max_8stepTurbo_v1.0_hybrid_activation_learned_HQ.safetensors",
+    "10Eros_Max_8stepTurbo_v1.0_hybrid_activation_learned_compact_w4w6int8_14.50gb.safetensors",
+    "10Eros_Max_8stepTurbo_v1.0_hybrid_activation_learned_Micro.safetensors",
+))
+H3_HYBRID_PREFIXES = {"hybrid_i2v:": "Hybrid 開始フレーム · ", "hybrid_ref2va:": "Hybrid 参考画像 · "}
+H3_HYBRID_DEFAULT_STEPS = 8
 H3_REF2VA_DEFAULT_PROMPT = (
     "Use <Picture 1> as a reference for the subject's appearance and visual style. "
     "Create a coherent video with natural motion and independent framing."
 )
+
+
+def h3_hybrid_model_key(filename: str, *, reference_only: bool) -> str | None:
+    """Recognize published v1.0 hybrid checkpoints, retaining the exact loader filename."""
+    if not isinstance(filename, str) or not filename or len(filename) > 1024:
+        return None
+    parts = filename.replace("\\", "/").split("/")
+    if any(not part or part in (".", "..") or ":" in part or "\x00" in part for part in parts):
+        return None
+    if parts[-1].lower() not in H3_HYBRID_FILES:
+        return None
+    return ("hybrid_ref2va:" if reference_only else "hybrid_i2v:") + filename
+
+
+def h3_hybrid_filename(model) -> str | None:
+    if not isinstance(model, str):
+        return None
+    for prefix in H3_HYBRID_PREFIXES:
+        if model.startswith(prefix):
+            filename = model[len(prefix):]
+            if h3_hybrid_model_key(filename, reference_only=prefix == "hybrid_ref2va:") == model:
+                return filename
+    return None
+
+
+def validate_h3_hybrid_steps(value) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or not 8 <= value <= 12:
+        raise OrchestratorError("10Eros-Max v1.0は8～12 Stepsで指定してください")
 
 
 def h3_ref2va_model_key(filename: str) -> str | None:
@@ -129,6 +167,8 @@ def h3_ref2va_model_key(filename: str) -> str | None:
 
 
 def h3_ref2va_filename(model) -> str | None:
+    if isinstance(model, str) and model.startswith("hybrid_ref2va:"):
+        return h3_hybrid_filename(model)
     if isinstance(model, str) and model.startswith(H3_REF2VA_PREFIX):
         filename = model[len(H3_REF2VA_PREFIX):]
         if h3_ref2va_model_key(filename) == model:
@@ -137,11 +177,17 @@ def h3_ref2va_filename(model) -> str | None:
 
 
 def h3_model_label(model) -> str:
+    hybrid = h3_hybrid_filename(model)
+    if hybrid is not None:
+        return H3_HYBRID_PREFIXES[model.split(":", 1)[0] + ":"] + hybrid
     filename = h3_ref2va_filename(model)
     return H3_REF2VA_LABEL + filename if filename else H3_MODEL_LABELS.get(model, "INT8 ConvRot")
 
 
 def h3_model_from_label(label: str) -> str | None:
+    for prefix, display in H3_HYBRID_PREFIXES.items():
+        if label.startswith(display):
+            return h3_hybrid_model_key(label[len(display):], reference_only=prefix == "hybrid_ref2va:")
     if label.startswith(H3_REF2VA_LABEL):
         return h3_ref2va_model_key(label[len(H3_REF2VA_LABEL):])
     return next((key for key, value in H3_MODEL_LABELS.items() if value == label), None)
@@ -170,10 +216,13 @@ def split_h3_options(parameters: dict, *, enabled: bool) -> tuple[dict, dict]:
     model = options.get("h3_model", "int8")
     turbo = options.get("h3_turbo", "off")
     ref_model = h3_ref2va_filename(model)
-    if not isinstance(model, str) or (model not in H3_MODELS and ref_model is None):
+    hybrid = h3_hybrid_filename(model)
+    if not isinstance(model, str) or (model not in H3_MODELS and ref_model is None and hybrid is None):
         raise OrchestratorError("未対応のH3モデルです")
     if not isinstance(turbo, str) or turbo not in H3_TURBOS:
         raise OrchestratorError("未対応のH3 Turbo設定です")
+    if hybrid is not None and turbo != "off":
+        raise OrchestratorError("10Eros-Max v1.0はTurbo内蔵です。追加TurboはOFFにしてください")
     selected = {"h3_model": model, "h3_turbo": turbo}
     # Do not inject a new device into old saved jobs or legacy CLI calls.
     if "h3_encoder_device" in options:
@@ -196,6 +245,11 @@ def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None =
     _, options = split_h3_options(options, enabled=True)
     model = options["h3_model"]
     ref_model = h3_ref2va_filename(model)
+    hybrid = h3_hybrid_filename(model)
+    hybrid_steps = H3_HYBRID_DEFAULT_STEPS
+    if hybrid is not None and parameters is not None:
+        hybrid_steps = parameters.get("steps", H3_HYBRID_DEFAULT_STEPS)
+        validate_h3_hybrid_steps(hybrid_steps)
     shift_video = None
     if ref_model is not None:
         lora, steps, shift_video = H3_REF2VA_TURBOS[options["h3_turbo"]]
@@ -227,6 +281,8 @@ def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None =
         inputs["ref_image_size"] = "match"
         graph["9"]["inputs"]["scheduler"] = "beta"
         graph["17"]["inputs"]["sampler_name"] = "res_multistep"
+    elif hybrid is not None:
+        graph["6"]["inputs"]["unet_name"] = hybrid
     elif model == "gguf_u16g":
         # The current backend uses legacy VRAM management. U16G needs the
         # compatible molbal fork; do not pass GGUF to the native UNETLoader.
@@ -259,6 +315,11 @@ def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None =
                 "inputs": {"clip": ["13", 0], "projection": H3_CLIPPROJ_MATRIX},
             }
             conditioning["inputs"]["clip"] = [node, 0]
+    if hybrid is not None:
+        # Native one-pass baseline. Do not stack an external distilled adapter,
+        # force an unpublished shift, or silently depend on custom sparse nodes.
+        graph["9"]["inputs"].update(scheduler="simple", steps=hybrid_steps, denoise=1)
+        graph["17"]["inputs"]["sampler_name"] = "lcm"
     if lora is not None:
         # FL2VA keeps the existing sampler. Ref2VA uses its own adapter and
         # Euler + simple with the published video/audio shift for that release.
@@ -347,7 +408,9 @@ def installed_model_choices(inventory: dict) -> dict:
         "h3": (tuple(key for key, name in H3_MODELS.items()
                      if name in (gguf if name.endswith(".gguf") else native))
                + tuple(dict.fromkeys(key for name in native
-                                     if (key := h3_ref2va_model_key(name)) is not None))),
+                                     if (key := h3_ref2va_model_key(name)) is not None))
+               + tuple(dict.fromkeys(key for name in native for reference_only in (False, True)
+                                     if (key := h3_hybrid_model_key(name, reference_only=reference_only)) is not None))),
         "sdxl": tuple(name for name in inventory.get("CheckpointLoaderSimple", ())
                       if sdxl_checkpoint_kind(name) is not None),
     }
@@ -968,6 +1031,9 @@ def execute(
         overrides or {}, enabled=set(workflows) == {H3_I2V_ID},
     )
     reference_only = h3_ref2va_filename(h3_options.get("h3_model")) is not None
+    if h3_hybrid_filename(h3_options.get("h3_model")) is not None:
+        overrides.setdefault("steps", H3_HYBRID_DEFAULT_STEPS)
+        validate_h3_hybrid_steps(overrides["steps"])
     if h3_options:
         fixed_steps = H3_TURBOS[h3_options["h3_turbo"]][1]
         if fixed_steps is not None:
