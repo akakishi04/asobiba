@@ -18,6 +18,7 @@ from typing import Any, Callable
 
 
 from .parameters import OrchestratorError, PARAMS, check_param
+from .jobs import JobJournal, JobCancellationRequested, JobExecutionFailed, run_job
 from .h3 import (
     H3_MODELS,
     H3_TURBOS,
@@ -633,29 +634,65 @@ class ComfyUI:
                              "comfyui.video_generation_timeout_seconds", 7200),
         )
 
-    def submit(self, workflow: dict) -> str:
-        result = http_json(self.base, "/prompt", {"prompt": workflow}, self.timeout)
+    def submit(self, workflow: dict, *, prompt_id: str | None = None) -> str:
+        payload = {"prompt": workflow}
+        if prompt_id is not None:
+            payload["prompt_id"] = prompt_id
+        result = http_json(self.base, "/prompt", payload, self.timeout)
         prompt_id = result.get("prompt_id")
         if not isinstance(prompt_id, str) or not prompt_id:
             raise OrchestratorError(f"ComfyUIがワークフローを受理しませんでした: {result}")
         return prompt_id
 
-    def wait(self, prompt_id: str, cancel_event: Any = None) -> dict:
-        deadline = time.monotonic() + self.wait_timeout
+    def job_history(self, prompt_id: str) -> dict | None:
         route = "/history/" + urllib.parse.quote(prompt_id, safe="")
+        results = http_json(self.base, route, timeout=self.timeout)
+        item = results.get(prompt_id)
+        if item is not None and not isinstance(item, dict):
+            raise OrchestratorError(f"履歴の形式が不正です: {prompt_id}")
+        return item
+
+    def job_queue_state(self, prompt_id: str) -> str:
+        queue = http_json(self.base, "/queue", timeout=self.timeout)
+        for field, state in (("queue_running", "running"), ("queue_pending", "pending")):
+            if any(isinstance(item, (tuple, list)) and len(item) >= 2 and item[1] == prompt_id
+                   for item in queue.get(field, ())):
+                return state
+        return "unknown"
+
+    def request_job_cancel(self, prompt_id: str) -> None:
+        """Only use the prompt-ID-targeted API verified on ComfyUI v0.46.3+."""
+        stats = http_json(self.base, "/system_stats", timeout=self.timeout)
+        version = stats.get("system", {}).get("comfyui_version", "")
+        match = re.match(r"^(\d+)\.(\d+)\.(\d+)(?:$|[.+-])", version) if isinstance(version, str) else None
+        if match is None or tuple(map(int, match.groups())) < (0, 46, 3):
+            raise OrchestratorError(
+                f"個別停止対応を確認できないため停止要求を送信しません。ComfyUIで確認してください: {prompt_id}"
+            )
+        if not isinstance(prompt_id, str) or not prompt_id:
+            raise OrchestratorError("停止するジョブIDがありません")
+        # First remove this ID if pending; if it became active, the server
+        # checks that the same ID is running before issuing its interrupt.
+        http_json(self.base, "/queue", {"delete": [prompt_id]}, self.timeout, allow_empty=True)
+        http_json(self.base, "/interrupt", {"prompt_id": prompt_id}, self.timeout, allow_empty=True)
+
+    def wait(self, prompt_id: str, cancel_event: Any = None, *, cancel_remote: bool = False) -> dict:
+        deadline = time.monotonic() + self.wait_timeout
         while time.monotonic() < deadline:
             if cancel_event is not None and cancel_event.is_set():
+                if cancel_remote:
+                    self.request_job_cancel(prompt_id)
+                    raise JobCancellationRequested(
+                        f"対象ジョブの停止要求を送信しました（終了未確認）: {prompt_id}"
+                    )
                 raise OrchestratorError(
                     f"結果待機を終了しました。ComfyUI上の生成ジョブは継続します: prompt_id={prompt_id}"
                 )
-            results = http_json(self.base, route, timeout=self.timeout)
-            if prompt_id in results:
-                item = results[prompt_id]
-                if not isinstance(item, dict):
-                    raise OrchestratorError(f"履歴の形式が不正です: {prompt_id}")
+            item = self.job_history(prompt_id)
+            if item is not None:
                 status = item.get("status", {})
                 if isinstance(status, dict) and (status.get("status_str") == "error" or status.get("completed") is False):
-                    raise OrchestratorError(f"ComfyUIの生成が失敗しました: {prompt_id}: {status}")
+                    raise JobExecutionFailed(f"ComfyUIの生成が失敗しました: {prompt_id}: {status}")
                 return item
             time.sleep(self.poll)
         raise OrchestratorError(f"生成結果の待機がタイムアウトしました。ComfyUIで確認してください: prompt_id={prompt_id}")
@@ -668,10 +705,12 @@ def execute(
     cancel_event: Any = None, mask_image: Path | None = None, pose_image: Path | None = None,
     composition_image: Path | None = None,
     character_traits: str | None = None,
+    job_journal: JobJournal | None = None, job_context: dict | None = None,
 ) -> dict:
     """Interpret natural language, unload the chosen LLM, then run a fixed workflow.
 
-    A cancel event only stops this client's wait and does NOT interrupt ComfyUI jobs.
+    Journal-backed GUI jobs support targeted cancellation. Legacy callers without
+    a journal keep the wait-only cancellation contract.
     """
     workflows = config["workflows"]
     if not workflows:
@@ -921,12 +960,17 @@ def execute(
     )
     check_cancelled()
     note("ComfyUI: キューに投入")
-    prompt_id = comfy.submit(rendered)
-    note(f"ComfyUI: 生成完了を待機中（{prompt_id}）")
-    history = comfy.wait(prompt_id, cancel_event=cancel_event)
+    context = {**(job_context or {}), "request_text": request,
+               "reference_image": image, "mask_image": mask_image,
+               "pose_image": pose_image, "composition_image": composition_image}
+    prompt_id, history, job_info = run_job(
+        comfy, rendered, workflow_id, selection["kind"], saved_params,
+        progress=note, cancel_event=cancel_event, journal=job_journal, context=context,
+    )
     note("ComfyUI: 生成完了")
     return {
         "status": "completed", "workflow_id": workflow_id, "parameters": saved_params,
+        **job_info,
         "prompt_id": prompt_id, "outputs": history.get("outputs", {}),
         "comfy_status": history.get("status", {}),
     }
@@ -937,6 +981,7 @@ def execute_saved(
     reference_image: Path | None = None, new_seed: bool = False,
     progress: Callable[[str], None] | None = None, cancel_event: Any = None,
     mask_image: Path | None = None, pose_image: Path | None = None,
+    job_journal: JobJournal | None = None, job_context: dict | None = None,
 ) -> dict:
     """Replay exact validated workflow inputs, without invoking or loading an LLM.
 
@@ -1002,14 +1047,20 @@ def execute_saved(
     rendered = render_workflow(template, bindings, params, uploaded, uploaded_mask, uploaded_pose)
     if progress:
         progress("ComfyUI: 保存設定で再生成を開始")
-    prompt_id = comfy.submit(rendered)
-    history = comfy.wait(prompt_id, cancel_event=cancel_event)
+    saved_params = {**params, **h3_options, **checkpoint_options}
+    context = {**(job_context or {}), "reference_image": reference_image,
+               "mask_image": mask_image, "pose_image": pose_image}
+    prompt_id, history, job_info = run_job(
+        comfy, rendered, workflow_id, selected["kind"], saved_params,
+        progress=progress, cancel_event=cancel_event, journal=job_journal, context=context,
+    )
     if progress:
         progress("ComfyUI: 再生成完了")
     return {
         "status": "completed",
         "workflow_id": workflow_id,
-        "parameters": {**params, **h3_options, **checkpoint_options},
+        "parameters": saved_params,
+        **job_info,
         "prompt_id": prompt_id,
         "outputs": history.get("outputs", {}),
         "comfy_status": history.get("status", {}),

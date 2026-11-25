@@ -525,3 +525,11 @@ ComfyUIのmodels/lorasに配置します。Ref2VA TurboはModelOnly LoRA強度1�
 Sol用追加ファイル (1.99GB): https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_sol_vae_int8_convrot.safetensors （models/vae）。標準ComfyUI 0.45.0以降のノードを使用。モデル・ノード不足は生成前に通知します。起動引数は変更しません。記事の実測はINT8 HQのI2VA/124f/0.98MP/32B TEであり、Compact、Ref2VA、4B ClipProjや長尺への適用は未検証です。長いシーケンスはKitchenカーネルの制約やOOMの可能性があります。標準へ戻せます。
 
 出典ワークフロー: https://github.com/sepiablue-ai/minimax_h3_workflows/blob/main/10eros_max_speedup_8-7-6step.json
+
+## 開発基盤: ジョブ記録と回収
+
+GUIからの新規生成・再生成では共通のjobs.pyを通して、POST /promptの前にローカル `data/jobs/<UUID>/record.json` に実行するAPIグラフ、設定、プロンプト、接続先、ID、入力スナップショットを保存します（Git対象外）。受理後は実際のprompt_idを保存し、完了・失敗・停止要求・不明・履歴回収済みを区別します。経過秒数はジョブ記録作成からComfyUI完了までの実測であり、LLM準備と出力ダウンロードは含みません。ネットワークエラー時に自動再投入はしません。
+
+「生成中止」は送信前なら処理を止め、送信後はComfyUI 0.46.3以上で個別のqueue deleteとprompt_id付きinterruptのみ送信します。古い・不明なバックエンドに対しては一括停止せずエラーを表示します。停止応答は終了確認ではありません。設定の「未回収結果を取得」は同じ接続先の記録を照会し、完了分だけ履歴に回収します。新たな生成は開始しません。再起動等でサーバー履歴が失われた場合は回収できないことがあります。既に履歴登録済みのprompt_idは重複登録しません。旧履歴とCLIの従来動作を維持します。入力スナップショットは履歴とは別に残るためディスクを使用します。
+
+H3モデル固有の組み立てはh3.py、高速化はh3_performance.py、共通パラメータはparameters.py、ジョブのライフサイクルはjobs.pyに分離しました。GUIとコアの残りの分割、WebSocket進捗、完全なグラフベースの履歴再生成、キューは別工程です。

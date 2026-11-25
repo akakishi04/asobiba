@@ -297,6 +297,11 @@ class HistoryStore:
             row = con.execute("SELECT * FROM generations WHERE id = ?", (entry_id,)).fetchone()
         return self._read_row(row) if row is not None else None
 
+    def find_by_prompt_id(self, prompt_id: str) -> HistoryEntry | None:
+        with self._connection() as con:
+            row = con.execute("SELECT * FROM generations WHERE prompt_id = ?", (prompt_id,)).fetchone()
+        return self._read_row(row) if row is not None else None
+
     def import_legacy_outputs(self, limit: int = 500) -> int:
         """Index images saved before this feature without inventing generation settings.
 

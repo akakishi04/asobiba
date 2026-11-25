@@ -22,6 +22,7 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 from . import core
 from .comparison import ComparisonWindow
 from .history import HistoryStore, HistoryEntry, HistoryError
+from .jobs import JobJournal, JobCancellationRequested
 from .mask_editor import edit_mask
 from .lmstudio import list_models, LMStudio
 from .character_ui import CharacterReferenceWindow
@@ -417,6 +418,7 @@ class Application:
         self.preview_photo: tk.PhotoImage | None = None
         self.config = bootstrap_config()
         self.history_store = HistoryStore(ROOT)
+        self.job_journal = JobJournal(self.history_store.data / "jobs")
         self.history_entries: dict[str, HistoryEntry] = {}
         self._history_refresh_running = False
         self._history_refresh_pending: tuple[str | None, bool] | None = None
@@ -580,6 +582,8 @@ class Application:
                         command=self._switch_theme).pack(side="left")
         ttk.Button(settings_actions, text="保存", command=self._save_settings).pack(side="right")
         ttk.Button(settings_actions, text="接続確認", command=self._check_connections).pack(side="right", padx=(0, 6))
+        self.recover_jobs_button = ttk.Button(settings_actions, text="未回収結果を取得", command=self._recover_jobs)
+        self.recover_jobs_button.pack(side="left", padx=(0, 6))
         self.free_memory_button = ttk.Button(settings_actions, text="生成モデル解放", command=self._release_comfy_memory)
         self.free_memory_button.pack(side="right", padx=(0, 6))
 
@@ -815,7 +819,7 @@ class Application:
         self.preview_button = ttk.Button(action_row, text="解釈テスト", command=lambda: self._start(True))
         self.preview_button.pack(side="left", padx=(0, 6))
         self.cancel_button = ttk.Button(
-            action_row, text="待機中止", command=self._request_cancel, state="disabled"
+            action_row, text="生成中止", command=self._request_cancel, state="disabled"
         )
         self.cancel_button.pack(side="left")
 
@@ -1729,7 +1733,7 @@ class Application:
             entry = self.history_store.record(
                 prompt_id=result["prompt_id"],
                 workflow_id=workflow_id,
-                kind=self.config["workflows"][workflow_id]["kind"],
+                kind=result.get("kind") or self.config["workflows"][workflow_id]["kind"],
                 request_text=request_text,
                 parameters=result["parameters"],
                 images=images,
@@ -1742,6 +1746,11 @@ class Application:
                 character_traits=character_traits,
                 character_analysis=character_analysis,
             )
+            if result.get("job_id") and hasattr(self, "job_journal"):
+                try:
+                    self.job_journal.update(result["job_id"], state="collected", history_id=entry.id)
+                except (OSError, ValueError, core.OrchestratorError) as exc:
+                    self.messages.put(("progress", f"ジョブ記録の更新に失敗: {exc}"))
             return entry.id
         except (HistoryError, OSError, ValueError, sqlite3.Error) as exc:
             self.messages.put(("progress", f"履歴保存に失敗しました（画像は保持）: {exc}"))
@@ -1758,6 +1767,8 @@ class Application:
         self.cancel_button.configure(state="normal")
         if hasattr(self, "free_memory_button"):
             self.free_memory_button.configure(state="disabled")
+        if hasattr(self, "recover_jobs_button"):
+            self.recover_jobs_button.configure(state="disabled")
         self.same_seed_button.configure(state="disabled")
         self.new_seed_button.configure(state="disabled")
         if hasattr(self, "history_request_button"):
@@ -1809,6 +1820,16 @@ class Application:
                     progress=lambda line: self.messages.put(("progress", line)),
                     cancel_event=self.stop_event,
                     mask_image=entry.mask_image, pose_image=entry.pose_image,
+                    job_journal=self.job_journal,
+                    job_context={"request_text": entry.request_text, "prompt_profile": entry.prompt_profile,
+                                 "composition_image": entry.composition_image if entry.composition_image
+                                 and entry.composition_image.is_file() else None,
+                                 "character_references": entry.character_references
+                                 if all(p.is_file() for p in entry.character_references) else (),
+                                 "character_traits": entry.character_traits
+                                 if all(p.is_file() for p in entry.character_references) else None,
+                                 "character_analysis": entry.character_analysis
+                                 if all(p.is_file() for p in entry.character_references) else None},
                 )
                 images = []
                 for item in output_media(result):
@@ -1836,6 +1857,8 @@ class Application:
                     if all(p.is_file() for p in entry.character_references) else None,
                 )
                 self.messages.put(("done", (result, images, history_id)))
+            except JobCancellationRequested as exc:
+                self.messages.put(("cancel_requested", str(exc)))
             except Exception as exc:
                 self.messages.put(("error", str(exc)))
             finally:
@@ -2591,6 +2614,10 @@ class Application:
                     progress=lambda line: self.messages.put(("progress", line)),
                     cancel_event=self.stop_event, mask_image=mask, pose_image=pose,
                     composition_image=composition,
+                    job_journal=self.job_journal,
+                    job_context={"prompt_profile": self.latest_prompt_profile,
+                                 "character_references": approved_images, "character_traits": approved_traits,
+                                 "character_analysis": approved_analysis},
                     **({"character_traits": approved_traits}
                        if approved_traits else {}),
                 )
@@ -2615,6 +2642,8 @@ class Application:
                     if not dry_run else None
                 )
                 self.messages.put(("done", (result, images, history_id)))
+            except JobCancellationRequested as exc:
+                self.messages.put(("cancel_requested", str(exc)))
             except Exception as exc:
                 self.messages.put(("error", str(exc)))
             finally:
@@ -2623,8 +2652,64 @@ class Application:
 
     def _request_cancel(self) -> None:
         self.stop_event.set()
-        self.status.set("停止要求済み（ComfyUI側のジョブは中断しません）")
-        self._log("処理の待機終了を要求しました。すでに投入された生成ジョブは続行します。")
+        self.status.set("停止要求中")
+        self._log("現在の処理の停止を要求しました。送信済みジョブは対象IDのみ停止を試みます。")
+
+    def _recover_jobs(self) -> None:
+        """Recover completed outputs without resubmitting or changing the queue."""
+        if self.working:
+            return
+        settings = copy.deepcopy(self.config["comfyui"])
+        settings["base_url"] = self.comfy_url.get().strip()
+        self._set_busy("未回収ジョブを確認中")
+        self.cancel_button.configure(state="disabled")
+
+        def task():
+            recovered = 0
+            remaining = 0
+            try:
+                comfy = core.ComfyUI(settings)
+                for record in self.job_journal.recoverable(comfy.base):
+                    try:
+                        prompt_id = record["prompt_id"]
+                        existing = self.history_store.find_by_prompt_id(prompt_id)
+                        if existing is not None:
+                            self.job_journal.update(record["job_id"], state="collected", history_id=existing.id)
+                            continue
+                        state, info = self.job_journal.inspect(comfy, record)
+                        if state != "completed":
+                            remaining += state != "failed"
+                            self.messages.put(("progress", f"{prompt_id}: {state}"))
+                            continue
+                        context = self.job_journal.context_for_history(record)
+                        result = {"status": "completed", "job_id": record["job_id"],
+                                  "prompt_id": prompt_id, "workflow_id": record["workflow_id"],
+                                  "kind": record["kind"], "parameters": record["parameters"],
+                                  "outputs": info.get("outputs", {})}
+                        images = [save_output_image(comfy.base, item, prompt_id) for item in output_media(result)]
+                        if not images or (record["kind"] in core.VIDEO_KINDS and not any(is_video_output(p) for p in images)):
+                            raise core.OrchestratorError("回収できる出力がありません")
+                        history_id = self._record_completed_generation(
+                            result, images, context.get("request_text", ""),
+                            context["reference_image"], context["mask_image"], context["pose_image"],
+                            context["composition_image"], context.get("prompt_profile"),
+                            character_references=context["character_references"],
+                            character_traits=context.get("character_traits"),
+                            character_analysis=context.get("character_analysis"),
+                        )
+                        if history_id is not None:
+                            recovered += 1
+                        else:
+                            remaining += 1
+                    except Exception as exc:
+                        remaining += 1
+                        self.messages.put(("progress", f"回収失敗 {record['prompt_id']}: {exc}"))
+                self.messages.put(("jobs_recovered", (recovered, remaining)))
+            except Exception as exc:
+                self.messages.put(("error", str(exc)))
+            finally:
+                self.messages.put(("idle", None))
+        threading.Thread(target=task, daemon=True).start()
 
     def _consume_messages(self) -> None:
         try:
@@ -2684,6 +2769,13 @@ class Application:
                     self.status.set(f"モデル一覧を更新: {len(names)}件")
                 elif kind == "history_loaded":
                     self._finish_history_refresh(*data)
+                elif kind == "cancel_requested":
+                    self.status.set("停止要求送信済み（終了未確認）")
+                    self._log(data)
+                elif kind == "jobs_recovered":
+                    recovered, remaining = data
+                    self.status.set(f"回収 {recovered}件 / 未回収 {remaining}件")
+                    self._refresh_history(scan_legacy=False)
                 elif kind == "done":
                     result, images, history_id = data
                     self.latest_prompt_plan = result
@@ -2731,6 +2823,8 @@ class Application:
                     self.cancel_button.configure(state="disabled")
                     if hasattr(self, "free_memory_button"):
                         self.free_memory_button.configure(state="normal")
+                    if hasattr(self, "recover_jobs_button"):
+                        self.recover_jobs_button.configure(state="normal")
                     self.progress_bar.stop()
                     self._history_selection_changed()
         except queue.Empty:
