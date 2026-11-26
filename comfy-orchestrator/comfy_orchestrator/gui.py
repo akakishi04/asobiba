@@ -7,6 +7,7 @@ No third-party GUI dependencies.
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 import json
 import os
 import queue
@@ -24,6 +25,8 @@ from .comparison import ComparisonWindow
 from .history import HistoryStore, HistoryEntry, HistoryError
 from .jobs import JobJournal, JobCancellationRequested
 from .prompt_cache import PromptCache, CACHE_ERRORS
+from .long_video import (LONG_VIDEO_ID, LONG_TARGETS, LongVideoStore, LongVideoPaused,
+                         FFmpeg, run_long_video, continuation_model)
 from .mask_editor import edit_mask
 from .lmstudio import list_models, LMStudio
 from .character_ui import CharacterReferenceWindow
@@ -161,7 +164,7 @@ def output_images(result: dict) -> list[dict]:
     return [m for m in output_media(result) if Path(m["filename"]).suffix.lower() in IMAGE_EXTENSIONS]
 
 
-def save_output_image(base_url: str, metadata: dict, prompt_id: str) -> Path:
+def save_output_image(base_url: str, metadata: dict, prompt_id: str, *, output_dir=None) -> Path:
     """Download a bounded image or video atomically into the local outputs directory."""
     parameters = {key: metadata[key] for key in ("filename", "subfolder", "type")}
     safe_name = Path(metadata["filename"].replace("\\", "/")).name
@@ -170,9 +173,10 @@ def save_output_image(base_url: str, metadata: dict, prompt_id: str) -> Path:
         raise core.OrchestratorError("未対応の出力形式です")
     limit = (512 if suffix in VIDEO_EXTENSIONS else 40) * 1024 * 1024
     url = base_url.rstrip("/") + "/view?" + urllib.parse.urlencode(parameters)
-    OUTPUTS.mkdir(parents=True, exist_ok=True)
+    directory = OUTPUTS if output_dir is None else Path(output_dir)
+    directory.mkdir(parents=True, exist_ok=True)
     prefix = "".join(c for c in prompt_id[:16] if c.isalnum() or c in "-_") or "output"
-    destination = OUTPUTS / (prefix + "_" + safe_name)
+    destination = directory / (prefix + "_" + safe_name)
     temporary = destination.with_suffix(destination.suffix + ".part")
     total = 0
     try:
@@ -236,6 +240,7 @@ WORKFLOW_NAMES = {
     "wai_pose_skeleton": "ポーズ参照 · 骨格",
     "wai_pose_detect": "ポーズ参照 · 画像",
     core.H3_I2V_ID: "動画生成 · MiniMax H3",
+    LONG_VIDEO_ID: "動画生成 · H3 長尺",
     core.WAN_I2V_ID: "動画生成 · Wan 2.2",
     core.HUNYUAN_I2V_ID: "動画生成 · Hunyuan 1.5 (480p)",
     core.QWEN_T2I_ID: "画像生成 · Qwen-Image 2512",
@@ -420,6 +425,7 @@ class Application:
         self.config = bootstrap_config()
         self.history_store = HistoryStore(ROOT)
         self.job_journal = JobJournal(self.history_store.data / "jobs")
+        self.long_video_store = LongVideoStore(self.history_store.data / "long_videos")
         self.prompt_cache = PromptCache(ROOT / ".cache" / "prompt_plans.sqlite3")
         self.history_entries: dict[str, HistoryEntry] = {}
         self._history_refresh_running = False
@@ -480,6 +486,7 @@ class Application:
         self.hunyuan_steps = tk.StringVar(value=str(options.get("hunyuan_steps", 8)))
         self.h3_size = tk.StringVar(value=str(options.get("h3_size", H3_RESOLUTIONS[0])))
         self.h3_duration = tk.StringVar(value=str(options.get("h3_duration", next(iter(H3_DURATIONS)))))
+        self.h3_long_target = tk.StringVar(value="単発")
         model_key = options.get("h3_model", "int8")
         turbo_key = options.get("h3_turbo", "off")
         self.h3_model = tk.StringVar(value=core.h3_model_label(model_key))
@@ -778,6 +785,11 @@ class Application:
         field(3, 2, "FPS", self.video_fps, "wan", choices=("16", "24", "30"), width=5)
         field(2, 0, "解像度", self.h3_size, "h3", choices=H3_RESOLUTIONS, span=3, width=18)
         field(3, 0, "長さ (24fps)", self.h3_duration, "h3", choices=tuple(H3_DURATIONS), span=3, width=18)
+        field(10, 0, "合計尺", self.h3_long_target, "h3", choices=tuple(LONG_TARGETS), span=2, width=8)
+        self.resume_long_button = ttk.Button(settings, text="長尺再開", command=self._resume_long_video,
+                                             style="Compact.TButton")
+        self.resume_long_button.grid(row=10, column=3, sticky="ew", pady=3, padx=(4, 0))
+        self.parameter_widgets["h3"].append(self.resume_long_button)
 
         field(2, 0, "解像度", self.hunyuan_size, "hunyuan", choices=HUNYUAN_RESOLUTIONS, span=3, width=18)
         field(3, 0, "フレーム数 (24fps)", self.hunyuan_frames, "hunyuan",
@@ -1447,7 +1459,8 @@ class Application:
             output = single.first_image if single else None
             exists = bool(output and output.is_file())
             still = exists and not is_video_output(output)
-            restorable = bool(single and not single.legacy and single.workflow_id in self.config["workflows"] and not self.working)
+            restorable = bool(single and not single.legacy and (single.workflow_id in self.config["workflows"]
+                              or single.workflow_id == LONG_VIDEO_ID) and not self.working)
             comparable = ((len(selected) == 2 and all(e.first_image and e.first_image.is_file() and not is_video_output(e.first_image) for e in selected))
                           or bool(still and single.reference_image and single.reference_image.is_file()))
             for button, enabled in (
@@ -1572,6 +1585,17 @@ class Application:
         if entry is None:
             messagebox.showinfo("履歴", "復元する履歴を1件選択してください")
             return
+        if entry.workflow_id == LONG_VIDEO_ID:
+            p = dict(entry.parameters)
+            seconds = p.pop("long_seconds", 0)
+            p.pop("long_run_id", None)
+            p["frames"] = p.pop("long_segment_frames", 124)
+            entry = replace(entry, workflow_id=core.H3_I2V_ID, parameters=p)
+            if hasattr(self, "h3_long_target"):
+                self.h3_long_target.set(next((label for label, value in LONG_TARGETS.items()
+                                              if value == seconds), "単発"))
+        elif hasattr(self, "h3_long_target"):
+            self.h3_long_target.set("単発")
         if entry.legacy or entry.workflow_id not in self.config["workflows"]:
             messagebox.showinfo(
                 "履歴", "この画像には生成設定が保存されていないため復元できません"
@@ -2622,6 +2646,31 @@ class Application:
             if selected == core.H3_I2V_ID else None
         )
         self.latest_request_text = prompt
+        long_seconds = LONG_TARGETS.get(self.h3_long_target.get(), 0) if selected == core.H3_I2V_ID else 0
+        if long_seconds and not dry_run:
+            try:
+                media = FFmpeg()
+                if overrides.get("h3_model") is not None:
+                    continuation_model(overrides["h3_model"])
+            except core.OrchestratorError as exc:
+                messagebox.showerror("長尺生成", str(exc))
+                return
+            self._set_busy("長尺生成準備中")
+            def long_task():
+                try:
+                    manifest = self.long_video_store.create(
+                        cfg["comfyui"]["base_url"], prompt, image, overrides, long_seconds,
+                        self.latest_prompt_profile,
+                    )
+                    self._complete_long_video(manifest, cfg, media, prompt_cache)
+                except (JobCancellationRequested, LongVideoPaused) as exc:
+                    self.messages.put(("progress", str(exc) + " / 長尺再開から続行できます"))
+                except Exception as exc:
+                    self.messages.put(("error", str(exc)))
+                finally:
+                    self.messages.put(("idle", None))
+            threading.Thread(target=long_task, daemon=True).start()
+            return
         self._set_busy("解釈テスト中..." if dry_run else "生成準備中...")
         self._log("開始: " + ("解釈のみテスト" if dry_run else "動画生成" if is_video else "画像生成")
                   + (f" / model={cfg['llm']['model']}" if use_prompt_llm else " / LLMなし"))
@@ -2670,6 +2719,71 @@ class Application:
                 self.messages.put(("idle", None))
         threading.Thread(target=task, daemon=True).start()
 
+    def _complete_long_video(self, manifest, cfg, media, prompt_cache):
+        def download(result, directory):
+            videos = [item for item in output_media(result)
+                      if Path(item["filename"]).suffix.lower() in VIDEO_EXTENSIONS]
+            if not videos:
+                raise core.OrchestratorError("長尺区間の動画を取得できません")
+            return save_output_image(cfg["comfyui"]["base_url"], videos[0], result["prompt_id"],
+                                     output_dir=directory)
+        self.messages.put(("progress", "長尺記録: " + str(
+            self.long_video_store.folder(manifest["run_id"]) / "manifest.json")))
+        result, video = run_long_video(
+            self.long_video_store, manifest, cfg, CONFIG, self.job_journal, OUTPUTS, download,
+            progress=lambda line: self.messages.put(("progress", line)),
+            cancel_event=self.stop_event, prompt_cache=prompt_cache, media=media,
+        )
+        existing = self.history_store.find_by_prompt_id(result["prompt_id"])
+        history_id = existing.id if existing else self._record_completed_generation(
+            result, [video], manifest["request"],
+            self.long_video_store.asset(manifest, manifest["source"]),
+            prompt_profile=manifest.get("profile"),
+        )
+        self.messages.put(("done", (result, [video], history_id)))
+
+    def _resume_long_video(self) -> None:
+        if self.working:
+            return
+        root = self.long_video_store.root
+        records = sorted(root.glob("*/manifest.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        path = filedialog.askopenfilename(
+            title="再開する長尺記録を選択", initialdir=str(records[0].parent if records else root),
+            filetypes=(("長尺生成記録", "manifest.json"),),
+        )
+        if not path:
+            return
+        try:
+            manifest = self.long_video_store.load(Path(path))
+            media = FFmpeg()
+            if manifest["backend"] != self.comfy_url.get().strip().rstrip("/"):
+                raise core.OrchestratorError("保存時と同じComfyUI接続先にしてください")
+        except (OSError, ValueError, KeyError, core.OrchestratorError) as exc:
+            messagebox.showerror("長尺再開", str(exc))
+            return
+        if not self._save_settings():
+            return
+        cfg = copy.deepcopy(self.config)
+        if manifest.get("profile"):
+            cfg["llm"]["h3_prompt_profile"] = manifest["profile"]
+        cache = self.prompt_cache if self.use_prompt_cache.get() else None
+        self.latest_request_text = manifest["request"]
+        self.latest_prompt_profile = manifest.get("profile")
+        self.latest_character_traits = None
+        self.latest_character_references = ()
+        self.latest_character_analysis = None
+        self._set_busy("長尺生成再開中")
+        def task():
+            try:
+                self._complete_long_video(manifest, cfg, media, cache)
+            except (JobCancellationRequested, LongVideoPaused) as exc:
+                self.messages.put(("progress", str(exc) + " / 長尺再開から続行できます"))
+            except Exception as exc:
+                self.messages.put(("error", str(exc)))
+            finally:
+                self.messages.put(("idle", None))
+        threading.Thread(target=task, daemon=True).start()
+
     def _request_cancel(self) -> None:
         self.stop_event.set()
         self.status.set("停止要求中")
@@ -2690,6 +2804,10 @@ class Application:
             try:
                 comfy = core.ComfyUI(settings)
                 for record in self.job_journal.recoverable(comfy.base):
+                    if record.get("context", {}).get("long_run_id"):
+                        remaining += 1
+                        self.messages.put(("progress", "長尺区間は「長尺再開」で回収してください"))
+                        continue
                     try:
                         prompt_id = record["prompt_id"]
                         existing = self.history_store.find_by_prompt_id(prompt_id)
