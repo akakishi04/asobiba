@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import hashlib
 import json
 import mimetypes
 import re
@@ -19,6 +20,7 @@ from typing import Any, Callable
 
 from .parameters import OrchestratorError, PARAMS, check_param
 from .jobs import JobJournal, JobCancellationRequested, JobExecutionFailed, run_job
+from .prompt_cache import PromptCache, CACHE_ERRORS, make_cache_key
 from .h3 import (
     H3_MODELS,
     H3_TURBOS,
@@ -511,13 +513,21 @@ class ComfyUI:
         if image.stat().st_size > 40 * 1024 * 1024:
             raise OrchestratorError("画像は40MB以下にしてください")
         boundary = uuid.uuid4().hex
-        filename = image.name.replace('"', "_").replace("\r", "_").replace("\n", "_")
+        data = image.read_bytes()
+        if len(data) > 40 * 1024 * 1024:
+            raise OrchestratorError("画像は40MB以下にしてください")
+        # Content-addressed input names let ComfyUI deduplicate identical bytes.
+        # Always POST: a prior upload might have been removed from the backend.
+        suffix = image.suffix.lower()
+        if not re.fullmatch(r"\.[a-z0-9]{1,8}", suffix):
+            suffix = ""
+        filename = "asobiba_" + hashlib.sha256(data).hexdigest() + suffix
         ctype = mimetypes.guess_type(filename)[0] or "application/octet-stream"
         prefix = (
             f"--{boundary}\r\nContent-Disposition: form-data; name=\"image\"; filename=\"{filename}\"\r\n"
             f"Content-Type: {ctype}\r\n\r\n"
         ).encode("utf-8")
-        payload = prefix + image.read_bytes() + f"\r\n--{boundary}--\r\n".encode("ascii")
+        payload = prefix + data + f"\r\n--{boundary}--\r\n".encode("ascii")
         req = urllib.request.Request(
             self.base.rstrip("/") + "/upload/image", data=payload,
             headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}, method="POST",
@@ -717,6 +727,7 @@ def execute(
     composition_image: Path | None = None,
     character_traits: str | None = None,
     job_journal: JobJournal | None = None, job_context: dict | None = None,
+    prompt_cache: PromptCache | None = None,
 ) -> dict:
     """Interpret natural language, unload the chosen LLM, then run a fixed workflow.
 
@@ -839,15 +850,35 @@ def execute(
                     video_template = prepare_h3_workflow(video_template, h3_options, overrides)
                 comfy.ensure_video_dependencies(video_template)
                 comfy.extend_video_timeout(config["comfyui"])
-    if not dry_run and use_prompt_llm and config["comfyui"].get("free_before_llm", True):
+    llm_key = "llm" if "llm" in config else "ollama"
+    settings = config[llm_key]
+    cache_key = None
+    cached_plan = None
+    if use_prompt_llm and prompt_cache is not None:
+        try:
+            # Seed, resolution and sampler choices are host-owned. H3 duration
+            # and the I2I denoise hint do affect the interpreter.
+            hints = {"i2v_only": i2v_only, "reference_only": reference_only,
+                     "frames": overrides.get("frames") if H3_I2V_ID in workflows else None,
+                     "denoise": overrides.get("denoise")}
+            sources = {} if i2v_only else {"image": image, "pose": pose_image,
+                                           "mask": mask_image, "composition": composition_image}
+            cache_key = make_cache_key(request, settings, workflows, hints, sources, character_traits)
+            cached_plan = prompt_cache.get(cache_key)
+        except CACHE_ERRORS as exc:
+            note(f"解釈キャッシュ読込失敗（通常処理を継続）: {exc}")
+        if cached_plan is not None:
+            try:
+                validate_plan(cached_plan, workflows, image is not None)
+            except OrchestratorError:
+                cached_plan = None
+    if not dry_run and use_prompt_llm and cached_plan is None and config["comfyui"].get("free_before_llm", True):
         note("ComfyUI: キューを確認して前回の生成モデルの解放を要求")
         comfy.free_if_idle()
-    elif not dry_run and not use_prompt_llm:
+    elif not dry_run and (not use_prompt_llm or cached_plan is not None):
         note("ComfyUI: LLMを使用しないためモデルキャッシュを維持")
     check_cancelled()
 
-    llm_key = "llm" if "llm" in config else "ollama"
-    settings = config[llm_key]
     if i2v_only:
         settings = {**settings, "send_reference_to_llm": False}
     if reference_only:
@@ -860,7 +891,10 @@ def execute(
                            "independent framing and synchronized audio."}
                      for key, entry in workflows.items()}
     provider = settings.get("provider", "lmstudio" if llm_key == "llm" else "ollama")
-    if not use_prompt_llm:
+    if cached_plan is not None:
+        note("LLM: 解釈キャッシュを使用")
+        plan = cached_plan
+    elif not use_prompt_llm:
         # The image is the primary conditioning; avoid a needless LLM load.
         note("I2V: 参照画像のみ（LLMを使用しません）")
         plan = {
@@ -958,6 +992,11 @@ def execute(
     if checkpoint_options:
         note("SDXL: " + checkpoint_options["checkpoint_model"])
     saved_params = {**params, **h3_options, **checkpoint_options}
+    if cache_key is not None and cached_plan is None:
+        try:
+            prompt_cache.put(cache_key, plan)
+        except CACHE_ERRORS as exc:
+            note(f"解釈キャッシュ保存失敗（通常処理を継続）: {exc}")
     note(f"ワークフロー確定: {workflow_id}")
     if dry_run:
         return {"status": "dry_run", "workflow_id": workflow_id, "parameters": saved_params}

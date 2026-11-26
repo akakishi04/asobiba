@@ -23,6 +23,7 @@ from . import core
 from .comparison import ComparisonWindow
 from .history import HistoryStore, HistoryEntry, HistoryError
 from .jobs import JobJournal, JobCancellationRequested
+from .prompt_cache import PromptCache, CACHE_ERRORS
 from .mask_editor import edit_mask
 from .lmstudio import list_models, LMStudio
 from .character_ui import CharacterReferenceWindow
@@ -419,6 +420,7 @@ class Application:
         self.config = bootstrap_config()
         self.history_store = HistoryStore(ROOT)
         self.job_journal = JobJournal(self.history_store.data / "jobs")
+        self.prompt_cache = PromptCache(ROOT / ".cache" / "prompt_plans.sqlite3")
         self.history_entries: dict[str, HistoryEntry] = {}
         self._history_refresh_running = False
         self._history_refresh_pending: tuple[str | None, bool] | None = None
@@ -453,6 +455,7 @@ class Application:
         options = self.config.get("ui", {})
         self.llm_url = tk.StringVar(value=llm.get("base_url", "http://127.0.0.1:1234"))
         self.comfy_url = tk.StringVar(value=comfy.get("base_url", "http://127.0.0.1:8188"))
+        self.use_prompt_cache = tk.BooleanVar(value=options.get("use_prompt_cache", True))
         self.model = tk.StringVar(value="" if llm.get("model") == "SELECT_IN_GUI" else llm.get("model", ""))
         workflows = list(self.config.get("workflows", {}))
         preferred = options.get("workflow", workflows[0] if workflows else "自動")
@@ -570,6 +573,10 @@ class Application:
                         variable=self.unload_llm).grid(row=0, column=0, sticky="w", padx=(0, 12))
         ttk.Checkbutton(options_frame, text="解釈前にComfyUIを解放",
                         variable=self.free_comfy).grid(row=0, column=1, sticky="w")
+        ttk.Checkbutton(options_frame, text="解釈キャッシュ", variable=self.use_prompt_cache).grid(
+            row=1, column=0, sticky="w", pady=(3, 0))
+        ttk.Button(options_frame, text="キャッシュ削除", command=self._clear_prompt_cache).grid(
+            row=1, column=1, sticky="w", pady=(3, 0))
         encoder_row = ttk.Frame(connection)
         encoder_row.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(2, 2))
         ttk.Label(encoder_row, text="H3エンコーダー").pack(side="left", padx=(0, 6))
@@ -1888,6 +1895,8 @@ class Application:
             "dark_mode": self.dark_mode.get(),
             "font_size": self.editor_font_size.get(),
         }
+        if hasattr(self, "use_prompt_cache"):
+            config["ui"]["use_prompt_cache"] = self.use_prompt_cache.get()
         config["ui"]["seed"] = self.seed.get().strip()
         config["ui"]["denoise"] = self.denoise.get().strip()
         config["ui"]["pose_mode"] = self.pose_mode.get()
@@ -2474,6 +2483,16 @@ class Application:
         threading.Thread(target=task, daemon=True).start()
         self._log("LM Studioのモデル一覧を取得中...")
 
+    def _clear_prompt_cache(self) -> None:
+        if self.working:
+            self.status.set("生成終了後にキャッシュを削除してください")
+            return
+        try:
+            count = self.prompt_cache.clear()
+            self.status.set(f"解釈キャッシュを{count}件削除しました")
+        except CACHE_ERRORS as exc:
+            messagebox.showerror("キャッシュ削除", str(exc))
+
     def _release_comfy_memory(self) -> None:
         """Request memory release off the GUI thread, only with an empty queue."""
         if self.working:
@@ -2573,6 +2592,7 @@ class Application:
             messagebox.showerror("生成設定エラー", str(exc))
             return
         cfg = copy.deepcopy(self.config)
+        prompt_cache = self.prompt_cache if self.use_prompt_cache.get() else None
         approved_traits = None if is_video else (self.character_traits or None)
         approved_images = tuple(self.character_references) if approved_traits else ()
         approved_analysis = (
@@ -2614,7 +2634,7 @@ class Application:
                     progress=lambda line: self.messages.put(("progress", line)),
                     cancel_event=self.stop_event, mask_image=mask, pose_image=pose,
                     composition_image=composition,
-                    job_journal=self.job_journal,
+                    job_journal=self.job_journal, prompt_cache=prompt_cache,
                     job_context={"prompt_profile": self.latest_prompt_profile,
                                  "character_references": approved_images, "character_traits": approved_traits,
                                  "character_analysis": approved_analysis},
