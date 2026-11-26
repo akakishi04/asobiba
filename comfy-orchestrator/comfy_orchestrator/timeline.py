@@ -2,11 +2,16 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 
 from .parameters import OrchestratorError, check_param
 
 FPS = 24
+MIN_CUT_FRAMES = FPS
+MAX_CUT_FRAMES = 15 * FPS
+MAX_TOTAL_FRAMES = 300 * FPS
+CUSTOM_CUTS = "カット別指定"
 MAX_PART = 1600
 CONTINUATION = (
     "Continue directly from the supplied opening frame. Preserve the established "
@@ -14,18 +19,77 @@ CONTINUATION = (
 )
 
 
-def segment_windows(frames: list[int], seconds: int) -> list[dict]:
-    """Effective output time, excluding the shared boundary and trimmed tail."""
+def parse_cut_seconds(value: str) -> int:
+    """Convert decimal seconds to the closest frame; no binary-float timing."""
+    try:
+        seconds = Decimal(value.strip())
+        if not seconds.is_finite() or not Decimal(1) <= seconds <= Decimal(15):
+            raise ValueError()
+        return int((seconds * FPS).to_integral_value(rounding=ROUND_HALF_UP))
+    except (AttributeError, InvalidOperation, ValueError, OverflowError) as exc:
+        raise OrchestratorError("カット尺は1～15秒の数値で指定してください") from exc
+
+
+def format_cut_seconds(frames: int) -> str:
+    return f"{frames / FPS:.3f}".rstrip("0").rstrip(".")
+
+
+def validate_cut_frames(cuts: list[int]) -> list[int]:
+    if not isinstance(cuts, list) or not 2 <= len(cuts) <= 300:
+        raise OrchestratorError("連続動画には2～300カットが必要です")
+    if any(type(n) is not int or not MIN_CUT_FRAMES <= n <= MAX_CUT_FRAMES for n in cuts):
+        raise OrchestratorError("各カットは1～15秒（24fps）にしてください")
+    if sum(cuts) > MAX_TOTAL_FRAMES:
+        raise OrchestratorError("カットの合計尺は5分以内にしてください")
+    return list(cuts)
+
+
+def generation_frames_for_cuts(cuts: list[int]) -> list[int]:
+    """Smallest legal H3 clip covering kept frames plus the repeated anchor."""
+    cuts = validate_cut_frames(cuts)
+    return [max(107, 5 + 17 * ((count + int(i > 0) - 5 + 16) // 17))
+            for i, count in enumerate(cuts)]
+
+
+def default_cut_frames(seconds: int, nominal_frames: int) -> list[int]:
+    """Seed the editable duration list from the preset, without tiny tail cuts."""
+    if type(seconds) is not int or not 2 <= seconds <= 300:
+        raise OrchestratorError("初期合計尺が不正です")
+    limit = min(MAX_CUT_FRAMES, max(MIN_CUT_FRAMES, nominal_frames - 1))
+    total = seconds * FPS
+    full, remainder = divmod(total, limit)
+    cuts = [limit] * full
+    if remainder:
+        if remainder < MIN_CUT_FRAMES and cuts:
+            cuts[-1] -= MIN_CUT_FRAMES - remainder
+            remainder = MIN_CUT_FRAMES
+        cuts.append(remainder)
+    if len(cuts) == 1:
+        cuts = [total // 2, total - total // 2]
+    return validate_cut_frames(cuts)
+
+
+def segment_windows(frames: list[int], seconds: int | float, *, cut_frames=None) -> list[dict]:
+    """Effective output time, excluding the shared boundary and trimmed tails."""
+    if cut_frames is not None:
+        cut_frames = validate_cut_frames(cut_frames)
+        if frames != generation_frames_for_cuts(cut_frames) or seconds != sum(cut_frames) / FPS:
+            raise OrchestratorError("カット尺とH3生成フレーム数が一致しません")
+        total = sum(cut_frames)
+    else:
+        total = seconds * FPS
     end = 0
     windows = []
     for index, count in enumerate(frames):
         start = end
-        end = min(seconds * FPS, start + count - int(index > 0))
-        if end <= start:
+        kept = cut_frames[index] if cut_frames is not None else min(total - start, count - int(index > 0))
+        end = start + kept
+        if kept <= 0 or kept + int(index > 0) > count:
             raise OrchestratorError("長尺タイムラインの区間が不正です")
         windows.append({"index": index + 1, "start_frame": start,
-                        "end_frame": end, "generation_frames": count})
-    if end != seconds * FPS:
+                        "end_frame": end, "generation_frames": count,
+                        "output_frames": kept, "duration_seconds": kept / FPS})
+    if end != total:
         raise OrchestratorError("長尺タイムラインの合計尺が一致しません")
     return windows
 
@@ -69,7 +133,7 @@ def prompt_plan_schema(count: int) -> dict:
 
 
 def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: int,
-                      reference_only: bool = False, *, progress=None,
+                      reference_only: bool = False, *, cut_frames=None, progress=None,
                       cancel_event=None, prompt_cache=None, release_comfy=True) -> dict:
     """One structured text-only LM Studio inference; never generate media here."""
     from . import core
@@ -85,7 +149,7 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
         if cancel_event is not None and cancel_event.is_set():
             raise core.JobCancellationRequested("長尺プロンプト計画を中止しました")
 
-    windows = segment_windows(frames, seconds)
+    windows = segment_windows(frames, seconds, cut_frames=cut_frames)
     count = len(windows)
     check_cancel()
     if not request.strip():
@@ -104,7 +168,7 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
         try:
             key = make_cache_key(request, settings, workflow, {
                 "task": "long_prompt_plan", "policy": content_sha256(Path(__file__)),
-                "seconds": seconds, "frames": frames, "reference_only": reference_only,
+                "seconds": seconds, "frames": frames, "cut_frames": cut_frames, "reference_only": reference_only,
             }, {}, None)
             cached = prompt_cache.get(key)
             if cached is not None:
@@ -134,7 +198,9 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
         "with a clear progression from the preceding interval's end state. "
         "Do not restart an earlier action or repeat dialogue at every interval. "
         "The first segment must establish the scene; subsequent segments start from "
-        "the previous clip's last frame. Make each action feasible within its effective time. "
+        "the previous clip's last retained frame. Make each action feasible within its effective time. "
+        "Complete requested actions before output_frames / fps seconds elapse, even if generation_frames "
+        "is longer; the unused tail is trimmed. Do not defer the action to that discarded tail. "
         "If a simple action finishes early, maintain the resulting state instead of inventing events. "
         "Do not invent reference-image details: you cannot see the image. "
         "Do not output picture markers or workflow/model parameters. "

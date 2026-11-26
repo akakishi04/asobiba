@@ -13,7 +13,8 @@ from pathlib import Path
 
 from . import core
 from .jobs import JobCancellationRequested, JobExecutionFailed
-from .timeline import validate_prompt_plan, prompt_for_segment
+from .timeline import (validate_prompt_plan, prompt_for_segment, validate_cut_frames,
+                       generation_frames_for_cuts)
 
 LONG_VIDEO_ID = "minimax_h3_long_video"
 LONG_TARGETS = {"単発": 0, "30秒": 30, "1分": 60, "2分": 120, "3分": 180, "5分": 300}
@@ -45,6 +46,23 @@ def segment_plan(seconds: int, maximum_frames: int) -> list[int]:
         plan.append(frames)
         remaining -= frames - overlap
     return plan
+
+
+def manifest_schedule(manifest: dict) -> tuple[list[int], list[int] | None, int]:
+    """Validate a legacy preset or an explicit, frame-accurate cut schedule."""
+    if "cut_frames" in manifest:
+        cuts = validate_cut_frames(manifest["cut_frames"])
+        plan = generation_frames_for_cuts(cuts)
+        target = sum(cuts)
+        if manifest["seconds"] != target / FPS or "prompt_plan" not in manifest:
+            raise core.OrchestratorError("長尺カット記録が不正です")
+    else:
+        cuts = None
+        plan = segment_plan(manifest["seconds"], manifest["overrides"]["frames"])
+        target = manifest["seconds"] * FPS
+    if manifest["plan"] != plan:
+        raise core.OrchestratorError("長尺計画が不正です")
+    return plan, cuts, target
 
 
 def continuation_model(model: str) -> str:
@@ -162,12 +180,19 @@ class FFmpeg:
         finally:
             temporary.unlink(missing_ok=True)
 
-    def join(self, clips: list[tuple[Path, dict]], target_frames: int, output: Path, cancel_event=None, progress=None):
+    def join(self, clips: list[tuple[Path, dict]], target_frames: int, output: Path, cancel_event=None, progress=None, *, keep_frames=None):
         """Remove repeated anchors, preserve video/audio timing, trim to exact length.
 
         Encode one short part at a time into matching H.264 + PCM tracks.
         Final concatenation copies video and encodes AAC only once.
         """
+        if keep_frames is not None:
+            if (not isinstance(keep_frames, list) or len(keep_frames) != len(clips)
+                    or any(type(n) is not int or n <= 0 for n in keep_frames)
+                    or sum(keep_frames) != target_frames
+                    or any(n + int(i > 0) > info["frames"]
+                           for i, (n, (_, info)) in enumerate(zip(keep_frames, clips)))):
+                raise core.OrchestratorError("カットごとの結合フレーム数が不正です")
         output.parent.mkdir(parents=True, exist_ok=True)
         temporary = output.with_name(output.stem + ".part.mp4")
         try:
@@ -180,7 +205,7 @@ class FFmpeg:
                     if remaining <= 0:
                         break
                     skip = int(i > 0)
-                    count = min(remaining, info["frames"] - skip)
+                    count = keep_frames[i] if keep_frames is not None else min(remaining, info["frames"] - skip)
                     if count <= 0:
                         raise core.OrchestratorError("結合区間に有効なフレームがありません")
                     part = f"part_{i:03d}.mkv"
@@ -248,13 +273,19 @@ class LongVideoStore:
                 temporary.unlink(missing_ok=True)
 
     def create(self, backend: str, request: str, source: Path, overrides: dict,
-               seconds: int, profile=None, *, prompt_plan=None) -> dict:
+               seconds: int | float, profile=None, *, prompt_plan=None, cut_frames=None) -> dict:
         p = dict(overrides)
         core.validate_h3_video_parameters(p)
         model = p.get("h3_model")
         if model is not None:
             continuation_model(model)
-        plan = segment_plan(seconds, p["frames"])
+        if cut_frames is not None:
+            cut_frames = validate_cut_frames(cut_frames)
+            if seconds != sum(cut_frames) / FPS or prompt_plan is None:
+                raise core.OrchestratorError("カット尺とプロンプト計画が一致しません")
+            plan = generation_frames_for_cuts(cut_frames)
+        else:
+            plan = segment_plan(seconds, p["frames"])
         if prompt_plan is not None:
             prompt_plan = validate_prompt_plan(prompt_plan, len(plan))
         p.setdefault("seed", secrets.randbits(32))
@@ -275,6 +306,8 @@ class LongVideoStore:
                         "first_parameters": None, "segments": [], "state": "generating"}
             if prompt_plan is not None:
                 manifest["prompt_plan"] = prompt_plan
+            if cut_frames is not None:
+                manifest["cut_frames"] = cut_frames
             self.save(manifest)
             return manifest
         except Exception:
@@ -288,8 +321,7 @@ class LongVideoStore:
         manifest = json.loads(path.read_text(encoding="utf-8"))
         if manifest.get("schema") != 1 or self.folder(manifest["run_id"]) != path.parent:
             raise core.OrchestratorError("長尺記録が不正です")
-        if manifest["plan"] != segment_plan(manifest["seconds"], manifest["overrides"]["frames"]):
-            raise core.OrchestratorError("長尺計画が不正です")
+        manifest_schedule(manifest)
         if "prompt_plan" in manifest:
             manifest["prompt_plan"] = validate_prompt_plan(manifest["prompt_plan"], len(manifest["plan"]))
         return manifest
@@ -359,8 +391,8 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
     core.validate_h3_video_parameters(p)
     if p.get("h3_model") is not None:
         continuation_model(p["h3_model"])
-    plan = segment_plan(manifest["seconds"], p["frames"])
-    if manifest["plan"] != plan or len(manifest["segments"]) > len(plan):
+    plan, cut_frames, target_frames = manifest_schedule(manifest)
+    if len(manifest["segments"]) > len(plan):
         raise core.OrchestratorError("長尺計画が不正です")
     prompt_plan = None
     if "prompt_plan" in manifest:
@@ -389,7 +421,10 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
                 image = source
                 if i:
                     image = folder / f"anchor_{i:03d}.png"
-                    media.last_frame(clips[-1][0], clips[-1][1]["frames"], image, cancel_event)
+                    # Anchor the next cut on the LAST RETAINED frame, not discarded motion.
+                    anchor_frames = (cut_frames[i - 1] + int(i > 1) if cut_frames is not None
+                                     else clips[-1][1]["frames"])
+                    media.last_frame(clips[-1][0], anchor_frames, image, cancel_event)
                 # Always derive seed progression from segment zero's seed.
                 params = planned_segment_parameters(
                     manifest["first_parameters"] if i else p, prompt_plan, i, plan[i],
@@ -440,12 +475,15 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
     check_cancel(cancel_event)
     output = Path(output_dir) / f"long_{manifest['run_id']}.mp4"
     if manifest["state"] != "completed" or not output.is_file():
-        media.join(clips, manifest["seconds"] * FPS, output, cancel_event, progress)
+        join_options = {"keep_frames": cut_frames} if cut_frames is not None else {}
+        media.join(clips, target_frames, output, cancel_event, progress, **join_options)
         manifest["state"] = "completed"
         store.save(manifest)
     first = dict(manifest["first_parameters"])
-    first.update(frames=manifest["seconds"] * FPS, long_segment_frames=p["frames"],
+    first.update(frames=target_frames, long_segment_frames=p["frames"],
                  long_seconds=manifest["seconds"], long_run_id=manifest["run_id"])
+    if cut_frames is not None:
+        first["long_cut_frames"] = cut_frames
     return {"status": "completed", "workflow_id": LONG_VIDEO_ID, "kind": "i2v",
             "parameters": first, "prompt_id": manifest["run_id"], "outputs": {}}, output
 

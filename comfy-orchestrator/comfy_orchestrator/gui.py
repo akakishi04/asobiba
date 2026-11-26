@@ -27,8 +27,9 @@ from .jobs import JobJournal, JobCancellationRequested
 from .prompt_cache import PromptCache, CACHE_ERRORS
 from .long_video import (LONG_VIDEO_ID, LONG_TARGETS, LongVideoStore, LongVideoPaused,
                          FFmpeg, run_long_video, continuation_model, segment_plan)
-from .timeline import plan_long_prompts
-from .timeline_ui import edit_prompt_plan
+from .timeline import (plan_long_prompts, CUSTOM_CUTS, validate_cut_frames,
+                       default_cut_frames, generation_frames_for_cuts, format_cut_seconds)
+from .timeline_ui import edit_prompt_plan, edit_cut_durations, CutDurationChange
 from .mask_editor import edit_mask
 from .lmstudio import list_models, LMStudio
 from .character_ui import CharacterReferenceWindow
@@ -533,7 +534,16 @@ class Application:
         self.h3_size = tk.StringVar(value=str(options.get("h3_size", H3_RESOLUTIONS[0])))
         self.h3_duration = tk.StringVar(value=str(options.get("h3_duration", next(iter(H3_DURATIONS)))))
         target = options.get("h3_long_target", "30秒")
-        self.h3_long_target = tk.StringVar(value=target if target in CONTINUOUS_TARGETS else "30秒")
+        try:
+            self._custom_cut_frames = validate_cut_frames(options.get("h3_cut_frames", []))
+        except core.OrchestratorError:
+            self._custom_cut_frames = None
+        if target == CUSTOM_CUTS and self._custom_cut_frames is None:
+            target = "30秒"
+        self.h3_long_target = tk.StringVar(value=target if target in (*CONTINUOUS_TARGETS, CUSTOM_CUTS) else "30秒")
+        self.h3_cut_summary = tk.StringVar()
+        self.h3_long_target.trace_add("write", self._sync_cut_summary)
+        self._sync_cut_summary()
         model_key = options.get("h3_model", "int8")
         turbo_key = options.get("h3_turbo", "off")
         self.h3_model = tk.StringVar(value=core.h3_model_label(model_key))
@@ -850,11 +860,17 @@ class Application:
         field(2, 0, "解像度", self.h3_size, "h3", choices=H3_RESOLUTIONS, span=3, width=18)
         field(3, 0, "長さ (24fps)", self.h3_duration, "h3", choices=tuple(H3_DURATIONS), span=3, width=18)
         self.h3_duration_title = self.parameter_widgets["h3"][-2]
-        field(10, 0, "合計尺", self.h3_long_target, "h3_long", choices=CONTINUOUS_TARGETS, span=2, width=8)
+        field(10, 0, "合計尺", self.h3_long_target, "h3_long",
+              choices=(*CONTINUOUS_TARGETS, CUSTOM_CUTS), span=2, width=8)
         self.resume_long_button = ttk.Button(settings, text="長尺再開", command=self._resume_long_video,
                                              style="Compact.TButton")
         self.resume_long_button.grid(row=10, column=3, sticky="ew", pady=3, padx=(4, 0))
         self.parameter_widgets["h3_long"].append(self.resume_long_button)
+        cut_button = ttk.Button(settings, text="カット尺設定…", command=self._edit_cut_durations)
+        cut_button.grid(row=11, column=0, columnspan=2, sticky="ew", pady=3)
+        cut_summary = ttk.Label(settings, textvariable=self.h3_cut_summary)
+        cut_summary.grid(row=11, column=2, columnspan=2, sticky="w", padx=(6, 0))
+        self.parameter_widgets["h3_long"].extend((cut_button, cut_summary))
 
         field(2, 0, "解像度", self.hunyuan_size, "hunyuan", choices=HUNYUAN_RESOLUTIONS, span=3, width=18)
         field(3, 0, "フレーム数 (24fps)", self.hunyuan_frames, "hunyuan",
@@ -1385,7 +1401,7 @@ class Application:
             self.extra_button.configure(text="追加参照 ▾" if expanded else "追加参照 ▸",
                                         state="disabled" if is_video else "normal")
         if hasattr(self, "h3_duration_title"):
-            self.h3_duration_title.configure(text="区間の長さ (24fps)" if state["h3_long"] else "長さ (24fps)")
+            self.h3_duration_title.configure(text="標準区間長 (24fps)" if state["h3_long"] else "長さ (24fps)")
         if hasattr(self, "run_button"):
             self.run_button.configure(text=GENERATION_MODE_LABELS.get(
                 generation_mode, "動画生成" if is_video else "画像生成"))
@@ -1708,11 +1724,22 @@ class Application:
             p = dict(entry.parameters)
             seconds = p.pop("long_seconds", 0)
             p.pop("long_run_id", None)
+            cuts = p.pop("long_cut_frames", None)
             p["frames"] = p.pop("long_segment_frames", 124)
             entry = replace(entry, workflow_id=core.H3_I2V_ID, parameters=p)
             if hasattr(self, "h3_long_target"):
-                self.h3_long_target.set(next((label for label in CONTINUOUS_TARGETS
-                                              if LONG_TARGETS[label] == seconds), "30秒"))
+                try:
+                    restored_cuts = validate_cut_frames(cuts) if cuts is not None else None
+                except core.OrchestratorError as exc:
+                    messagebox.showerror("履歴復元", str(exc))
+                    return
+                if restored_cuts is not None:
+                    self._custom_cut_frames = restored_cuts
+                    self.h3_long_target.set(CUSTOM_CUTS)
+                    self._sync_cut_summary()
+                else:
+                    self.h3_long_target.set(next((label for label in CONTINUOUS_TARGETS
+                                                  if LONG_TARGETS[label] == seconds), "30秒"))
         if entry.legacy or entry.workflow_id not in self.config["workflows"]:
             messagebox.showinfo(
                 "履歴", "この画像には生成設定が保存されていないため復元できません"
@@ -2042,6 +2069,8 @@ class Application:
             config["ui"]["generation_mode"] = self.generation_mode.get()
             config["ui"]["mode_workflows"] = dict(self._mode_workflows)
             config["ui"]["h3_long_target"] = self.h3_long_target.get()
+            if getattr(self, "_custom_cut_frames", None) is not None:
+                config["ui"]["h3_cut_frames"] = list(self._custom_cut_frames)
         if hasattr(self, "use_prompt_cache"):
             config["ui"]["use_prompt_cache"] = self.use_prompt_cache.get()
         config["ui"]["seed"] = self.seed.get().strip()
@@ -2682,6 +2711,43 @@ class Application:
         threading.Thread(target=task, daemon=True).start()
         self._log("接続を確認中...")
 
+    def _sync_cut_summary(self, *_args):
+        if self.h3_long_target.get() != CUSTOM_CUTS:
+            self.h3_cut_summary.set("プリセット")
+        elif self._custom_cut_frames is None:
+            self.h3_cut_summary.set("未設定")
+        else:
+            self.h3_cut_summary.set(f"{len(self._custom_cut_frames)}カット / "
+                                    f"{format_cut_seconds(sum(self._custom_cut_frames))}秒")
+
+    def _set_custom_cuts(self, cuts):
+        self._custom_cut_frames = validate_cut_frames(cuts)
+        self.h3_long_target.set(CUSTOM_CUTS)
+        self._sync_cut_summary()
+        self._long_prompt_draft = None
+
+    def _edit_cut_durations(self):
+        if self.working or self.generation_mode.get() != "continuous":
+            return None
+        try:
+            if self.h3_long_target.get() == CUSTOM_CUTS and self._custom_cut_frames is not None:
+                initial = self._custom_cut_frames
+            else:
+                label = self.h3_duration.get()
+                nominal = H3_DURATIONS.get(label)
+                if nominal is None:
+                    nominal = int(label.rsplit("(", 1)[1].removesuffix("f)"))
+                initial = default_cut_frames(LONG_TARGETS.get(self.h3_long_target.get(), 30), nominal)
+            cuts = edit_cut_durations(self.root, initial)
+            if cuts is not None:
+                if cuts != self._custom_cut_frames or self.h3_long_target.get() != CUSTOM_CUTS:
+                    self._set_custom_cuts(cuts)
+                self._save_settings()
+                return list(cuts)
+        except (IndexError, ValueError, core.OrchestratorError) as exc:
+            messagebox.showerror("カット尺設定", str(exc))
+        return None
+
     def _start(self, dry_run: bool) -> None:
         if self.working:
             return
@@ -2773,15 +2839,26 @@ class Application:
         )
         self.latest_request_text = prompt
         continuous = self.generation_mode.get() == "continuous"
-        long_seconds = LONG_TARGETS.get(self.h3_long_target.get(), 0) if continuous else 0
-        if continuous and (selected != core.H3_I2V_ID or not long_seconds):
-            messagebox.showerror("連続動画生成", "MiniMax H3と30秒以上の合計尺を選択してください")
-            return
         if continuous:
+            if selected != core.H3_I2V_ID:
+                messagebox.showerror("連続動画生成", "MiniMax H3を選択してください")
+                return
             try:
                 if overrides.get("h3_model") is not None:
                     continuation_model(overrides["h3_model"])
-                frames = segment_plan(long_seconds, overrides["frames"])
+                cut_frames = None
+                if self.h3_long_target.get() == CUSTOM_CUTS:
+                    cut_frames = getattr(self, "_custom_cut_frames", None)
+                    if cut_frames is None:
+                        cut_frames = self._edit_cut_durations()
+                        if cut_frames is None:
+                            return
+                    cut_frames = validate_cut_frames(cut_frames)
+                    long_seconds = sum(cut_frames) / 24
+                    frames = generation_frames_for_cuts(cut_frames)
+                else:
+                    long_seconds = LONG_TARGETS.get(self.h3_long_target.get(), 0)
+                    frames = segment_plan(long_seconds, overrides["frames"])
                 if image is None or not image.is_file():
                     raise core.OrchestratorError("長尺生成の参照画像がありません")
                 if image.stat().st_size > 40 * 1024 * 1024:
@@ -2792,7 +2869,7 @@ class Application:
                 return
             self._start_long_prompt_plan(
                 cfg, prompt, image, overrides, long_seconds, frames, media,
-                prompt_cache, dry_run, self.latest_prompt_profile,
+                prompt_cache, dry_run, self.latest_prompt_profile, cut_frames=cut_frames,
             )
             return
         self._set_busy("解釈テスト中..." if dry_run else "生成準備中...")
@@ -2844,16 +2921,16 @@ class Application:
         threading.Thread(target=task, daemon=True).start()
 
     def _start_long_prompt_plan(self, cfg, prompt, image, overrides, seconds, frames,
-                                media, cache, dry_run, profile):
+                                media, cache, dry_run, profile, *, cut_frames=None):
         # Snapshot the planning inputs; a prior preview is reused only for
         # the same request, duration, reference and interpreter settings.
         reference_only = core.h3_ref2va_filename(overrides.get("h3_model")) is not None
-        key = json.dumps([prompt, str(image.resolve()), seconds, frames, reference_only,
+        key = json.dumps([prompt, str(image.resolve()), seconds, frames, cut_frames, reference_only,
                           cfg["llm"]], ensure_ascii=False, sort_keys=True)
         self._set_busy("長尺プロンプト計画中")
         draft = getattr(self, "_long_prompt_draft", None)
         context = (cfg, prompt, image, overrides, seconds, frames, media,
-                   cache, dry_run, profile, key)
+                   cache, dry_run, profile, key, cut_frames)
         if draft is not None and draft[0] == key:
             self.messages.put(("long_plan_ready", (copy.deepcopy(draft[1]), context)))
             return
@@ -2861,7 +2938,7 @@ class Application:
         def task():
             try:
                 plan = plan_long_prompts(
-                    cfg, prompt, frames, seconds, reference_only,
+                    cfg, prompt, frames, seconds, reference_only, cut_frames=cut_frames,
                     progress=lambda line: self.messages.put(("progress", line)),
                     cancel_event=self.stop_event, prompt_cache=cache, release_comfy=not dry_run,
                 )
@@ -2876,16 +2953,27 @@ class Application:
         threading.Thread(target=task, daemon=True).start()
 
     def _finish_long_prompt_plan(self, plan, context):
-        cfg, prompt, image, overrides, seconds, frames, media, cache, dry_run, profile, key = context
+        cfg, prompt, image, overrides, seconds, frames, media, cache, dry_run, profile, key, cut_frames = context
         started = False
         try:
             if self.stop_event.is_set():
                 self.status.set("長尺プロンプト計画を中止しました")
                 return
             self.status.set("長尺プロンプトを確認・編集してください")
-            approved = edit_prompt_plan(self.root, plan, frames, seconds, preview_only=dry_run)
+            approved = edit_prompt_plan(self.root, plan, frames, seconds,
+                                        cut_frames=cut_frames, preview_only=dry_run)
             if approved is None or self.stop_event.is_set():
                 self.status.set("長尺プロンプト計画を取り消しました")
+                return
+            if isinstance(approved, CutDurationChange):
+                self._set_custom_cuts(approved.frames)
+                cuts = list(self._custom_cut_frames)
+                self._start_long_prompt_plan(
+                    cfg, prompt, image, overrides, sum(cuts) / 24,
+                    generation_frames_for_cuts(cuts), media, cache, dry_run, profile,
+                    cut_frames=cuts,
+                )
+                started = True
                 return
             self._long_prompt_draft = (key, copy.deepcopy(approved))
             if dry_run:
@@ -2896,7 +2984,7 @@ class Application:
                 try:
                     manifest = self.long_video_store.create(
                         cfg["comfyui"]["base_url"], prompt, image, overrides, seconds,
-                        profile, prompt_plan=approved,
+                        profile, prompt_plan=approved, cut_frames=cut_frames,
                     )
                     self._complete_long_video(manifest, cfg, media, cache)
                 except (JobCancellationRequested, LongVideoPaused) as exc:
