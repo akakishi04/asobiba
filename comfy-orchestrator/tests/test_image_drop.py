@@ -127,6 +127,7 @@ class CharacterImageBatchTests(unittest.TestCase):
         fake = SimpleNamespace(
             images=[self.images[0]],
             busy=False,
+            text_only=False,
             status=State(),
             window=None,
             _refresh=lambda: log.append("refresh"),
