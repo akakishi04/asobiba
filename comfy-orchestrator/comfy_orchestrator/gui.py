@@ -26,7 +26,9 @@ from .history import HistoryStore, HistoryEntry, HistoryError
 from .jobs import JobJournal, JobCancellationRequested
 from .prompt_cache import PromptCache, CACHE_ERRORS
 from .long_video import (LONG_VIDEO_ID, LONG_TARGETS, LongVideoStore, LongVideoPaused,
-                         FFmpeg, run_long_video, continuation_model)
+                         FFmpeg, run_long_video, continuation_model, segment_plan)
+from .timeline import plan_long_prompts
+from .timeline_ui import edit_prompt_plan
 from .mask_editor import edit_mask
 from .lmstudio import list_models, LMStudio
 from .character_ui import CharacterReferenceWindow
@@ -1387,6 +1389,8 @@ class Application:
         if hasattr(self, "run_button"):
             self.run_button.configure(text=GENERATION_MODE_LABELS.get(
                 generation_mode, "動画生成" if is_video else "画像生成"))
+        if hasattr(self, "preview_button"):
+            self.preview_button.configure(text="計画生成・編集" if generation_mode == "continuous" else "解釈テスト")
         for widget in (self.width_entry, self.height_entry):
             widget.configure(state="normal" if state["resolution"] else "disabled")
         if hasattr(self, "resolution_box"):
@@ -2634,6 +2638,7 @@ class Application:
             return
         try:
             count = self.prompt_cache.clear()
+            self._long_prompt_draft = None
             self.status.set(f"解釈キャッシュを{count}件削除しました")
         except CACHE_ERRORS as exc:
             messagebox.showerror("キャッシュ削除", str(exc))
@@ -2772,29 +2777,23 @@ class Application:
         if continuous and (selected != core.H3_I2V_ID or not long_seconds):
             messagebox.showerror("連続動画生成", "MiniMax H3と30秒以上の合計尺を選択してください")
             return
-        if continuous and not dry_run:
+        if continuous:
             try:
-                media = FFmpeg()
                 if overrides.get("h3_model") is not None:
                     continuation_model(overrides["h3_model"])
-            except core.OrchestratorError as exc:
+                frames = segment_plan(long_seconds, overrides["frames"])
+                if image is None or not image.is_file():
+                    raise core.OrchestratorError("長尺生成の参照画像がありません")
+                if image.stat().st_size > 40 * 1024 * 1024:
+                    raise core.OrchestratorError("参照画像は40MB以下にしてください")
+                media = None if dry_run else FFmpeg()
+            except (OSError, core.OrchestratorError) as exc:
                 messagebox.showerror("長尺生成", str(exc))
                 return
-            self._set_busy("長尺生成準備中")
-            def long_task():
-                try:
-                    manifest = self.long_video_store.create(
-                        cfg["comfyui"]["base_url"], prompt, image, overrides, long_seconds,
-                        self.latest_prompt_profile,
-                    )
-                    self._complete_long_video(manifest, cfg, media, prompt_cache)
-                except (JobCancellationRequested, LongVideoPaused) as exc:
-                    self.messages.put(("progress", str(exc) + " / 長尺再開から続行できます"))
-                except Exception as exc:
-                    self.messages.put(("error", str(exc)))
-                finally:
-                    self.messages.put(("idle", None))
-            threading.Thread(target=long_task, daemon=True).start()
+            self._start_long_prompt_plan(
+                cfg, prompt, image, overrides, long_seconds, frames, media,
+                prompt_cache, dry_run, self.latest_prompt_profile,
+            )
             return
         self._set_busy("解釈テスト中..." if dry_run else "生成準備中...")
         self._log("開始: " + ("解釈のみテスト" if dry_run else "動画生成" if is_video else "画像生成")
@@ -2843,6 +2842,78 @@ class Application:
             finally:
                 self.messages.put(("idle", None))
         threading.Thread(target=task, daemon=True).start()
+
+    def _start_long_prompt_plan(self, cfg, prompt, image, overrides, seconds, frames,
+                                media, cache, dry_run, profile):
+        # Snapshot the planning inputs; a prior preview is reused only for
+        # the same request, duration, reference and interpreter settings.
+        reference_only = core.h3_ref2va_filename(overrides.get("h3_model")) is not None
+        key = json.dumps([prompt, str(image.resolve()), seconds, frames, reference_only,
+                          cfg["llm"]], ensure_ascii=False, sort_keys=True)
+        self._set_busy("長尺プロンプト計画中")
+        draft = getattr(self, "_long_prompt_draft", None)
+        context = (cfg, prompt, image, overrides, seconds, frames, media,
+                   cache, dry_run, profile, key)
+        if draft is not None and draft[0] == key:
+            self.messages.put(("long_plan_ready", (copy.deepcopy(draft[1]), context)))
+            return
+
+        def task():
+            try:
+                plan = plan_long_prompts(
+                    cfg, prompt, frames, seconds, reference_only,
+                    progress=lambda line: self.messages.put(("progress", line)),
+                    cancel_event=self.stop_event, prompt_cache=cache, release_comfy=not dry_run,
+                )
+                self.messages.put(("long_plan_ready", (plan, context)))
+            except JobCancellationRequested as exc:
+                self.messages.put(("progress", str(exc)))
+                self.messages.put(("idle", None))
+            except Exception as exc:
+                self.messages.put(("error", str(exc)))
+                self.messages.put(("idle", None))
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def _finish_long_prompt_plan(self, plan, context):
+        cfg, prompt, image, overrides, seconds, frames, media, cache, dry_run, profile, key = context
+        started = False
+        try:
+            if self.stop_event.is_set():
+                self.status.set("長尺プロンプト計画を中止しました")
+                return
+            self.status.set("長尺プロンプトを確認・編集してください")
+            approved = edit_prompt_plan(self.root, plan, frames, seconds, preview_only=dry_run)
+            if approved is None or self.stop_event.is_set():
+                self.status.set("長尺プロンプト計画を取り消しました")
+                return
+            self._long_prompt_draft = (key, copy.deepcopy(approved))
+            if dry_run:
+                self.status.set(f"長尺計画を保持しました: {len(frames)}区間（未生成）")
+                return
+
+            def task():
+                try:
+                    manifest = self.long_video_store.create(
+                        cfg["comfyui"]["base_url"], prompt, image, overrides, seconds,
+                        profile, prompt_plan=approved,
+                    )
+                    self._complete_long_video(manifest, cfg, media, cache)
+                except (JobCancellationRequested, LongVideoPaused) as exc:
+                    self.messages.put(("progress", str(exc) + " / 長尺再開から続行できます"))
+                except Exception as exc:
+                    self.messages.put(("error", str(exc)))
+                finally:
+                    self.messages.put(("idle", None))
+
+            self.status.set("確定済みの計画で長尺生成を開始")
+            threading.Thread(target=task, daemon=True).start()
+            started = True
+        except Exception as exc:
+            self.messages.put(("error", str(exc)))
+        finally:
+            if not started:
+                self.messages.put(("idle", None))
 
     def _complete_long_video(self, manifest, cfg, media, prompt_cache):
         def download(result, directory):
@@ -2986,6 +3057,8 @@ class Application:
                     else:
                         self.status.set(data)
                     self._log(data)
+                elif kind == "long_plan_ready":
+                    self._finish_long_prompt_plan(*data)
                 elif kind == "character_analysis_done":
                     dialog, analysis = data
                     self.character_analysis_running = False

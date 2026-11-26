@@ -13,6 +13,7 @@ from pathlib import Path
 
 from . import core
 from .jobs import JobCancellationRequested, JobExecutionFailed
+from .timeline import validate_prompt_plan, prompt_for_segment
 
 LONG_VIDEO_ID = "minimax_h3_long_video"
 LONG_TARGETS = {"単発": 0, "30秒": 30, "1分": 60, "2分": 120, "3分": 180, "5分": 300}
@@ -74,6 +75,23 @@ def continuation_parameters(first: dict, index: int, frames: int) -> dict:
                              "Maintain the subject, setting, camera and motion continuity without a cut. " + prompt)
     core.check_param("seed", p["seed"])
     core.check_param("positive_prompt", p["positive_prompt"])
+    return p
+
+
+def planned_segment_parameters(base: dict, prompt_plan: dict, index: int, frames: int) -> dict:
+    """Apply only the approved prompt for this interval, including segment zero."""
+    p = dict(base)
+    model = p.get("h3_model")
+    if index and model is not None:
+        p["h3_model"] = continuation_model(model)
+    p["frames"] = frames
+    # The ordinary parameter validator accepts signed 63-bit nonnegative seeds.
+    # Wrap on its actual domain, not an unsigned 64-bit domain.
+    p["seed"] = (int(base["seed"]) + index) % (core.PARAMS["seed"][2] + 1)
+    p["positive_prompt"] = prompt_for_segment(prompt_plan, index)
+    if index == 0 and core.h3_ref2va_filename(model) is not None:
+        p["positive_prompt"] = core.ensure_h3_reference_prompt(p["positive_prompt"])
+    core.check_param("seed", p["seed"])
     return p
 
 
@@ -230,13 +248,15 @@ class LongVideoStore:
                 temporary.unlink(missing_ok=True)
 
     def create(self, backend: str, request: str, source: Path, overrides: dict,
-               seconds: int, profile=None) -> dict:
+               seconds: int, profile=None, *, prompt_plan=None) -> dict:
         p = dict(overrides)
         core.validate_h3_video_parameters(p)
         model = p.get("h3_model")
         if model is not None:
             continuation_model(model)
         plan = segment_plan(seconds, p["frames"])
+        if prompt_plan is not None:
+            prompt_plan = validate_prompt_plan(prompt_plan, len(plan))
         p.setdefault("seed", secrets.randbits(32))
         source = Path(source)
         if not source.is_file() or source.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
@@ -253,6 +273,8 @@ class LongVideoStore:
                         "request": request, "profile": profile, "source": name,
                         "overrides": p, "seconds": seconds, "plan": plan,
                         "first_parameters": None, "segments": [], "state": "generating"}
+            if prompt_plan is not None:
+                manifest["prompt_plan"] = prompt_plan
             self.save(manifest)
             return manifest
         except Exception:
@@ -268,6 +290,8 @@ class LongVideoStore:
             raise core.OrchestratorError("長尺記録が不正です")
         if manifest["plan"] != segment_plan(manifest["seconds"], manifest["overrides"]["frames"]):
             raise core.OrchestratorError("長尺計画が不正です")
+        if "prompt_plan" in manifest:
+            manifest["prompt_plan"] = validate_prompt_plan(manifest["prompt_plan"], len(manifest["plan"]))
         return manifest
 
     def asset(self, manifest, name) -> Path:
@@ -338,6 +362,9 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
     plan = segment_plan(manifest["seconds"], p["frames"])
     if manifest["plan"] != plan or len(manifest["segments"]) > len(plan):
         raise core.OrchestratorError("長尺計画が不正です")
+    prompt_plan = None
+    if "prompt_plan" in manifest:
+        prompt_plan = validate_prompt_plan(manifest["prompt_plan"], len(plan))
     folder = store.folder(manifest["run_id"])
     source = store.asset(manifest, manifest["source"])
     if not source.is_file():
@@ -358,7 +385,22 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
             progress(f"長尺生成 {i + 1}/{len(plan)}")
         result = existing_result(journal, comfy, manifest, i, cancel_event)
         if result is None:
-            if i == 0:
+            if prompt_plan is not None:
+                image = source
+                if i:
+                    image = folder / f"anchor_{i:03d}.png"
+                    media.last_frame(clips[-1][0], clips[-1][1]["frames"], image, cancel_event)
+                # Always derive seed progression from segment zero's seed.
+                params = planned_segment_parameters(
+                    manifest["first_parameters"] if i else p, prompt_plan, i, plan[i],
+                )
+                result = core.execute_saved(
+                    config, config_path, core.H3_I2V_ID, params, reference_image=image,
+                    progress=progress, cancel_event=cancel_event, job_journal=journal,
+                    job_context={"long_run_id": manifest["run_id"], "long_segment": i,
+                                 "request_text": manifest["request"], "prompt_profile": manifest["profile"]},
+                )
+            elif i == 0:
                 image = source
                 overrides = {**p, "frames": plan[i]}
                 result = core.execute(
