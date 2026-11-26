@@ -7,6 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .parameters import OrchestratorError
+from .h3_guide import prepare_guide_workflow, validate_guide_inputs, GUIDE_LENGTHS
 
 
 def check_cancel(cancel_event, message="生成開始前に処理を中止しました"):
@@ -58,7 +59,7 @@ def early_preflight(comfy, config, config_path, workflows, parameters, h3_option
         preflight(comfy, config, workflow_id, entry, template, checkpoint_options)
 
 
-def preflight_long(config, config_path, overrides, frames, *, cancel_event=None):
+def preflight_long(config, config_path, overrides, frames, *, cancel_event=None, guide_frame_count=0):
     """Check both H3 reference modes before generating a lengthy prompt plan."""
     from . import core
     from .long_video import continuation_model
@@ -83,24 +84,46 @@ def preflight_long(config, config_path, overrides, frames, *, cancel_event=None)
         effective = {**defaults, **params, "frames": max(sizes)}
         template = build_template(config_path, entry, core.H3_I2V_ID, effective, variant, {}, final=True)
         preflight(comfy, config, core.H3_I2V_ID, entry, template, {})
+    if guide_frame_count:
+        if guide_frame_count not in GUIDE_LENGTHS:
+            raise OrchestratorError("長尺ガイドの長さが不正です")
+        check_cancel(cancel_event)
+        following = variants[-1]
+        effective = {**defaults, **params, "frames": max(sizes)}
+        template = build_template(config_path, entry, core.H3_I2V_ID, effective, following, {}, final=True)
+        guided = prepare_guide_workflow(template, ["guide.png"] * (guide_frame_count - 1))
+        preflight(comfy, config, core.H3_I2V_ID, entry, guided, {})
 
 
 def submit_prepared(comfy, workflow_id, entry, template, parameters, saved_parameters, *,
                     reference_image=None, mask_image=None, pose_image=None,
-                    progress=None, cancel_event=None, journal=None, context=None):
+                    progress=None, cancel_event=None, journal=None, context=None, guide_images=()):
     """Exactly one upload/render/journal/submit/wait path, with no LLM calls."""
     from . import core
 
+    guide_images = validate_guide_inputs(guide_images)
+    if guide_images and (workflow_id != core.H3_I2V_ID or reference_image is None):
+        raise OrchestratorError("H3ガイドには開始画像が必要です")
     uploaded = []
     for source in (reference_image, mask_image, pose_image):
         check_cancel(cancel_event)
         uploaded.append(comfy.upload_image(source) if source is not None else None)
     rendered = core.render_workflow(template, entry["bindings"], parameters, *uploaded)
+    if guide_images:
+        names = []
+        for source in guide_images:
+            check_cancel(cancel_event)
+            names.append(comfy.upload_image(source))
+        rendered = prepare_guide_workflow(rendered, names)
+        if progress:
+            progress(f"ComfyUI: {len(names) + 1}fの動画ガイドを設定")
     check_cancel(cancel_event)
     if progress:
         progress("ComfyUI: キューに投入")
     job_context = {**(context or {}), "reference_image": reference_image,
                    "mask_image": mask_image, "pose_image": pose_image}
+    if guide_images:
+        job_context["guide_images"] = guide_images
     prompt_id, history, job_info = core.run_job(
         comfy, rendered, workflow_id, entry["kind"], saved_parameters,
         progress=progress, cancel_event=cancel_event, journal=journal, context=job_context,

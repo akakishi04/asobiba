@@ -498,7 +498,7 @@
     "video_fps": 24,
     "h3_size": "864 × 480",
     "h3_duration": "約5秒 (124f)",
-    "h3_overlap_frames": 12,
+    "h3_overlap_frames": 22,
     "h3_model": "int8",
     "h3_turbo": "off",
     "h3_steps": 20,

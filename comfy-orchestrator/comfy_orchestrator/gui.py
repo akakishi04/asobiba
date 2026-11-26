@@ -38,9 +38,9 @@ from .prompt_cache import PromptCache, CACHE_ERRORS
 from .long_video import (LONG_VIDEO_ID, LONG_TARGETS, LongVideoStore, LongVideoPaused,
                          FFmpeg, continuation_model, segment_plan, edit_project, restore_project_plan,
                          first_changed_cut, project_generation_inputs, project_cut_lengths,
-                         connection_changed_from)
+                         connection_changed_from, manifest_windows)
 from .timeline import (plan_long_prompts, CUSTOM_CUTS, validate_cut_frames,
-                       CONTINUATION_OVERLAP_FRAMES,
+                       CONTINUATION_OVERLAP_FRAMES, GUIDE_CONNECTION_FRAMES,
                        default_cut_frames, generation_frames_for_cuts, format_cut_seconds)
 from .timeline_ui import edit_cut_durations
 from .project_ui import ProjectWorkspace
@@ -80,12 +80,13 @@ VIDEO_FRAME_COUNTS = ("49", "81", "121")
 HUNYUAN_RESOLUTIONS = ("848 × 480", "480 × 848", "640 × 640")
 H3_RESOLUTIONS = ("864 × 480", "480 × 864", "640 × 640", "1056 × 608", "608 × 1056", "1344 × 768", "768 × 1344", "768 × 768")
 H3_DURATIONS = {"約5秒 (124f)": 124, "8秒 (192f)": 192, "約10秒 (243f)": 243, "約12秒 (294f)": 294, "約15秒 (362f)": 362}
-H3_CONNECTION_LABELS = {CONTINUATION_OVERLAP_FRAMES: "助走付き（最大0.5秒）", 0: "従来接続"}
+H3_CONNECTION_LABELS = {GUIDE_CONNECTION_FRAMES: "ガイド接続（22f）",
+                        0: "従来接続", CONTINUATION_OVERLAP_FRAMES: "助走付き（最大0.5秒）"}
 
 
 def connection_label(frames):
     if type(frames) is not int or frames not in H3_CONNECTION_LABELS:
-        frames = CONTINUATION_OVERLAP_FRAMES
+        frames = GUIDE_CONNECTION_FRAMES
     return H3_CONNECTION_LABELS[frames]
 
 
@@ -512,7 +513,7 @@ class Application:
         self.hunyuan_steps = tk.StringVar(value=str(options.get("hunyuan_steps", 8)))
         self.h3_size = tk.StringVar(value=str(options.get("h3_size", H3_RESOLUTIONS[0])))
         self.h3_duration = tk.StringVar(value=str(options.get("h3_duration", next(iter(H3_DURATIONS)))))
-        self.h3_connection = tk.StringVar(value=connection_label(options.get("h3_overlap_frames", CONTINUATION_OVERLAP_FRAMES)))
+        self.h3_connection = tk.StringVar(value=connection_label(options.get("h3_overlap_frames", GUIDE_CONNECTION_FRAMES)))
         target = options.get("h3_long_target", "30秒")
         try:
             self._custom_cut_frames = validate_cut_frames(options.get("h3_cut_frames", []))
@@ -3088,7 +3089,7 @@ class Application:
 
     def _start_long_prompt_plan(self, cfg, prompt, image, overrides, seconds, frames,
                                 media, cache, dry_run, profile, *, cut_frames=None,
-                                overlap_frames=CONTINUATION_OVERLAP_FRAMES):
+                                overlap_frames=GUIDE_CONNECTION_FRAMES):
         reference_only = core.h3_ref2va_filename(overrides.get("h3_model")) is not None
         self._set_busy("長尺プロンプト計画中")
 
@@ -3201,7 +3202,9 @@ class Application:
                 return updated["run_id"]
             media = FFmpeg()
             if action.action != "join" and len(updated["segments"]) < len(updated["plan"]):
-                preflight_long(cfg, CONFIG, updated["overrides"], updated["plan"], cancel_event=self.stop_event)
+                guides = max((w.get("guide_frames", 0) for w in manifest_windows(updated)[len(updated["segments"]):]), default=0)
+                preflight_long(cfg, CONFIG, updated["overrides"], updated["plan"], cancel_event=self.stop_event,
+                               guide_frame_count=guides)
             return self._complete_long_video(
                 updated, cfg, media, cache, join_only=action.action == "join",
                 auto_join=action.action != "generate",

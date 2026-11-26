@@ -12,6 +12,9 @@ MIN_CUT_FRAMES = FPS
 MAX_CUT_FRAMES = 15 * FPS
 H3_MAX_GENERATION_FRAMES = 362
 CONTINUATION_OVERLAP_FRAMES = 12
+# 22 is a persisted policy identifier as well as the preferred guide length.
+# Legacy values 0..12 continue to mean the original single-image methods.
+GUIDE_CONNECTION_FRAMES = 22
 MAX_TOTAL_FRAMES = 300 * FPS
 CUSTOM_CUTS = "カット別指定"
 MAX_PART = 1600
@@ -73,8 +76,8 @@ def default_cut_frames(seconds: int, nominal_frames: int) -> list[int]:
 
 def validate_overlap_frames(value):
     """Zero is the legacy one-anchor-frame continuation, not a hard cut."""
-    if type(value) is not int or not 0 <= value <= CONTINUATION_OVERLAP_FRAMES:
-        raise OrchestratorError("長尺助走フレーム数が不正です")
+    if type(value) is not int or not (0 <= value <= CONTINUATION_OVERLAP_FRAMES or value == GUIDE_CONNECTION_FRAMES):
+        raise OrchestratorError("長尺接続方式が不正です")
     return value
 
 
@@ -89,8 +92,13 @@ def continuation_skip_frames(kept_frames, overlap_frames):
             skips.append(0)
             continue
         # Preserve the exact output duration even at H3's 362-frame ceiling.
-        skip = min(max(1, overlap_frames), kept_frames[i - 1],
-                   max(1, kept - 1), H3_MAX_GENERATION_FRAMES - kept)
+        capacity = min(kept_frames[i - 1], H3_MAX_GENERATION_FRAMES - kept)
+        if overlap_frames == GUIDE_CONNECTION_FRAMES:
+            # The native clip encoder supports 17k+5 lengths; a 2..4-frame
+            # batch is silently treated as a still. Never request that.
+            skip = next((n for n in (22, 5, 1) if n <= capacity), 0)
+        else:
+            skip = min(max(1, overlap_frames), capacity, max(1, kept - 1))
         if skip < 1:
             raise OrchestratorError("助走を含めるとH3の最大生成フレーム数を超えます")
         skips.append(skip)
@@ -129,6 +137,8 @@ def segment_windows(frames: list[int], seconds: int | float, *, cut_frames=None,
             w["generation_frames"] = max(107, 5 + 17 * ((needed - 5 + 16) // 17))
             w["trim_start_frames"] = skip
             w["lead_in_seconds"] = skip / FPS
+            if overlap_frames == GUIDE_CONNECTION_FRAMES:
+                w["guide_frames"] = skip if skip >= 5 else 0
     return windows
 
 
@@ -149,10 +159,14 @@ def validate_prompt_plan(value: dict, count: int) -> dict:
     return {"common": common.strip(), "segments": result}
 
 
-def prompt_for_segment(plan: dict, index: int) -> str:
+def prompt_for_segment(plan: dict, index: int, *, guide_frames=0) -> str:
     text = " ".join(part for part in (plan["common"], plan["segments"][index]) if part)
     if index:
-        text = CONTINUATION + text
+        prefix = ("Continue the same shot and motion from the supplied opening video guide. "
+                  "Preserve the subject, camera trajectory and established visual style. "
+                  "The new action follows the guide, without a pause or abrupt cut. "
+                  if guide_frames else CONTINUATION)
+        text = prefix + text
     check_param("positive_prompt", text)
     return text
 
@@ -307,6 +321,8 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
         "near the preceding clip's retained end. Make each action feasible within its effective time. "
         "Complete requested actions within the retained output window; discard any lead-in and unused tail. "
         "If trim_start_frames is supplied, the initial lead-in is continuity of prior motion only. "
+        "When guide_frames is positive, the opening clip is supplied from the preceding retained video; "
+        "continue its motion and begin this segment's new action after the guide. "
         "Do not place new actions or dialogue exclusively in that discarded lead-in or tail. "
         "If a simple action finishes early, maintain the resulting state instead of inventing events. "
         "Do not invent reference-image details: you cannot see the image. "

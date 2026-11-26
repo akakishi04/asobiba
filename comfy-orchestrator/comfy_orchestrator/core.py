@@ -22,6 +22,7 @@ from .parameters import OrchestratorError, PARAMS, check_param
 from .jobs import (JobJournal, JobCancellationRequested, JobExecutionFailed,
                    JobSubmissionRejected, run_job)
 from .input_snapshot import freeze_generation_inputs
+from .h3_guide import prepare_guide_workflow, validate_guide_inputs
 from .generation_runtime import build_template, preflight, early_preflight, submit_prepared
 from .model_runtime import release_comfy_before_llm, record_model_event
 from .prompt_cache import PromptCache, CACHE_ERRORS, make_cache_key
@@ -619,6 +620,7 @@ class ComfyUI:
             "ModelAttentionBackend": "attention",
         }
         required = {"Wan22ImageToVideoLatent", "MiniMaxH3ImageToVideo", "MiniMaxH3ReferenceToVideo", "MiniMaxH3SigmaShift",
+                    "MiniMaxH3AddGuide", "ImageBatch",
                     "HunyuanVideo15ImageToVideo", "CLIPVisionEncode", "ModelSamplingSD3",
                     "VAEDecodeAudio", "CreateVideo", "SaveVideo",
                     "ModelSamplingAuraFlow", "EmptySD3LatentImage", "BlockSparseAttention"}
@@ -1019,6 +1021,7 @@ def execute_saved(
     progress: Callable[[str], None] | None = None, cancel_event: Any = None,
     mask_image: Path | None = None, pose_image: Path | None = None,
     job_journal: JobJournal | None = None, job_context: dict | None = None,
+    guide_images=(),
 ) -> dict:
     """Replay exact validated workflow inputs, without invoking or loading an LLM.
 
@@ -1037,6 +1040,12 @@ def execute_saved(
     for field, value in (("参照画像", reference_image), ("マスク", mask_image), ("ポーズ画像", pose_image)):
         if value is not None and not Path(value).is_file():
             raise OrchestratorError(f"{field}がありません: {value}")
+    guide_images = validate_guide_inputs(guide_images)
+    if guide_images and (workflow_id != H3_I2V_ID or reference_image is None):
+        raise OrchestratorError("動画ガイドはMiniMax H3の開始画像付き生成専用です")
+    for guide in guide_images:
+        if not Path(guide).is_file():
+            raise OrchestratorError(f"H3ガイド画像がありません: {guide}")
     has_image = reference_image is not None
     if "seed" in bindings and not new_seed and "seed" not in parameters:
         raise OrchestratorError("元のSeedが履歴にありません。同条件の再生成はできません")
@@ -1059,7 +1068,9 @@ def execute_saved(
         raise OrchestratorError("再生成開始前に中止しました")
 
     comfy = ComfyUI(config["comfyui"])
-    preflight(comfy, config, workflow_id, selected, template, checkpoint_options)
+    checked = (prepare_guide_workflow(template, ["guide.png"] * len(guide_images))
+               if guide_images else template)
+    preflight(comfy, config, workflow_id, selected, checked, checkpoint_options)
     record_model_event("comfy_preserve_jobs")
     if progress:
         progress("保存済みのプロンプトと生成設定を復元（LLMは使用しません）")
@@ -1067,4 +1078,5 @@ def execute_saved(
         comfy, workflow_id, selected, template, params, {**params, **h3_options, **checkpoint_options},
         reference_image=reference_image, mask_image=mask_image, pose_image=pose_image,
         progress=progress, cancel_event=cancel_event, journal=job_journal, context=job_context,
+        guide_images=guide_images,
     )

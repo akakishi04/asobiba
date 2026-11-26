@@ -104,6 +104,12 @@ class JobJournal:
                 copy_asset(value, f"character_{idx}")
                 for idx, value in enumerate(snapshot.get("character_references", ()))
             ]
+            if snapshot.get("guide_images"):
+                from .h3_guide import validate_guide_inputs
+                snapshot["guide_images"] = [
+                    copy_asset(value, f"guide_{idx:03d}")
+                    for idx, value in enumerate(validate_guide_inputs(snapshot["guide_images"]), start=1)
+                ]
             record = {
                 "schema": 1, "job_id": job_id, "prompt_id": job_id,
                 "backend": backend.rstrip("/"), "state": "submitting",
@@ -171,6 +177,8 @@ class JobJournal:
         for name in ASSETS:
             context[name] = resolve_asset(context.get(name))
         context["character_references"] = tuple(resolve_asset(p) for p in context.get("character_references", ()))
+        if "guide_images" in context:
+            context["guide_images"] = tuple(resolve_asset(p) for p in context["guide_images"])
         return context
 
     def inspect(self, comfy, record: dict) -> tuple[str, dict | None]:

@@ -193,7 +193,8 @@ class ProjectWorkspaceTests(unittest.TestCase):
         journal = JobJournal(self.root / "jobs")
         self.assertEqual(gui.connection_frames(gui.connection_label(0)), 0)
         self.assertEqual(gui.connection_frames(gui.connection_label(12)), 12)
-        self.assertEqual(gui.connection_label(None), gui.connection_label(12))
+        self.assertEqual(gui.connection_label(None), gui.connection_label(22))
+        self.assertEqual(gui.connection_frames(gui.connection_label(22)), 22)
         with self.assertRaises(core.OrchestratorError):
             gui.connection_frames("invalid")
         app = SimpleNamespace(

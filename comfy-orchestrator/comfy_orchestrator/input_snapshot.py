@@ -7,6 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from .parameters import OrchestratorError
+from .h3_guide import validate_guide_inputs
 
 _ROLES = ("image", "reference_image", "mask_image", "pose_image", "composition_image")
 _SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
@@ -58,6 +59,12 @@ def freeze_generation_inputs(function):
                 copy_frozen_asset(value, folder, f"character_{i}")
                 for i, value in enumerate(context.get("character_references", ()))
             )
+            if "guide_images" in bound.arguments:
+                images = validate_guide_inputs(bound.arguments["guide_images"])
+                bound.arguments["guide_images"] = tuple(
+                    copy_frozen_asset(value, folder, f"guide_{i:03d}")
+                    for i, value in enumerate(images, start=1)
+                )
             bound.arguments["job_context"] = context
             return function(*bound.args, **bound.kwargs)
 

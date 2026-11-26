@@ -5,6 +5,7 @@ import json
 import hashlib
 import math
 from datetime import datetime, timezone
+from contextlib import nullcontext
 import secrets
 import shutil
 import subprocess
@@ -18,7 +19,7 @@ from . import core
 from .jobs import JobCancellationRequested, JobExecutionFailed, UnknownLongJob
 from .timeline import (validate_prompt_plan, prompt_for_segment, validate_cut_frames,
                        generation_frames_for_cuts, segment_windows, validate_overlap_frames,
-                       CONTINUATION_OVERLAP_FRAMES)
+                       CONTINUATION_OVERLAP_FRAMES, GUIDE_CONNECTION_FRAMES)
 from .asset_store import save_snapshot
 from .timing import report_estimate, ERRORS as TIMING_ERRORS
 from .project_lock import lock_project
@@ -127,7 +128,7 @@ def continuation_parameters(first: dict, index: int, frames: int) -> dict:
 
 
 def planned_segment_parameters(base: dict, prompt_plan: dict, index: int, frames: int,
-                               *, lead_in_frames=0) -> dict:
+                               *, lead_in_frames=0, guide_frames=0) -> dict:
     """Apply only the approved prompt for this interval, including segment zero."""
     p = dict(base)
     model = p.get("h3_model")
@@ -137,8 +138,15 @@ def planned_segment_parameters(base: dict, prompt_plan: dict, index: int, frames
     # The ordinary parameter validator accepts signed 63-bit nonnegative seeds.
     # Wrap on its actual domain, not an unsigned 64-bit domain.
     p["seed"] = (int(base["seed"]) + index) % (core.PARAMS["seed"][2] + 1)
-    p["positive_prompt"] = prompt_for_segment(prompt_plan, index)
-    if index and lead_in_frames > 1:
+    p["positive_prompt"] = prompt_for_segment(prompt_plan, index, guide_frames=guide_frames)
+    if index and guide_frames:
+        p["positive_prompt"] = (
+            f"The first {guide_frames / FPS:.3f} seconds are an anchored video clip. "
+            "Extend its existing movement immediately after the guide, without replaying or resetting it. "
+            + p["positive_prompt"]
+        )
+        core.check_param("positive_prompt", p["positive_prompt"])
+    elif index and lead_in_frames > 1:
         p["positive_prompt"] = (
             f"Immediately continue the preceding ongoing motion without pausing. "
             f"For the first {lead_in_frames / FPS:.3f} seconds, sustain that motion and the camera trajectory; "
@@ -219,6 +227,25 @@ class FFmpeg:
             temporary.replace(target)
         finally:
             temporary.unlink(missing_ok=True)
+
+    def extract_guide_frames(self, clip: Path, start: int, count: int, folder: Path, cancel_event=None):
+        """Decode the exact contiguous retained frames in chronological order."""
+        from .h3_guide import GUIDE_LENGTHS
+        if type(start) is not int or start < 0 or count not in GUIDE_LENGTHS:
+            raise core.OrchestratorError("H3ガイドの切り出し範囲が不正です")
+        folder = Path(folder)
+        paths = tuple(folder / f"frame_{i:03d}.png" for i in range(count))
+        if any(path.exists() for path in paths):
+            raise core.OrchestratorError("H3ガイドの一時保存先が使用済みです")
+        self._run([self.ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+                   "-threads", "2", "-i", clip, "-map", "0:v:0",
+                   "-vf", f"select=between(n\\,{start}\\,{start + count - 1})",
+                   "-fps_mode", "passthrough", "-frames:v", str(count),
+                   "-start_number", "0", "-threads", "2", folder / "frame_%03d.png"], cancel_event)
+        if (tuple(sorted(folder.glob("frame_*.png"))) != paths
+                or any(not path.is_file() or path.stat().st_size == 0 for path in paths)):
+            raise core.OrchestratorError("H3ガイドに必要な連続フレームを取得できません")
+        return paths
 
     def join(self, clips: list[tuple[Path, dict]], target_frames: int, output: Path, cancel_event=None, progress=None, *,
              keep_frames=None, trim_start_frames=None):
@@ -440,7 +467,8 @@ def connection_changed_from(manifest, cut_frames, overlap_frames):
                                    overlap_frames=overlap)
     return next((i for i, (a, b) in enumerate(zip(old_windows, new_windows))
                  if a["generation_frames"] != b["generation_frames"]
-                 or a["trim_start_frames"] != b["trim_start_frames"]), len(new_windows))
+                 or a["trim_start_frames"] != b["trim_start_frames"]
+                 or a.get("guide_frames", 0) != b.get("guide_frames", 0)), len(new_windows))
 
 
 def project_generation_inputs(store, manifest, *, overrides=None, source=None):
@@ -540,7 +568,8 @@ def edit_project(store, manifest, journal, prompt_plan, cut_frames, *, regenerat
         for i in range(prefix):
             segment = manifest["segments"][i]
             if (new["plan"][i] != manifest["plan"][i]
-                    or old_windows[i]["trim_start_frames"] != new_windows[i]["trim_start_frames"]):
+                    or old_windows[i]["trim_start_frames"] != new_windows[i]["trim_start_frames"]
+                    or old_windows[i].get("guide_frames", 0) != new_windows[i].get("guide_frames", 0)):
                 raise core.OrchestratorError("引継ぎカットの生成・助走フレーム数が一致しません")
             old_file = store.asset(manifest, segment["file"])
             dest = store.asset(new, segment["file"])
@@ -740,7 +769,10 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
             progress(f"長尺生成 {i + 1}/{len(plan)}")
             if overlap:
                 w = windows[i]
-                progress(f"カット{i + 1}: 採用 {w['output_frames']}f / 助走 {w['trim_start_frames']}f / 生成 {plan[i]}f")
+                mode = (f"ガイド {w.get('guide_frames', 0)}f" if w.get("guide_frames", 0)
+                        else "従来接続（ガイド長不足）" if i and overlap == GUIDE_CONNECTION_FRAMES
+                        else f"助走 {w['trim_start_frames']}f")
+                progress(f"カット{i + 1}: 採用 {w['output_frames']}f / {mode} / 生成 {plan[i]}f")
         report_estimate(estimate_remaining(journal, manifest, config, i, plan, indexed), label="残カット生成待ち")
         cut_started = time.monotonic()
         result = existing_result(journal, comfy, manifest, i, cancel_event,
@@ -748,27 +780,43 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
         recovered = result is not None
         if result is None:
             if prompt_plan is not None:
-                image = source
-                if i:
-                    image = folder / f"anchor_{i:03d}.png"
-                    # Frame-exact opening anchor, inside the preceding retained window.
-                    anchor_frames = continuation_anchor_count(windows[i - 1], windows[i])
-                    if overlap and progress:
-                        progress(f"カット{i + 1}: 前カットのフレーム {anchor_frames}（1始まり）を開始画像に使用")
-                    media.last_frame(clips[-1][0], anchor_frames, image, cancel_event)
-                # Always derive seed progression from segment zero's seed.
-                params = planned_segment_parameters(
-                    manifest["first_parameters"] if i else p, prompt_plan, i, plan[i],
-                    lead_in_frames=windows[i]["trim_start_frames"] if overlap else 0,
-                )
-                if manifest.get("cut_seeds") is not None:
-                    params["seed"] = manifest["cut_seeds"][i]
-                result = core.execute_saved(
-                    config, config_path, core.H3_I2V_ID, params, reference_image=image,
-                    progress=progress, cancel_event=cancel_event, job_journal=journal,
-                    job_context={"long_run_id": manifest["run_id"], "long_segment": i,
-                                 "request_text": manifest["request"], "prompt_profile": manifest["profile"]},
-                )
+                guide_count = windows[i].get("guide_frames", 0)
+                # The previous raw clip may include both discarded opening
+                # frames and a discarded tail. Anchor inside its kept window.
+                scratch = tempfile.TemporaryDirectory(prefix="guide-", dir=folder) if guide_count else nullcontext(None)
+                with scratch as temporary:
+                    image = source
+                    extra = {}
+                    if i:
+                        anchor_frames = continuation_anchor_count(windows[i - 1], windows[i])
+                        if guide_count:
+                            images = media.extract_guide_frames(clips[-1][0], anchor_frames - 1, guide_count,
+                                                                Path(temporary), cancel_event)
+                            if len(images) != guide_count:
+                                raise core.OrchestratorError("H3ガイド画像数が計画と一致しません")
+                            image = images[0]
+                            extra["guide_images"] = tuple(images[1:])
+                            if progress:
+                                progress(f"カット{i + 1}: 前カットの採用末尾{guide_count}fを動画ガイドに使用")
+                        else:
+                            image = folder / f"anchor_{i:03d}.png"
+                            if overlap and progress:
+                                progress(f"カット{i + 1}: 前カットのフレーム {anchor_frames}（1始まり）を開始画像に使用")
+                            media.last_frame(clips[-1][0], anchor_frames, image, cancel_event)
+                    params = planned_segment_parameters(
+                        manifest["first_parameters"] if i else p, prompt_plan, i, plan[i],
+                        lead_in_frames=windows[i]["trim_start_frames"] if overlap else 0,
+                        guide_frames=guide_count,
+                    )
+                    if manifest.get("cut_seeds") is not None:
+                        params["seed"] = manifest["cut_seeds"][i]
+                    result = core.execute_saved(
+                        config, config_path, core.H3_I2V_ID, params, reference_image=image,
+                        progress=progress, cancel_event=cancel_event, job_journal=journal,
+                        job_context={"long_run_id": manifest["run_id"], "long_segment": i,
+                                     "request_text": manifest["request"], "prompt_profile": manifest["profile"]},
+                        **extra,
+                    )
             elif i == 0:
                 image = source
                 overrides = {**p, "frames": plan[i]}
@@ -805,6 +853,8 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
                                      "parameters": result["parameters"], "frames": info["frames"],
                                      "cut_processing_seconds": round(time.monotonic() - cut_started, 3),
                                      "generation_wait_seconds": result.get("elapsed_seconds") if not recovered else None})
+        if overlap == GUIDE_CONNECTION_FRAMES:
+            manifest["segments"][-1]["guide_frames"] = windows[i].get("guide_frames", 0)
         store.save(manifest)
         journal.update(result["job_id"], state="collected", collection_state="collected")
         clips.append((clip, info))
