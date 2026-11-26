@@ -14,6 +14,7 @@ import queue
 import shutil
 import sqlite3
 import threading
+import tempfile
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -30,10 +31,12 @@ from .history import HistoryStore, HistoryEntry, HistoryError
 from .jobs import JobJournal, JobCancellationRequested
 from .prompt_cache import PromptCache, CACHE_ERRORS
 from .long_video import (LONG_VIDEO_ID, LONG_TARGETS, LongVideoStore, LongVideoPaused,
-                         FFmpeg, run_long_video, continuation_model, segment_plan)
+                         FFmpeg, run_long_video, continuation_model, segment_plan, edit_project)
 from .timeline import (plan_long_prompts, CUSTOM_CUTS, validate_cut_frames,
                        default_cut_frames, generation_frames_for_cuts, format_cut_seconds)
-from .timeline_ui import edit_prompt_plan, edit_cut_durations, CutDurationChange
+from .timeline_ui import edit_cut_durations
+from .project_ui import choose_project, edit_long_project
+from .input_snapshot import copy_frozen_asset
 from .mask_editor import edit_mask
 from .lmstudio import list_models, LMStudio
 from .character_ui import CharacterReferenceWindow
@@ -810,7 +813,7 @@ class Application:
         self.h3_duration_title = self.parameter_widgets["h3"][-2]
         field(10, 0, "合計尺", self.h3_long_target, "h3_long",
               choices=(*CONTINUOUS_TARGETS, CUSTOM_CUTS), span=2, width=8)
-        self.resume_long_button = ttk.Button(settings, text="長尺再開", command=self._resume_long_video,
+        self.resume_long_button = ttk.Button(settings, text="プロジェクト…", command=self._resume_long_video,
                                              style="Compact.TButton")
         self.resume_long_button.grid(row=10, column=3, sticky="ew", pady=3, padx=(4, 0))
         self.parameter_widgets["h3_long"].append(self.resume_long_button)
@@ -1671,7 +1674,8 @@ class Application:
         if entry.workflow_id == LONG_VIDEO_ID:
             p = dict(entry.parameters)
             seconds = p.pop("long_seconds", 0)
-            p.pop("long_run_id", None)
+            self._preferred_long_project_id = p.pop("long_run_id", None)
+            p.pop("long_prompt_plan", None)
             cuts = p.pop("long_cut_frames", None)
             p["frames"] = p.pop("long_segment_frames", 124)
             entry = replace(entry, workflow_id=core.H3_I2V_ID, parameters=p)
@@ -2782,30 +2786,45 @@ class Application:
 
     def _start_long_prompt_plan(self, cfg, prompt, image, overrides, seconds, frames,
                                 media, cache, dry_run, profile, *, cut_frames=None):
-        # Snapshot the planning inputs; a prior preview is reused only for
-        # the same request, duration, reference and interpreter settings.
         reference_only = core.h3_ref2va_filename(overrides.get("h3_model")) is not None
-        key = json.dumps([prompt, str(image.resolve()), seconds, frames, cut_frames, reference_only,
-                          cfg["llm"]], ensure_ascii=False, sort_keys=True)
+        try:
+            stat = image.stat()
+        except OSError as exc:
+            messagebox.showerror("長尺プロジェクト", str(exc))
+            return
+        key = json.dumps([prompt, str(image.resolve()), stat.st_mtime_ns,
+                          stat.st_size, seconds, frames, cut_frames, overrides,
+                          cfg["llm"], cfg["comfyui"]["base_url"]],
+                         ensure_ascii=False, sort_keys=True)
         self._set_busy("長尺プロンプト計画中")
-        draft = getattr(self, "_long_prompt_draft", None)
-        context = (cfg, prompt, image, overrides, seconds, frames, media,
-                   cache, dry_run, profile, key, cut_frames)
-        cached_draft = copy.deepcopy(draft[1]) if draft is not None and draft[0] == key else None
+        saved = getattr(self, "_long_prompt_draft", None)
 
         def task():
             try:
+                if saved is not None and saved[0] == key:
+                    path = self.long_video_store.folder(saved[1]) / "manifest.json"
+                    if path.is_file():
+                        existing = self.long_video_store.load(path)
+                        if existing["state"] == "draft":
+                            self.messages.put(("long_plan_ready", (existing, (cfg, cache, key))))
+                            return
                 if not dry_run:
                     preflight_long(cfg, CONFIG, overrides, frames, cancel_event=self.stop_event)
-                if cached_draft is not None:
-                    self.messages.put(("long_plan_ready", (cached_draft, context)))
-                    return
-                plan = plan_long_prompts(
-                    cfg, prompt, frames, seconds, reference_only, cut_frames=cut_frames,
-                    progress=lambda line: self.messages.put(("progress", line)),
-                    cancel_event=self.stop_event, prompt_cache=cache, release_comfy=True,
-                )
-                self.messages.put(("long_plan_ready", (plan, context)))
+                # Freeze the source before planning; the persisted project owns a copy.
+                with tempfile.TemporaryDirectory(prefix="asobiba-long-") as temporary:
+                    source = copy_frozen_asset(image, Path(temporary), "source")
+                    plan = plan_long_prompts(
+                        cfg, prompt, frames, seconds, reference_only, cut_frames=cut_frames,
+                        progress=lambda line: self.messages.put(("progress", line)),
+                        cancel_event=self.stop_event, prompt_cache=cache, release_comfy=True,
+                    )
+                    if self.stop_event.is_set():
+                        raise JobCancellationRequested("長尺計画を中止しました")
+                    manifest = self.long_video_store.create(
+                        cfg["comfyui"]["base_url"], prompt, source, overrides, seconds, profile,
+                        prompt_plan=plan, cut_frames=cut_frames, draft=True,
+                    )
+                self.messages.put(("long_plan_ready", (manifest, (cfg, cache, key))))
             except JobCancellationRequested as exc:
                 self.messages.put(("progress", str(exc)))
                 self.messages.put(("idle", None))
@@ -2815,49 +2834,54 @@ class Application:
 
         threading.Thread(target=task, daemon=True).start()
 
-    def _finish_long_prompt_plan(self, plan, context):
-        cfg, prompt, image, overrides, seconds, frames, media, cache, dry_run, profile, key, cut_frames = context
+    def _finish_long_prompt_plan(self, manifest, context):
+        cfg, cache, key = context
         started = False
         try:
+            self._preferred_long_project_id = manifest["run_id"]
+            self._long_prompt_draft = (key, manifest["run_id"])
             if self.stop_event.is_set():
-                self.status.set("長尺プロンプト計画を中止しました")
+                self.status.set("長尺計画を保存しました（未生成）")
                 return
-            self.status.set("長尺プロンプトを確認・編集してください")
-            approved = edit_prompt_plan(self.root, plan, frames, seconds,
-                                        cut_frames=cut_frames, preview_only=dry_run)
-            if approved is None or self.stop_event.is_set():
-                self.status.set("長尺プロンプト計画を取り消しました")
+            self.status.set("長尺プロジェクトを確認してください")
+            action = edit_long_project(self.root, self.long_video_store, manifest)
+            if action is None or self.stop_event.is_set():
+                self.status.set("長尺計画を保存しました（未生成）")
                 return
-            if isinstance(approved, CutDurationChange):
-                self._set_custom_cuts(approved.frames)
-                cuts = list(self._custom_cut_frames)
-                self._start_long_prompt_plan(
-                    cfg, prompt, image, overrides, sum(cuts) / 24,
-                    generation_frames_for_cuts(cuts), media, cache, dry_run, profile,
-                    cut_frames=cuts,
-                )
-                started = True
-                return
-            self._long_prompt_draft = (key, copy.deepcopy(approved))
-            if dry_run:
-                self.status.set(f"長尺計画を保持しました: {len(frames)}区間（未生成）")
-                return
-
-            def task():
-                manifest = self.long_video_store.create(
-                    cfg["comfyui"]["base_url"], prompt, image, overrides, seconds,
-                    profile, prompt_plan=approved, cut_frames=cut_frames,
-                )
-                return self._complete_long_video(manifest, cfg, media, cache)
-
-            self.status.set("確定済みの計画で長尺生成を開始")
-            self._launch_generation(task, long_video=True)
+            self._run_project_action(manifest, action, cfg, cache, key)
             started = True
         except Exception as exc:
             self.messages.put(("error", str(exc)))
         finally:
             if not started:
                 self.messages.put(("idle", None))
+
+    def _run_project_action(self, manifest, action, cfg, cache, key=None):
+        """Persist the chosen revision in a worker before any GPU job."""
+        if action.action not in ("save", "generate", "generate_join", "join"):
+            raise core.OrchestratorError("長尺プロジェクト操作が不正です")
+        if action.action in ("generate", "generate_join") and manifest["backend"] != cfg["comfyui"]["base_url"].rstrip("/"):
+            raise core.OrchestratorError("保存時と同じComfyUI接続先にしてください")
+        self._set_busy("長尺プロジェクト処理中")
+
+        def task():
+            updated = edit_project(
+                self.long_video_store, manifest, self.job_journal,
+                action.prompt_plan, action.cut_frames, regenerate_from=action.regenerate_from,
+            )
+            self.messages.put(("long_project_saved", (updated["run_id"], key)))
+            if action.action == "save":
+                return updated["run_id"]
+            media = FFmpeg()
+            if action.action != "join" and len(updated["segments"]) < len(updated["plan"]):
+                preflight_long(cfg, CONFIG, updated["overrides"], updated["plan"], cancel_event=self.stop_event)
+            return self._complete_long_video(
+                updated, cfg, media, cache, join_only=action.action == "join",
+                auto_join=action.action != "generate",
+            )
+
+        event = "long_project_done" if action.action in ("save", "generate") else "done"
+        self._launch_generation(task, done_event=event, long_video=True)
 
     def _confirm_unknown_long_job(self, record):
         # Worker thread: dialog interaction stays on the Tk main thread.
@@ -2869,44 +2893,47 @@ class Application:
                 return False
         return decision["retry"] and not self.stop_event.is_set()
 
-    def _complete_long_video(self, manifest, cfg, media, prompt_cache):
+    def _complete_long_video(self, manifest, cfg, media, prompt_cache, *, join_only=False, auto_join=True):
         return self._controller(cfg, prompt_cache).complete_long(
             self.long_video_store, manifest, media, confirm_unknown=self._confirm_unknown_long_job,
+            join_only=join_only, auto_join=auto_join,
         )
 
     def _resume_long_video(self) -> None:
         if self.working or self.character_analysis_running or self.generation_mode.get() != "continuous":
             return
-        root = self.long_video_store.root
-        records = sorted(root.glob("*/manifest.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-        path = filedialog.askopenfilename(
-            title="再開する長尺記録を選択", initialdir=str(records[0].parent if records else root),
-            filetypes=(("長尺生成記録", "manifest.json"),),
-        )
-        if not path:
-            return
         try:
-            manifest = self.long_video_store.load(Path(path))
-            media = FFmpeg()
+            projects = self.long_video_store.projects()
+            manifest = choose_project(self.root, projects, getattr(self, "_preferred_long_project_id", None))
+            if manifest is None:
+                return
+            self._preferred_long_project_id = manifest["run_id"]
+            if not self._save_settings():
+                return
+            cfg = copy.deepcopy(self.config)
+            if manifest.get("profile"):
+                cfg["llm"]["h3_prompt_profile"] = manifest["profile"]
+            cache = self.prompt_cache if self.use_prompt_cache.get() else None
+            self.latest_request_text = manifest["request"]
+            self.latest_prompt_profile = manifest.get("profile")
+            self.latest_character_traits = None
+            self.latest_character_references = ()
+            self.latest_character_analysis = None
+            if "prompt_plan" in manifest:
+                action = edit_long_project(self.root, self.long_video_store, manifest)
+                if action is not None:
+                    self._run_project_action(manifest, action, cfg, cache)
+                return
+            # Old manifests without editable prompts retain the original resume path.
             if manifest["backend"] != self.comfy_url.get().strip().rstrip("/"):
                 raise core.OrchestratorError("保存時と同じComfyUI接続先にしてください")
+            media = FFmpeg()
+            if not messagebox.askyesno("旧形式の長尺記録", "区間別計画のない旧形式です。従来方式で生成を再開しますか？"):
+                return
+            self._set_busy("長尺生成再開中")
+            self._launch_generation(lambda: self._complete_long_video(manifest, cfg, media, cache), long_video=True)
         except (OSError, ValueError, KeyError, core.OrchestratorError) as exc:
-            messagebox.showerror("長尺再開", str(exc))
-            return
-        if not self._save_settings():
-            return
-        cfg = copy.deepcopy(self.config)
-        if manifest.get("profile"):
-            cfg["llm"]["h3_prompt_profile"] = manifest["profile"]
-        cache = self.prompt_cache if self.use_prompt_cache.get() else None
-        self.latest_request_text = manifest["request"]
-        self.latest_prompt_profile = manifest.get("profile")
-        self.latest_character_traits = None
-        self.latest_character_references = ()
-        self.latest_character_analysis = None
-        self._set_busy("長尺生成再開中")
-        self._launch_generation(lambda: self._complete_long_video(manifest, cfg, media, cache),
-                                long_video=True)
+            messagebox.showerror("長尺プロジェクト", str(exc))
 
     def _request_cancel(self) -> None:
         self.stop_event.set()
@@ -2937,6 +2964,15 @@ class Application:
                     self._log(data)
                 elif kind == "long_plan_ready":
                     self._finish_long_prompt_plan(*data)
+                elif kind == "long_project_saved":
+                    run_id, key = data
+                    self._preferred_long_project_id = run_id
+                    if key is not None:
+                        self._long_prompt_draft = (key, run_id)
+                    self._log("長尺プロジェクト保存: " + run_id)
+                elif kind == "long_project_done":
+                    self._preferred_long_project_id = data
+                    self.status.set("長尺プロジェクト保存済み / プロジェクトから確認・生成・結合できます")
                 elif kind == "confirm_unknown_long_job":
                     record, answered, decision = data
                     try:

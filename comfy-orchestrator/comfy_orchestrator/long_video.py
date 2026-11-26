@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import math
+from datetime import datetime, timezone
 import secrets
 import shutil
 import subprocess
@@ -14,7 +15,8 @@ from pathlib import Path
 from . import core
 from .jobs import JobCancellationRequested, JobExecutionFailed, UnknownLongJob
 from .timeline import (validate_prompt_plan, prompt_for_segment, validate_cut_frames,
-                       generation_frames_for_cuts)
+                       generation_frames_for_cuts, segment_windows)
+from .input_snapshot import copy_frozen_asset
 
 LONG_VIDEO_ID = "minimax_h3_long_video"
 LONG_TARGETS = {"単発": 0, "30秒": 30, "1分": 60, "2分": 120, "3分": 180, "5分": 300}
@@ -273,7 +275,8 @@ class LongVideoStore:
                 temporary.unlink(missing_ok=True)
 
     def create(self, backend: str, request: str, source: Path, overrides: dict,
-               seconds: int | float, profile=None, *, prompt_plan=None, cut_frames=None) -> dict:
+               seconds: int | float, profile=None, *, prompt_plan=None, cut_frames=None,
+               draft=False) -> dict:
         p = dict(overrides)
         core.validate_h3_video_parameters(p)
         model = p.get("h3_model")
@@ -298,12 +301,13 @@ class LongVideoStore:
         folder = self.folder(run_id)
         folder.mkdir()
         try:
-            name = "source" + source.suffix.lower()
-            shutil.copyfile(source, folder / name)
+            name = copy_frozen_asset(source, folder, "source").name
             manifest = {"schema": 1, "run_id": run_id, "backend": backend.rstrip("/"),
                         "request": request, "profile": profile, "source": name,
                         "overrides": p, "seconds": seconds, "plan": plan,
-                        "first_parameters": None, "segments": [], "state": "generating"}
+                        "first_parameters": None, "segments": [],
+                        "state": "draft" if draft else "generating",
+                        "created_at": datetime.now(timezone.utc).isoformat()}
             if prompt_plan is not None:
                 manifest["prompt_plan"] = prompt_plan
             if cut_frames is not None:
@@ -324,7 +328,25 @@ class LongVideoStore:
         manifest_schedule(manifest)
         if "prompt_plan" in manifest:
             manifest["prompt_plan"] = validate_prompt_plan(manifest["prompt_plan"], len(manifest["plan"]))
+        if not isinstance(manifest["segments"], list) or len(manifest["segments"]) > len(manifest["plan"]):
+            raise core.OrchestratorError("長尺区間記録が不正です")
+        seeds = manifest.get("cut_seeds")
+        if seeds is not None:
+            if not isinstance(seeds, list) or len(seeds) != len(manifest["plan"]):
+                raise core.OrchestratorError("長尺Seed記録が不正です")
+            for seed in seeds:
+                core.check_param("seed", seed)
         return manifest
+
+    def projects(self):
+        """Read independent projects, including drafts; corrupt records stay untouched."""
+        result = []
+        for path in self.root.glob("*/manifest.json"):
+            try:
+                result.append((path.stat().st_mtime, self.load(path)))
+            except (OSError, ValueError, KeyError, TypeError, core.OrchestratorError):
+                continue
+        return [m for _, m in sorted(result, key=lambda item: item[0], reverse=True)]
 
     def asset(self, manifest, name) -> Path:
         folder = self.folder(manifest["run_id"])
@@ -332,6 +354,99 @@ class LongVideoStore:
         if not path.is_relative_to(folder):
             raise core.OrchestratorError("長尺記録のパスが不正です")
         return path
+
+
+def project_cut_lengths(manifest):
+    plan, cuts, _ = manifest_schedule(manifest)
+    return cuts if cuts is not None else [
+        w["output_frames"] for w in segment_windows(plan, manifest["seconds"])
+    ]
+
+
+def first_changed_cut(manifest, prompt_plan, cut_frames):
+    old = manifest.get("prompt_plan")
+    if old is None:
+        raise core.OrchestratorError("旧形式の計画なしプロジェクトは編集できません")
+    old_cuts = project_cut_lengths(manifest)
+    if old["common"] != prompt_plan["common"]:
+        return 0
+    for i, (old_text, new_text) in enumerate(zip(old["segments"], prompt_plan["segments"])):
+        if old_text != new_text or old_cuts[i] != cut_frames[i]:
+            return i
+    return min(len(old_cuts), len(cut_frames)) if len(old_cuts) != len(cut_frames) else None
+
+
+def edit_project(store, manifest, journal, prompt_plan, cut_frames, *, regenerate_from=None):
+    """Create a revision with its unchanged generated prefix. Never remove old data.
+
+    A new run ID isolates job recovery and final history. Old unfinished remote
+    jobs must be recovered/cancelled before branching from an already-running plan.
+    """
+    old_cuts = project_cut_lengths(manifest)
+    cuts = list(cut_frames)
+    if cuts != old_cuts:
+        cuts = validate_cut_frames(cuts)
+    approved = validate_prompt_plan(prompt_plan, len(cuts))
+    changed = first_changed_cut(manifest, approved, cuts)
+    if regenerate_from is not None:
+        if type(regenerate_from) is not int or not 0 <= regenerate_from < len(cuts):
+            raise core.OrchestratorError("再生成するカット番号が不正です")
+        changed = regenerate_from if changed is None else min(changed, regenerate_from)
+    if changed is None:
+        return manifest
+    # Don't fork away from an active or uncertain remote job. A completed
+    # result may remain uncollected; preserve it in the old project.
+    for path in journal.root.glob("*/record.json"):
+        record = journal.read(path.parent.name)
+        if (record.get("context", {}).get("long_run_id") == manifest["run_id"]
+                and record["state"] not in ("failed", "completed", "collected")):
+            raise core.OrchestratorError("未確定の生成ジョブがあります。元のプロジェクトを再開して状態を確定してください")
+    same_schedule = cuts == old_cuts
+    new = store.create(
+        manifest["backend"], manifest["request"], store.asset(manifest, manifest["source"]),
+        manifest["overrides"], manifest["seconds"] if same_schedule else sum(cuts) / FPS,
+        manifest.get("profile"), prompt_plan=approved,
+        cut_frames=manifest.get("cut_frames") if same_schedule else cuts, draft=True,
+    )
+    folder = store.folder(new["run_id"])
+    try:
+        new["parent_run_id"] = manifest["run_id"]
+        new["revision"] = int(manifest.get("revision", 0)) + 1
+        new["changed_from"] = changed
+        prefix = min(changed, len(manifest["segments"]), len(new["plan"]))
+        for i in range(prefix):
+            segment = manifest["segments"][i]
+            if new["plan"][i] != manifest["plan"][i]:
+                raise core.OrchestratorError("引継ぎカットの生成フレーム数が一致しません")
+            old_file = store.asset(manifest, segment["file"])
+            dest = store.asset(new, segment["file"])
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            # Hard-link immutable completed clips where supported; fall back to
+            # a regular copy. Later generations use a different run directory.
+            try:
+                dest.hardlink_to(old_file)
+            except OSError:
+                shutil.copy2(old_file, dest)
+            new["segments"].append(dict(segment))
+        if prefix:
+            new["first_parameters"] = dict(manifest["first_parameters"])
+        modulus = core.PARAMS["seed"][2] + 1
+        old_seeds = manifest.get("cut_seeds") or [
+            (int(manifest["overrides"]["seed"]) + i) % modulus
+            for i in range(len(old_cuts))
+        ]
+        seeds = [old_seeds[i] if i < len(old_seeds)
+                 else (int(new["overrides"]["seed"]) + i) % modulus
+                 for i in range(len(cuts))]
+        if regenerate_from is not None:
+            for i in range(regenerate_from, len(seeds)):
+                seeds[i] = secrets.randbits(32)
+        new["cut_seeds"] = seeds
+        store.save(new)
+        return new
+    except Exception:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise
 
 
 def series_records(journal, run_id, index, backend):
@@ -386,11 +501,11 @@ def existing_result(journal, comfy, manifest, index, cancel_event, *, confirm_un
 
 def run_long_video(store, manifest, config, config_path, journal, output_dir,
                    download, progress=None, cancel_event=None, prompt_cache=None, media=None,
-                   confirm_unknown=None):
-    """Run or resume exactly one sequential series; no LLM between segments."""
+                   confirm_unknown=None, join_only=False, auto_join=True):
+    """Run/resume a series, or join saved cuts without connecting to ComfyUI."""
     media = media or FFmpeg()
     backend = config["comfyui"]["base_url"].rstrip("/")
-    if manifest["backend"] != backend:
+    if not join_only and manifest["backend"] != backend:
         raise core.OrchestratorError("長尺生成の接続先が保存時と異なります")
     p = manifest["overrides"]
     core.validate_h3_video_parameters(p)
@@ -406,9 +521,15 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
     source = store.asset(manifest, manifest["source"])
     if not source.is_file():
         raise core.OrchestratorError("長尺生成の元画像がありません")
-    comfy = core.ComfyUI(config["comfyui"])
-    # Resume may wait for a job that was already submitted in a past process.
-    comfy.extend_video_timeout(config["comfyui"])
+    if join_only and len(manifest["segments"]) != len(plan):
+        raise core.OrchestratorError("全カット生成後に結合してください")
+    comfy = None
+    if not join_only:
+        comfy = core.ComfyUI(config["comfyui"])
+        comfy.extend_video_timeout(config["comfyui"])
+        if manifest["state"] == "draft":
+            manifest["state"] = "generating"
+            store.save(manifest)
     clips = []
     for i, segment in enumerate(manifest["segments"]):
         check_cancel(cancel_event)
@@ -435,6 +556,8 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
                 params = planned_segment_parameters(
                     manifest["first_parameters"] if i else p, prompt_plan, i, plan[i],
                 )
+                if manifest.get("cut_seeds") is not None:
+                    params["seed"] = manifest["cut_seeds"][i]
                 result = core.execute_saved(
                     config, config_path, core.H3_I2V_ID, params, reference_image=image,
                     progress=progress, cancel_event=cancel_event, job_journal=journal,
@@ -479,6 +602,11 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
         journal.update(result["job_id"], state="collected", collection_state="collected")
         clips.append((clip, info))
     check_cancel(cancel_event)
+    if not auto_join and not join_only:
+        if manifest["state"] != "completed":
+            manifest["state"] = "ready_to_join"
+            store.save(manifest)
+        return None, None
     output = Path(output_dir) / f"long_{manifest['run_id']}.mp4"
     if manifest["state"] != "completed" or not output.is_file():
         join_options = {"keep_frames": cut_frames} if cut_frames is not None else {}
@@ -490,6 +618,8 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
                  long_seconds=manifest["seconds"], long_run_id=manifest["run_id"])
     if cut_frames is not None:
         first["long_cut_frames"] = cut_frames
+    if prompt_plan is not None:
+        first["long_prompt_plan"] = prompt_plan
     return {"status": "completed", "workflow_id": LONG_VIDEO_ID, "kind": "i2v",
             "parameters": first, "prompt_id": manifest["run_id"], "outputs": {}}, output
 

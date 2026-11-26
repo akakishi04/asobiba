@@ -153,7 +153,8 @@ class GenerationController:
                            mask_image=entry.mask_image, pose_image=entry.pose_image,
                            **{key: value for key, value in context.items() if key != "request_text"})
 
-    def complete_long(self, store, manifest, media, *, confirm_unknown=None):
+    def complete_long(self, store, manifest, media, *, confirm_unknown=None,
+                      join_only=False, auto_join=True):
         def download(result, directory):
             videos = [item for item in output_collection.output_media(result)
                       if Path(item["filename"]).suffix.lower() in output_collection.VIDEO_EXTENSIONS]
@@ -168,7 +169,10 @@ class GenerationController:
             store, manifest, self.config, self.config_path, self.journal, self.output_dir,
             download, progress=self.progress, cancel_event=self.cancel_event,
             prompt_cache=self.prompt_cache, media=media, confirm_unknown=confirm_unknown,
+            join_only=join_only, auto_join=auto_join,
         )
+        if result is None:
+            return manifest["run_id"]
         existing = self.history_store.find_by_prompt_id(result["prompt_id"])
         history_id = existing.id if existing else self.record(
             result, [video], manifest["request"], store.asset(manifest, manifest["source"]),

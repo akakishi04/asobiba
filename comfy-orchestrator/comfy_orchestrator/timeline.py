@@ -132,10 +132,76 @@ def prompt_plan_schema(count: int) -> dict:
     }
 
 
+def _request_plan(settings, request_fn, instance_id, system, payload, schema, name):
+    from .lmstudio import read_json_reply
+    reply = request_fn(settings, "/v1/chat/completions", {
+        "model": instance_id,
+        "messages": [{"role": "system", "content": system},
+                     {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
+        "stream": False, "temperature": 0.2,
+        "max_tokens": settings.get("max_tokens", 4096),
+        "response_format": {"type": "json_schema", "json_schema": {"name": name, "schema": schema}},
+    })
+    return read_json_reply(reply, "長尺プロンプト計画")
+
+
+def _batched_plan(settings, request_fn, instance_id, system, payload, note, check_cancel):
+    windows = payload["timeline"]
+    max_tokens = settings.get("max_tokens", 4096)
+    context = settings.get("context_length") or 8192
+    if max_tokens < 1024 or context < 4096:
+        raise OrchestratorError("多数カットの計画にはmax_tokens 1024以上、context_length 4096以上を推奨します")
+    batch_size = max(4, min(12, max_tokens // 180, context // 500))
+    batches = [windows[i:i + batch_size] for i in range(0, len(windows), batch_size)]
+    # Group outline into at most 12 major stages so a 300-cut timeline never
+    # requires a 300-item input or output in the initial inference.
+    stride = max(1, (len(batches) + 11) // 12)
+    groups = [batches[i:i + stride] for i in range(0, len(batches), stride)]
+    summaries = [{"first_cut": group[0][0]["index"], "last_cut": group[-1][-1]["index"],
+                  "start_frame": group[0][0]["start_frame"], "end_frame": group[-1][-1]["end_frame"]}
+                 for group in groups]
+    base = {k: v for k, v in payload.items() if k != "timeline"}
+    note(f"LM Studio: 全体構成を{len(groups)}章に分割")
+    check_cancel()
+    outline = validate_prompt_plan(_request_plan(
+        settings, request_fn, instance_id,
+        system + "\nOUTLINE ONLY: each supplied group is a broad story stage, not an individual cut. "
+        "Return shared constraints in common and one concise stage summary per group. "
+        "Distribute the requested story across the full duration.",
+        {**base, "timeline_groups": summaries}, prompt_plan_schema(len(groups)), "continuous_outline",
+    ), len(groups))
+    details = []
+    for group_index, group in enumerate(groups):
+        for batch in group:
+            check_cancel()
+            note(f"LM Studio: カット{batch[0]['index']}～{batch[-1]['index']}の詳細計画")
+            schema = {"type": "object", "properties": {"segments": {
+                "type": "array", "minItems": len(batch), "maxItems": len(batch),
+                "items": {"type": "string", "minLength": 1, "maxLength": MAX_PART}}},
+                "required": ["segments"], "additionalProperties": False}
+            previous = details[-1] if details else ""
+            part = _request_plan(
+                settings, request_fn, instance_id,
+                system + "\nDETAIL ONLY: shared constraints are already fixed. Return only segments "
+                "for the supplied cut windows. Do not repeat the whole stage in each batch. "
+                "Use the preceding cut and the current stage's start/end to determine progression.",
+                {**base, "common": outline["common"], "stage": summaries[group_index],
+                 "stage_summary": outline["segments"][group_index],
+                 "next_stage": outline["segments"][group_index + 1] if group_index + 1 < len(groups) else "",
+                 "previous_cut": previous, "timeline": batch},
+                schema, "continuous_cut_batch",
+            )
+            if set(part) != {"segments"}:
+                raise OrchestratorError("区間別の詳細計画形式が不正です")
+            validated = validate_prompt_plan({"common": outline["common"], "segments": part["segments"]}, len(batch))
+            details.extend(validated["segments"])
+    return validate_prompt_plan({"common": outline["common"], "segments": details}, len(windows))
+
+
 def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: int,
                       reference_only: bool = False, *, cut_frames=None, progress=None,
                       cancel_event=None, prompt_cache=None, release_comfy=True) -> dict:
-    """One structured text-only LM Studio inference; never generate media here."""
+    """Plan text in one model session; large timelines use outline plus batches."""
     from . import core
     from .lmstudio import LMStudio, _request, read_json_reply
     from .prompt_cache import CACHE_ERRORS, content_sha256, make_cache_key
@@ -214,19 +280,16 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
     client = LMStudio(settings)
     instance_id = None
     try:
-        note(f"LM Studio: {count}区間のプロンプトを一括作成")
         instance_id = client._ensure_loaded()
         check_cancel()
-        reply = _request(settings, "/v1/chat/completions", {
-            "model": instance_id,
-            "messages": [{"role": "system", "content": system},
-                         {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
-            "stream": False, "temperature": 0.2,
-            "max_tokens": settings.get("max_tokens", 4096),
-            "response_format": {"type": "json_schema", "json_schema": {
-                "name": "continuous_video_prompt_plan", "schema": prompt_plan_schema(count)}},
-        })
-        result = validate_prompt_plan(read_json_reply(reply, "長尺プロンプト計画"), count)
+        if count <= 12:
+            note(f"LM Studio: {count}区間のプロンプトを一括作成")
+            result = validate_prompt_plan(_request_plan(
+                settings, _request, instance_id, system, payload,
+                prompt_plan_schema(count), "continuous_video_prompt_plan",
+            ), count)
+        else:
+            result = _batched_plan(settings, _request, instance_id, system, payload, note, check_cancel)
     finally:
         client.unload_selected(instance_id, note)
     check_cancel()
