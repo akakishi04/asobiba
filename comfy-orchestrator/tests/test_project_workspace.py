@@ -188,6 +188,16 @@ class ProjectWorkspaceTests(unittest.TestCase):
         self.assertIsNone(app._run_project_action.call_args.kwargs["overrides"])
         self.assertIsNone(app._run_project_action.call_args.kwargs["overlap_frames"])
 
+    def test_retired_lead_in_is_only_available_for_legacy_project_restore(self):
+        self.assertEqual(set(gui.H3_CONNECTION_LABELS), {0, 22})
+        for old in range(1, 13):
+            label = gui.connection_label(old)
+            self.assertNotIn(label, gui.H3_CONNECTION_LABELS.values())
+            self.assertEqual(gui.connection_frames(label), old)
+            self.assertEqual(gui.preferred_connection_frames(old), 22)
+        for value, expected in ((None, 22), (False, 22), (0, 0), (22, 22), (99, 22)):
+            self.assertEqual(gui.preferred_connection_frames(value), expected)
+
     def test_connection_selection_reuses_first_clip_and_seed_in_both_directions(self):
         self.completed_project()
         journal = JobJournal(self.root / "jobs")
@@ -199,7 +209,7 @@ class ProjectWorkspaceTests(unittest.TestCase):
             gui.connection_frames("invalid")
         app = SimpleNamespace(
             working=False, character_analysis_running=False, reference_image=Var(str(self.source)),
-            h3_connection=Var(gui.connection_label(12)), _h3_overrides=Mock(return_value=self.params),
+            h3_connection=Var(gui.connection_label(22)), _h3_overrides=Mock(return_value=self.params),
             long_video_store=self.store, _save_settings=Mock(return_value=True),
             _project_config=Mock(return_value={"comfyui": {"base_url": self.manifest["backend"]}}),
             use_prompt_cache=Var(False), prompt_cache=Mock(), seed=Var("11"), _run_project_action=Mock(),
@@ -212,12 +222,12 @@ class ProjectWorkspaceTests(unittest.TestCase):
         with patch.object(gui.messagebox, "askyesno", return_value=True):
             gui.Application._project_action(app, self.manifest, action)
         kwargs = app._run_project_action.call_args.kwargs
-        self.assertEqual(kwargs["overlap_frames"], 12)
+        self.assertEqual(kwargs["overlap_frames"], 22)
         revised = edit_project(self.store, self.manifest, journal, self.plan, self.cuts, **kwargs)
         self.assertEqual(revised["changed_from"], 1)
         self.assertEqual(len(revised["segments"]), 1)
         self.assertEqual(revised["cut_seeds"], [11, 12, 13])
-        self.assertEqual(revised["overlap_frames"], 12)
+        self.assertEqual(revised["overlap_frames"], 22)
         back = edit_project(self.store, revised, journal, self.plan, self.cuts,
                             overlap_frames=0, overrides=self.params, source=self.source)
         self.assertEqual(back["changed_from"], 1)

@@ -324,7 +324,7 @@ class ProjectWorkspace(ttk.Frame):
             }.get(d.manifest["state"], d.manifest["state"])
             overlap = d.manifest.get("overlap_frames", 0)
             method = ("ガイド 最大22f" if overlap == GUIDE_CONNECTION_FRAMES
-                      else f"助走 最大{overlap}f" if overlap else "従来接続")
+                      else f"旧助走 最大{overlap}f" if overlap else "従来接続")
             self.summary.set(f"{len(d.cuts)}カット / {format_cut_seconds(sum(d.cuts))}秒 / "
                              f"有効 {d.valid_prefix()}件 · {status} · {method}")
         finally:

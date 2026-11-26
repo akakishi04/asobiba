@@ -80,18 +80,29 @@ VIDEO_FRAME_COUNTS = ("49", "81", "121")
 HUNYUAN_RESOLUTIONS = ("848 × 480", "480 × 848", "640 × 640")
 H3_RESOLUTIONS = ("864 × 480", "480 × 864", "640 × 640", "1056 × 608", "608 × 1056", "1344 × 768", "768 × 1344", "768 × 768")
 H3_DURATIONS = {"約5秒 (124f)": 124, "8秒 (192f)": 192, "約10秒 (243f)": 243, "約12秒 (294f)": 294, "約15秒 (362f)": 362}
-H3_CONNECTION_LABELS = {GUIDE_CONNECTION_FRAMES: "ガイド接続（22f）",
-                        0: "従来接続", CONTINUATION_OVERLAP_FRAMES: "助走付き（最大0.5秒）"}
+# Only the adopted guide policy and the conventional comparison are selectable.
+H3_CONNECTION_LABELS = {GUIDE_CONNECTION_FRAMES: "ガイド接続（22f）", 0: "従来接続"}
+# A loaded old manifest may display its retired policy without making it a
+# selectable option. This permits exact resume, including in-flight jobs.
+LEGACY_CONNECTION_LABELS = {
+    frames: f"旧助走接続（最大{frames}f）"
+    for frames in range(1, CONTINUATION_OVERLAP_FRAMES + 1)
+}
+
+
+def preferred_connection_frames(frames):
+    """Migrate old UI preferences; do not alter any saved project."""
+    return frames if type(frames) is int and frames in H3_CONNECTION_LABELS else GUIDE_CONNECTION_FRAMES
 
 
 def connection_label(frames):
-    if type(frames) is not int or frames not in H3_CONNECTION_LABELS:
-        frames = GUIDE_CONNECTION_FRAMES
-    return H3_CONNECTION_LABELS[frames]
+    if type(frames) is int and frames in LEGACY_CONNECTION_LABELS:
+        return LEGACY_CONNECTION_LABELS[frames]
+    return H3_CONNECTION_LABELS[preferred_connection_frames(frames)]
 
 
 def connection_frames(label):
-    for frames, name in H3_CONNECTION_LABELS.items():
+    for frames, name in {**H3_CONNECTION_LABELS, **LEGACY_CONNECTION_LABELS}.items():
         if name == label:
             return frames
     raise core.OrchestratorError("接続方式の設定が不正です")
@@ -513,7 +524,8 @@ class Application:
         self.hunyuan_steps = tk.StringVar(value=str(options.get("hunyuan_steps", 8)))
         self.h3_size = tk.StringVar(value=str(options.get("h3_size", H3_RESOLUTIONS[0])))
         self.h3_duration = tk.StringVar(value=str(options.get("h3_duration", next(iter(H3_DURATIONS)))))
-        self.h3_connection = tk.StringVar(value=connection_label(options.get("h3_overlap_frames", GUIDE_CONNECTION_FRAMES)))
+        self.h3_connection = tk.StringVar(value=connection_label(
+            preferred_connection_frames(options.get("h3_overlap_frames"))))
         target = options.get("h3_long_target", "30秒")
         try:
             self._custom_cut_frames = validate_cut_frames(options.get("h3_cut_frames", []))
@@ -2069,7 +2081,8 @@ class Application:
                 config["ui"]["mode_settings"] = self._mode_settings.snapshot(self)
             config["ui"]["h3_long_target"] = self.h3_long_target.get()
             if hasattr(self, "h3_connection"):
-                config["ui"]["h3_overlap_frames"] = connection_frames(self.h3_connection.get())
+                config["ui"]["h3_overlap_frames"] = preferred_connection_frames(
+                    connection_frames(self.h3_connection.get()))
             if getattr(self, "_custom_cut_frames", None) is not None:
                 config["ui"]["h3_cut_frames"] = list(self._custom_cut_frames)
         if hasattr(self, "use_prompt_cache"):
@@ -2945,7 +2958,8 @@ class Application:
             try:
                 if overrides.get("h3_model") is not None:
                     continuation_model(overrides["h3_model"])
-                overlap_frames = connection_frames(self.h3_connection.get())
+                overlap_frames = preferred_connection_frames(connection_frames(self.h3_connection.get()))
+                self.h3_connection.set(connection_label(overlap_frames))
                 cut_frames = None
                 if self.h3_long_target.get() == CUSTOM_CUTS:
                     cut_frames = getattr(self, "_custom_cut_frames", None)
