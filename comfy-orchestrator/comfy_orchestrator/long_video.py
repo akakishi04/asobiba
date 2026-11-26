@@ -449,6 +449,36 @@ def edit_project(store, manifest, journal, prompt_plan, cut_frames, *, regenerat
         raise
 
 
+def restore_project_plan(store, entry, fallback_backend):
+    """Recover a plan-only draft from completed history; never invent old clips."""
+    params = dict(entry.parameters)
+    approved = params.get("long_prompt_plan")
+    source = entry.reference_image
+    if approved is None or source is None or not source.is_file():
+        raise core.OrchestratorError("履歴に計画または参照画像が保存されていません")
+    base = params.get("long_base_overrides")
+    if base is None:
+        base = {k: v for k, v in params.items() if not k.startswith("long_") and k != "positive_prompt"}
+        base["frames"] = params.get("long_segment_frames", 124)
+    if not isinstance(base, dict):
+        raise core.OrchestratorError("履歴の生成設定が不正です")
+    seeds = params.get("long_cut_seeds")
+    if seeds is not None:
+        if not isinstance(seeds, list) or len(seeds) != len(approved.get("segments", [])):
+            raise core.OrchestratorError("履歴のSeed記録が不正です")
+        for seed in seeds:
+            core.check_param("seed", seed)
+    manifest = store.create(params.get("long_backend") or fallback_backend,
+                            entry.request_text, source, base, params["long_seconds"],
+                            entry.prompt_profile, prompt_plan=approved,
+                            cut_frames=params.get("long_cut_frames"), draft=True)
+    manifest["restored_from_run_id"] = params.get("long_run_id")
+    if seeds is not None:
+        manifest["cut_seeds"] = list(seeds)
+    store.save(manifest)
+    return manifest
+
+
 def series_records(journal, run_id, index, backend):
     """Correlate durable job records even if the app died between submit/save."""
     records = []
@@ -501,7 +531,7 @@ def existing_result(journal, comfy, manifest, index, cancel_event, *, confirm_un
 
 def run_long_video(store, manifest, config, config_path, journal, output_dir,
                    download, progress=None, cancel_event=None, prompt_cache=None, media=None,
-                   confirm_unknown=None, join_only=False, auto_join=True):
+                   confirm_unknown=None, join_only=False, auto_join=True, on_checkpoint=None):
     """Run/resume a series, or join saved cuts without connecting to ComfyUI."""
     media = media or FFmpeg()
     backend = config["comfyui"]["base_url"].rstrip("/")
@@ -530,6 +560,8 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
         if manifest["state"] == "draft":
             manifest["state"] = "generating"
             store.save(manifest)
+            if on_checkpoint:
+                on_checkpoint(manifest)
     clips = []
     for i, segment in enumerate(manifest["segments"]):
         check_cancel(cancel_event)
@@ -601,11 +633,15 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
         store.save(manifest)
         journal.update(result["job_id"], state="collected", collection_state="collected")
         clips.append((clip, info))
+        if on_checkpoint:
+            on_checkpoint(manifest)
     check_cancel(cancel_event)
     if not auto_join and not join_only:
         if manifest["state"] != "completed":
             manifest["state"] = "ready_to_join"
             store.save(manifest)
+            if on_checkpoint:
+                on_checkpoint(manifest)
         return None, None
     output = Path(output_dir) / f"long_{manifest['run_id']}.mp4"
     if manifest["state"] != "completed" or not output.is_file():
@@ -613,6 +649,8 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
         media.join(clips, target_frames, output, cancel_event, progress, **join_options)
         manifest["state"] = "completed"
         store.save(manifest)
+        if on_checkpoint:
+            on_checkpoint(manifest)
     first = dict(manifest["first_parameters"])
     first.update(frames=target_frames, long_segment_frames=p["frames"],
                  long_seconds=manifest["seconds"], long_run_id=manifest["run_id"])
@@ -620,6 +658,9 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
         first["long_cut_frames"] = cut_frames
     if prompt_plan is not None:
         first["long_prompt_plan"] = prompt_plan
+        first["long_base_overrides"] = dict(manifest["overrides"])
+        first["long_backend"] = manifest["backend"]
+        first["long_cut_seeds"] = [segment["parameters"]["seed"] for segment in manifest["segments"]]
     return {"status": "completed", "workflow_id": LONG_VIDEO_ID, "kind": "i2v",
             "parameters": first, "prompt_id": manifest["run_id"], "outputs": {}}, output
 
