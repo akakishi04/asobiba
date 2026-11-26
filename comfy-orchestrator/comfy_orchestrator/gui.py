@@ -37,7 +37,8 @@ from .jobs import JobJournal, JobCancellationRequested
 from .prompt_cache import PromptCache, CACHE_ERRORS
 from .long_video import (LONG_VIDEO_ID, LONG_TARGETS, LongVideoStore, LongVideoPaused,
                          FFmpeg, continuation_model, segment_plan, edit_project, restore_project_plan,
-                         first_changed_cut, project_generation_inputs, project_cut_lengths)
+                         first_changed_cut, project_generation_inputs, project_cut_lengths,
+                         connection_changed_from)
 from .timeline import (plan_long_prompts, CUSTOM_CUTS, validate_cut_frames,
                        CONTINUATION_OVERLAP_FRAMES,
                        default_cut_frames, generation_frames_for_cuts, format_cut_seconds)
@@ -79,6 +80,22 @@ VIDEO_FRAME_COUNTS = ("49", "81", "121")
 HUNYUAN_RESOLUTIONS = ("848 × 480", "480 × 848", "640 × 640")
 H3_RESOLUTIONS = ("864 × 480", "480 × 864", "640 × 640", "1056 × 608", "608 × 1056", "1344 × 768", "768 × 1344", "768 × 768")
 H3_DURATIONS = {"約5秒 (124f)": 124, "8秒 (192f)": 192, "約10秒 (243f)": 243, "約12秒 (294f)": 294, "約15秒 (362f)": 362}
+H3_CONNECTION_LABELS = {CONTINUATION_OVERLAP_FRAMES: "助走付き（最大0.5秒）", 0: "従来接続"}
+
+
+def connection_label(frames):
+    if type(frames) is not int or frames not in H3_CONNECTION_LABELS:
+        frames = CONTINUATION_OVERLAP_FRAMES
+    return H3_CONNECTION_LABELS[frames]
+
+
+def connection_frames(label):
+    for frames, name in H3_CONNECTION_LABELS.items():
+        if name == label:
+            return frames
+    raise core.OrchestratorError("接続方式の設定が不正です")
+
+
 VIDEO_EXTENSIONS = output_collection.VIDEO_EXTENSIONS
 IMAGE_EXTENSIONS = output_collection.IMAGE_EXTENSIONS
 is_video_output = output_collection.is_video_output
@@ -495,6 +512,7 @@ class Application:
         self.hunyuan_steps = tk.StringVar(value=str(options.get("hunyuan_steps", 8)))
         self.h3_size = tk.StringVar(value=str(options.get("h3_size", H3_RESOLUTIONS[0])))
         self.h3_duration = tk.StringVar(value=str(options.get("h3_duration", next(iter(H3_DURATIONS)))))
+        self.h3_connection = tk.StringVar(value=connection_label(options.get("h3_overlap_frames", CONTINUATION_OVERLAP_FRAMES)))
         target = options.get("h3_long_target", "30秒")
         try:
             self._custom_cut_frames = validate_cut_frames(options.get("h3_cut_frames", []))
@@ -834,16 +852,18 @@ class Application:
         field(2, 0, "解像度", self.h3_size, "h3", choices=H3_RESOLUTIONS, span=3, width=18)
         field(3, 0, "長さ (24fps)", self.h3_duration, "h3", choices=tuple(H3_DURATIONS), span=3, width=18)
         self.h3_duration_title = self.parameter_widgets["h3"][-2]
-        field(10, 0, "計画用合計尺", self.h3_long_target, "h3_long",
+        field(10, 0, "接続方式", self.h3_connection, "h3_long",
+              choices=tuple(H3_CONNECTION_LABELS.values()), span=3, width=18)
+        field(11, 0, "計画用合計尺", self.h3_long_target, "h3_long",
               choices=(*CONTINUOUS_TARGETS, CUSTOM_CUTS), span=2, width=8)
         self.resume_long_button = ttk.Button(settings, text="プロジェクト", command=self._resume_long_video,
                                              style="Compact.TButton")
-        self.resume_long_button.grid(row=10, column=3, sticky="ew", pady=3, padx=(4, 0))
+        self.resume_long_button.grid(row=11, column=3, sticky="ew", pady=3, padx=(4, 0))
         self.parameter_widgets["h3_long"].append(self.resume_long_button)
         cut_button = ttk.Button(settings, text="計画用カット尺…", command=self._edit_cut_durations)
-        cut_button.grid(row=11, column=0, columnspan=2, sticky="ew", pady=3)
+        cut_button.grid(row=12, column=0, columnspan=2, sticky="ew", pady=3)
         cut_summary = ttk.Label(settings, textvariable=self.h3_cut_summary)
-        cut_summary.grid(row=11, column=2, columnspan=2, sticky="w", padx=(6, 0))
+        cut_summary.grid(row=12, column=2, columnspan=2, sticky="w", padx=(6, 0))
         self.parameter_widgets["h3_long"].extend((cut_button, cut_summary))
 
         field(2, 0, "解像度", self.hunyuan_size, "hunyuan", choices=HUNYUAN_RESOLUTIONS, span=3, width=18)
@@ -2047,6 +2067,8 @@ class Application:
             if hasattr(self, "_mode_settings"):
                 config["ui"]["mode_settings"] = self._mode_settings.snapshot(self)
             config["ui"]["h3_long_target"] = self.h3_long_target.get()
+            if hasattr(self, "h3_connection"):
+                config["ui"]["h3_overlap_frames"] = connection_frames(self.h3_connection.get())
             if getattr(self, "_custom_cut_frames", None) is not None:
                 config["ui"]["h3_cut_frames"] = list(self._custom_cut_frames)
         if hasattr(self, "use_prompt_cache"):
@@ -2922,6 +2944,7 @@ class Application:
             try:
                 if overrides.get("h3_model") is not None:
                     continuation_model(overrides["h3_model"])
+                overlap_frames = connection_frames(self.h3_connection.get())
                 cut_frames = None
                 if self.h3_long_target.get() == CUSTOM_CUTS:
                     cut_frames = getattr(self, "_custom_cut_frames", None)
@@ -2946,6 +2969,7 @@ class Application:
             self._start_long_prompt_plan(
                 cfg, prompt, image, overrides, long_seconds, frames, media,
                 prompt_cache, dry_run, self.latest_prompt_profile, cut_frames=cut_frames,
+                overlap_frames=overlap_frames,
             )
             return
         self._set_busy("解釈テスト中..." if dry_run else "生成準備中...")
@@ -3020,6 +3044,7 @@ class Application:
         self.h3_duration.set(next((label for label, n in H3_DURATIONS.items() if n == p["frames"]),
                                   f"{p['frames'] / 24:.2f}秒 ({p['frames']}f)"))
         self.seed.set(str(p["seed"]))
+        self.h3_connection.set(connection_label(manifest.get("overlap_frames", 0)))
         self.h3_profile.set(H3_PROFILE_LABELS.get(manifest.get("profile"), H3_PROFILE_LABELS[H3_PROFILE_GENERAL]))
         if manifest.get("cut_frames") is not None:
             self._custom_cut_frames = list(manifest["cut_frames"])
@@ -3062,7 +3087,8 @@ class Application:
         self.status.set("保存済みの長尺プロジェクトを復元しました")
 
     def _start_long_prompt_plan(self, cfg, prompt, image, overrides, seconds, frames,
-                                media, cache, dry_run, profile, *, cut_frames=None):
+                                media, cache, dry_run, profile, *, cut_frames=None,
+                                overlap_frames=CONTINUATION_OVERLAP_FRAMES):
         reference_only = core.h3_ref2va_filename(overrides.get("h3_model")) is not None
         self._set_busy("長尺プロンプト計画中")
 
@@ -3072,7 +3098,7 @@ class Application:
                     source = copy_frozen_asset(image, Path(temporary), "source")
                     plan = plan_long_prompts(
                         cfg, prompt, frames, seconds, reference_only, cut_frames=cut_frames,
-                        overlap_frames=CONTINUATION_OVERLAP_FRAMES,
+                        overlap_frames=overlap_frames,
                         progress=lambda line: self.messages.put(("progress", line)),
                         cancel_event=self.stop_event, prompt_cache=cache, release_comfy=True,
                     )
@@ -3081,7 +3107,7 @@ class Application:
                     manifest = self.long_video_store.create(
                         cfg["comfyui"]["base_url"], prompt, source, overrides, seconds, profile,
                         prompt_plan=plan, cut_frames=cut_frames, draft=True,
-                        overlap_frames=CONTINUATION_OVERLAP_FRAMES,
+                        overlap_frames=overlap_frames,
                     )
                 self.messages.put(("long_plan_ready", manifest))
             except JobCancellationRequested as exc:
@@ -3104,8 +3130,9 @@ class Application:
     def _project_action(self, manifest, action):
         if self.working or self.character_analysis_running:
             raise core.OrchestratorError("現在の処理が終了してから操作してください")
-        overrides = source = None
+        overrides = source = overlap_frames = None
         inputs_changed = False
+        boundary = None
         if action.action in ("generate", "generate_join"):
             if not self.reference_image.get().strip():
                 raise core.OrchestratorError("左側で参照画像を指定してください")
@@ -3115,17 +3142,25 @@ class Application:
             source = Path(self.reference_image.get()).expanduser()
             effective, source, inputs_changed = project_generation_inputs(
                 self.long_video_store, manifest, overrides=overrides, source=source)
-            if "prompt_plan" not in manifest and inputs_changed:
-                raise core.OrchestratorError("計画のない旧プロジェクトは新規計画から作成してください")
+            overlap_frames = connection_frames(self.h3_connection.get())
+            if "prompt_plan" not in manifest:
+                if inputs_changed or overlap_frames != manifest.get("overlap_frames", 0):
+                    raise core.OrchestratorError("計画のない旧プロジェクトは新規計画から作成してください")
+            else:
+                boundary = connection_changed_from(manifest, action.cut_frames, overlap_frames)
         changed = (first_changed_cut(manifest, action.prompt_plan, action.cut_frames)
                    if "prompt_plan" in manifest else None)
         affected = action.regenerate_from
         if changed is not None:
             affected = changed if affected is None else min(changed, affected)
+        if boundary is not None:
+            affected = boundary if affected is None else min(boundary, affected)
         if inputs_changed:
             affected = 0
         if affected is not None and affected < len(manifest["segments"]):
-            reason = "左側の生成設定または参照画像が変わりました。全カットを再生成します。" if inputs_changed else f"カット{affected+1}以降を再生成対象にします。"
+            reason = ("左側の生成設定または参照画像が変わりました。全カットを再生成します。"
+                      if inputs_changed else
+                      f"{'接続方式の変更を適用します。' if boundary is not None else ''}カット{affected+1}以降を再生成対象にします。")
             if not messagebox.askyesno("改訂版を作成", reason + "\n元のプロジェクトは保持します。続けますか？"):
                 return
         if overrides is not None:
@@ -3139,9 +3174,11 @@ class Application:
         self.latest_character_traits = None
         self.latest_character_references = ()
         self.latest_character_analysis = None
-        self._run_project_action(manifest, action, cfg, cache, overrides=overrides, source=source)
+        self._run_project_action(manifest, action, cfg, cache, overrides=overrides, source=source,
+                                 overlap_frames=overlap_frames)
 
-    def _run_project_action(self, manifest, action, cfg, cache, *, overrides=None, source=None):
+    def _run_project_action(self, manifest, action, cfg, cache, *, overrides=None, source=None,
+                            overlap_frames=None):
         if action.action not in ("save", "generate", "generate_join", "join"):
             raise core.OrchestratorError("長尺プロジェクト操作が不正です")
         if action.action in ("generate", "generate_join") and manifest["backend"] != cfg["comfyui"]["base_url"].rstrip("/"):
@@ -3153,7 +3190,7 @@ class Application:
                 updated = edit_project(
                     self.long_video_store, manifest, self.job_journal,
                     action.prompt_plan, action.cut_frames, regenerate_from=action.regenerate_from,
-                    overrides=overrides, source=source,
+                    overrides=overrides, source=source, overlap_frames=overlap_frames,
                 )
             else:
                 if action.action not in ("generate_join", "join"):

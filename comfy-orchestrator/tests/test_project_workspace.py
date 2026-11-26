@@ -166,6 +166,7 @@ class ProjectWorkspaceTests(unittest.TestCase):
     def test_gui_generation_captures_left_settings_but_join_does_not(self):
         app = SimpleNamespace(
             working=False, character_analysis_running=False, reference_image=Var(str(self.source)),
+            h3_connection=Var(gui.connection_label(12)),
             _h3_overrides=Mock(return_value={**self.params, "width": 480, "height": 864}),
             long_video_store=self.store, _save_settings=Mock(return_value=True),
             _project_config=Mock(return_value={"comfyui": {"base_url": "http://localhost:8188"}}),
@@ -176,6 +177,7 @@ class ProjectWorkspaceTests(unittest.TestCase):
         gui.Application._project_action(app, self.manifest, generate)
         self.assertEqual(app._run_project_action.call_args.kwargs["overrides"]["width"], 480)
         self.assertEqual(app._run_project_action.call_args.kwargs["overrides"]["height"], 864)
+        self.assertEqual(app._run_project_action.call_args.kwargs["overlap_frames"], 12)
         self.assertEqual(app._run_project_action.call_args.kwargs["source"],
                          self.store.asset(self.manifest, self.manifest["source"]))
         app._h3_overrides.reset_mock()
@@ -184,6 +186,43 @@ class ProjectWorkspaceTests(unittest.TestCase):
         app._h3_overrides.assert_not_called()
         app._save_settings.assert_not_called()
         self.assertIsNone(app._run_project_action.call_args.kwargs["overrides"])
+        self.assertIsNone(app._run_project_action.call_args.kwargs["overlap_frames"])
+
+    def test_connection_selection_reuses_first_clip_and_seed_in_both_directions(self):
+        self.completed_project()
+        journal = JobJournal(self.root / "jobs")
+        self.assertEqual(gui.connection_frames(gui.connection_label(0)), 0)
+        self.assertEqual(gui.connection_frames(gui.connection_label(12)), 12)
+        self.assertEqual(gui.connection_label(None), gui.connection_label(12))
+        with self.assertRaises(core.OrchestratorError):
+            gui.connection_frames("invalid")
+        app = SimpleNamespace(
+            working=False, character_analysis_running=False, reference_image=Var(str(self.source)),
+            h3_connection=Var(gui.connection_label(12)), _h3_overrides=Mock(return_value=self.params),
+            long_video_store=self.store, _save_settings=Mock(return_value=True),
+            _project_config=Mock(return_value={"comfyui": {"base_url": self.manifest["backend"]}}),
+            use_prompt_cache=Var(False), prompt_cache=Mock(), seed=Var("11"), _run_project_action=Mock(),
+        )
+        action = ProjectAction("generate_join", self.plan, self.cuts)
+        with patch.object(gui.messagebox, "askyesno", return_value=False) as ask:
+            gui.Application._project_action(app, self.manifest, action)
+            self.assertIn("カット2以降", ask.call_args.args[1])
+            app._run_project_action.assert_not_called()
+        with patch.object(gui.messagebox, "askyesno", return_value=True):
+            gui.Application._project_action(app, self.manifest, action)
+        kwargs = app._run_project_action.call_args.kwargs
+        self.assertEqual(kwargs["overlap_frames"], 12)
+        revised = edit_project(self.store, self.manifest, journal, self.plan, self.cuts, **kwargs)
+        self.assertEqual(revised["changed_from"], 1)
+        self.assertEqual(len(revised["segments"]), 1)
+        self.assertEqual(revised["cut_seeds"], [11, 12, 13])
+        self.assertEqual(revised["overlap_frames"], 12)
+        back = edit_project(self.store, revised, journal, self.plan, self.cuts,
+                            overlap_frames=0, overrides=self.params, source=self.source)
+        self.assertEqual(back["changed_from"], 1)
+        self.assertEqual(len(back["segments"]), 1)
+        self.assertEqual(back["cut_seeds"], revised["cut_seeds"])
+        self.assertNotIn("overlap_frames", back)
 
     def test_primary_button_dispatches_to_current_plan_only_in_continuous_mode(self):
         app = SimpleNamespace(working=False, generation_mode=Var("continuous"),

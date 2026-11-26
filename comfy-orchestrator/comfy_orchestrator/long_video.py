@@ -426,6 +426,23 @@ def first_changed_cut(manifest, prompt_plan, cut_frames):
     return min(len(old_cuts), len(cut_frames)) if len(old_cuts) != len(cut_frames) else None
 
 
+def connection_changed_from(manifest, cut_frames, overlap_frames):
+    """Earliest affected cut when the connection policy changes."""
+    old_overlap = manifest.get("overlap_frames", 0)
+    overlap = validate_overlap_frames(old_overlap if overlap_frames is None else overlap_frames)
+    if overlap == old_overlap:
+        return None
+    same_schedule = list(cut_frames) == project_cut_lengths(manifest)
+    new_cuts = manifest.get("cut_frames") if same_schedule else validate_cut_frames(list(cut_frames))
+    seconds = manifest["seconds"] if same_schedule else sum(new_cuts) / FPS
+    old_windows = manifest_windows(manifest)
+    new_windows = schedule_windows(seconds, manifest["overrides"]["frames"], new_cuts,
+                                   overlap_frames=overlap)
+    return next((i for i, (a, b) in enumerate(zip(old_windows, new_windows))
+                 if a["generation_frames"] != b["generation_frames"]
+                 or a["trim_start_frames"] != b["trim_start_frames"]), len(new_windows))
+
+
 def project_generation_inputs(store, manifest, *, overrides=None, source=None):
     """Resolve live generation inputs without changing the saved cut schedule.
 
@@ -493,10 +510,8 @@ def edit_project(store, manifest, journal, prompt_plan, cut_frames, *, regenerat
     new_windows = schedule_windows(new_seconds, effective["frames"], new_cuts,
                                    overlap_frames=overlap)
     old_windows = manifest_windows(manifest)
-    if overlap != old_overlap:
-        boundary = next((i for i, (a, b) in enumerate(zip(old_windows, new_windows))
-                         if a["generation_frames"] != b["generation_frames"]
-                         or a["trim_start_frames"] != b["trim_start_frames"]), len(new_windows))
+    boundary = connection_changed_from(manifest, cuts, overlap)
+    if boundary is not None:
         changed = boundary if changed is None else min(changed, boundary)
     if regenerate_from is not None:
         if type(regenerate_from) is not int or not 0 <= regenerate_from < len(cuts):

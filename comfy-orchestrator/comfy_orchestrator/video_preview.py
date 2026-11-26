@@ -14,6 +14,13 @@ def format_time(ms: int) -> str:
     return f"{seconds // 60}:{seconds % 60:02d}"
 
 
+def preview_error_message(exc):
+    if isinstance(exc, ModuleNotFoundError) and exc.name == "vlc":
+        return ("現在のPythonに python-vlc がありません。run_gui.bat から起動して導入するか、"
+                "外部プレイヤーで開いてください。\n使用中のPython: " + sys.executable)
+    return "アプリ内再生に失敗しました。64bit VLCを確認、または外部プレイヤーで開いてください: " + str(exc)[:100]
+
+
 def attach_windows(player, hwnd: int) -> None:
     # libVLC requires WS_CLIPCHILDREN for the host window.
     from ctypes import wintypes
@@ -153,7 +160,7 @@ class VideoPreview(ttk.Frame):
 
     def _fail(self, exc):
         self.stop()
-        self.info.set("再生できません。64bit VLCとpython-vlcを確認、または「開く」を使用: " + str(exc)[:100])
+        self.info.set(preview_error_message(exc))
 
     def toggle_mute(self):
         if self.session is None:

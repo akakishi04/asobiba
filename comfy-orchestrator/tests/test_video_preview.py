@@ -11,6 +11,17 @@ class VideoPreviewTests(unittest.TestCase):
         self.assertEqual(vp.format_time(-1), "0:00")
         self.assertEqual(vp.format_time(61234), "1:01")
 
+    def test_preview_missing_binding_reports_actual_python_and_native_errors_are_distinct(self):
+        with patch.object(vp.sys, "executable", r"C:\Python314\python.exe"):
+            message = vp.preview_error_message(ModuleNotFoundError("No module named 'vlc'", name="vlc"))
+            self.assertIn("python-vlc", message)
+            self.assertIn("run_gui.bat", message)
+            self.assertIn(r"C:\Python314\python.exe", message)
+            native = vp.preview_error_message(OSError("libvlc.dll"))
+            self.assertIn("64bit VLC", native)
+            self.assertIn("libvlc.dll", native)
+            self.assertNotIn("現在のPythonに python-vlc がありません", native)
+
     def test_session_initialization_and_idempotent_cleanup(self):
         instance, player, media = Mock(), Mock(), Mock()
         instance.media_player_new.return_value = player
