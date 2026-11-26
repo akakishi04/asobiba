@@ -646,6 +646,33 @@ class Application:
         self.free_memory_button = ttk.Button(settings_actions, text="生成モデル解放", command=self._release_comfy_memory)
         self.free_memory_button.pack(side="right", padx=(0, 6))
 
+        # Keep the generation tabs and their own workflow selectors above the
+        # shared editor/result area, outside the scrollable option form.
+        self.generation_tabs = ttk.Notebook(layout, style="Generation.TNotebook")
+        self.generation_tabs.pack(fill="x", pady=(8, 0))
+        self._mode_pages = {}
+        self._mode_boxes = {}
+        self._mode_vars = {}
+        for mode, label in GENERATION_MODE_LABELS.items():
+            page = ttk.Frame(self.generation_tabs, padding=(8, 6))
+            self.generation_tabs.add(page, text=label)
+            self._mode_pages[mode] = page
+            chosen = self._mode_workflows[mode]
+            variable = tk.StringVar(value=self.workflow_names.get(chosen, ""))
+            self._mode_vars[mode] = variable
+            choices = mode_workflow_ids(self.config, mode)
+            ttk.Label(page, text="ワークフロー").pack(side="left", padx=(0, 6))
+            box = ttk.Combobox(
+                page, textvariable=variable, width=30,
+                values=tuple(self.workflow_names[key] for key in choices),
+                state="readonly" if len(choices) > 1 else "disabled",
+            )
+            box.pack(side="left", fill="x", expand=True)
+            box.bind("<<ComboboxSelected>>", self._on_workflow_choice)
+            self._mode_boxes[mode] = box
+        self._sync_workflow_choice()
+        self.generation_tabs.bind("<<NotebookTabChanged>>", self._on_generation_tab_changed)
+
         # The footer is laid out before the resizable main panes to guarantee
         # that status and the optional log never fall below the visible screen.
         footer = ttk.Frame(layout)
@@ -713,25 +740,7 @@ class Application:
         self.root.bind("<Button-4>", self._on_form_mousewheel, add="+")
         self.root.bind("<Button-5>", self._on_form_mousewheel, add="+")
 
-        # One shared work surface: mode, prompt, references, parameters, actions.
-        workflow_row = ttk.Frame(self.options_form)
-        mode_row = ttk.Frame(self.options_form)
-        mode_row.pack(fill="x", pady=(0, 6))
-        for column, (mode, label) in enumerate(GENERATION_MODE_LABELS.items()):
-            mode_row.columnconfigure(column, weight=1)
-            ttk.Radiobutton(mode_row, text=label, value=mode, variable=self.generation_mode,
-                            command=self._on_generation_mode_choice).grid(
-                                row=0, column=column, sticky="ew", padx=(0, 4))
-        workflow_row.pack(fill="x", pady=(0, 8))
-        ttk.Label(workflow_row, text="ワークフロー").pack(side="left", padx=(0, 6))
-        self.workflow_box = ttk.Combobox(
-            workflow_row, textvariable=self.workflow_choice,
-            values=(), state="readonly", width=18,
-        )
-        self.workflow_box.pack(side="left", fill="x", expand=True)
-        self.workflow_box.bind("<<ComboboxSelected>>", self._on_workflow_choice)
-        self._sync_workflow_choice()
-
+        # One shared work surface: prompt, references, parameters, actions.
         editor_toolbar = ttk.Frame(self.options_form)
         editor_toolbar.pack(fill="x", pady=(0, 4))
         ttk.Label(editor_toolbar, text="プロンプト", style="FieldHeading.TLabel").pack(side="left")
@@ -1080,12 +1089,28 @@ class Application:
             if chosen in choices:
                 self._mode_workflows[mode] = chosen
             values = tuple(self.workflow_names[key] for key in choices)
-            if hasattr(self, "workflow_box") and getattr(self, "_mode_choices_key", None) != values:
+            if hasattr(self, "_mode_pages"):
+                page = self._mode_pages[mode]
+                self.workflow_box = self._mode_boxes[mode]
+                self.workflow_choice = self._mode_vars[mode]
+                if self.generation_tabs.select() != str(page):
+                    self.generation_tabs.select(page)
+            key = (mode, values)
+            if hasattr(self, "workflow_box") and getattr(self, "_mode_choices_key", None) != key:
                 self.workflow_box.configure(values=values, state="readonly" if len(values) > 1 else "disabled")
-                self._mode_choices_key = values
+                self._mode_choices_key = key
         label = self.workflow_names.get(chosen, chosen)
         if self.workflow_choice.get() != label:
             self.workflow_choice.set(label)
+
+    def _on_generation_tab_changed(self, _event=None) -> None:
+        selected = self.generation_tabs.select()
+        mode = next((key for key, page in self._mode_pages.items()
+                     if str(page) == selected), None)
+        if mode is None or self.generation_mode.get() == mode:
+            return
+        self.generation_mode.set(mode)
+        self._on_generation_mode_choice()
 
     def _on_generation_mode_choice(self) -> None:
         mode = self.generation_mode.get()
@@ -1095,6 +1120,10 @@ class Application:
         self._update_generation_controls()
 
     def _on_workflow_choice(self, _event=None) -> None:
+        # Ignore queued events from a hidden selector after changing tabs.
+        if (_event is not None and hasattr(self, "_mode_boxes")
+                and _event.widget is not self.workflow_box):
+            return
         choices = (mode_workflow_ids(self.config, self.generation_mode.get())
                    if hasattr(self, "generation_mode") else self.workflow_names)
         by_label = {self.workflow_names[key]: key for key in choices}

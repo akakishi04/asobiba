@@ -1,4 +1,5 @@
 """Generation categories must not conflate single H3 runs and long series."""
+import inspect
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -70,6 +71,54 @@ class GenerationModeTests(unittest.TestCase):
         self.assertEqual(app.reference_image.get(), "ref.png")
         app.prompt.delete.assert_not_called()
         app.prompt.insert.assert_not_called()
+
+    def test_fixed_top_notebook_owns_three_separate_workflow_selectors(self):
+        source = inspect.getsource(gui.Application._build)
+        self.assertLess(source.index("self.generation_tabs = ttk.Notebook(layout"),
+                        source.index("main = ttk.Panedwindow(layout"))
+        self.assertIn("self._mode_boxes[mode] = box", source)
+        self.assertIn("self._mode_vars[mode] = variable", source)
+        self.assertIn('self.generation_tabs.bind("<<NotebookTabChanged>>"', source)
+        self.assertNotIn("ttk.Radiobutton(mode_row", source)
+
+    def test_tab_change_and_programmatic_restore_keep_selectors_in_sync(self):
+        names = gui.workflow_display_names(self.config)
+        class Tabs:
+            def __init__(self):
+                self.selected = "video_page"
+            def select(self, page=None):
+                if page is not None:
+                    self.selected = str(page)
+                return self.selected
+        app = SimpleNamespace(
+            config=self.config, generation_mode=Var("image"), workflow=Var("wai_i2i_basic"),
+            workflow_names=names, workflow_choice=Var(""), generation_tabs=Tabs(),
+            _mode_pages={key: key + "_page" for key in gui.GENERATION_MODE_LABELS},
+            _mode_boxes={key: Mock() for key in gui.GENERATION_MODE_LABELS},
+            _mode_vars={key: Var("") for key in gui.GENERATION_MODE_LABELS},
+            _mode_workflows={"image": "wai_i2i_basic", "video": core.WAN_I2V_ID,
+                             "continuous": core.H3_I2V_ID}, _update_generation_controls=Mock(),
+        )
+        app._sync_workflow_choice = lambda: gui.Application._sync_workflow_choice(app)
+        app._on_generation_mode_choice = lambda: gui.Application._on_generation_mode_choice(app)
+        gui.Application._on_generation_tab_changed(app)
+        self.assertEqual(app.generation_mode.get(), "video")
+        self.assertEqual(app.workflow.get(), core.WAN_I2V_ID)
+        self.assertIs(app.workflow_box, app._mode_boxes["video"])
+        self.assertIs(app.workflow_choice, app._mode_vars["video"])
+        self.assertEqual(app.workflow_choice.get(), names[core.WAN_I2V_ID])
+        # History restoration selects the matching top tab.
+        app.generation_mode.set("continuous")
+        app.workflow.set(core.H3_I2V_ID)
+        app._sync_workflow_choice()
+        self.assertEqual(app.generation_tabs.select(), "continuous_page")
+        self.assertIs(app.workflow_box, app._mode_boxes["continuous"])
+        self.assertEqual(app.workflow_choice.get(), names[core.H3_I2V_ID])
+        gui.Application._on_generation_tab_changed(app)
+        self.assertEqual(app.workflow.get(), core.H3_I2V_ID)
+        # A queued selection from the old video page cannot change the mode.
+        gui.Application._on_workflow_choice(app, SimpleNamespace(widget=app._mode_boxes["video"]))
+        self.assertEqual(app.workflow.get(), core.H3_I2V_ID)
 
     def test_active_workflow_cannot_route_continuous_to_image(self):
         app = SimpleNamespace(config=self.config, generation_mode=Var("continuous"),

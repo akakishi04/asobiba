@@ -110,6 +110,16 @@ def apply_ttk_theme(root: tk.Tk, dark: bool = True) -> dict[str, str]:
         background=[("selected", p["surface"]), ("active", p["button_hover"])],
         foreground=[("selected", p["text"])],
     )
+    style.configure("Generation.TNotebook", background=p["surface"], borderwidth=0)
+    style.configure(
+        "Generation.TNotebook.Tab", background=p["button"], foreground=p["text"],
+        padding=(16, 8), font=("Meiryo UI", 10, "bold"),
+    )
+    style.map(
+        "Generation.TNotebook.Tab",
+        background=[("selected", p["accent"]), ("active", p["button_hover"])],
+        foreground=[("selected", "#FFFFFF")],
+    )
     style.configure("TCheckbutton", background=p["surface"], foreground=p["text"], padding=(0, 2))
     style.map(
         "TCheckbutton", background=[("active", p["surface"])],
