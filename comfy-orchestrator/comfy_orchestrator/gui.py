@@ -261,7 +261,37 @@ def workflow_display_names(config: dict) -> dict[str, str]:
     return labels
 
 
-def parameter_visibility(config: dict, workflow_id: str | None, custom_size: bool = False) -> dict:
+GENERATION_MODE_LABELS = {"image": "画像生成", "video": "動画生成", "continuous": "連続動画生成"}
+CONTINUOUS_TARGETS = tuple(label for label, seconds in LONG_TARGETS.items() if seconds > 0)
+
+
+def workflow_generation_mode(config: dict, workflow_id: str) -> str:
+    if workflow_id == LONG_VIDEO_ID:
+        return "continuous"
+    entry = config.get("workflows", {}).get(workflow_id, {})
+    return "video" if entry.get("kind") in core.VIDEO_KINDS else "image"
+
+
+def mode_workflow_ids(config: dict, mode: str) -> tuple[str, ...]:
+    workflows = config.get("workflows", {})
+    if mode == "continuous":
+        return (core.H3_I2V_ID,) if workflows.get(core.H3_I2V_ID, {}).get("kind") == "i2v" else ()
+    if mode == "video":
+        return tuple(key for key, entry in workflows.items() if entry.get("kind") in core.VIDEO_KINDS)
+    return ("自動", *(key for key, entry in workflows.items() if entry.get("kind") not in core.VIDEO_KINDS))
+
+
+def choose_mode_workflow(config: dict, mode: str, preferred: str | None = None) -> str:
+    choices = mode_workflow_ids(config, mode)
+    if preferred in choices:
+        return preferred
+    if core.H3_I2V_ID in choices:
+        return core.H3_I2V_ID
+    return choices[0] if choices else ""
+
+
+def parameter_visibility(config: dict, workflow_id: str | None, custom_size: bool = False,
+                         *, generation_mode: str | None = None) -> dict:
     """All workflows share the same grid. Only the individual fields vary."""
     entry = config.get("workflows", {}).get(workflow_id, {})
     bindings = entry.get("bindings", {})
@@ -277,6 +307,7 @@ def parameter_visibility(config: dict, workflow_id: str | None, custom_size: boo
         "source_size": not video and "image" in bindings and not still_size,
         "wan": video and not h3 and not hunyuan,
         "h3": h3,
+        "h3_long": h3 and generation_mode == "continuous",
         "h3_turbo": h3,
         "h3_performance": False,
         "hunyuan": hunyuan,
@@ -465,9 +496,22 @@ class Application:
         self.model = tk.StringVar(value="" if llm.get("model") == "SELECT_IN_GUI" else llm.get("model", ""))
         workflows = list(self.config.get("workflows", {}))
         preferred = options.get("workflow", workflows[0] if workflows else "自動")
-        self.workflow = tk.StringVar(value=preferred if preferred in workflows else "自動")
+        mode = options.get("generation_mode", workflow_generation_mode(self.config, preferred))
+        if mode not in GENERATION_MODE_LABELS:
+            mode = "image"
+        self.generation_mode = tk.StringVar(value=mode)
+        remembered = options.get("mode_workflows", {})
+        if not isinstance(remembered, dict):
+            remembered = {}
+        self._mode_workflows = {
+            key: choose_mode_workflow(self.config, key, remembered.get(key))
+            for key in GENERATION_MODE_LABELS
+        }
+        chosen = choose_mode_workflow(self.config, mode, preferred)
+        self._mode_workflows[mode] = chosen
+        self.workflow = tk.StringVar(value=chosen)
         self.workflow_names = workflow_display_names(self.config)
-        self.workflow_choice = tk.StringVar(value=self.workflow_names.get(self.workflow.get(), "自動"))
+        self.workflow_choice = tk.StringVar(value=self.workflow_names.get(chosen, ""))
         self.workflow.trace_add("write", self._sync_workflow_choice)
         self._extra_references = False
         self.width = tk.StringVar(value=str(options.get("width", 768)))
@@ -486,7 +530,8 @@ class Application:
         self.hunyuan_steps = tk.StringVar(value=str(options.get("hunyuan_steps", 8)))
         self.h3_size = tk.StringVar(value=str(options.get("h3_size", H3_RESOLUTIONS[0])))
         self.h3_duration = tk.StringVar(value=str(options.get("h3_duration", next(iter(H3_DURATIONS)))))
-        self.h3_long_target = tk.StringVar(value="単発")
+        target = options.get("h3_long_target", "30秒")
+        self.h3_long_target = tk.StringVar(value=target if target in CONTINUOUS_TARGETS else "30秒")
         model_key = options.get("h3_model", "int8")
         turbo_key = options.get("h3_turbo", "off")
         self.h3_model = tk.StringVar(value=core.h3_model_label(model_key))
@@ -670,14 +715,22 @@ class Application:
 
         # One shared work surface: mode, prompt, references, parameters, actions.
         workflow_row = ttk.Frame(self.options_form)
+        mode_row = ttk.Frame(self.options_form)
+        mode_row.pack(fill="x", pady=(0, 6))
+        for column, (mode, label) in enumerate(GENERATION_MODE_LABELS.items()):
+            mode_row.columnconfigure(column, weight=1)
+            ttk.Radiobutton(mode_row, text=label, value=mode, variable=self.generation_mode,
+                            command=self._on_generation_mode_choice).grid(
+                                row=0, column=column, sticky="ew", padx=(0, 4))
         workflow_row.pack(fill="x", pady=(0, 8))
         ttk.Label(workflow_row, text="ワークフロー").pack(side="left", padx=(0, 6))
         self.workflow_box = ttk.Combobox(
             workflow_row, textvariable=self.workflow_choice,
-            values=tuple(self.workflow_names.values()), state="readonly", width=18,
+            values=(), state="readonly", width=18,
         )
         self.workflow_box.pack(side="left", fill="x", expand=True)
         self.workflow_box.bind("<<ComboboxSelected>>", self._on_workflow_choice)
+        self._sync_workflow_choice()
 
         editor_toolbar = ttk.Frame(self.options_form)
         editor_toolbar.pack(fill="x", pady=(0, 4))
@@ -785,11 +838,12 @@ class Application:
         field(3, 2, "FPS", self.video_fps, "wan", choices=("16", "24", "30"), width=5)
         field(2, 0, "解像度", self.h3_size, "h3", choices=H3_RESOLUTIONS, span=3, width=18)
         field(3, 0, "長さ (24fps)", self.h3_duration, "h3", choices=tuple(H3_DURATIONS), span=3, width=18)
-        field(10, 0, "合計尺", self.h3_long_target, "h3", choices=tuple(LONG_TARGETS), span=2, width=8)
+        self.h3_duration_title = self.parameter_widgets["h3"][-2]
+        field(10, 0, "合計尺", self.h3_long_target, "h3_long", choices=CONTINUOUS_TARGETS, span=2, width=8)
         self.resume_long_button = ttk.Button(settings, text="長尺再開", command=self._resume_long_video,
                                              style="Compact.TButton")
         self.resume_long_button.grid(row=10, column=3, sticky="ew", pady=3, padx=(4, 0))
-        self.parameter_widgets["h3"].append(self.resume_long_button)
+        self.parameter_widgets["h3_long"].append(self.resume_long_button)
 
         field(2, 0, "解像度", self.hunyuan_size, "hunyuan", choices=HUNYUAN_RESOLUTIONS, span=3, width=18)
         field(3, 0, "フレーム数 (24fps)", self.hunyuan_frames, "hunyuan",
@@ -1019,13 +1073,33 @@ class Application:
         self._update_generation_controls()
 
     def _sync_workflow_choice(self, *_args) -> None:
-        label = self.workflow_names.get(self.workflow.get(), self.workflow.get())
+        chosen = self.workflow.get()
+        if hasattr(self, "generation_mode"):
+            mode = self.generation_mode.get()
+            choices = mode_workflow_ids(self.config, mode)
+            if chosen in choices:
+                self._mode_workflows[mode] = chosen
+            values = tuple(self.workflow_names[key] for key in choices)
+            if hasattr(self, "workflow_box") and getattr(self, "_mode_choices_key", None) != values:
+                self.workflow_box.configure(values=values, state="readonly" if len(values) > 1 else "disabled")
+                self._mode_choices_key = values
+        label = self.workflow_names.get(chosen, chosen)
         if self.workflow_choice.get() != label:
             self.workflow_choice.set(label)
 
+    def _on_generation_mode_choice(self) -> None:
+        mode = self.generation_mode.get()
+        chosen = choose_mode_workflow(self.config, mode, self._mode_workflows.get(mode))
+        self.workflow.set(chosen)
+        self._sync_workflow_choice()
+        self._update_generation_controls()
+
     def _on_workflow_choice(self, _event=None) -> None:
-        by_label = {label: key for key, label in self.workflow_names.items()}
-        self.workflow.set(by_label.get(self.workflow_choice.get(), "自動"))
+        choices = (mode_workflow_ids(self.config, self.generation_mode.get())
+                   if hasattr(self, "generation_mode") else self.workflow_names)
+        by_label = {self.workflow_names[key]: key for key in choices}
+        if self.workflow_choice.get() in by_label:
+            self.workflow.set(by_label[self.workflow_choice.get()])
         self._update_generation_controls()
 
     def _on_composition_image_changed(self, *_args) -> None:
@@ -1063,10 +1137,16 @@ class Application:
         sync_native_ime_font(self.prompt)
 
     def _active_workflow(self) -> str | None:
+        chosen = self.workflow.get()
+        if hasattr(self, "generation_mode"):
+            mode = self.generation_mode.get()
+            chosen = choose_mode_workflow(self.config, mode, chosen)
+            if mode != "image":
+                return chosen or None
         get = lambda name: bool(getattr(self, name, None) and getattr(self, name).get().strip())
         pose_mode = getattr(self, "pose_mode", None)
         return resolve_generation_workflow(
-            self.config, self.workflow.get(),
+            self.config, chosen,
             get("reference_image"), get("mask_image"), get("pose_image"),
             pose_mode.get() if pose_mode is not None else "skeleton",
         )
@@ -1230,10 +1310,12 @@ class Application:
             self.workflow.set(workflow_id)
         entry = self.config["workflows"].get(workflow_id, {})
         is_video = entry.get("kind") in core.VIDEO_KINDS
+        generation_mode = self.generation_mode.get() if hasattr(self, "generation_mode") else None
         state = parameter_visibility(
             self.config, workflow_id,
             getattr(self, "_custom_size_editing", False)
             or (hasattr(self, "resolution_preset") and self.resolution_preset.get() == CUSTOM_RESOLUTION),
+            generation_mode=generation_mode,
         )
         has = lambda name: bool(getattr(self, name, None) and getattr(self, name).get().strip())
         reference = has("reference_image")
@@ -1247,7 +1329,7 @@ class Application:
         )
         # Source path edits may emit dozens of traces with identical visibility.
         # Never issue geometry/configure writes when the effective UI is unchanged.
-        ui_key = (workflow_id, tuple(state.items()), tuple(refs.items()), expanded,
+        ui_key = (workflow_id, generation_mode, tuple(state.items()), tuple(refs.items()), expanded,
                   reference, pose, composition)
         if getattr(self, "_generation_ui_key", None) == ui_key:
             return
@@ -1271,8 +1353,11 @@ class Application:
                 set_grid_visible(getattr(self, name), refs[key])
             self.extra_button.configure(text="追加参照 ▾" if expanded else "追加参照 ▸",
                                         state="disabled" if is_video else "normal")
+        if hasattr(self, "h3_duration_title"):
+            self.h3_duration_title.configure(text="区間の長さ (24fps)" if state["h3_long"] else "長さ (24fps)")
         if hasattr(self, "run_button"):
-            self.run_button.configure(text="動画生成" if is_video else "画像生成")
+            self.run_button.configure(text=GENERATION_MODE_LABELS.get(
+                generation_mode, "動画生成" if is_video else "画像生成"))
         for widget in (self.width_entry, self.height_entry):
             widget.configure(state="normal" if state["resolution"] else "disabled")
         if hasattr(self, "resolution_box"):
@@ -1585,6 +1670,7 @@ class Application:
         if entry is None:
             messagebox.showinfo("履歴", "復元する履歴を1件選択してください")
             return
+        restored_mode = workflow_generation_mode(self.config, entry.workflow_id)
         if entry.workflow_id == LONG_VIDEO_ID:
             p = dict(entry.parameters)
             seconds = p.pop("long_seconds", 0)
@@ -1592,10 +1678,8 @@ class Application:
             p["frames"] = p.pop("long_segment_frames", 124)
             entry = replace(entry, workflow_id=core.H3_I2V_ID, parameters=p)
             if hasattr(self, "h3_long_target"):
-                self.h3_long_target.set(next((label for label, value in LONG_TARGETS.items()
-                                              if value == seconds), "単発"))
-        elif hasattr(self, "h3_long_target"):
-            self.h3_long_target.set("単発")
+                self.h3_long_target.set(next((label for label in CONTINUOUS_TARGETS
+                                              if LONG_TARGETS[label] == seconds), "30秒"))
         if entry.legacy or entry.workflow_id not in self.config["workflows"]:
             messagebox.showinfo(
                 "履歴", "この画像には生成設定が保存されていないため復元できません"
@@ -1605,6 +1689,8 @@ class Application:
         self.prompt.insert("1.0", entry.request_text)
         self._source_change_lock = True
         try:
+            if hasattr(self, "generation_mode"):
+                self.generation_mode.set(restored_mode)
             self.workflow.set(entry.workflow_id)
             reference = entry.reference_image
             self.reference_image.set(
@@ -1919,6 +2005,10 @@ class Application:
             "dark_mode": self.dark_mode.get(),
             "font_size": self.editor_font_size.get(),
         }
+        if hasattr(self, "generation_mode"):
+            config["ui"]["generation_mode"] = self.generation_mode.get()
+            config["ui"]["mode_workflows"] = dict(self._mode_workflows)
+            config["ui"]["h3_long_target"] = self.h3_long_target.get()
         if hasattr(self, "use_prompt_cache"):
             config["ui"]["use_prompt_cache"] = self.use_prompt_cache.get()
         config["ui"]["seed"] = self.seed.get().strip()
@@ -2425,6 +2515,8 @@ class Application:
         finally:
             self._source_change_lock = False
         self._on_reference_image_changed()
+        if hasattr(self, "generation_mode"):
+            self.generation_mode.set(workflow_generation_mode(self.config, workflow_id))
         self.workflow.set(workflow_id)
         self._update_generation_controls()
         self.tabs.select(0)
@@ -2646,8 +2738,12 @@ class Application:
             if selected == core.H3_I2V_ID else None
         )
         self.latest_request_text = prompt
-        long_seconds = LONG_TARGETS.get(self.h3_long_target.get(), 0) if selected == core.H3_I2V_ID else 0
-        if long_seconds and not dry_run:
+        continuous = self.generation_mode.get() == "continuous"
+        long_seconds = LONG_TARGETS.get(self.h3_long_target.get(), 0) if continuous else 0
+        if continuous and (selected != core.H3_I2V_ID or not long_seconds):
+            messagebox.showerror("連続動画生成", "MiniMax H3と30秒以上の合計尺を選択してください")
+            return
+        if continuous and not dry_run:
             try:
                 media = FFmpeg()
                 if overrides.get("h3_model") is not None:
@@ -2743,7 +2839,7 @@ class Application:
         self.messages.put(("done", (result, [video], history_id)))
 
     def _resume_long_video(self) -> None:
-        if self.working:
+        if self.working or self.generation_mode.get() != "continuous":
             return
         root = self.long_video_store.root
         records = sorted(root.glob("*/manifest.json"), key=lambda p: p.stat().st_mtime, reverse=True)
