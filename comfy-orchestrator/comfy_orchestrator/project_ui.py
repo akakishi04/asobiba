@@ -63,11 +63,13 @@ class ProjectDraft:
 
 class ProjectWorkspace(ttk.Frame):
     """Project picker, cut editor and video preview in the main application."""
-    def __init__(self, master, store, *, on_refresh, on_action):
+    def __init__(self, master, store, *, on_refresh, on_action, on_load=None, on_actions_changed=None):
         super().__init__(master, padding=6)
         self.store = store
         self.on_refresh = on_refresh
         self.on_action = on_action
+        self.on_load = on_load
+        self.on_actions_changed = on_actions_changed
         self.draft = None
         self.projects = []
         self.enabled = True
@@ -84,20 +86,16 @@ class ProjectWorkspace(ttk.Frame):
         self.refresh_button.pack(side="right", padx=(4, 0))
         self.summary = tk.StringVar(value="新規計画を作成するか、保存済みプロジェクトを選択")
         ttk.Label(self, textvariable=self.summary, wraplength=420).pack(fill="x", pady=(0, 2))
-        self.project_info = tk.StringVar(value="")
-        ttk.Label(self, textvariable=self.project_info, wraplength=420).pack(fill="x", pady=(0, 4))
-
         actions = ttk.Frame(self)
         actions.pack(side="bottom", fill="x", pady=(4, 0))
         self.action_buttons = {}
         for i, (key, label) in enumerate((
-            ("save", "計画保存"), ("generate", "カット生成"), ("generate_join", "生成・結合"),
-            ("regenerate", "選択以降再生成"), ("join", "結合のみ"), ("preview", "動画確認"),
+            ("save", "計画保存"), ("preview", "カット確認"),
         )):
             command = self._show_preview if key == "preview" else lambda k=key: self._accept(k)
             button = ttk.Button(actions, text=label, command=command, style="Compact.TButton")
-            button.grid(row=i // 3, column=i % 3, sticky="ew", padx=2, pady=2)
-            actions.columnconfigure(i % 3, weight=1)
+            button.grid(row=0, column=i, sticky="ew", padx=2, pady=2)
+            actions.columnconfigure(i, weight=1)
             self.action_buttons[key] = button
 
         self.views = ttk.Notebook(self)
@@ -176,16 +174,21 @@ class ProjectWorkspace(ttk.Frame):
             widget.configure(state="normal" if editable else "disabled")
         self.selection.configure(state="readonly" if self.enabled else "disabled")
         self.refresh_button.configure(state="normal" if self.enabled else "disabled")
+        available = self.available_actions()
         for key, button in self.action_buttons.items():
-            active = self.enabled and exists
-            if key in ("save", "generate", "regenerate"):
-                active = active and editable
-            elif key == "join":
-                active = active and self.draft.valid_prefix() == len(self.draft.cuts) and not self.draft.dirty() and not self._missing_clips
-            elif key == "preview":
-                active = active and self.draft.current < len(self.draft.manifest["segments"])
-            button.configure(state="normal" if active else "disabled")
+            button.configure(state="normal" if available[key] else "disabled")
+        if self.on_actions_changed is not None:
+            self.on_actions_changed(available)
         self.external_button.configure(state="normal" if self.enabled and self.preview.source is not None else "disabled")
+
+    def available_actions(self):
+        d = self.draft
+        active = self.enabled and d is not None
+        editable = active and d.original is not None
+        return {"save": editable, "generate": editable, "regenerate": editable,
+                "generate_join": active,
+                "join": active and d.valid_prefix() == len(d.cuts) and not d.dirty() and not self._missing_clips,
+                "preview": active and d.current < len(d.manifest["segments"])}
 
     def _read(self, *, strict=True):
         if not self.draft or self.draft.original is None:
@@ -230,20 +233,15 @@ class ProjectWorkspace(ttk.Frame):
                 self.load(self.projects[index])
             elif self.enabled and self._read(strict=False) and not self.draft.dirty():
                 self.checkpoint(self.projects[index])
-        elif self.draft is None and self.projects and not open_preferred:
-            self.selection.current(0)
-            self.load(self.projects[0])
         elif self.draft is None:
+            # Entering the mode must not silently overwrite the shared
+            # reference image/prompt with an unrelated previous project.
             self.selection.set("")
 
-    def load(self, manifest, *, preserve_selection=False):
+    def load(self, manifest, *, preserve_selection=False, restore_inputs=True):
         old = self.draft
         self.draft = ProjectDraft(manifest)
         self._update_clip_presence()
-        p = manifest["overrides"]
-        overlap = manifest.get("overlap_frames", 0)
-        method = f"助走 最大{overlap}f" if overlap else "従来接続"
-        self.project_info.set(f"{p.get('h3_model', 'H3')} · {p.get('width', '?')} × {p.get('height', '?')} · Seed {p.get('seed', '?')} · {method}")
         if preserve_selection and old is not None:
             self.draft.current = min(old.current, len(self.draft.cuts) - 1)
         self._updating = True
@@ -256,6 +254,8 @@ class ProjectWorkspace(ttk.Frame):
         self._load_cut()
         self._updating = False
         self._refresh_rows()
+        if restore_inputs and self.on_load is not None:
+            self.on_load(manifest)
 
     def checkpoint(self, manifest):
         # Checkpoints arrive only while the project is being executed; no edits
@@ -322,8 +322,10 @@ class ProjectWorkspace(ttk.Frame):
             status = "未保存の編集あり" if d.dirty() else {
                 "draft": "計画保存", "generating": "途中", "ready_to_join": "結合待ち", "completed": "完成",
             }.get(d.manifest["state"], d.manifest["state"])
+            overlap = d.manifest.get("overlap_frames", 0)
+            method = f"助走 最大{overlap}f" if overlap else "従来接続"
             self.summary.set(f"{len(d.cuts)}カット / {format_cut_seconds(sum(d.cuts))}秒 / "
-                             f"有効 {d.valid_prefix()}件 · {status}")
+                             f"有効 {d.valid_prefix()}件 · {status} · {method}")
         finally:
             self._updating = False
         self._states()
@@ -416,15 +418,8 @@ class ProjectWorkspace(ttk.Frame):
         try:
             d = self.draft
             action = d.action("generate" if key == "regenerate" else key, key == "regenerate")
-            changed = d.changed_from()
-            affected = action.regenerate_from
-            if changed is not None:
-                affected = changed if affected is None else min(changed, affected)
-            if affected is not None and affected < len(d.manifest["segments"]):
-                if not messagebox.askyesno("改訂版を作成",
-                    f"カット{affected+1}以降を再生成対象にします。元のプロジェクトは保持します。続けますか？",
-                    parent=self):
-                    return
+            # The application confirms once, after accounting for BOTH the
+            # live generation settings and the edited cut plan.
             self.on_action(d.manifest, action)
         except (OSError, ValueError, KeyError, OrchestratorError) as exc:
             messagebox.showerror("長尺プロジェクト", str(exc), parent=self)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 from datetime import datetime, timezone
 import secrets
@@ -425,9 +426,50 @@ def first_changed_cut(manifest, prompt_plan, cut_frames):
     return min(len(old_cuts), len(cut_frames)) if len(old_cuts) != len(cut_frames) else None
 
 
+def project_generation_inputs(store, manifest, *, overrides=None, source=None):
+    """Resolve live generation inputs without changing the saved cut schedule.
+
+    The left form's standard segment length is for new plans only. Once a
+    plan exists, the right editor owns its frame-accurate cut lengths.
+    """
+    old = manifest["overrides"]
+    p = dict(old)
+    if overrides is not None:
+        # Remove old optional model-specific selections when the new model
+        # does not use them. Preserve legacy non-UI parameters and timing.
+        for key in core.H3_OPTION_KEYS:
+            p.pop(key, None)
+        p.update(overrides)
+        p["frames"] = old["frames"]
+        p["seed"] = overrides["seed"] if "seed" in overrides else secrets.randbits(32)
+        core.validate_h3_video_parameters(p)
+        core.check_param("seed", p["seed"])
+        _, options = core.split_h3_options(p, enabled=True)
+        if options:
+            continuation_model(options["h3_model"])
+    saved_source = store.asset(manifest, manifest["source"])
+    selected = saved_source
+    source_changed = False
+    if source is not None:
+        selected = Path(source).expanduser().resolve()
+        if not selected.is_file() or selected.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+            raise core.OrchestratorError("左側で有効な参照画像を指定してください")
+        if selected.stat().st_size > 40 * 1024 * 1024:
+            raise core.OrchestratorError("参照画像は40MB以下にしてください")
+        if selected != saved_source.resolve():
+            source_changed = True
+            if (saved_source.is_file() and selected.suffix.lower() == saved_source.suffix.lower()
+                    and selected.stat().st_size == saved_source.stat().st_size):
+                with selected.open("rb") as a, saved_source.open("rb") as b:
+                    source_changed = hashlib.file_digest(a, "sha256").digest() != hashlib.file_digest(b, "sha256").digest()
+            if not source_changed:
+                selected = saved_source
+    return p, selected, p != old or source_changed
+
+
 @lock_project
 def edit_project(store, manifest, journal, prompt_plan, cut_frames, *, regenerate_from=None,
-                 overlap_frames=None):
+                 overlap_frames=None, overrides=None, source=None):
     """Create a revision with its unchanged generated prefix. Never remove old data.
 
     A new run ID isolates job recovery and final history. Old unfinished remote
@@ -439,12 +481,16 @@ def edit_project(store, manifest, journal, prompt_plan, cut_frames, *, regenerat
         cuts = validate_cut_frames(cuts)
     approved = validate_prompt_plan(prompt_plan, len(cuts))
     changed = first_changed_cut(manifest, approved, cuts)
+    effective, selected_source, inputs_changed = project_generation_inputs(
+        store, manifest, overrides=overrides, source=source)
+    if inputs_changed:
+        changed = 0
     old_overlap = manifest.get("overlap_frames", 0)
     overlap = validate_overlap_frames(old_overlap if overlap_frames is None else overlap_frames)
     same_schedule = cuts == old_cuts
     new_seconds = manifest["seconds"] if same_schedule else sum(cuts) / FPS
     new_cuts = manifest.get("cut_frames") if same_schedule else cuts
-    new_windows = schedule_windows(new_seconds, manifest["overrides"]["frames"], new_cuts,
+    new_windows = schedule_windows(new_seconds, effective["frames"], new_cuts,
                                    overlap_frames=overlap)
     old_windows = manifest_windows(manifest)
     if overlap != old_overlap:
@@ -466,8 +512,8 @@ def edit_project(store, manifest, journal, prompt_plan, cut_frames, *, regenerat
                 and record["state"] not in ("failed", "completed", "collected")):
             raise core.OrchestratorError("未確定の生成ジョブがあります。元のプロジェクトを再開して状態を確定してください")
     new = store.create(
-        manifest["backend"], manifest["request"], store.asset(manifest, manifest["source"]),
-        manifest["overrides"], new_seconds, manifest.get("profile"), prompt_plan=approved,
+        manifest["backend"], manifest["request"], selected_source,
+        effective, new_seconds, manifest.get("profile"), prompt_plan=approved,
         cut_frames=new_cuts, draft=True, overlap_frames=overlap,
     )
     folder = store.folder(new["run_id"])
@@ -498,10 +544,13 @@ def edit_project(store, manifest, journal, prompt_plan, cut_frames, *, regenerat
             (int(manifest["overrides"]["seed"]) + i) % modulus
             for i in range(len(old_cuts))
         ]
-        seeds = [old_seeds[i] if i < len(old_seeds)
+        seed_changed = effective["seed"] != manifest["overrides"]["seed"]
+        seeds = [old_seeds[i] if i < len(old_seeds) and not seed_changed
                  else (int(new["overrides"]["seed"]) + i) % modulus
                  for i in range(len(cuts))]
-        if regenerate_from is not None:
+        # A changed seed or model/source is an explicit new comparison. Keep
+        # the specified seed progression rather than randomizing it silently.
+        if regenerate_from is not None and not inputs_changed:
             for i in range(regenerate_from, len(seeds)):
                 seeds[i] = secrets.randbits(32)
         new["cut_seeds"] = seeds

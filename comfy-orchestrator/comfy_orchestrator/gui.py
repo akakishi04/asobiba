@@ -11,6 +11,7 @@ from dataclasses import replace
 import json
 import os
 import queue
+import secrets
 import shutil
 import sqlite3
 import threading
@@ -35,7 +36,8 @@ from .history import HistoryStore, HistoryEntry, HistoryError
 from .jobs import JobJournal, JobCancellationRequested
 from .prompt_cache import PromptCache, CACHE_ERRORS
 from .long_video import (LONG_VIDEO_ID, LONG_TARGETS, LongVideoStore, LongVideoPaused,
-                         FFmpeg, continuation_model, segment_plan, edit_project, restore_project_plan)
+                         FFmpeg, continuation_model, segment_plan, edit_project, restore_project_plan,
+                         first_changed_cut, project_generation_inputs, project_cut_lengths)
 from .timeline import (plan_long_prompts, CUSTOM_CUTS, validate_cut_frames,
                        CONTINUATION_OVERLAP_FRAMES,
                        default_cut_frames, generation_frames_for_cuts, format_cut_seconds)
@@ -726,7 +728,8 @@ class Application:
         # One shared work surface: prompt, references, parameters, actions.
         editor_toolbar = ttk.Frame(self.options_form)
         editor_toolbar.pack(fill="x", pady=(0, 4))
-        ttk.Label(editor_toolbar, text="プロンプト", style="FieldHeading.TLabel").pack(side="left")
+        self.prompt_title = ttk.Label(editor_toolbar, text="プロンプト", style="FieldHeading.TLabel")
+        self.prompt_title.pack(side="left")
         ttk.Button(editor_toolbar, text="A+", width=3, command=lambda: self._change_editor_font(1),
                    style="Compact.TButton").pack(side="right", padx=(4, 0))
         ttk.Button(editor_toolbar, text="A−", width=3, command=lambda: self._change_editor_font(-1),
@@ -831,13 +834,13 @@ class Application:
         field(2, 0, "解像度", self.h3_size, "h3", choices=H3_RESOLUTIONS, span=3, width=18)
         field(3, 0, "長さ (24fps)", self.h3_duration, "h3", choices=tuple(H3_DURATIONS), span=3, width=18)
         self.h3_duration_title = self.parameter_widgets["h3"][-2]
-        field(10, 0, "合計尺", self.h3_long_target, "h3_long",
+        field(10, 0, "計画用合計尺", self.h3_long_target, "h3_long",
               choices=(*CONTINUOUS_TARGETS, CUSTOM_CUTS), span=2, width=8)
         self.resume_long_button = ttk.Button(settings, text="プロジェクト", command=self._resume_long_video,
                                              style="Compact.TButton")
         self.resume_long_button.grid(row=10, column=3, sticky="ew", pady=3, padx=(4, 0))
         self.parameter_widgets["h3_long"].append(self.resume_long_button)
-        cut_button = ttk.Button(settings, text="カット尺設定…", command=self._edit_cut_durations)
+        cut_button = ttk.Button(settings, text="計画用カット尺…", command=self._edit_cut_durations)
         cut_button.grid(row=11, column=0, columnspan=2, sticky="ew", pady=3)
         cut_summary = ttk.Label(settings, textvariable=self.h3_cut_summary)
         cut_summary.grid(row=11, column=2, columnspan=2, sticky="w", padx=(6, 0))
@@ -884,15 +887,22 @@ class Application:
                 widget.grid_remove()
 
         self.run_button = ttk.Button(
-            action_row, text="画像生成", style="Run.TButton", command=lambda: self._start(False)
+            action_row, text="画像生成", style="Run.TButton", command=self._run_primary
         )
         self.run_button.pack(side="left", fill="x", expand=True, padx=(0, 6))
-        self.preview_button = ttk.Button(action_row, text="解釈テスト", command=lambda: self._start(True))
+        self.preview_button = ttk.Button(action_row, text="解釈テスト", command=self._run_secondary)
         self.preview_button.pack(side="left", padx=(0, 6))
         self.cancel_button = ttk.Button(
             action_row, text="生成中止", command=self._request_cancel, state="disabled"
         )
         self.cancel_button.pack(side="left")
+        self.long_actions_button = ttk.Menubutton(action_row, text="その他 ▾", style="Compact.TButton")
+        self.long_actions_menu = tk.Menu(self.long_actions_button, tearoff=False)
+        self.long_actions_button.configure(menu=self.long_actions_menu)
+        self._long_menu_keys = ("generate", "regenerate", "join")
+        for key, label in zip(self._long_menu_keys, ("カット生成（結合なし）", "選択以降再生成", "結合のみ")):
+            self.long_actions_menu.add_command(label=label, command=lambda k=key: self.project_workspace._accept(k),
+                                               state="disabled")
 
         self.tabs = ttk.Notebook(right)
         self.tabs.pack(fill="both", expand=True)
@@ -904,7 +914,8 @@ class Application:
         self.history_panel = history_panel
         self.project_workspace = ProjectWorkspace(
             self.tabs, self.long_video_store, on_refresh=self._refresh_projects,
-            on_action=self._project_action,
+            on_action=self._project_action, on_load=self._restore_project_inputs,
+            on_actions_changed=self._project_actions_changed,
         )
         self.tabs.add(self.project_workspace, text="プロジェクト")
         self.tabs.hide(self.project_workspace)
@@ -1369,7 +1380,9 @@ class Application:
         self._generation_ui_key = ui_key
         if hasattr(self, "project_workspace"):
             self._sync_project_visibility(generation_mode == "continuous")
-            self.prompt_panel.configure(text="新規計画" if generation_mode == "continuous" else "生成")
+            self.prompt_panel.configure(text="生成")
+        if hasattr(self, "prompt_title"):
+            self.prompt_title.configure(text="プロンプト（新規計画用）" if generation_mode == "continuous" else "プロンプト")
         if hasattr(self, "parameter_widgets"):
             for key, widgets in self.parameter_widgets.items():
                 for widget in widgets:
@@ -1390,17 +1403,19 @@ class Application:
             self.extra_button.configure(text="追加参照 ▾" if expanded else "追加参照 ▸",
                                         state="disabled" if is_video else "normal")
         if hasattr(self, "h3_duration_title"):
-            self.h3_duration_title.configure(text="標準区間長 (24fps)" if state["h3_long"] else "長さ (24fps)")
+            self.h3_duration_title.configure(text="計画用区間長 (24fps)" if state["h3_long"] else "長さ (24fps)")
         if hasattr(self, "run_button"):
-            self.run_button.configure(text="新規計画" if generation_mode == "continuous" else
-                                      GENERATION_MODE_LABELS.get(generation_mode, "動画生成" if is_video else "画像生成"))
+            self.run_button.configure(text=GENERATION_MODE_LABELS.get(generation_mode, "動画生成" if is_video else "画像生成"))
         if hasattr(self, "preview_button"):
+            if not self.preview_button.winfo_manager():
+                self.preview_button.pack(side="left", padx=(0, 6), before=self.cancel_button)
+            self.preview_button.configure(text="新規計画" if generation_mode == "continuous" else "解釈テスト")
+        if hasattr(self, "long_actions_button"):
             if generation_mode == "continuous":
-                self.preview_button.pack_forget()
+                if not self.long_actions_button.winfo_manager():
+                    self.long_actions_button.pack(side="left", padx=(0, 6), before=self.cancel_button)
             else:
-                if not self.preview_button.winfo_manager():
-                    self.preview_button.pack(side="left", padx=(0, 6), before=self.cancel_button)
-                self.preview_button.configure(text="解釈テスト")
+                self.long_actions_button.pack_forget()
         for widget in (self.width_entry, self.height_entry):
             widget.configure(state="normal" if state["resolution"] else "disabled")
         if hasattr(self, "resolution_box"):
@@ -2795,6 +2810,24 @@ class Application:
             messagebox.showerror("カット尺設定", str(exc))
         return None
 
+    def _run_primary(self):
+        if self.working:
+            return
+        if self.generation_mode.get() == "continuous" and self.project_workspace.draft is not None:
+            self.project_workspace._accept("generate_join")
+        else:
+            # Without a plan, the first press creates one for review.
+            self._start(False)
+
+    def _run_secondary(self):
+        self._start(self.generation_mode.get() != "continuous")
+
+    def _project_actions_changed(self, available):
+        for i, key in enumerate(self._long_menu_keys):
+            self.long_actions_menu.entryconfigure(i, state="normal" if available[key] else "disabled")
+        enabled = any(available[key] for key in self._long_menu_keys)
+        self.long_actions_button.configure(state="normal" if enabled else "disabled")
+
     def _start(self, dry_run: bool) -> None:
         if self.working:
             return
@@ -2955,8 +2988,8 @@ class Application:
         threading.Thread(target=task, daemon=True).start()
 
     def _project_config(self, manifest):
-        # Project parameters come from the manifest, not potentially unfinished
-        # edits in the new-plan form. Only current connections are read here.
+        # Generation inputs are captured separately from the left form.
+        # The approved prompt plan retains its original interpretation profile.
         cfg = copy.deepcopy(self.config)
         cfg["comfyui"].update(base_url=self.comfy_url.get().strip(), free_before_llm=self.free_comfy.get())
         cfg["llm"].update(base_url=self.llm_url.get().strip(), model=self.model.get().strip() or "SELECT_IN_GUI",
@@ -2964,6 +2997,39 @@ class Application:
         if manifest.get("profile"):
             cfg["llm"]["h3_prompt_profile"] = manifest["profile"]
         return cfg
+
+    def _restore_project_inputs(self, manifest):
+        """Opening a project initializes the shared generation form once."""
+        if self.generation_mode.get() != "continuous":
+            return
+        p = manifest["overrides"]
+        self.prompt.delete("1.0", "end")
+        self.prompt.insert("1.0", manifest["request"])
+        self.prompt.edit_reset()
+        self.reference_image.set(str(self.long_video_store.asset(manifest, manifest["source"])))
+        self.h3_model.set(core.h3_model_label(p.get("h3_model", "int8")))
+        self.h3_turbo.set(core.H3_TURBO_LABELS.get(p.get("h3_turbo", "off"), "OFF"))
+        self.h3_performance.set(core.H3_PERFORMANCE_LABELS.get(
+            p.get("h3_performance", "standard"), core.H3_PERFORMANCE_LABELS["standard"]))
+        self.h3_encoder_cpu.set(p.get("h3_encoder_device", "default") == "cpu")
+        self.h3_encoder_model.set(core.H3_ENCODER_LABELS.get(p.get("h3_encoder_model", "nvfp4"), "NVFP4 AWQ"))
+        steps = self.h3_hybrid_steps if core.h3_hybrid_filename(p.get("h3_model")) is not None else self.h3_steps
+        if "steps" in p:
+            steps.set(str(p["steps"]))
+        self.h3_size.set(f"{p['width']} × {p['height']}")
+        self.h3_duration.set(next((label for label, n in H3_DURATIONS.items() if n == p["frames"]),
+                                  f"{p['frames'] / 24:.2f}秒 ({p['frames']}f)"))
+        self.seed.set(str(p["seed"]))
+        self.h3_profile.set(H3_PROFILE_LABELS.get(manifest.get("profile"), H3_PROFILE_LABELS[H3_PROFILE_GENERAL]))
+        if manifest.get("cut_frames") is not None:
+            self._custom_cut_frames = list(manifest["cut_frames"])
+            self.h3_long_target.set(CUSTOM_CUTS)
+        else:
+            label = next((name for name in CONTINUOUS_TARGETS if LONG_TARGETS[name] == manifest["seconds"]), "30秒")
+            self.h3_long_target.set(label)
+        self._sync_cut_summary()
+        self._apply_generation_model_choices()
+        self._sync_h3_steps()
 
     def _restore_long_project(self, entry):
         if not self.project_workspace.confirm_replace():
@@ -3038,6 +3104,34 @@ class Application:
     def _project_action(self, manifest, action):
         if self.working or self.character_analysis_running:
             raise core.OrchestratorError("現在の処理が終了してから操作してください")
+        overrides = source = None
+        inputs_changed = False
+        if action.action in ("generate", "generate_join"):
+            if not self.reference_image.get().strip():
+                raise core.OrchestratorError("左側で参照画像を指定してください")
+            overrides = self._h3_overrides()
+            if "seed" not in overrides:
+                overrides["seed"] = secrets.randbits(32)
+            source = Path(self.reference_image.get()).expanduser()
+            effective, source, inputs_changed = project_generation_inputs(
+                self.long_video_store, manifest, overrides=overrides, source=source)
+            if "prompt_plan" not in manifest and inputs_changed:
+                raise core.OrchestratorError("計画のない旧プロジェクトは新規計画から作成してください")
+        changed = (first_changed_cut(manifest, action.prompt_plan, action.cut_frames)
+                   if "prompt_plan" in manifest else None)
+        affected = action.regenerate_from
+        if changed is not None:
+            affected = changed if affected is None else min(changed, affected)
+        if inputs_changed:
+            affected = 0
+        if affected is not None and affected < len(manifest["segments"]):
+            reason = "左側の生成設定または参照画像が変わりました。全カットを再生成します。" if inputs_changed else f"カット{affected+1}以降を再生成対象にします。"
+            if not messagebox.askyesno("改訂版を作成", reason + "\n元のプロジェクトは保持します。続けますか？"):
+                return
+        if overrides is not None:
+            self.seed.set(str(overrides["seed"]))
+            if not self._save_settings():
+                return
         cfg = self._project_config(manifest)
         cache = self.prompt_cache if self.use_prompt_cache.get() else None
         self.latest_request_text = manifest["request"]
@@ -3045,9 +3139,9 @@ class Application:
         self.latest_character_traits = None
         self.latest_character_references = ()
         self.latest_character_analysis = None
-        self._run_project_action(manifest, action, cfg, cache)
+        self._run_project_action(manifest, action, cfg, cache, overrides=overrides, source=source)
 
-    def _run_project_action(self, manifest, action, cfg, cache):
+    def _run_project_action(self, manifest, action, cfg, cache, *, overrides=None, source=None):
         if action.action not in ("save", "generate", "generate_join", "join"):
             raise core.OrchestratorError("長尺プロジェクト操作が不正です")
         if action.action in ("generate", "generate_join") and manifest["backend"] != cfg["comfyui"]["base_url"].rstrip("/"):
@@ -3059,6 +3153,7 @@ class Application:
                 updated = edit_project(
                     self.long_video_store, manifest, self.job_journal,
                     action.prompt_plan, action.cut_frames, regenerate_from=action.regenerate_from,
+                    overrides=overrides, source=source,
                 )
             else:
                 if action.action not in ("generate_join", "join"):
@@ -3152,7 +3247,7 @@ class Application:
                     self._finish_long_prompt_plan(data)
                 elif kind == "long_project_saved":
                     self._preferred_long_project_id = data["run_id"]
-                    self.project_workspace.load(data, preserve_selection=True)
+                    self.project_workspace.load(data, preserve_selection=True, restore_inputs=False)
                     self._refresh_projects(data["run_id"])
                     self._log("長尺プロジェクト保存: " + data["run_id"])
                 elif kind == "long_project_checkpoint":
