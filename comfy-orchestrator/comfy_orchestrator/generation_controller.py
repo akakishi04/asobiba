@@ -141,7 +141,7 @@ class GenerationController:
             "request_text": entry.request_text, "prompt_profile": entry.prompt_profile,
             "composition_image": composition if composition and composition.is_file() else None,
             "character_references": refs if refs_ok else (),
-            "character_traits": entry.character_traits if refs_ok else None,
+            "character_traits": entry.character_traits,
             "character_analysis": entry.character_analysis if refs_ok else None,
         }
         result = core.execute_saved(

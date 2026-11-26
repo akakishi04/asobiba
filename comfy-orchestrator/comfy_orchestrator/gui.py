@@ -44,11 +44,13 @@ from .mode_settings import ModeSettings
 from .input_snapshot import copy_frozen_asset
 from .mask_editor import edit_mask
 from .lmstudio import list_models, LMStudio
-from .character_ui import CharacterReferenceWindow
+from .character_ui import CharacterReferenceWindow, choose_history_traits
+from .character_features import CharacterFeatureStore
 from .file_drop import enable_native_dnd, register_file_drop
 from .character_refs import (
     validate_images as validate_character_images,
     normalize_approved as normalize_character_traits,
+    validate_character_selection, character_status_label,
     save_character_sheet, load_character_sheet, clear_character_sheet,
     format_evidence,
 )
@@ -438,6 +440,7 @@ class Application:
         )
         self.character_analysis_running = False
         self.character_dialog: CharacterReferenceWindow | None = None
+        self.character_feature_store = CharacterFeatureStore(self.history_store.data / "character_features.sqlite3")
         self._variables()
         self._build()
         self._refresh_generation_models()
@@ -571,8 +574,7 @@ class Application:
         self._operations_pending = False
         self.result_info = tk.StringVar(value="")
         self.character_status = tk.StringVar(
-            value=f"キャラ参照 · {len(self.character_references)}枚"
-            if self.character_traits else "キャラ参照"
+            value=character_status_label(self.character_references, self.character_traits)
         )
 
     def _build(self) -> None:
@@ -1006,6 +1008,9 @@ class Application:
         self.history_prompt_button = ttk.Button(second_row, text="詳細", command=self._show_selected_history_prompt, style="Compact.TButton")
         self.history_prompt_button.grid(row=0, column=2, sticky="ew", padx=(0, 4))
         ttk.Button(second_row, text="更新", command=self._refresh_history, style="Compact.TButton").grid(row=0, column=3, sticky="ew")
+        self.history_character_button = ttk.Button(history_actions, text="キャラ特徴復元",
+            command=self._restore_selected_character_traits, state="disabled", style="Compact.TButton")
+        self.history_character_button.pack(fill="x", pady=(4, 0))
         self.history_tools = ttk.Frame(history_actions)
         self.history_tools.columnconfigure(0, weight=1)
         self.history_tools.columnconfigure(1, weight=1)
@@ -1597,6 +1602,10 @@ class Application:
                 self.history_request_button.configure(
                     state="normal" if history_request_text(single) is not None and not self.working else "disabled"
                 )
+            if hasattr(self, "history_character_button"):
+                self.history_character_button.configure(
+                    state="normal" if single and single.character_traits and not self.working else "disabled"
+                )
             if still and not self.working:
                 self.history_tools.pack(fill="x", pady=(4, 0))
             else:
@@ -1682,6 +1691,19 @@ class Application:
             self.history_image.configure(
                 image="", text="プレビュー非対応"
             )
+
+    def _restore_selected_character_traits(self) -> None:
+        if self.working or self.character_analysis_running:
+            return
+        entry = self._one_history()
+        if entry is None or not entry.character_traits:
+            return
+        try:
+            self._open_character_references()
+            if self.character_dialog is not None:
+                self.character_dialog.load_history_traits(entry.character_traits)
+        except (OSError, ValueError, RuntimeError) as exc:
+            messagebox.showerror("キャラ特徴の復元", str(exc))
 
     def _restore_selected_history_request(self) -> None:
         """Replace only the editable request, without restoring generation settings."""
@@ -1836,10 +1858,7 @@ class Application:
             self.character_references = entry.character_references
             self.character_traits = entry.character_traits or ""
             self.character_analysis = entry.character_analysis
-            self.character_status.set(
-                f"確定: {len(entry.character_references)}枚"
-                if self.character_traits else "キャラ参照"
-            )
+            self.character_status.set(character_status_label(self.character_references, self.character_traits))
         if entry.kind == "t2i" and entry.prompt_profile in T2I_PROFILE_LABELS:
             self.t2i_profile.set(T2I_PROFILE_LABELS[entry.prompt_profile])
         elif (
@@ -1939,6 +1958,8 @@ class Application:
         self.new_seed_button.configure(state="disabled")
         if hasattr(self, "history_request_button"):
             self.history_request_button.configure(state="disabled")
+        if hasattr(self, "history_character_button"):
+            self.history_character_button.configure(state="disabled")
         if hasattr(self, "history_restore_button"):
             self.history_restore_button.configure(state="disabled")
             self.history_tools.pack_forget()
@@ -2302,7 +2323,7 @@ class Application:
         ttk.Button(bottom, text="閉じる", command=popup.destroy).pack(side="right")
         num = len(details.get("character_references") or ())
         ttk.Label(
-            popup, text=f"生成に採用した特徴 / 参照画像 {num}枚",
+            popup, text=f"生成に採用した特徴 / 参照画像 {num}枚" if num else "生成に採用した特徴 / 文章のみ",
             style="Muted.TLabel",
         ).pack(anchor="w", padx=10, pady=(8, 4))
         content = ttk.Panedwindow(popup, orient="vertical")
@@ -2390,7 +2411,20 @@ class Application:
             on_confirm=self._approve_character_traits,
             on_clear=self._clear_character_traits,
             on_revise=self._request_character_revision,
+            on_history=self._choose_character_history,
+            feature_store=self.character_feature_store,
         )
+
+    def _choose_character_history(self, dialog):
+        if self.working or self.character_analysis_running:
+            return
+        try:
+            entries = self.history_store.list_character_entries()
+            traits = choose_history_traits(dialog.window, entries)
+            if traits is not None:
+                dialog.load_history_traits(traits)
+        except (OSError, ValueError, RuntimeError, sqlite3.Error) as exc:
+            messagebox.showerror("キャラ特徴の復元", str(exc), parent=dialog.window)
 
     def _request_character_analysis(
         self, paths: tuple[Path, ...], dialog: CharacterReferenceWindow,
@@ -2464,18 +2498,19 @@ class Application:
         threading.Thread(target=task, daemon=True).start()
 
     def _approve_character_traits(
-        self, paths: tuple[Path, ...], analysis: dict, traits: str,
+        self, paths: tuple[Path, ...], analysis: dict | None, traits: str,
     ) -> None:
-        paths = validate_character_images(paths)
-        traits = normalize_character_traits(traits)
+        if self.working or self.character_analysis_running:
+            raise core.OrchestratorError("現在の処理が終了してからキャラ特徴を確定してください")
+        paths, traits = validate_character_selection(paths, analysis, traits)
         # Persist first. If it fails, keep the previous accepted sheet intact.
         save_character_sheet(ROOT, paths, analysis, traits)
         self.character_references = paths
         self.character_analysis = copy.deepcopy(analysis)
         self.character_traits = traits
-        self.character_status.set(f"キャラ参照 · {len(paths)}枚")
+        self.character_status.set(character_status_label(paths, traits))
         self.status.set("キャラ特徴を確定しました。次のT2I/I2Iから反映します")
-        self._log(f"キャラ特徴確定: {len(paths)}枚（生成プロンプトへ反映）")
+        self._log(f"キャラ特徴確定: {'文章のみ' if analysis is None else str(len(paths)) + '枚'}（生成プロンプトへ反映）")
 
     def _clear_character_traits(self) -> None:
         clear_character_sheet(ROOT)
@@ -2824,10 +2859,7 @@ class Application:
         )
         if approved_traits:
             try:
-                validate_character_images(approved_images)
-                normalize_character_traits(approved_traits)
-                if not isinstance(approved_analysis, dict):
-                    raise core.OrchestratorError("キャラ参照の承認情報がありません")
+                validate_character_selection(approved_images, approved_analysis, approved_traits)
             except (OSError, ValueError, core.OrchestratorError) as exc:
                 messagebox.showerror("キャラ参照", str(exc))
                 return

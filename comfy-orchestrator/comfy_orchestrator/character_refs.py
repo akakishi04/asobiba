@@ -400,23 +400,41 @@ def normalize_approved(text: str) -> str:
 
 
 
+def validate_character_selection(images, analysis, approved):
+    """A confirmed text-only sheet is valid without any visual evidence."""
+    from .core import OrchestratorError
+
+    clean = normalize_approved(approved)
+    if analysis is None:
+        if images:
+            raise OrchestratorError("文章のみのキャラ特徴には分析済み画像を関連付けられません")
+        return (), clean
+    if not isinstance(analysis, dict):
+        raise OrchestratorError("キャラ特徴の根拠が不正です")
+    return validate_images(images), clean
+
+
+def character_status_label(images, traits):
+    if not traits:
+        return "キャラ参照"
+    return f"キャラ参照 · {len(images)}枚" if images else "キャラ参照 · 文章のみ"
+
+
 def save_character_sheet(
-    root: Path, images: tuple[Path, ...], analysis: dict, approved: str,
+    root: Path, images: tuple[Path, ...], analysis: dict | None, approved: str,
 ) -> None:
     """Persist the last explicitly approved sheet locally (not in git)."""
     from .core import OrchestratorError
 
-    paths = validate_images(images)
-    clean = normalize_approved(approved)
-    if not isinstance(analysis, dict):
-        raise OrchestratorError("キャラ特徴の根拠がありません")
-    analysis = normalize_analysis(analysis.get("observations", []), analysis)
+    paths, clean = validate_character_selection(images, analysis, approved)
+    if analysis is not None:
+        analysis = normalize_analysis(analysis.get("observations", []), analysis)
     file = Path(root) / "data" / "character_sheet.json"
     file.parent.mkdir(parents=True, exist_ok=True)
     tmp = file.with_suffix(".tmp")
     try:
         tmp.write_text(json.dumps({
-            "version": 1,
+            "version": 1 if analysis is not None else 2,
             "images": [str(path) for path in paths],
             "analysis": analysis,
             "approved_traits": clean,
@@ -433,10 +451,14 @@ def load_character_sheet(root: Path) -> tuple[tuple[Path, ...], dict | None, str
         return (), None, ""
     try:
         value = json.loads(file.read_text(encoding="utf-8"))
-        if not isinstance(value, dict) or value.get("version") != 1:
+        if not isinstance(value, dict) or value.get("version") not in (1, 2):
             raise ValueError("unexpected version")
-        paths = validate_images(value["images"])
         analysis = value["analysis"]
+        if value["version"] == 2:
+            if value["images"] != [] or analysis is not None:
+                raise ValueError("invalid text-only sheet")
+            return (), None, normalize_approved(value["approved_traits"])
+        paths = validate_images(value["images"])
         approved = normalize_approved(value["approved_traits"])
         if not isinstance(analysis, dict):
             raise ValueError("invalid analysis")

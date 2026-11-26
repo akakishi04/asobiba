@@ -142,12 +142,14 @@ class HistoryStore:
             not isinstance(prompt_profile, str) or len(prompt_profile) > 64
         ):
             raise HistoryError("プロンプト方式が不正です")
-        from .character_refs import validate_images, normalize_approved
+        from .character_refs import validate_character_selection
         if character_references or character_traits is not None or character_analysis is not None:
-            if not character_references or character_traits is None or not isinstance(character_analysis, dict):
-                raise HistoryError("キャラ参照履歴には画像・確定特徴・分析結果が必要です")
-            refs = validate_images(character_references)
-            approved = normalize_approved(character_traits)
+            if character_traits is None:
+                raise HistoryError("キャラ参照履歴には確定特徴が必要です")
+            try:
+                refs, approved = validate_character_selection(character_references, character_analysis, character_traits)
+            except (ValueError, RuntimeError, TypeError, OSError) as exc:
+                raise HistoryError(str(exc)) from exc
             character_data_json = json.dumps(
                 {"approved_traits": approved, "analysis": character_analysis},
                 ensure_ascii=False,
@@ -261,7 +263,9 @@ class HistoryStore:
             if character_data is not None and (
                 not isinstance(character_data, dict)
                 or not isinstance(character_data.get("approved_traits"), str)
-                or not isinstance(character_data.get("analysis"), dict)
+                or (character_data.get("analysis") is not None
+                    and not isinstance(character_data.get("analysis"), dict))
+                or (bool(characters) != (character_data.get("analysis") is not None))
             ):
                 raise ValueError("invalid character sheet")
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
@@ -293,6 +297,26 @@ class HistoryStore:
                 (limit,),
             ).fetchall()
         return [self._read_row(row) for row in rows]
+
+    def list_character_entries(self, limit: int = 200) -> list[HistoryEntry]:
+        """Confirmed character text, even if its original images are missing."""
+        if not isinstance(limit, int) or not 1 <= limit <= 2000:
+            raise HistoryError("履歴の取得件数は1～2000です")
+        with self._connection() as con:
+            rows = con.execute(
+                "SELECT * FROM generations WHERE character_data_json IS NOT NULL "
+                "ORDER BY created_at DESC, id DESC LIMIT ?", (limit,),
+            ).fetchall()
+        entries = []
+        from .character_refs import normalize_approved
+        for row in rows:
+            try:
+                entry = self._read_row(row)
+                normalize_approved(entry.character_traits)
+                entries.append(entry)
+            except (ValueError, TypeError, RuntimeError, OSError):
+                continue
+        return entries
 
     def get(self, entry_id: str) -> HistoryEntry | None:
         with self._connection() as con:
