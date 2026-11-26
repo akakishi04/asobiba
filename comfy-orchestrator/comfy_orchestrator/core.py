@@ -19,7 +19,9 @@ from typing import Any, Callable
 
 
 from .parameters import OrchestratorError, PARAMS, check_param
-from .jobs import JobJournal, JobCancellationRequested, JobExecutionFailed, run_job
+from .jobs import (JobJournal, JobCancellationRequested, JobExecutionFailed,
+                   JobSubmissionRejected, run_job)
+from .input_snapshot import freeze_generation_inputs
 from .prompt_cache import PromptCache, CACHE_ERRORS, make_cache_key
 from .h3 import (
     H3_MODELS,
@@ -178,6 +180,13 @@ def http_json(base: str, route: str, payload: Any = None, timeout: float = 60, a
     return _open_json(request, timeout, allow_empty)
 
 
+class APIHTTPError(OrchestratorError):
+    def __init__(self, status: int, url: str, reason: str):
+        self.status = status
+        self.reason = reason
+        super().__init__(f"HTTP {status}: {url}: {reason}")
+
+
 def _open_json(request: urllib.request.Request, timeout: float, allow_empty: bool = False) -> dict:
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -185,7 +194,7 @@ def _open_json(request: urllib.request.Request, timeout: float, allow_empty: boo
             result = json.loads(body) if body else ({} if allow_empty else None)
     except urllib.error.HTTPError as exc:
         reason = exc.read(1200).decode("utf-8", errors="replace")
-        raise OrchestratorError(f"HTTP {exc.code}: {request.full_url}: {reason}") from exc
+        raise APIHTTPError(exc.code, request.full_url, reason) from exc
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
         raise OrchestratorError(f"API接続またはJSONの読み込みに失敗: {request.full_url}: {exc}") from exc
     if not isinstance(result, dict):
@@ -501,6 +510,13 @@ class ComfyUI:
         self.poll = _positive_number(settings.get("poll_seconds"), "comfyui.poll_seconds", 2)
         self.wait_timeout = _positive_number(settings.get("generation_timeout_seconds"), "comfyui.generation_timeout_seconds", 1800)
 
+    def queue_is_idle(self) -> bool:
+        queue = http_json(self.base, "/queue", timeout=self.timeout)
+        for field in ("queue_running", "queue_pending"):
+            if not isinstance(queue.get(field), list):
+                raise OrchestratorError("ComfyUIのキュー応答が不正です")
+        return not queue["queue_running"] and not queue["queue_pending"]
+
     def free_if_idle(self) -> None:
         queue = http_json(self.base, "/queue", timeout=self.timeout)
         if queue.get("queue_running") or queue.get("queue_pending"):
@@ -659,7 +675,14 @@ class ComfyUI:
         payload = {"prompt": workflow}
         if prompt_id is not None:
             payload["prompt_id"] = prompt_id
-        result = http_json(self.base, "/prompt", payload, self.timeout)
+        try:
+            result = http_json(self.base, "/prompt", payload, self.timeout)
+        except APIHTTPError as exc:
+            # HTTP validation rejection at submission differs from transport
+            # failures or errors while waiting for an accepted prompt.
+            if exc.status in (400, 422):
+                raise JobSubmissionRejected(str(exc)) from exc
+            raise
         prompt_id = result.get("prompt_id")
         if not isinstance(prompt_id, str) or not prompt_id:
             raise OrchestratorError(f"ComfyUIがワークフローを受理しませんでした: {result}")
@@ -719,6 +742,7 @@ class ComfyUI:
         raise OrchestratorError(f"生成結果の待機がタイムアウトしました。ComfyUIで確認してください: prompt_id={prompt_id}")
 
 
+@freeze_generation_inputs
 def execute(
     config: dict, config_path: Path, request: str, image: Path | None = None,
     dry_run: bool = False, selected_workflow: str | None = None,
@@ -1026,6 +1050,7 @@ def execute(
     }
 
 
+@freeze_generation_inputs
 def execute_saved(
     config: dict, config_path: Path, workflow_id: str, parameters: dict,
     reference_image: Path | None = None, new_seed: bool = False,

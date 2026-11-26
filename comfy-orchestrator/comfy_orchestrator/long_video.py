@@ -12,7 +12,7 @@ from fractions import Fraction
 from pathlib import Path
 
 from . import core
-from .jobs import JobCancellationRequested, JobExecutionFailed
+from .jobs import JobCancellationRequested, JobExecutionFailed, UnknownLongJob
 from .timeline import (validate_prompt_plan, prompt_for_segment, validate_cut_frames,
                        generation_frames_for_cuts)
 
@@ -346,7 +346,7 @@ def series_records(journal, run_id, index, backend):
     return sorted(records, key=lambda r: r["created_at"], reverse=True)
 
 
-def existing_result(journal, comfy, manifest, index, cancel_event):
+def existing_result(journal, comfy, manifest, index, cancel_event, *, confirm_unknown=None):
     matches = series_records(journal, manifest["run_id"], index, comfy.base)
     if not matches:
         return None
@@ -375,13 +375,18 @@ def existing_result(journal, comfy, manifest, index, cancel_event):
             # server has no running/pending job for this ID.
             journal.update(record["job_id"], state="failed", error="cancelled; no active job")
             return None
-        raise core.OrchestratorError("前回ジョブの状態が不明です。重複生成を防ぐため再投入しません: " + record["prompt_id"])
+        if confirm_unknown is not None and confirm_unknown(record):
+            if journal.abandon_unknown(comfy, record["job_id"]):
+                return None
+            raise core.OrchestratorError("ジョブの状態が変化したか、ComfyUIに実行・待機ジョブがあります。再度長尺再開してください")
+        raise UnknownLongJob(record)
     return {"job_id": record["job_id"], "prompt_id": record["prompt_id"],
             "parameters": record["parameters"], "outputs": info.get("outputs", {})}
 
 
 def run_long_video(store, manifest, config, config_path, journal, output_dir,
-                   download, progress=None, cancel_event=None, prompt_cache=None, media=None):
+                   download, progress=None, cancel_event=None, prompt_cache=None, media=None,
+                   confirm_unknown=None):
     """Run or resume exactly one sequential series; no LLM between segments."""
     media = media or FFmpeg()
     backend = config["comfyui"]["base_url"].rstrip("/")
@@ -415,7 +420,8 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
         check_cancel(cancel_event)
         if progress:
             progress(f"長尺生成 {i + 1}/{len(plan)}")
-        result = existing_result(journal, comfy, manifest, i, cancel_event)
+        result = existing_result(journal, comfy, manifest, i, cancel_event,
+                                 confirm_unknown=confirm_unknown)
         if result is None:
             if prompt_plan is not None:
                 image = source
@@ -470,7 +476,7 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
                                      "job_id": result["job_id"], "prompt_id": result["prompt_id"],
                                      "parameters": result["parameters"], "frames": info["frames"]})
         store.save(manifest)
-        journal.update(result["job_id"], state="collected")
+        journal.update(result["job_id"], state="collected", collection_state="collected")
         clips.append((clip, info))
     check_cancel(cancel_event)
     output = Path(output_dir) / f"long_{manifest['run_id']}.mp4"

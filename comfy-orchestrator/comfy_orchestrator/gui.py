@@ -7,6 +7,7 @@ No third-party GUI dependencies.
 from __future__ import annotations
 
 import copy
+import hashlib
 from dataclasses import replace
 import json
 import os
@@ -167,6 +168,19 @@ def output_images(result: dict) -> list[dict]:
     return [m for m in output_media(result) if Path(m["filename"]).suffix.lower() in IMAGE_EXTENSIONS]
 
 
+def output_destination(metadata: dict, prompt_id: str, directory: Path) -> Path:
+    """Stable local filename used for both output reservation and atomic download."""
+    parameters = {key: metadata[key] for key in ("filename", "subfolder", "type")}
+    safe_name = Path(metadata["filename"].replace("\\", "/")).name
+    suffix = Path(safe_name).suffix.lower()
+    if suffix not in IMAGE_EXTENSIONS | VIDEO_EXTENSIONS:
+        raise core.OrchestratorError("未対応の出力形式です")
+    prefix = "".join(c for c in prompt_id[:16] if c.isalnum() or c in "-_") or "output"
+    identity = json.dumps([prompt_id, parameters], sort_keys=True, ensure_ascii=False)
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
+    return directory / (prefix + "_" + digest + "_" + Path(safe_name).stem[:100] + suffix)
+
+
 def save_output_image(base_url: str, metadata: dict, prompt_id: str, *, output_dir=None) -> Path:
     """Download a bounded image or video atomically into the local outputs directory."""
     parameters = {key: metadata[key] for key in ("filename", "subfolder", "type")}
@@ -178,8 +192,7 @@ def save_output_image(base_url: str, metadata: dict, prompt_id: str, *, output_d
     url = base_url.rstrip("/") + "/view?" + urllib.parse.urlencode(parameters)
     directory = OUTPUTS if output_dir is None else Path(output_dir)
     directory.mkdir(parents=True, exist_ok=True)
-    prefix = "".join(c for c in prompt_id[:16] if c.isalnum() or c in "-_") or "output"
-    destination = directory / (prefix + "_" + safe_name)
+    destination = output_destination(metadata, prompt_id, directory)
     temporary = destination.with_suffix(destination.suffix + ".part")
     total = 0
     try:
@@ -198,6 +211,67 @@ def save_output_image(base_url: str, metadata: dict, prompt_id: str, *, output_d
     finally:
         temporary.unlink(missing_ok=True)
     return destination
+
+
+def collect_generation_outputs(base_url, result, kind, *, journal=None, cancel_event=None):
+    """Checkpoint all supported files; partial downloads are never collected."""
+    job_id = result.get("job_id") if journal is not None else None
+    downloads = {}
+    reserved = {}
+    if job_id:
+        record = journal.read(job_id)
+        stored = record.get("downloaded_outputs", {})
+        if isinstance(stored, dict):
+            downloads = dict(stored)
+        stored = record.get("reserved_outputs", {})
+        if isinstance(stored, dict):
+            reserved = dict(stored)
+    output_root = OUTPUTS.resolve()
+    images = []
+    try:
+        entries = output_media(result)
+        if not entries:
+            raise core.OrchestratorError("生成結果に回収できる出力がありません")
+        if job_id:
+            for item in entries:
+                identity = json.dumps(item, sort_keys=True, ensure_ascii=False)
+                reserved[identity] = output_destination(item, result["prompt_id"], output_root).relative_to(output_root).as_posix()
+            # Reserve before any atomic rename so legacy indexing cannot claim a partial collection.
+            journal.update(job_id, reserved_outputs=reserved)
+        for item in entries:
+            if cancel_event is not None and cancel_event.is_set():
+                raise core.OrchestratorError("出力回収を中断しました")
+            identity = json.dumps(item, sort_keys=True, ensure_ascii=False)
+            cached = downloads.get(identity)
+            path = None
+            if isinstance(cached, str):
+                candidate = (output_root / cached).resolve()
+                if candidate.is_relative_to(output_root) and candidate.is_file() and candidate.stat().st_size > 0:
+                    path = candidate
+            if path is None:
+                path = save_output_image(base_url, item, result["prompt_id"]).resolve()
+                if not path.is_relative_to(output_root) or not path.is_file() or path.stat().st_size <= 0:
+                    raise core.OrchestratorError("出力ファイルの保存結果が不正です")
+                downloads[identity] = path.relative_to(output_root).as_posix()
+                if job_id:
+                    journal.update(job_id, collection_state="downloading", downloaded_outputs=downloads)
+            images.append(path)
+        if kind in core.VIDEO_KINDS and not any(is_video_output(path) for path in images):
+            raise core.OrchestratorError("動画出力がありません")
+        if kind not in core.VIDEO_KINDS and not any(path.suffix.lower() in IMAGE_EXTENSIONS for path in images):
+            raise core.OrchestratorError("画像出力がありません")
+        if job_id:
+            journal.update(job_id, collection_state="downloaded", downloaded_outputs=downloads,
+                           collection_error=None)
+        return images
+    except Exception as exc:
+        if job_id:
+            journal.update(job_id, collection_state="download_failed", downloaded_outputs=downloads,
+                           collection_error=str(exc))
+        raise core.OrchestratorError(
+            "ComfyUIでの生成は完了しましたが、出力回収に失敗しました。"
+            "「未回収結果を取得」で再試行してください: " + str(exc)
+        ) from exc
 
 
 def resolve_generation_workflow(
@@ -1905,8 +1979,21 @@ class Application:
     ) -> str | None:
         if not images:
             return None
+        job_id = result.get("job_id")
         try:
             workflow_id = result["workflow_id"]
+            if job_id:
+                record = self.job_journal.read(job_id)
+                ctx = self.job_journal.context_for_history(record)
+                request_text = ctx.get("request_text", request_text)
+                source_image = ctx["reference_image"]
+                mask_image = ctx["mask_image"]
+                pose_image = ctx["pose_image"]
+                composition_image = ctx["composition_image"]
+                prompt_profile = ctx.get("prompt_profile", prompt_profile)
+                character_references = ctx["character_references"]
+                character_traits = ctx.get("character_traits")
+                character_analysis = ctx.get("character_analysis")
             entry = self.history_store.record(
                 prompt_id=result["prompt_id"],
                 workflow_id=workflow_id,
@@ -1925,12 +2012,18 @@ class Application:
             )
             if result.get("job_id") and hasattr(self, "job_journal"):
                 try:
-                    self.job_journal.update(result["job_id"], state="collected", history_id=entry.id)
+                    self.job_journal.update(result["job_id"], state="collected",
+                                            collection_state="collected", history_id=entry.id)
                 except (OSError, ValueError, core.OrchestratorError) as exc:
                     self.messages.put(("progress", f"ジョブ記録の更新に失敗: {exc}"))
             return entry.id
-        except (HistoryError, OSError, ValueError, sqlite3.Error) as exc:
-            self.messages.put(("progress", f"履歴保存に失敗しました（画像は保持）: {exc}"))
+        except (HistoryError, OSError, ValueError, sqlite3.Error, core.OrchestratorError) as exc:
+            if job_id:
+                try:
+                    self.job_journal.update(job_id, collection_state="history_failed", collection_error=str(exc))
+                except (OSError, ValueError, core.OrchestratorError):
+                    pass
+            self.messages.put(("progress", f"履歴保存に失敗しました（出力は保持）: {exc}"))
             return None
 
     def _set_busy(self, label: str) -> None:
@@ -2008,18 +2101,10 @@ class Application:
                                  "character_analysis": entry.character_analysis
                                  if all(p.is_file() for p in entry.character_references) else None},
                 )
-                images = []
-                for item in output_media(result):
-                    try:
-                        images.append(
-                            save_output_image(
-                                cfg["comfyui"]["base_url"], item, result["prompt_id"]
-                            )
-                        )
-                    except Exception as exc:
-                        self.messages.put(("progress", f"出力取得エラー: {exc}"))
-                if entry.kind in core.VIDEO_KINDS and not any(is_video_output(p) for p in images):
-                    raise core.OrchestratorError("動画を取得できません。ComfyUIのoutput/videoを確認してください")
+                images = collect_generation_outputs(
+                    cfg["comfyui"]["base_url"], result, entry.kind,
+                    journal=self.job_journal, cancel_event=self.stop_event,
+                )
                 history_id = self._record_completed_generation(
                     result, images, entry.request_text, entry.reference_image,
                     entry.mask_image, entry.pose_image,
@@ -2060,6 +2145,7 @@ class Application:
         config["comfyui"]["free_before_llm"] = self.free_comfy.get()
         opts = self._overrides()
         config["ui"] = {
+            **config.get("ui", {}),
             **opts,
             "workflow": self.workflow.get(),
             "dark_mode": self.dark_mode.get(),
@@ -2891,16 +2977,10 @@ class Application:
                     **({"character_traits": approved_traits}
                        if approved_traits else {}),
                 )
-                images = []
-                if not dry_run:
-                    for item in output_media(result):
-                        try:
-                            path = save_output_image(cfg["comfyui"]["base_url"], item, result["prompt_id"])
-                            images.append(path)
-                        except Exception as exc:
-                            self.messages.put(("progress", f"出力取得エラー: {exc}"))
-                if not dry_run and is_video and not any(is_video_output(p) for p in images):
-                    raise core.OrchestratorError("動画を取得できません。ComfyUIのoutput/videoを確認してください")
+                images = [] if dry_run else collect_generation_outputs(
+                    cfg["comfyui"]["base_url"], result, kind,
+                    journal=self.job_journal, cancel_event=self.stop_event,
+                )
                 history_id = (
                     self._record_completed_generation(
                         result, images, prompt, image, mask, pose, composition,
@@ -3003,6 +3083,16 @@ class Application:
             if not started:
                 self.messages.put(("idle", None))
 
+    def _confirm_unknown_long_job(self, record):
+        # Worker thread: dialog interaction stays on the Tk main thread.
+        answered = threading.Event()
+        decision = {"retry": False}
+        self.messages.put(("confirm_unknown_long_job", (record, answered, decision)))
+        while not answered.wait(0.2):
+            if self.stop_event.is_set():
+                return False
+        return decision["retry"] and not self.stop_event.is_set()
+
     def _complete_long_video(self, manifest, cfg, media, prompt_cache):
         def download(result, directory):
             videos = [item for item in output_media(result)
@@ -3017,6 +3107,7 @@ class Application:
             self.long_video_store, manifest, cfg, CONFIG, self.job_journal, OUTPUTS, download,
             progress=lambda line: self.messages.put(("progress", line)),
             cancel_event=self.stop_event, prompt_cache=prompt_cache, media=media,
+            confirm_unknown=self._confirm_unknown_long_job,
         )
         existing = self.history_store.find_by_prompt_id(result["prompt_id"])
         history_id = existing.id if existing else self._record_completed_generation(
@@ -3096,7 +3187,8 @@ class Application:
                         prompt_id = record["prompt_id"]
                         existing = self.history_store.find_by_prompt_id(prompt_id)
                         if existing is not None:
-                            self.job_journal.update(record["job_id"], state="collected", history_id=existing.id)
+                            self.job_journal.update(record["job_id"], state="collected",
+                                                    collection_state="collected", history_id=existing.id)
                             continue
                         state, info = self.job_journal.inspect(comfy, record)
                         if state != "completed":
@@ -3108,9 +3200,8 @@ class Application:
                                   "prompt_id": prompt_id, "workflow_id": record["workflow_id"],
                                   "kind": record["kind"], "parameters": record["parameters"],
                                   "outputs": info.get("outputs", {})}
-                        images = [save_output_image(comfy.base, item, prompt_id) for item in output_media(result)]
-                        if not images or (record["kind"] in core.VIDEO_KINDS and not any(is_video_output(p) for p in images)):
-                            raise core.OrchestratorError("回収できる出力がありません")
+                        images = collect_generation_outputs(comfy.base, result, record["kind"],
+                                                           journal=self.job_journal)
                         history_id = self._record_completed_generation(
                             result, images, context.get("request_text", ""),
                             context["reference_image"], context["mask_image"], context["pose_image"],
@@ -3147,6 +3238,18 @@ class Application:
                     self._log(data)
                 elif kind == "long_plan_ready":
                     self._finish_long_prompt_plan(*data)
+                elif kind == "confirm_unknown_long_job":
+                    record, answered, decision = data
+                    try:
+                        if not self.stop_event.is_set():
+                            decision["retry"] = messagebox.askyesno(
+                                "状態不明の長尺ジョブ",
+                                "前回ジョブの実行結果が確認できません。ComfyUI側に結果や待機・実行中のジョブがないことを確認してください。\n"
+                                "この記録を失敗扱いにして同じ区間を再生成しますか？\n"
+                                "以前に生成済みだった場合、再生成になる可能性があります。\n\nID: " + record["prompt_id"],
+                            )
+                    finally:
+                        answered.set()
                 elif kind == "character_analysis_done":
                     dialog, analysis = data
                     self.character_analysis_running = False
@@ -3230,7 +3333,10 @@ class Application:
                             self.result_tools.pack_forget()
                             self.open_button.configure(state="disabled")
                         self._log("生成完了: " + json.dumps(result.get("parameters", {}), ensure_ascii=False))
-                        self.status.set("動画生成完了" if any(is_video_output(p) for p in images) else "画像生成完了")
+                        if history_id is None:
+                            self.status.set("出力保存済み / 履歴未登録（未回収結果または長尺再開で回収）")
+                        else:
+                            self.status.set("動画生成完了" if any(is_video_output(p) for p in images) else "画像生成完了")
                         self.tabs.select(0)
                         self._refresh_history(select_id=history_id, scan_legacy=False)
                 elif kind == "error":

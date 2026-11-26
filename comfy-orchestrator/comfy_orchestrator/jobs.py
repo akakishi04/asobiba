@@ -23,6 +23,18 @@ class JobExecutionFailed(OrchestratorError):
     """The server reported an execution failure."""
 
 
+class JobSubmissionRejected(JobExecutionFailed):
+    """ComfyUI explicitly rejected the prompt before queueing it."""
+
+
+class UnknownLongJob(OrchestratorError):
+    """A previous long-video submission has no provable outcome."""
+    def __init__(self, record):
+        self.job_id = record["job_id"]
+        self.prompt_id = record["prompt_id"]
+        super().__init__("前回ジョブの状態が不明です。再投入には確認が必要です: " + self.prompt_id)
+
+
 def _now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -92,6 +104,7 @@ class JobJournal:
             record = {
                 "schema": 1, "job_id": job_id, "prompt_id": job_id,
                 "backend": backend.rstrip("/"), "state": "submitting",
+                "collection_state": "pending",
                 "created_at": _now(), "updated_at": _now(),
                 "workflow_id": workflow_id, "kind": kind,
                 "parameters": parameters, "graph": graph, "context": snapshot,
@@ -121,6 +134,21 @@ class JobJournal:
             if record["backend"] == backend.rstrip("/") and record["state"] not in TERMINAL:
                 records.append(record)
         return sorted(records, key=lambda r: r["created_at"])
+
+    def abandon_unknown(self, comfy, job_id: str) -> bool:
+        """Only after explicit operator approval and two server checks."""
+        record = self.read(job_id)
+        if record["state"] in TERMINAL:
+            return False
+        state, _ = self.inspect(comfy, record)
+        if state != "unknown" or not comfy.queue_is_idle():
+            return False
+        state, _ = self.inspect(comfy, record)
+        if state != "unknown":
+            return False
+        self.update(job_id, state="failed", error="operator abandoned unresolved submission",
+                    failure_kind="operator_abandoned")
+        return True
 
     def context_for_history(self, record: dict) -> dict:
         folder = self._folder(record["job_id"])
@@ -188,6 +216,9 @@ def run_job(comfy, graph: dict, workflow_id: str, kind: str, parameters: dict,
             state = ("cancel_requested" if isinstance(exc, JobCancellationRequested) else
                      "failed" if isinstance(exc, JobExecutionFailed) else "unknown")
             # Ambiguous network failures are deliberately not classified as failed.
-            journal.update(record["job_id"], state=state, error=str(exc),
+            kind = ("submission_rejected" if isinstance(exc, JobSubmissionRejected) else
+                    "execution_failed" if isinstance(exc, JobExecutionFailed) else
+                    "cancel_requested" if isinstance(exc, JobCancellationRequested) else "uncertain")
+            journal.update(record["job_id"], state=state, error=str(exc), failure_kind=kind,
                            elapsed_seconds=round(time.monotonic() - start, 3))
         raise

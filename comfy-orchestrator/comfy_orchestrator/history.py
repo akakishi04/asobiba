@@ -323,6 +323,19 @@ class HistoryStore:
                 indexed.update(json.loads(row["images_json"]))
             except (ValueError, TypeError):
                 continue
+        # Incomplete journaled collections belong to their original generation.
+        # Do not import their files as unrelated legacy entries after a restart.
+        for record_path in (self.data / "jobs").glob("*/record.json"):
+            try:
+                record = json.loads(record_path.read_text(encoding="utf-8"))
+                if not isinstance(record, dict):
+                    continue
+                for field in ("downloaded_outputs", "reserved_outputs"):
+                    values = record.get(field)
+                    if isinstance(values, dict):
+                        indexed.update(value for value in values.values() if isinstance(value, str))
+            except (OSError, ValueError, TypeError):
+                continue
         imported = 0
         candidates = []
         for f in self.outputs.iterdir():
