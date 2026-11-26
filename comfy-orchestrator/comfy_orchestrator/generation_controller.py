@@ -10,6 +10,7 @@ from pathlib import Path
 from . import core, output_collection
 from .history import HistoryError
 from .jobs import JobCancellationRequested
+from .timing import observe
 from .long_video import LongVideoPaused, run_long_video
 
 
@@ -220,7 +221,9 @@ class GenerationController:
 def worker_events(operation, emit, *, done_event="done", long_video=False):
     """Consistent worker terminal events; operation must not access Tk widgets."""
     try:
-        emit((done_event, operation()))
+        with observe(emit):
+            result = operation()
+        emit((done_event, result))
     except JobCancellationRequested as exc:
         if long_video:
             emit(("progress", str(exc) + " / 長尺再開から続行できます"))

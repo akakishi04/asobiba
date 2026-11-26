@@ -15,6 +15,7 @@ import shutil
 import sqlite3
 import threading
 import tempfile
+import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -24,7 +25,10 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 from . import core, output_collection
 from .generation_controller import GenerationController, record_history, worker_events, active_aux_inputs
 from .generation_runtime import preflight_long
-from .model_runtime import release_comfy_before_llm
+from .model_runtime import release_comfy_before_llm, memory_stats
+from .timing import format_elapsed
+from .storage_report import storage_report
+from .operations_ui import OperationsWindow
 from .output_collection import output_media, output_images, output_destination
 from .comparison import ComparisonWindow
 from .history import HistoryStore, HistoryEntry, HistoryError
@@ -557,6 +561,14 @@ class Application:
         self.free_comfy = tk.BooleanVar(value=comfy.get("free_before_llm", True))
         self._mode_settings = ModeSettings(self, mode, options.get("mode_settings"))
         self.status = tk.StringVar(value="準備完了")
+        self.timing_status = tk.StringVar(value="")
+        self._operation_started = None
+        self._estimate = None
+        self._timing_label = ""
+        self._timing_at = 0.0
+        self._last_timing_update = 0.0
+        self._operations_window = None
+        self._operations_pending = False
         self.result_info = tk.StringVar(value="")
         self.character_status = tk.StringVar(
             value=f"キャラ参照 · {len(self.character_references)}枚"
@@ -610,6 +622,8 @@ class Application:
         self.recover_jobs_button.pack(side="left", padx=(0, 6))
         self.free_memory_button = ttk.Button(settings_actions, text="生成モデル解放", command=self._release_comfy_memory)
         self.free_memory_button.pack(side="right", padx=(0, 6))
+        ttk.Button(connection, text="運用情報・保存容量", command=self._show_operations).grid(
+            row=5, column=0, columnspan=2, sticky="ew", pady=(4, 0))
 
         # Keep the generation tabs and their own workflow selectors above the
         # shared editor/result area, outside the scrollable option form.
@@ -654,6 +668,7 @@ class Application:
         self.log_toggle.pack(side="right", padx=(8, 0))
         self.progress_bar = ttk.Progressbar(status_bar, mode="indeterminate", length=125)
         self.progress_bar.pack(side="right")
+        ttk.Label(footer, textvariable=self.timing_status, anchor="w").pack(side="bottom", fill="x")
         # Hidden on startup: logs remain buffered, without consuming screen height.
         self.logs_panel = ttk.LabelFrame(footer, text="実行ログ", padding=5)
         self.log = scrolledtext.ScrolledText(
@@ -1902,6 +1917,12 @@ class Application:
     def _set_busy(self, label: str) -> None:
         self.stop_event.clear()
         self.working = True
+        self._operation_started = time.monotonic()
+        self._estimate = None
+        self._timing_label = ""
+        self._last_timing_update = 0.0
+        if hasattr(self, "timing_status"):
+            self.timing_status.set("経過 00:00")
         if hasattr(self, "project_workspace"):
             self.project_workspace.set_enabled(False)
         for name in ("result_video", "history_video"):
@@ -2593,6 +2614,66 @@ class Application:
         threading.Thread(target=task, daemon=True).start()
         self._log("LM Studioのモデル一覧を取得中...")
 
+    def _tick_timing(self, *, finished=False):
+        if not hasattr(self, "timing_status") or self._operation_started is None:
+            return
+        now = time.monotonic()
+        if not finished and now - self._last_timing_update < 0.8:
+            return
+        self._last_timing_update = now
+        elapsed = format_elapsed(now - self._operation_started)
+        if finished:
+            self.timing_status.set("処理時間 " + elapsed)
+            self._operation_started = None
+            self._estimate = None
+            self._timing_label = ""
+            return
+        text = "経過 " + elapsed
+        if self._timing_label:
+            text += " / " + self._timing_label
+        if self._estimate is not None:
+            remaining = self._estimate.seconds - (now - self._timing_at)
+            text += (" 約" + format_elapsed(remaining) if remaining > 0 else " 推定超過")
+            text += f" (実測{self._estimate.samples}件" + ("・尺換算)" if self._estimate.scaled else ")")
+        elif self._timing_label in ("生成待ち", "残カット生成待ち"):
+            text += " 計測中"
+        if self.timing_status.get() != text:
+            self.timing_status.set(text)
+
+    def _show_operations(self):
+        if self._operations_window is None or not self._operations_window.is_open():
+            self._operations_window = OperationsWindow(
+                self.root, ROOT, on_refresh=self._refresh_operations, on_clear_cache=self._clear_operations_cache,
+            )
+        self._operations_window.window.lift()
+        self._refresh_operations()
+
+    def _clear_operations_cache(self):
+        if self.working or self.character_analysis_running:
+            messagebox.showwarning("キャッシュ", "処理終了後に削除してください")
+            return
+        if messagebox.askyesno("キャッシュ削除", "解釈キャッシュを削除しますか？生成済みデータには影響しません。"):
+            self._clear_prompt_cache()
+            self._refresh_operations()
+
+    def _refresh_operations(self):
+        if self._operations_pending:
+            return
+        self._operations_pending = True
+
+        def task():
+            try:
+                report = storage_report(ROOT)
+                try:
+                    cache = self.prompt_cache.stats()
+                except CACHE_ERRORS:
+                    cache = None
+                self.messages.put(("operations_report", (report, cache, memory_stats())))
+            except Exception as exc:
+                self.messages.put(("operations_error", str(exc)))
+
+        threading.Thread(target=task, daemon=True).start()
+
     def _clear_prompt_cache(self) -> None:
         if self.working:
             self.status.set("生成終了後にキャッシュを削除してください")
@@ -3013,6 +3094,21 @@ class Application:
                     else:
                         self.status.set(data)
                     self._log(data)
+                elif kind == "timing":
+                    self._estimate = data["estimate"]
+                    self._timing_label = data["label"]
+                    self._timing_at = data["at"]
+                    self._last_timing_update = 0.0
+                    self._tick_timing()
+                elif kind == "operations_report":
+                    self._operations_pending = False
+                    if self._operations_window is not None and self._operations_window.is_open():
+                        self._operations_window.update(*data)
+                elif kind == "operations_error":
+                    self._operations_pending = False
+                    self._log("運用情報の取得失敗: " + data)
+                    if self._operations_window is not None and self._operations_window.is_open():
+                        self._operations_window.summary.set("取得失敗: " + data[:180])
                 elif kind == "projects_loaded":
                     serial, projects, preferred, open_preferred = data
                     if serial == self._project_refresh_serial:
@@ -3135,6 +3231,7 @@ class Application:
                     self.status.set("エラー: " + data[:110])
                     messagebox.showerror("処理エラー", data)
                 elif kind == "idle":
+                    self._tick_timing(finished=True)
                     self.working = False
                     if hasattr(self, "project_workspace"):
                         self.project_workspace.set_enabled(True)
@@ -3155,6 +3252,8 @@ class Application:
         except queue.Empty:
             pass
         if self.root.winfo_exists():
+            if self.working:
+                self._tick_timing()
             self.root.after(15 if not self.messages.empty() else 100, self._consume_messages)
 
     def _show_selected_image(self, _event=None) -> None:

@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .parameters import OrchestratorError
+from .asset_store import save_snapshot
+from .timing import TimingStore, report_estimate, ERRORS as TIMING_ERRORS
 
 ASSETS = ("reference_image", "mask_image", "pose_image", "composition_image")
 TERMINAL = frozenset({"collected", "failed"})
@@ -49,6 +51,7 @@ class JobJournal:
     def __init__(self, root: Path):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
+        self.timings = TimingStore(self.root.parent / "generation_timings.sqlite3")
 
     def _folder(self, job_id: str) -> Path:
         try:
@@ -92,7 +95,7 @@ class JobJournal:
                 if source.stat().st_size > 40 * 1024 * 1024:
                     raise OrchestratorError("ジョブの参照画像は40MB以下にしてください")
                 target = assets / (stem + source.suffix.lower())
-                shutil.copyfile(source, target)
+                save_snapshot(source, target, self.root.parent / "asset_pool")
                 return target.relative_to(folder).as_posix()
 
             for name in ASSETS:
@@ -127,10 +130,13 @@ class JobJournal:
         self._write(record)
         return record
 
+    def records(self):
+        for path in self.root.glob("*/record.json"):
+            yield self.read(path.parent.name)
+
     def recoverable(self, backend: str) -> list[dict]:
         records = []
-        for path in self.root.glob("*/record.json"):
-            record = self.read(path.parent.name)
+        for record in self.records():
             if record["backend"] == backend.rstrip("/") and record["state"] not in TERMINAL:
                 records.append(record)
         return sorted(records, key=lambda r: r["created_at"])
@@ -189,6 +195,14 @@ def run_job(comfy, graph: dict, workflow_id: str, kind: str, parameters: dict,
             context: dict | None = None) -> tuple[str, dict, dict]:
     """Shared submission/wait path for first-generation and history replay."""
     record = None
+    report_single = journal is not None and not (context or {}).get("long_run_id")
+    if report_single:
+        try:
+            journal.timings.bootstrap(journal.root)
+            estimate = journal.timings.estimate(comfy.base, workflow_id, parameters)
+        except TIMING_ERRORS:
+            estimate = None
+        report_estimate(estimate)
     start = time.monotonic()
     if journal is not None:
         record = journal.create(comfy.base, workflow_id, kind, parameters, graph, context)
@@ -210,6 +224,10 @@ def run_job(comfy, graph: dict, workflow_id: str, kind: str, parameters: dict,
             return prompt_id, history, {}
         journal.update(record["job_id"], state="completed", outputs=history.get("outputs", {}),
                        comfy_status=history.get("status", {}), elapsed_seconds=elapsed)
+        try:
+            journal.timings.record(record["job_id"], comfy.base, workflow_id, parameters, elapsed)
+        except TIMING_ERRORS:
+            pass  # Optional telemetry must never change a successful generation.
         return prompt_id, history, {"job_id": record["job_id"], "elapsed_seconds": elapsed}
     except Exception as exc:
         if record is not None:
@@ -222,3 +240,6 @@ def run_job(comfy, graph: dict, workflow_id: str, kind: str, parameters: dict,
             journal.update(record["job_id"], state=state, error=str(exc), failure_kind=kind,
                            elapsed_seconds=round(time.monotonic() - start, 3))
         raise
+    finally:
+        if report_single:
+            report_estimate(None, label="出力回収")

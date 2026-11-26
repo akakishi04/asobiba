@@ -17,6 +17,7 @@ from typing import Any, Callable
 from .core import OrchestratorError, _open_json, plan_schema, HOST_VIDEO_IDS, H3_I2V_ID, QWEN_IDS
 from .character_refs import observation_schema, intersection_schema, validate_images
 from .character_repair import repair_model_analysis
+from .model_runtime import record_model_event
 from .prompt_profiles import (
     DEFAULT_T2I_PROFILE, T2I_PROFILE_LEGACY,
     DEFAULT_I2I_PROFILE, I2I_PROFILE_LEGACY,
@@ -157,6 +158,7 @@ class LMStudio:
             instance_id = running[0].get("id") if isinstance(running[0], dict) else None
             if not instance_id:
                 raise OrchestratorError("LM StudioのモデルインスタンスIDを取得できません")
+            record_model_event("llm_reuses")
             return instance_id
 
         settings = {"model": self.model}
@@ -166,6 +168,7 @@ class LMStudio:
         loaded_id = result.get("instance_id", result.get("model_instance_id"))
         if result.get("status") != "loaded" or not isinstance(loaded_id, str) or not loaded_id:
             raise OrchestratorError(f"LM Studioのロード完了を確認できません: {result}")
+        record_model_event("llm_loads")
         return loaded_id
 
     def unload_selected(self, instance_id, progress=None, *, label="LM Studio: 選択モデルをアンロード"):
@@ -179,6 +182,7 @@ class LMStudio:
             raise OrchestratorError(
                 "LM Studioのアンロード完了を確認できません。VRAM空き容量を確認してください"
             )
+        record_model_event("llm_unloads")
 
     def interpret(
         self, text: str, workflows: dict, image: Path | None,

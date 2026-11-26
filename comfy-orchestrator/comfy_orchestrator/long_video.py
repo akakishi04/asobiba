@@ -8,6 +8,7 @@ import secrets
 import shutil
 import subprocess
 import tempfile
+import time
 import uuid
 from fractions import Fraction
 from pathlib import Path
@@ -16,7 +17,9 @@ from . import core
 from .jobs import JobCancellationRequested, JobExecutionFailed, UnknownLongJob
 from .timeline import (validate_prompt_plan, prompt_for_segment, validate_cut_frames,
                        generation_frames_for_cuts, segment_windows)
-from .input_snapshot import copy_frozen_asset
+from .asset_store import save_snapshot
+from .timing import report_estimate, ERRORS as TIMING_ERRORS
+from .project_lock import lock_project
 
 LONG_VIDEO_ID = "minimax_h3_long_video"
 LONG_TARGETS = {"単発": 0, "30秒": 30, "1分": 60, "2分": 120, "3分": 180, "5分": 300}
@@ -301,7 +304,8 @@ class LongVideoStore:
         folder = self.folder(run_id)
         folder.mkdir()
         try:
-            name = copy_frozen_asset(source, folder, "source").name
+            name = "source" + source.suffix.lower()
+            save_snapshot(source, folder / name, self.root.parent / "asset_pool")
             manifest = {"schema": 1, "run_id": run_id, "backend": backend.rstrip("/"),
                         "request": request, "profile": profile, "source": name,
                         "overrides": p, "seconds": seconds, "plan": plan,
@@ -376,6 +380,7 @@ def first_changed_cut(manifest, prompt_plan, cut_frames):
     return min(len(old_cuts), len(cut_frames)) if len(old_cuts) != len(cut_frames) else None
 
 
+@lock_project
 def edit_project(store, manifest, journal, prompt_plan, cut_frames, *, regenerate_from=None):
     """Create a revision with its unchanged generated prefix. Never remove old data.
 
@@ -479,20 +484,47 @@ def restore_project_plan(store, entry, fallback_backend):
     return manifest
 
 
-def series_records(journal, run_id, index, backend):
-    """Correlate durable job records even if the app died between submit/save."""
-    records = []
-    for path in journal.root.glob("*/record.json"):
-        record = journal.read(path.parent.name)
+def series_index(journal, run_id, backend):
+    """One journal scan per series execution, keyed by its stable cut index."""
+    indexed = {}
+    for record in journal.records():
         ctx = record.get("context", {})
         if (record["backend"] == backend.rstrip("/") and ctx.get("long_run_id") == run_id
-                and ctx.get("long_segment") == index and record["state"] != "failed"):
-            records.append(record)
-    return sorted(records, key=lambda r: r["created_at"], reverse=True)
+                and type(ctx.get("long_segment")) is int and record["state"] != "failed"):
+            indexed.setdefault(ctx["long_segment"], []).append(record)
+    for records in indexed.values():
+        records.sort(key=lambda r: r["created_at"], reverse=True)
+    return indexed
 
 
-def existing_result(journal, comfy, manifest, index, cancel_event, *, confirm_unknown=None):
-    matches = series_records(journal, manifest["run_id"], index, comfy.base)
+def series_records(journal, run_id, index, backend):
+    return series_index(journal, run_id, backend).get(index, [])
+
+
+def estimate_remaining(journal, manifest, config, start, plan, indexed=None):
+    """Approximate outstanding generation waits, not LLM, downloads or joining."""
+    try:
+        workflow = config.get("workflows", {}).get(core.H3_I2V_ID, {})
+        base = {**workflow.get("defaults", {}), **manifest["overrides"],
+                **(manifest.get("first_parameters") or {})}
+        inputs = []
+        for i in range(start, len(plan)):
+            matches = (indexed or {}).get(i, ())
+            if matches and matches[0]["state"] in ("completed", "collected"):
+                continue
+            params = {**base, "frames": plan[i]}
+            if i and params.get("h3_model") is not None:
+                params["h3_model"] = continuation_model(params["h3_model"])
+            inputs.append(params)
+        return journal.timings.sequence(manifest["backend"], core.H3_I2V_ID, inputs)
+    except TIMING_ERRORS:
+        return None
+
+
+def existing_result(journal, comfy, manifest, index, cancel_event, *, confirm_unknown=None, indexed=None):
+    matches = (series_records(journal, manifest["run_id"], index, comfy.base) if indexed is None
+               else [journal.read(row["job_id"]) for row in indexed.get(index, [])])
+    matches = [row for row in matches if row["state"] != "failed"]
     if not matches:
         return None
     record = matches[0]
@@ -529,6 +561,7 @@ def existing_result(journal, comfy, manifest, index, cancel_event, *, confirm_un
             "parameters": record["parameters"], "outputs": info.get("outputs", {})}
 
 
+@lock_project
 def run_long_video(store, manifest, config, config_path, journal, output_dir,
                    download, progress=None, cancel_event=None, prompt_cache=None, media=None,
                    confirm_unknown=None, join_only=False, auto_join=True, on_checkpoint=None):
@@ -554,9 +587,16 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
     if join_only and len(manifest["segments"]) != len(plan):
         raise core.OrchestratorError("全カット生成後に結合してください")
     comfy = None
+    indexed = {}
     if not join_only:
         comfy = core.ComfyUI(config["comfyui"])
         comfy.extend_video_timeout(config["comfyui"])
+        if len(manifest["segments"]) < len(plan):
+            indexed = series_index(journal, manifest["run_id"], comfy.base)
+            try:
+                journal.timings.bootstrap(journal.root)
+            except TIMING_ERRORS:
+                pass
         if manifest["state"] == "draft":
             manifest["state"] = "generating"
             store.save(manifest)
@@ -573,8 +613,11 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
         check_cancel(cancel_event)
         if progress:
             progress(f"長尺生成 {i + 1}/{len(plan)}")
+        report_estimate(estimate_remaining(journal, manifest, config, i, plan, indexed), label="残カット生成待ち")
+        cut_started = time.monotonic()
         result = existing_result(journal, comfy, manifest, i, cancel_event,
-                                 confirm_unknown=confirm_unknown)
+                                 confirm_unknown=confirm_unknown, indexed=indexed)
+        recovered = result is not None
         if result is None:
             if prompt_plan is not None:
                 image = source
@@ -629,13 +672,16 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
             manifest["first_parameters"] = result["parameters"]
         manifest["segments"].append({"file": clip.relative_to(folder).as_posix(),
                                      "job_id": result["job_id"], "prompt_id": result["prompt_id"],
-                                     "parameters": result["parameters"], "frames": info["frames"]})
+                                     "parameters": result["parameters"], "frames": info["frames"],
+                                     "cut_processing_seconds": round(time.monotonic() - cut_started, 3),
+                                     "generation_wait_seconds": result.get("elapsed_seconds") if not recovered else None})
         store.save(manifest)
         journal.update(result["job_id"], state="collected", collection_state="collected")
         clips.append((clip, info))
         if on_checkpoint:
             on_checkpoint(manifest)
     check_cancel(cancel_event)
+    report_estimate(None, label="結合・保存" if auto_join or join_only else "保存")
     if not auto_join and not join_only:
         if manifest["state"] != "completed":
             manifest["state"] = "ready_to_join"
@@ -646,7 +692,9 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
     output = Path(output_dir) / f"long_{manifest['run_id']}.mp4"
     if manifest["state"] != "completed" or not output.is_file():
         join_options = {"keep_frames": cut_frames} if cut_frames is not None else {}
+        join_started = time.monotonic()
         media.join(clips, target_frames, output, cancel_event, progress, **join_options)
+        manifest["join_seconds"] = round(time.monotonic() - join_started, 3)
         manifest["state"] = "completed"
         store.save(manifest)
         if on_checkpoint:

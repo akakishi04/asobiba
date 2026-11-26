@@ -6,6 +6,7 @@ import hashlib
 import json
 import sqlite3
 import time
+from threading import Lock
 from pathlib import Path
 
 CACHE_ERRORS = (OSError, ValueError, TypeError, sqlite3.Error)
@@ -37,6 +38,18 @@ def make_cache_key(request, settings, workflows, hints, sources, character_trait
 class PromptCache:
     def __init__(self, database: Path):
         self.database = Path(database)
+        self._lock = Lock()
+        self._counts = {"hits": 0, "misses": 0, "writes": 0, "clears": 0}
+
+    def _count(self, key):
+        with self._lock:
+            self._counts[key] += 1
+
+    def stats(self):
+        with self._connection() as con:
+            count, size = con.execute("SELECT COUNT(*), COALESCE(SUM(LENGTH(CAST(plan AS BLOB))), 0) FROM plans").fetchone()
+        with self._lock:
+            return {**self._counts, "entries": count, "payload_bytes": size, "limit": CACHE_LIMIT}
 
     @contextmanager
     def _connection(self):
@@ -53,16 +66,20 @@ class PromptCache:
         with self._connection() as con:
             row = con.execute("SELECT plan FROM plans WHERE key = ?", (key,)).fetchone()
             if row is None:
+                self._count("misses")
                 return None
             try:
                 plan = json.loads(row[0])
             except ValueError:
                 con.execute("DELETE FROM plans WHERE key = ?", (key,))
+                self._count("misses")
                 return None
             if not isinstance(plan, dict):
                 con.execute("DELETE FROM plans WHERE key = ?", (key,))
+                self._count("misses")
                 return None
             con.execute("UPDATE plans SET accessed = ? WHERE key = ?", (time.time(), key))
+            self._count("hits")
             return plan
 
     def put(self, key: str, plan: dict) -> None:
@@ -76,10 +93,12 @@ class PromptCache:
             con.execute("""DELETE FROM plans WHERE key IN (
                 SELECT key FROM plans ORDER BY accessed DESC, key LIMIT -1 OFFSET ?
             )""", (CACHE_LIMIT,))
+        self._count("writes")
 
     def clear(self) -> int:
         with self._connection() as con:
             count = con.execute("SELECT COUNT(*) FROM plans").fetchone()[0]
             con.execute("PRAGMA secure_delete=ON")
             con.execute("DELETE FROM plans")
+        self._count("clears")
         return count

@@ -2,6 +2,21 @@
 from __future__ import annotations
 
 from .parameters import OrchestratorError
+from threading import Lock
+
+_lock = Lock()
+_events = {"comfy_release_requests": 0, "comfy_preserve_jobs": 0,
+           "llm_loads": 0, "llm_reuses": 0, "llm_unloads": 0}
+
+
+def record_model_event(name):
+    with _lock:
+        _events[name] += 1
+
+
+def memory_stats():
+    with _lock:
+        return dict(_events)
 
 
 def release_comfy_before_llm(settings, *, comfy=None, progress=None, enabled=True):

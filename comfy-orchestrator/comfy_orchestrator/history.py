@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
+from .asset_store import save_snapshot
+
 
 class HistoryError(ValueError):
     """Invalid or unavailable history data."""
@@ -170,7 +172,7 @@ class HistoryStore:
             folder.mkdir(parents=True, exist_ok=True)
             snapshot = folder / (row_id + source.suffix.lower())
             # Never copy over the same path if a reference is already archived.
-            shutil.copyfile(source, snapshot)
+            save_snapshot(source, snapshot, self.data / "asset_pool")
             copied.append(snapshot)
             return snapshot.relative_to(self.data).as_posix()
 
@@ -187,7 +189,7 @@ class HistoryStore:
                 folder = self.data / "characters"
                 folder.mkdir(parents=True, exist_ok=True)
                 snapshot = folder / f"{row_id}_{idx}{source.suffix.lower()}"
-                shutil.copyfile(source, snapshot)
+                save_snapshot(source, snapshot, self.data / "asset_pool")
                 copied.append(snapshot)
                 character_files.append(snapshot.relative_to(self.data).as_posix())
         except Exception:

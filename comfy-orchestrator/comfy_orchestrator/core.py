@@ -23,7 +23,7 @@ from .jobs import (JobJournal, JobCancellationRequested, JobExecutionFailed,
                    JobSubmissionRejected, run_job)
 from .input_snapshot import freeze_generation_inputs
 from .generation_runtime import build_template, preflight, early_preflight, submit_prepared
-from .model_runtime import release_comfy_before_llm
+from .model_runtime import release_comfy_before_llm, record_model_event
 from .prompt_cache import PromptCache, CACHE_ERRORS, make_cache_key
 from .h3 import (
     H3_MODELS,
@@ -523,6 +523,7 @@ class ComfyUI:
         if not self.queue_is_idle():
             raise OrchestratorError("ComfyUIに他の実行・待機ジョブがあります。VRAM解放せず中断しました")
         http_json(self.base, "/free", {"unload_models": True, "free_memory": True}, self.timeout, allow_empty=True)
+        record_model_event("comfy_release_requests")
 
     def upload_image(self, image: Path) -> str:
         if not image.is_file():
@@ -883,6 +884,7 @@ def execute(
         release_comfy_before_llm(config["comfyui"], comfy=comfy, progress=note,
                                  enabled=not dry_run or release_before_dry_run)
     elif not dry_run and (not use_prompt_llm or cached_plan is not None):
+        record_model_event("comfy_preserve_jobs")
         note("ComfyUI: LLMを使用しないためモデルキャッシュを維持")
     check_cancelled()
 
@@ -1058,6 +1060,7 @@ def execute_saved(
 
     comfy = ComfyUI(config["comfyui"])
     preflight(comfy, config, workflow_id, selected, template, checkpoint_options)
+    record_model_event("comfy_preserve_jobs")
     if progress:
         progress("保存済みのプロンプトと生成設定を復元（LLMは使用しません）")
     return submit_prepared(
