@@ -10,6 +10,8 @@ from .parameters import OrchestratorError, check_param
 FPS = 24
 MIN_CUT_FRAMES = FPS
 MAX_CUT_FRAMES = 15 * FPS
+H3_MAX_GENERATION_FRAMES = 362
+CONTINUATION_OVERLAP_FRAMES = 12
 MAX_TOTAL_FRAMES = 300 * FPS
 CUSTOM_CUTS = "カット別指定"
 MAX_PART = 1600
@@ -69,7 +71,34 @@ def default_cut_frames(seconds: int, nominal_frames: int) -> list[int]:
     return validate_cut_frames(cuts)
 
 
-def segment_windows(frames: list[int], seconds: int | float, *, cut_frames=None) -> list[dict]:
+def validate_overlap_frames(value):
+    """Zero is the legacy one-anchor-frame continuation, not a hard cut."""
+    if type(value) is not int or not 0 <= value <= CONTINUATION_OVERLAP_FRAMES:
+        raise OrchestratorError("長尺助走フレーム数が不正です")
+    return value
+
+
+def continuation_skip_frames(kept_frames, overlap_frames):
+    """Number of frames discarded at the start, including the opening anchor."""
+    overlap_frames = validate_overlap_frames(overlap_frames)
+    skips = []
+    for i, kept in enumerate(kept_frames):
+        if type(kept) is not int or not 1 <= kept <= H3_MAX_GENERATION_FRAMES:
+            raise OrchestratorError("長尺区間の採用フレーム数が不正です")
+        if not i:
+            skips.append(0)
+            continue
+        # Preserve the exact output duration even at H3's 362-frame ceiling.
+        skip = min(max(1, overlap_frames), kept_frames[i - 1],
+                   max(1, kept - 1), H3_MAX_GENERATION_FRAMES - kept)
+        if skip < 1:
+            raise OrchestratorError("助走を含めるとH3の最大生成フレーム数を超えます")
+        skips.append(skip)
+    return skips
+
+
+def segment_windows(frames: list[int], seconds: int | float, *, cut_frames=None,
+                    overlap_frames=0) -> list[dict]:
     """Effective output time, excluding the shared boundary and trimmed tails."""
     if cut_frames is not None:
         cut_frames = validate_cut_frames(cut_frames)
@@ -91,6 +120,15 @@ def segment_windows(frames: list[int], seconds: int | float, *, cut_frames=None)
                         "output_frames": kept, "duration_seconds": kept / FPS})
     if end != total:
         raise OrchestratorError("長尺タイムラインの合計尺が一致しません")
+    overlap_frames = validate_overlap_frames(overlap_frames)
+    if overlap_frames:
+        kept = [w["output_frames"] for w in windows]
+        skips = continuation_skip_frames(kept, overlap_frames)
+        for w, skip in zip(windows, skips):
+            needed = w["output_frames"] + skip
+            w["generation_frames"] = max(107, 5 + 17 * ((needed - 5 + 16) // 17))
+            w["trim_start_frames"] = skip
+            w["lead_in_seconds"] = skip / FPS
     return windows
 
 
@@ -200,7 +238,8 @@ def _batched_plan(settings, request_fn, instance_id, system, payload, note, chec
 
 def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: int,
                       reference_only: bool = False, *, cut_frames=None, progress=None,
-                      cancel_event=None, prompt_cache=None, release_comfy=True) -> dict:
+                      cancel_event=None, prompt_cache=None, release_comfy=True,
+                      overlap_frames=0) -> dict:
     """Plan text in one model session; large timelines use outline plus batches."""
     from . import core
     from .lmstudio import LMStudio, _request, read_json_reply
@@ -215,7 +254,7 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
         if cancel_event is not None and cancel_event.is_set():
             raise core.JobCancellationRequested("長尺プロンプト計画を中止しました")
 
-    windows = segment_windows(frames, seconds, cut_frames=cut_frames)
+    windows = segment_windows(frames, seconds, cut_frames=cut_frames, overlap_frames=overlap_frames)
     count = len(windows)
     check_cancel()
     if not request.strip():
@@ -234,7 +273,8 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
         try:
             key = make_cache_key(request, settings, workflow, {
                 "task": "long_prompt_plan", "policy": content_sha256(Path(__file__)),
-                "seconds": seconds, "frames": frames, "cut_frames": cut_frames, "reference_only": reference_only,
+                "seconds": seconds, "frames": frames, "cut_frames": cut_frames,
+                "overlap_frames": overlap_frames, "reference_only": reference_only,
             }, {}, None)
             cached = prompt_cache.get(key)
             if cached is not None:
@@ -263,10 +303,11 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
         "Each segments item is the motion, camera and audio for that interval only, "
         "with a clear progression from the preceding interval's end state. "
         "Do not restart an earlier action or repeat dialogue at every interval. "
-        "The first segment must establish the scene; subsequent segments start from "
-        "the previous clip's last retained frame. Make each action feasible within its effective time. "
-        "Complete requested actions before output_frames / fps seconds elapse, even if generation_frames "
-        "is longer; the unused tail is trimmed. Do not defer the action to that discarded tail. "
+        "The first segment must establish the scene; later segments continue from a supplied frame "
+        "near the preceding clip's retained end. Make each action feasible within its effective time. "
+        "Complete requested actions within the retained output window; discard any lead-in and unused tail. "
+        "If trim_start_frames is supplied, the initial lead-in is continuity of prior motion only. "
+        "Do not place new actions or dialogue exclusively in that discarded lead-in or tail. "
         "If a simple action finishes early, maintain the resulting state instead of inventing events. "
         "Do not invent reference-image details: you cannot see the image. "
         "Do not output picture markers or workflow/model parameters. "

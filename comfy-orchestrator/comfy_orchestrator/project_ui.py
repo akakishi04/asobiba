@@ -241,7 +241,9 @@ class ProjectWorkspace(ttk.Frame):
         self.draft = ProjectDraft(manifest)
         self._update_clip_presence()
         p = manifest["overrides"]
-        self.project_info.set(f"{p.get('h3_model', 'H3')} · {p.get('width', '?')} × {p.get('height', '?')} · Seed {p.get('seed', '?')}")
+        overlap = manifest.get("overlap_frames", 0)
+        method = f"助走 最大{overlap}f" if overlap else "従来接続"
+        self.project_info.set(f"{p.get('h3_model', 'H3')} · {p.get('width', '?')} × {p.get('height', '?')} · Seed {p.get('seed', '?')} · {method}")
         if preserve_selection and old is not None:
             self.draft.current = min(old.current, len(self.draft.cuts) - 1)
         self._updating = True

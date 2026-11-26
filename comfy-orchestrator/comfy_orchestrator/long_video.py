@@ -16,7 +16,8 @@ from pathlib import Path
 from . import core
 from .jobs import JobCancellationRequested, JobExecutionFailed, UnknownLongJob
 from .timeline import (validate_prompt_plan, prompt_for_segment, validate_cut_frames,
-                       generation_frames_for_cuts, segment_windows)
+                       generation_frames_for_cuts, segment_windows, validate_overlap_frames,
+                       CONTINUATION_OVERLAP_FRAMES)
 from .asset_store import save_snapshot
 from .timing import report_estimate, ERRORS as TIMING_ERRORS
 from .project_lock import lock_project
@@ -53,21 +54,44 @@ def segment_plan(seconds: int, maximum_frames: int) -> list[int]:
     return plan
 
 
+def schedule_windows(seconds, nominal_frames, cut_frames=None, *, overlap_frames=0):
+    """Derive output intervals from the legacy schedule, then extend raw clips."""
+    overlap_frames = validate_overlap_frames(overlap_frames)
+    base = (generation_frames_for_cuts(cut_frames) if cut_frames is not None
+            else segment_plan(seconds, nominal_frames))
+    windows = segment_windows(base, seconds, cut_frames=cut_frames, overlap_frames=overlap_frames)
+    # Always expose the exact trim used by the runtime, even in old records.
+    for i, w in enumerate(windows):
+        w.setdefault("trim_start_frames", int(i > 0))
+    return windows
+
+
+def manifest_windows(manifest):
+    return schedule_windows(manifest["seconds"], manifest["overrides"]["frames"],
+                            manifest.get("cut_frames"),
+                            overlap_frames=manifest.get("overlap_frames", 0))
+
+
 def manifest_schedule(manifest: dict) -> tuple[list[int], list[int] | None, int]:
-    """Validate a legacy preset or an explicit, frame-accurate cut schedule."""
-    if "cut_frames" in manifest:
-        cuts = validate_cut_frames(manifest["cut_frames"])
-        plan = generation_frames_for_cuts(cuts)
-        target = sum(cuts)
-        if manifest["seconds"] != target / FPS or "prompt_plan" not in manifest:
+    """Validate both legacy and versioned lead-in schedules."""
+    cuts = manifest.get("cut_frames")
+    overlap = validate_overlap_frames(manifest.get("overlap_frames", 0))
+    if cuts is not None:
+        cuts = validate_cut_frames(cuts)
+        if manifest["seconds"] != sum(cuts) / FPS or "prompt_plan" not in manifest:
             raise core.OrchestratorError("長尺カット記録が不正です")
-    else:
-        cuts = None
-        plan = segment_plan(manifest["seconds"], manifest["overrides"]["frames"])
-        target = manifest["seconds"] * FPS
+    if overlap and "prompt_plan" not in manifest:
+        raise core.OrchestratorError("助走付き長尺には区間プロンプト計画が必要です")
+    windows = manifest_windows(manifest)
+    plan = [w["generation_frames"] for w in windows]
     if manifest["plan"] != plan:
         raise core.OrchestratorError("長尺計画が不正です")
-    return plan, cuts, target
+    return plan, cuts, sum(w["output_frames"] for w in windows)
+
+
+def continuation_anchor_count(previous, current):
+    """One-based frame number: lead-in ends exactly at the output boundary."""
+    return previous["trim_start_frames"] + previous["output_frames"] - current["trim_start_frames"] + 1
 
 
 def continuation_model(model: str) -> str:
@@ -101,7 +125,8 @@ def continuation_parameters(first: dict, index: int, frames: int) -> dict:
     return p
 
 
-def planned_segment_parameters(base: dict, prompt_plan: dict, index: int, frames: int) -> dict:
+def planned_segment_parameters(base: dict, prompt_plan: dict, index: int, frames: int,
+                               *, lead_in_frames=0) -> dict:
     """Apply only the approved prompt for this interval, including segment zero."""
     p = dict(base)
     model = p.get("h3_model")
@@ -112,6 +137,15 @@ def planned_segment_parameters(base: dict, prompt_plan: dict, index: int, frames
     # Wrap on its actual domain, not an unsigned 64-bit domain.
     p["seed"] = (int(base["seed"]) + index) % (core.PARAMS["seed"][2] + 1)
     p["positive_prompt"] = prompt_for_segment(prompt_plan, index)
+    if index and lead_in_frames > 1:
+        p["positive_prompt"] = (
+            f"Immediately continue the preceding ongoing motion without pausing. "
+            f"For the first {lead_in_frames / FPS:.3f} seconds, sustain that motion and the camera trajectory; "
+            "then progress into this segment's new action smoothly. "
+            "Do not start with a stationary hold or repeat earlier dialogue. "
+            + p["positive_prompt"]
+        )
+        core.check_param("positive_prompt", p["positive_prompt"])
     if index == 0 and core.h3_ref2va_filename(model) is not None:
         p["positive_prompt"] = core.ensure_h3_reference_prompt(p["positive_prompt"])
     core.check_param("seed", p["seed"])
@@ -185,18 +219,27 @@ class FFmpeg:
         finally:
             temporary.unlink(missing_ok=True)
 
-    def join(self, clips: list[tuple[Path, dict]], target_frames: int, output: Path, cancel_event=None, progress=None, *, keep_frames=None):
+    def join(self, clips: list[tuple[Path, dict]], target_frames: int, output: Path, cancel_event=None, progress=None, *,
+             keep_frames=None, trim_start_frames=None):
         """Remove repeated anchors, preserve video/audio timing, trim to exact length.
 
         Encode one short part at a time into matching H.264 + PCM tracks.
         Final concatenation copies video and encodes AAC only once.
         """
+        skips = [int(i > 0) for i in range(len(clips))]
+        if trim_start_frames is not None:
+            if (keep_frames is None or not isinstance(trim_start_frames, list)
+                    or len(trim_start_frames) != len(clips)
+                    or any(type(n) is not int or n < 0 for n in trim_start_frames)
+                    or not trim_start_frames or trim_start_frames[0] != 0):
+                raise core.OrchestratorError("カットごとの助走フレーム数が不正です")
+            skips = trim_start_frames
         if keep_frames is not None:
             if (not isinstance(keep_frames, list) or len(keep_frames) != len(clips)
                     or any(type(n) is not int or n <= 0 for n in keep_frames)
                     or sum(keep_frames) != target_frames
-                    or any(n + int(i > 0) > info["frames"]
-                           for i, (n, (_, info)) in enumerate(zip(keep_frames, clips)))):
+                    or any(n + skip > info["frames"]
+                           for n, skip, (_, info) in zip(keep_frames, skips, clips))):
                 raise core.OrchestratorError("カットごとの結合フレーム数が不正です")
         output.parent.mkdir(parents=True, exist_ok=True)
         temporary = output.with_name(output.stem + ".part.mp4")
@@ -209,7 +252,7 @@ class FFmpeg:
                     check_cancel(cancel_event)
                     if remaining <= 0:
                         break
-                    skip = int(i > 0)
+                    skip = skips[i]
                     count = keep_frames[i] if keep_frames is not None else min(remaining, info["frames"] - skip)
                     if count <= 0:
                         raise core.OrchestratorError("結合区間に有効なフレームがありません")
@@ -279,19 +322,21 @@ class LongVideoStore:
 
     def create(self, backend: str, request: str, source: Path, overrides: dict,
                seconds: int | float, profile=None, *, prompt_plan=None, cut_frames=None,
-               draft=False) -> dict:
+               draft=False, overlap_frames=0) -> dict:
         p = dict(overrides)
         core.validate_h3_video_parameters(p)
         model = p.get("h3_model")
         if model is not None:
             continuation_model(model)
+        overlap_frames = validate_overlap_frames(overlap_frames)
         if cut_frames is not None:
             cut_frames = validate_cut_frames(cut_frames)
             if seconds != sum(cut_frames) / FPS or prompt_plan is None:
                 raise core.OrchestratorError("カット尺とプロンプト計画が一致しません")
-            plan = generation_frames_for_cuts(cut_frames)
-        else:
-            plan = segment_plan(seconds, p["frames"])
+        if overlap_frames and prompt_plan is None:
+            raise core.OrchestratorError("助走付き長尺には区間プロンプト計画が必要です")
+        windows = schedule_windows(seconds, p["frames"], cut_frames, overlap_frames=overlap_frames)
+        plan = [w["generation_frames"] for w in windows]
         if prompt_plan is not None:
             prompt_plan = validate_prompt_plan(prompt_plan, len(plan))
         p.setdefault("seed", secrets.randbits(32))
@@ -316,6 +361,8 @@ class LongVideoStore:
                 manifest["prompt_plan"] = prompt_plan
             if cut_frames is not None:
                 manifest["cut_frames"] = cut_frames
+            if overlap_frames:
+                manifest["overlap_frames"] = overlap_frames
             self.save(manifest)
             return manifest
         except Exception:
@@ -361,10 +408,8 @@ class LongVideoStore:
 
 
 def project_cut_lengths(manifest):
-    plan, cuts, _ = manifest_schedule(manifest)
-    return cuts if cuts is not None else [
-        w["output_frames"] for w in segment_windows(plan, manifest["seconds"])
-    ]
+    manifest_schedule(manifest)
+    return [w["output_frames"] for w in manifest_windows(manifest)]
 
 
 def first_changed_cut(manifest, prompt_plan, cut_frames):
@@ -381,7 +426,8 @@ def first_changed_cut(manifest, prompt_plan, cut_frames):
 
 
 @lock_project
-def edit_project(store, manifest, journal, prompt_plan, cut_frames, *, regenerate_from=None):
+def edit_project(store, manifest, journal, prompt_plan, cut_frames, *, regenerate_from=None,
+                 overlap_frames=None):
     """Create a revision with its unchanged generated prefix. Never remove old data.
 
     A new run ID isolates job recovery and final history. Old unfinished remote
@@ -393,6 +439,19 @@ def edit_project(store, manifest, journal, prompt_plan, cut_frames, *, regenerat
         cuts = validate_cut_frames(cuts)
     approved = validate_prompt_plan(prompt_plan, len(cuts))
     changed = first_changed_cut(manifest, approved, cuts)
+    old_overlap = manifest.get("overlap_frames", 0)
+    overlap = validate_overlap_frames(old_overlap if overlap_frames is None else overlap_frames)
+    same_schedule = cuts == old_cuts
+    new_seconds = manifest["seconds"] if same_schedule else sum(cuts) / FPS
+    new_cuts = manifest.get("cut_frames") if same_schedule else cuts
+    new_windows = schedule_windows(new_seconds, manifest["overrides"]["frames"], new_cuts,
+                                   overlap_frames=overlap)
+    old_windows = manifest_windows(manifest)
+    if overlap != old_overlap:
+        boundary = next((i for i, (a, b) in enumerate(zip(old_windows, new_windows))
+                         if a["generation_frames"] != b["generation_frames"]
+                         or a["trim_start_frames"] != b["trim_start_frames"]), len(new_windows))
+        changed = boundary if changed is None else min(changed, boundary)
     if regenerate_from is not None:
         if type(regenerate_from) is not int or not 0 <= regenerate_from < len(cuts):
             raise core.OrchestratorError("再生成するカット番号が不正です")
@@ -406,12 +465,10 @@ def edit_project(store, manifest, journal, prompt_plan, cut_frames, *, regenerat
         if (record.get("context", {}).get("long_run_id") == manifest["run_id"]
                 and record["state"] not in ("failed", "completed", "collected")):
             raise core.OrchestratorError("未確定の生成ジョブがあります。元のプロジェクトを再開して状態を確定してください")
-    same_schedule = cuts == old_cuts
     new = store.create(
         manifest["backend"], manifest["request"], store.asset(manifest, manifest["source"]),
-        manifest["overrides"], manifest["seconds"] if same_schedule else sum(cuts) / FPS,
-        manifest.get("profile"), prompt_plan=approved,
-        cut_frames=manifest.get("cut_frames") if same_schedule else cuts, draft=True,
+        manifest["overrides"], new_seconds, manifest.get("profile"), prompt_plan=approved,
+        cut_frames=new_cuts, draft=True, overlap_frames=overlap,
     )
     folder = store.folder(new["run_id"])
     try:
@@ -421,8 +478,9 @@ def edit_project(store, manifest, journal, prompt_plan, cut_frames, *, regenerat
         prefix = min(changed, len(manifest["segments"]), len(new["plan"]))
         for i in range(prefix):
             segment = manifest["segments"][i]
-            if new["plan"][i] != manifest["plan"][i]:
-                raise core.OrchestratorError("引継ぎカットの生成フレーム数が一致しません")
+            if (new["plan"][i] != manifest["plan"][i]
+                    or old_windows[i]["trim_start_frames"] != new_windows[i]["trim_start_frames"]):
+                raise core.OrchestratorError("引継ぎカットの生成・助走フレーム数が一致しません")
             old_file = store.asset(manifest, segment["file"])
             dest = store.asset(new, segment["file"])
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -476,7 +534,8 @@ def restore_project_plan(store, entry, fallback_backend):
     manifest = store.create(params.get("long_backend") or fallback_backend,
                             entry.request_text, source, base, params["long_seconds"],
                             entry.prompt_profile, prompt_plan=approved,
-                            cut_frames=params.get("long_cut_frames"), draft=True)
+                            cut_frames=params.get("long_cut_frames"), draft=True,
+                            overlap_frames=params.get("long_overlap_frames", 0))
     manifest["restored_from_run_id"] = params.get("long_run_id")
     if seeds is not None:
         manifest["cut_seeds"] = list(seeds)
@@ -575,6 +634,8 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
     if p.get("h3_model") is not None:
         continuation_model(p["h3_model"])
     plan, cut_frames, target_frames = manifest_schedule(manifest)
+    windows = manifest_windows(manifest)
+    overlap = manifest.get("overlap_frames", 0)
     if len(manifest["segments"]) > len(plan):
         raise core.OrchestratorError("長尺計画が不正です")
     prompt_plan = None
@@ -613,6 +674,9 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
         check_cancel(cancel_event)
         if progress:
             progress(f"長尺生成 {i + 1}/{len(plan)}")
+            if overlap:
+                w = windows[i]
+                progress(f"カット{i + 1}: 採用 {w['output_frames']}f / 助走 {w['trim_start_frames']}f / 生成 {plan[i]}f")
         report_estimate(estimate_remaining(journal, manifest, config, i, plan, indexed), label="残カット生成待ち")
         cut_started = time.monotonic()
         result = existing_result(journal, comfy, manifest, i, cancel_event,
@@ -623,13 +687,15 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
                 image = source
                 if i:
                     image = folder / f"anchor_{i:03d}.png"
-                    # Anchor the next cut on the LAST RETAINED frame, not discarded motion.
-                    anchor_frames = (cut_frames[i - 1] + int(i > 1) if cut_frames is not None
-                                     else clips[-1][1]["frames"])
+                    # Frame-exact opening anchor, inside the preceding retained window.
+                    anchor_frames = continuation_anchor_count(windows[i - 1], windows[i])
+                    if overlap and progress:
+                        progress(f"カット{i + 1}: 前カットのフレーム {anchor_frames}（1始まり）を開始画像に使用")
                     media.last_frame(clips[-1][0], anchor_frames, image, cancel_event)
                 # Always derive seed progression from segment zero's seed.
                 params = planned_segment_parameters(
                     manifest["first_parameters"] if i else p, prompt_plan, i, plan[i],
+                    lead_in_frames=windows[i]["trim_start_frames"] if overlap else 0,
                 )
                 if manifest.get("cut_seeds") is not None:
                     params["seed"] = manifest["cut_seeds"][i]
@@ -692,6 +758,9 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
     output = Path(output_dir) / f"long_{manifest['run_id']}.mp4"
     if manifest["state"] != "completed" or not output.is_file():
         join_options = {"keep_frames": cut_frames} if cut_frames is not None else {}
+        if overlap:
+            join_options = {"keep_frames": [w["output_frames"] for w in windows],
+                            "trim_start_frames": [w["trim_start_frames"] for w in windows]}
         join_started = time.monotonic()
         media.join(clips, target_frames, output, cancel_event, progress, **join_options)
         manifest["join_seconds"] = round(time.monotonic() - join_started, 3)
@@ -704,6 +773,8 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
                  long_seconds=manifest["seconds"], long_run_id=manifest["run_id"])
     if cut_frames is not None:
         first["long_cut_frames"] = cut_frames
+    if overlap:
+        first["long_overlap_frames"] = overlap
     if prompt_plan is not None:
         first["long_prompt_plan"] = prompt_plan
         first["long_base_overrides"] = dict(manifest["overrides"])

@@ -37,6 +37,7 @@ from .prompt_cache import PromptCache, CACHE_ERRORS
 from .long_video import (LONG_VIDEO_ID, LONG_TARGETS, LongVideoStore, LongVideoPaused,
                          FFmpeg, continuation_model, segment_plan, edit_project, restore_project_plan)
 from .timeline import (plan_long_prompts, CUSTOM_CUTS, validate_cut_frames,
+                       CONTINUATION_OVERLAP_FRAMES,
                        default_cut_frames, generation_frames_for_cuts, format_cut_seconds)
 from .timeline_ui import edit_cut_durations
 from .project_ui import ProjectWorkspace
@@ -3005,6 +3006,7 @@ class Application:
                     source = copy_frozen_asset(image, Path(temporary), "source")
                     plan = plan_long_prompts(
                         cfg, prompt, frames, seconds, reference_only, cut_frames=cut_frames,
+                        overlap_frames=CONTINUATION_OVERLAP_FRAMES,
                         progress=lambda line: self.messages.put(("progress", line)),
                         cancel_event=self.stop_event, prompt_cache=cache, release_comfy=True,
                     )
@@ -3013,6 +3015,7 @@ class Application:
                     manifest = self.long_video_store.create(
                         cfg["comfyui"]["base_url"], prompt, source, overrides, seconds, profile,
                         prompt_plan=plan, cut_frames=cut_frames, draft=True,
+                        overlap_frames=CONTINUATION_OVERLAP_FRAMES,
                     )
                 self.messages.put(("long_plan_ready", manifest))
             except JobCancellationRequested as exc:
