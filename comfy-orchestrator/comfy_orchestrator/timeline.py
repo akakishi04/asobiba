@@ -181,9 +181,9 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
                     return result
         except CACHE_ERRORS as exc:
             note(f"長尺キャッシュ読込失敗（通常処理を継続）: {exc}")
-    if release_comfy and config["comfyui"].get("free_before_llm", True):
-        note("ComfyUI: 長尺計画の前に生成モデルを解放")
-        core.ComfyUI(config["comfyui"]).free_if_idle()
+    if release_comfy:
+        from .model_runtime import release_comfy_before_llm
+        release_comfy_before_llm(config["comfyui"], progress=note)
     check_cancel()
     system = apply_h3_profile(
         "You plan one continuous H3 image-to-video sequence. "
@@ -228,11 +228,7 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
         })
         result = validate_prompt_plan(read_json_reply(reply, "長尺プロンプト計画"), count)
     finally:
-        if instance_id and client.unload_after:
-            note("LM Studio: 選択モデルをアンロード")
-            response = _request(settings, "/api/v1/models/unload", {"instance_id": instance_id})
-            if response.get("instance_id") != instance_id:
-                raise OrchestratorError("LM Studioのアンロード完了を確認できません")
+        client.unload_selected(instance_id, note)
     check_cancel()
     if key is not None:
         try:

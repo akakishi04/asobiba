@@ -1,6 +1,8 @@
 """Foundation regressions: definitive rejection, recovery and immutable inputs."""
 import io
+import os
 import queue
+import time
 import tempfile
 import unittest
 from pathlib import Path
@@ -92,7 +94,7 @@ class StabilityTests(unittest.TestCase):
         second.write_bytes(b"downloaded")
         with patch.object(gui, "OUTPUTS", root), patch.object(gui, "save_output_image", return_value=second) as download:
             images = gui.collect_generation_outputs(self.backend, result, "t2i", journal=self.journal)
-        self.assertEqual(images, [saved, second])
+        self.assertEqual(images, [saved.resolve(), second.resolve()])
         self.assertEqual(download.call_count, 1)
         self.assertEqual(download.call_args.args[1]["filename"], "b.png")
         self.assertEqual(self.journal.read(row["job_id"])["collection_state"], "downloaded")
@@ -152,9 +154,6 @@ class StabilityTests(unittest.TestCase):
         self.assertEqual(self.journal.read(result["job_id"])["state"], "collected")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 class LegacyRecoveryTests(unittest.TestCase):
     def test_legacy_import_ignores_reserved_and_downloaded_files(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -164,6 +163,13 @@ class LegacyRecoveryTests(unittest.TestCase):
             row = journal.create("http://localhost:8188", "wf", "t2i", {}, {})
             journal.update(row["job_id"], reserved_outputs={"a": "reserved.png"},
                            downloaded_outputs={"b": "downloaded.png"})
+            old_time = time.time() - 60
             for name in ("reserved.png", "downloaded.png", "old.png"):
-                (store.outputs / name).write_bytes(b"image")
+                path = store.outputs / name
+                path.write_bytes(b"image")
+                os.utime(path, (old_time, old_time))
             self.assertEqual(store.import_legacy_outputs(), 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

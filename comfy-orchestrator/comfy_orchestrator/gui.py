@@ -7,7 +7,6 @@ No third-party GUI dependencies.
 from __future__ import annotations
 
 import copy
-import hashlib
 from dataclasses import replace
 import json
 import os
@@ -21,7 +20,11 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
-from . import core
+from . import core, output_collection
+from .generation_controller import GenerationController, record_history, worker_events, active_aux_inputs
+from .generation_runtime import preflight_long
+from .model_runtime import release_comfy_before_llm
+from .output_collection import output_media, output_images, output_destination
 from .comparison import ComparisonWindow
 from .history import HistoryStore, HistoryEntry, HistoryError
 from .jobs import JobJournal, JobCancellationRequested
@@ -63,12 +66,9 @@ VIDEO_FRAME_COUNTS = ("49", "81", "121")
 HUNYUAN_RESOLUTIONS = ("848 × 480", "480 × 848", "640 × 640")
 H3_RESOLUTIONS = ("864 × 480", "480 × 864", "640 × 640", "1056 × 608", "608 × 1056", "1344 × 768", "768 × 1344", "768 × 768")
 H3_DURATIONS = {"約5秒 (124f)": 124, "8秒 (192f)": 192, "約10秒 (243f)": 243, "約12秒 (294f)": 294, "約15秒 (362f)": 362}
-VIDEO_EXTENSIONS = frozenset({".mp4", ".webm", ".mov", ".mkv"})
-IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp"})
-
-
-def is_video_output(path: Path) -> bool:
-    return path.suffix.lower() in VIDEO_EXTENSIONS
+VIDEO_EXTENSIONS = output_collection.VIDEO_EXTENSIONS
+IMAGE_EXTENSIONS = output_collection.IMAGE_EXTENSIONS
+is_video_output = output_collection.is_video_output
 
 
 RESOLUTION_PRESETS = {
@@ -134,144 +134,18 @@ def bootstrap_config() -> dict:
     return config
 
 
-def output_media(result: dict) -> list[dict]:
-    """Native SaveVideo uses images + animated; also support videos/gifs metadata."""
-    media = []
-    seen = set()
-    outputs = result.get("outputs", {})
-    if not isinstance(outputs, dict):
-        return media
-    for node_output in outputs.values():
-        if not isinstance(node_output, dict):
-            continue
-        for key in ("images", "videos", "gifs"):
-            entries = node_output.get(key, [])
-            if not isinstance(entries, list):
-                continue
-            for entry in entries:
-                if not isinstance(entry, dict) or not isinstance(entry.get("filename"), str):
-                    continue
-                name = entry["filename"]
-                if Path(name).suffix.lower() not in IMAGE_EXTENSIONS | VIDEO_EXTENSIONS:
-                    continue
-                subfolder = str(entry.get("subfolder", ""))
-                kind = str(entry.get("type", "output"))
-                identity = (name, subfolder, kind)
-                if identity in seen:
-                    continue
-                seen.add(identity)
-                media.append({"filename": name, "subfolder": subfolder, "type": kind})
-    return media
-
-
-def output_images(result: dict) -> list[dict]:
-    return [m for m in output_media(result) if Path(m["filename"]).suffix.lower() in IMAGE_EXTENSIONS]
-
-
-def output_destination(metadata: dict, prompt_id: str, directory: Path) -> Path:
-    """Stable local filename used for both output reservation and atomic download."""
-    parameters = {key: metadata[key] for key in ("filename", "subfolder", "type")}
-    safe_name = Path(metadata["filename"].replace("\\", "/")).name
-    suffix = Path(safe_name).suffix.lower()
-    if suffix not in IMAGE_EXTENSIONS | VIDEO_EXTENSIONS:
-        raise core.OrchestratorError("未対応の出力形式です")
-    prefix = "".join(c for c in prompt_id[:16] if c.isalnum() or c in "-_") or "output"
-    identity = json.dumps([prompt_id, parameters], sort_keys=True, ensure_ascii=False)
-    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
-    return directory / (prefix + "_" + digest + "_" + Path(safe_name).stem[:100] + suffix)
-
-
+# Preserve these public helpers for existing callers and local tests.
 def save_output_image(base_url: str, metadata: dict, prompt_id: str, *, output_dir=None) -> Path:
-    """Download a bounded image or video atomically into the local outputs directory."""
-    parameters = {key: metadata[key] for key in ("filename", "subfolder", "type")}
-    safe_name = Path(metadata["filename"].replace("\\", "/")).name
-    suffix = Path(safe_name).suffix.lower()
-    if suffix not in IMAGE_EXTENSIONS | VIDEO_EXTENSIONS:
-        raise core.OrchestratorError("未対応の出力形式です")
-    limit = (512 if suffix in VIDEO_EXTENSIONS else 40) * 1024 * 1024
-    url = base_url.rstrip("/") + "/view?" + urllib.parse.urlencode(parameters)
-    directory = OUTPUTS if output_dir is None else Path(output_dir)
-    directory.mkdir(parents=True, exist_ok=True)
-    destination = output_destination(metadata, prompt_id, directory)
-    temporary = destination.with_suffix(destination.suffix + ".part")
-    total = 0
-    try:
-        with urllib.request.urlopen(url, timeout=90) as response, temporary.open("wb") as out:
-            while True:
-                chunk = response.read(1024 * 1024)
-                if not chunk:
-                    break
-                total += len(chunk)
-                if total > limit:
-                    raise core.OrchestratorError("出力ファイルがサイズ上限を超えました")
-                out.write(chunk)
-        if total == 0:
-            raise core.OrchestratorError("出力ファイルが空です")
-        temporary.replace(destination)
-    finally:
-        temporary.unlink(missing_ok=True)
-    return destination
+    return output_collection.save_output_image(
+        base_url, metadata, prompt_id, output_dir=OUTPUTS if output_dir is None else output_dir,
+    )
 
 
 def collect_generation_outputs(base_url, result, kind, *, journal=None, cancel_event=None):
-    """Checkpoint all supported files; partial downloads are never collected."""
-    job_id = result.get("job_id") if journal is not None else None
-    downloads = {}
-    reserved = {}
-    if job_id:
-        record = journal.read(job_id)
-        stored = record.get("downloaded_outputs", {})
-        if isinstance(stored, dict):
-            downloads = dict(stored)
-        stored = record.get("reserved_outputs", {})
-        if isinstance(stored, dict):
-            reserved = dict(stored)
-    output_root = OUTPUTS.resolve()
-    images = []
-    try:
-        entries = output_media(result)
-        if not entries:
-            raise core.OrchestratorError("生成結果に回収できる出力がありません")
-        if job_id:
-            for item in entries:
-                identity = json.dumps(item, sort_keys=True, ensure_ascii=False)
-                reserved[identity] = output_destination(item, result["prompt_id"], output_root).relative_to(output_root).as_posix()
-            # Reserve before any atomic rename so legacy indexing cannot claim a partial collection.
-            journal.update(job_id, reserved_outputs=reserved)
-        for item in entries:
-            if cancel_event is not None and cancel_event.is_set():
-                raise core.OrchestratorError("出力回収を中断しました")
-            identity = json.dumps(item, sort_keys=True, ensure_ascii=False)
-            cached = downloads.get(identity)
-            path = None
-            if isinstance(cached, str):
-                candidate = (output_root / cached).resolve()
-                if candidate.is_relative_to(output_root) and candidate.is_file() and candidate.stat().st_size > 0:
-                    path = candidate
-            if path is None:
-                path = save_output_image(base_url, item, result["prompt_id"]).resolve()
-                if not path.is_relative_to(output_root) or not path.is_file() or path.stat().st_size <= 0:
-                    raise core.OrchestratorError("出力ファイルの保存結果が不正です")
-                downloads[identity] = path.relative_to(output_root).as_posix()
-                if job_id:
-                    journal.update(job_id, collection_state="downloading", downloaded_outputs=downloads)
-            images.append(path)
-        if kind in core.VIDEO_KINDS and not any(is_video_output(path) for path in images):
-            raise core.OrchestratorError("動画出力がありません")
-        if kind not in core.VIDEO_KINDS and not any(path.suffix.lower() in IMAGE_EXTENSIONS for path in images):
-            raise core.OrchestratorError("画像出力がありません")
-        if job_id:
-            journal.update(job_id, collection_state="downloaded", downloaded_outputs=downloads,
-                           collection_error=None)
-        return images
-    except Exception as exc:
-        if job_id:
-            journal.update(job_id, collection_state="download_failed", downloaded_outputs=downloads,
-                           collection_error=str(exc))
-        raise core.OrchestratorError(
-            "ComfyUIでの生成は完了しましたが、出力回収に失敗しました。"
-            "「未回収結果を取得」で再試行してください: " + str(exc)
-        ) from exc
+    return output_collection.collect_generation_outputs(
+        base_url, result, kind, output_dir=OUTPUTS, journal=journal,
+        cancel_event=cancel_event, downloader=save_output_image,
+    )
 
 
 def resolve_generation_workflow(
@@ -1967,64 +1841,32 @@ class Application:
         except (ValueError, OSError, tk.TclError) as exc:
             messagebox.showerror("画像比較", str(exc))
 
+    def _controller(self, cfg, cache=None):
+        return GenerationController(
+            cfg, CONFIG, OUTPUTS, self.history_store, self.job_journal,
+            progress=lambda line: self.messages.put(("progress", line)),
+            cancel_event=self.stop_event, prompt_cache=cache,
+        )
+
+    def _launch_generation(self, operation, *, done_event="done", long_video=False):
+        threading.Thread(
+            target=lambda: worker_events(operation, self.messages.put,
+                                         done_event=done_event, long_video=long_video),
+            daemon=True,
+        ).start()
+
     def _record_completed_generation(
-        self, result: dict, images: list[Path], request_text: str,
-        source_image: Path | None, mask_image: Path | None = None,
-        pose_image: Path | None = None,
-        composition_image: Path | None = None,
-        prompt_profile: str | None = None,
-        character_references: tuple[Path, ...] = (),
-        character_traits: str | None = None,
-        character_analysis: dict | None = None,
-    ) -> str | None:
-        if not images:
-            return None
-        job_id = result.get("job_id")
-        try:
-            workflow_id = result["workflow_id"]
-            if job_id:
-                record = self.job_journal.read(job_id)
-                ctx = self.job_journal.context_for_history(record)
-                request_text = ctx.get("request_text", request_text)
-                source_image = ctx["reference_image"]
-                mask_image = ctx["mask_image"]
-                pose_image = ctx["pose_image"]
-                composition_image = ctx["composition_image"]
-                prompt_profile = ctx.get("prompt_profile", prompt_profile)
-                character_references = ctx["character_references"]
-                character_traits = ctx.get("character_traits")
-                character_analysis = ctx.get("character_analysis")
-            entry = self.history_store.record(
-                prompt_id=result["prompt_id"],
-                workflow_id=workflow_id,
-                kind=result.get("kind") or self.config["workflows"][workflow_id]["kind"],
-                request_text=request_text,
-                parameters=result["parameters"],
-                images=images,
-                reference_image=source_image,
-                mask_image=mask_image,
-                pose_image=pose_image,
-                composition_image=composition_image,
-                prompt_profile=prompt_profile,
-                character_references=character_references,
-                character_traits=character_traits,
-                character_analysis=character_analysis,
-            )
-            if result.get("job_id") and hasattr(self, "job_journal"):
-                try:
-                    self.job_journal.update(result["job_id"], state="collected",
-                                            collection_state="collected", history_id=entry.id)
-                except (OSError, ValueError, core.OrchestratorError) as exc:
-                    self.messages.put(("progress", f"ジョブ記録の更新に失敗: {exc}"))
-            return entry.id
-        except (HistoryError, OSError, ValueError, sqlite3.Error, core.OrchestratorError) as exc:
-            if job_id:
-                try:
-                    self.job_journal.update(job_id, collection_state="history_failed", collection_error=str(exc))
-                except (OSError, ValueError, core.OrchestratorError):
-                    pass
-            self.messages.put(("progress", f"履歴保存に失敗しました（出力は保持）: {exc}"))
-            return None
+        self, result, images, request_text, source_image=None, mask_image=None,
+        pose_image=None, composition_image=None, prompt_profile=None,
+        character_references=(), character_traits=None, character_analysis=None,
+    ):
+        # Compatibility entry point; all history writes use the same service.
+        return record_history(
+            self.config, self.history_store, self.job_journal, result, images, request_text,
+            source_image, mask_image, pose_image, composition_image, prompt_profile,
+            character_references, character_traits, character_analysis,
+            progress=lambda line: self.messages.put(("progress", line)),
+        )
 
     def _set_busy(self, label: str) -> None:
         self.stop_event.clear()
@@ -2050,7 +1892,7 @@ class Application:
         self.status.set(label)
 
     def _regenerate_selected_history(self, *, new_seed: bool) -> None:
-        if self.working:
+        if self.working or self.character_analysis_running:
             return
         entry = self._one_history()
         if (
@@ -2081,51 +1923,8 @@ class Application:
             + ("別Seed" if new_seed else "同じSeed")
         )
 
-        def task():
-            try:
-                result = core.execute_saved(
-                    cfg, CONFIG, entry.workflow_id, entry.parameters,
-                    reference_image=entry.reference_image,
-                    new_seed=new_seed,
-                    progress=lambda line: self.messages.put(("progress", line)),
-                    cancel_event=self.stop_event,
-                    mask_image=entry.mask_image, pose_image=entry.pose_image,
-                    job_journal=self.job_journal,
-                    job_context={"request_text": entry.request_text, "prompt_profile": entry.prompt_profile,
-                                 "composition_image": entry.composition_image if entry.composition_image
-                                 and entry.composition_image.is_file() else None,
-                                 "character_references": entry.character_references
-                                 if all(p.is_file() for p in entry.character_references) else (),
-                                 "character_traits": entry.character_traits
-                                 if all(p.is_file() for p in entry.character_references) else None,
-                                 "character_analysis": entry.character_analysis
-                                 if all(p.is_file() for p in entry.character_references) else None},
-                )
-                images = collect_generation_outputs(
-                    cfg["comfyui"]["base_url"], result, entry.kind,
-                    journal=self.job_journal, cancel_event=self.stop_event,
-                )
-                history_id = self._record_completed_generation(
-                    result, images, entry.request_text, entry.reference_image,
-                    entry.mask_image, entry.pose_image,
-                    entry.composition_image if entry.composition_image
-                    and entry.composition_image.is_file() else None,
-                    entry.prompt_profile,
-                    character_references=entry.character_references
-                    if all(p.is_file() for p in entry.character_references) else (),
-                    character_traits=entry.character_traits
-                    if all(p.is_file() for p in entry.character_references) else None,
-                    character_analysis=entry.character_analysis
-                    if all(p.is_file() for p in entry.character_references) else None,
-                )
-                self.messages.put(("done", (result, images, history_id)))
-            except JobCancellationRequested as exc:
-                self.messages.put(("cancel_requested", str(exc)))
-            except Exception as exc:
-                self.messages.put(("error", str(exc)))
-            finally:
-                self.messages.put(("idle", None))
-        threading.Thread(target=task, daemon=True).start()
+        controller = self._controller(cfg)
+        self._launch_generation(lambda: controller.replay(entry, new_seed=new_seed))
 
     def _collect_config(self) -> dict:
         config = copy.deepcopy(self.config)
@@ -2555,8 +2354,14 @@ class Application:
             "unload_after_inference": self.unload_llm.get(),
         })
 
+        comfy_settings = copy.deepcopy(self.config["comfyui"])
+        comfy_settings.update(base_url=self.comfy_url.get().strip(),
+                              free_before_llm=self.free_comfy.get())
+
         def task():
             try:
+                release_comfy_before_llm(comfy_settings,
+                                         progress=lambda line: self.messages.put(("progress", line)))
                 analysis = LMStudio(settings).analyze_character_references(
                     paths, progress=lambda line: self.messages.put(("progress", line)),
                 )
@@ -2584,8 +2389,14 @@ class Application:
             "unload_after_inference": self.unload_llm.get(),
         })
 
+        comfy_settings = copy.deepcopy(self.config["comfyui"])
+        comfy_settings.update(base_url=self.comfy_url.get().strip(),
+                              free_before_llm=self.free_comfy.get())
+
         def task():
             try:
+                release_comfy_before_llm(comfy_settings,
+                                         progress=lambda line: self.messages.put(("progress", line)))
                 revised = LMStudio(settings).revise_character_description(
                     current, instruction,
                     progress=lambda line: self.messages.put(("progress", line)),
@@ -2760,7 +2571,7 @@ class Application:
 
     def _release_comfy_memory(self) -> None:
         """Request memory release off the GUI thread, only with an empty queue."""
-        if self.working:
+        if self.working or self.character_analysis_running:
             return
         settings = copy.deepcopy(self.config["comfyui"])
         settings["base_url"] = self.comfy_url.get().strip()
@@ -2856,14 +2667,11 @@ class Application:
         if selected is None:
             messagebox.showerror("生成設定エラー", "画像・マスク・ポーズの指定に対応するワークフローがありません")
             return
-        is_video = self.config["workflows"][selected]["kind"] == "i2v"
-        if is_video:
-            # Keep still-image composition and character selections intact,
-            # without letting them trigger a VLM or block video generation.
-            composition = None
-        if is_video and (image is None or image.suffix.lower() not in IMAGE_EXTENSIONS
-                         or mask is not None or pose is not None):
-            messagebox.showerror("I2V", "参照画像を1枚指定し、マスク・ポーズ画像は空欄にしてください")
+        kind = self.config["workflows"][selected]["kind"]
+        is_video = kind in core.VIDEO_KINDS
+        mask, pose, composition = active_aux_inputs(kind, mask, pose, composition)
+        if kind == "i2v" and (image is None or image.suffix.lower() not in IMAGE_EXTENSIONS):
+            messagebox.showerror("I2V", "参照画像を1枚指定してください")
             return
         if not prompt and not core.supports_empty_i2v_request(
             self.config, selected, image, mask, pose, composition,
@@ -2962,43 +2770,15 @@ class Application:
         self._log("開始: " + ("解釈のみテスト" if dry_run else "動画生成" if is_video else "画像生成")
                   + (f" / model={cfg['llm']['model']}" if use_prompt_llm else " / LLMなし"))
 
-        def task():
-            try:
-                result = core.execute(
-                    cfg, CONFIG, prompt, image=image, dry_run=dry_run,
-                    selected_workflow=selected, overrides=overrides,
-                    progress=lambda line: self.messages.put(("progress", line)),
-                    cancel_event=self.stop_event, mask_image=mask, pose_image=pose,
-                    composition_image=composition,
-                    job_journal=self.job_journal, prompt_cache=prompt_cache,
-                    job_context={"prompt_profile": self.latest_prompt_profile,
-                                 "character_references": approved_images, "character_traits": approved_traits,
-                                 "character_analysis": approved_analysis},
-                    **({"character_traits": approved_traits}
-                       if approved_traits else {}),
-                )
-                images = [] if dry_run else collect_generation_outputs(
-                    cfg["comfyui"]["base_url"], result, kind,
-                    journal=self.job_journal, cancel_event=self.stop_event,
-                )
-                history_id = (
-                    self._record_completed_generation(
-                        result, images, prompt, image, mask, pose, composition,
-                        self.latest_prompt_profile,
-                        character_references=approved_images,
-                        character_traits=approved_traits,
-                        character_analysis=approved_analysis,
-                    )
-                    if not dry_run else None
-                )
-                self.messages.put(("done", (result, images, history_id)))
-            except JobCancellationRequested as exc:
-                self.messages.put(("cancel_requested", str(exc)))
-            except Exception as exc:
-                self.messages.put(("error", str(exc)))
-            finally:
-                self.messages.put(("idle", None))
-        threading.Thread(target=task, daemon=True).start()
+        controller = self._controller(cfg, prompt_cache)
+        profile = self.latest_prompt_profile
+        self._launch_generation(lambda: controller.generate(
+            prompt, selected, overrides, image=image, dry_run=dry_run,
+            mask_image=mask, pose_image=pose, composition_image=composition,
+            prompt_profile=profile, character_references=approved_images,
+            character_analysis=approved_analysis,
+            **({"character_traits": approved_traits} if approved_traits else {}),
+        ))
 
     def _start_long_prompt_plan(self, cfg, prompt, image, overrides, seconds, frames,
                                 media, cache, dry_run, profile, *, cut_frames=None):
@@ -3011,16 +2791,19 @@ class Application:
         draft = getattr(self, "_long_prompt_draft", None)
         context = (cfg, prompt, image, overrides, seconds, frames, media,
                    cache, dry_run, profile, key, cut_frames)
-        if draft is not None and draft[0] == key:
-            self.messages.put(("long_plan_ready", (copy.deepcopy(draft[1]), context)))
-            return
+        cached_draft = copy.deepcopy(draft[1]) if draft is not None and draft[0] == key else None
 
         def task():
             try:
+                if not dry_run:
+                    preflight_long(cfg, CONFIG, overrides, frames, cancel_event=self.stop_event)
+                if cached_draft is not None:
+                    self.messages.put(("long_plan_ready", (cached_draft, context)))
+                    return
                 plan = plan_long_prompts(
                     cfg, prompt, frames, seconds, reference_only, cut_frames=cut_frames,
                     progress=lambda line: self.messages.put(("progress", line)),
-                    cancel_event=self.stop_event, prompt_cache=cache, release_comfy=not dry_run,
+                    cancel_event=self.stop_event, prompt_cache=cache, release_comfy=True,
                 )
                 self.messages.put(("long_plan_ready", (plan, context)))
             except JobCancellationRequested as exc:
@@ -3061,21 +2844,14 @@ class Application:
                 return
 
             def task():
-                try:
-                    manifest = self.long_video_store.create(
-                        cfg["comfyui"]["base_url"], prompt, image, overrides, seconds,
-                        profile, prompt_plan=approved, cut_frames=cut_frames,
-                    )
-                    self._complete_long_video(manifest, cfg, media, cache)
-                except (JobCancellationRequested, LongVideoPaused) as exc:
-                    self.messages.put(("progress", str(exc) + " / 長尺再開から続行できます"))
-                except Exception as exc:
-                    self.messages.put(("error", str(exc)))
-                finally:
-                    self.messages.put(("idle", None))
+                manifest = self.long_video_store.create(
+                    cfg["comfyui"]["base_url"], prompt, image, overrides, seconds,
+                    profile, prompt_plan=approved, cut_frames=cut_frames,
+                )
+                return self._complete_long_video(manifest, cfg, media, cache)
 
             self.status.set("確定済みの計画で長尺生成を開始")
-            threading.Thread(target=task, daemon=True).start()
+            self._launch_generation(task, long_video=True)
             started = True
         except Exception as exc:
             self.messages.put(("error", str(exc)))
@@ -3094,31 +2870,12 @@ class Application:
         return decision["retry"] and not self.stop_event.is_set()
 
     def _complete_long_video(self, manifest, cfg, media, prompt_cache):
-        def download(result, directory):
-            videos = [item for item in output_media(result)
-                      if Path(item["filename"]).suffix.lower() in VIDEO_EXTENSIONS]
-            if not videos:
-                raise core.OrchestratorError("長尺区間の動画を取得できません")
-            return save_output_image(cfg["comfyui"]["base_url"], videos[0], result["prompt_id"],
-                                     output_dir=directory)
-        self.messages.put(("progress", "長尺記録: " + str(
-            self.long_video_store.folder(manifest["run_id"]) / "manifest.json")))
-        result, video = run_long_video(
-            self.long_video_store, manifest, cfg, CONFIG, self.job_journal, OUTPUTS, download,
-            progress=lambda line: self.messages.put(("progress", line)),
-            cancel_event=self.stop_event, prompt_cache=prompt_cache, media=media,
-            confirm_unknown=self._confirm_unknown_long_job,
+        return self._controller(cfg, prompt_cache).complete_long(
+            self.long_video_store, manifest, media, confirm_unknown=self._confirm_unknown_long_job,
         )
-        existing = self.history_store.find_by_prompt_id(result["prompt_id"])
-        history_id = existing.id if existing else self._record_completed_generation(
-            result, [video], manifest["request"],
-            self.long_video_store.asset(manifest, manifest["source"]),
-            prompt_profile=manifest.get("profile"),
-        )
-        self.messages.put(("done", (result, [video], history_id)))
 
     def _resume_long_video(self) -> None:
-        if self.working or self.generation_mode.get() != "continuous":
+        if self.working or self.character_analysis_running or self.generation_mode.get() != "continuous":
             return
         root = self.long_video_store.root
         records = sorted(root.glob("*/manifest.json"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -3148,16 +2905,8 @@ class Application:
         self.latest_character_references = ()
         self.latest_character_analysis = None
         self._set_busy("長尺生成再開中")
-        def task():
-            try:
-                self._complete_long_video(manifest, cfg, media, cache)
-            except (JobCancellationRequested, LongVideoPaused) as exc:
-                self.messages.put(("progress", str(exc) + " / 長尺再開から続行できます"))
-            except Exception as exc:
-                self.messages.put(("error", str(exc)))
-            finally:
-                self.messages.put(("idle", None))
-        threading.Thread(target=task, daemon=True).start()
+        self._launch_generation(lambda: self._complete_long_video(manifest, cfg, media, cache),
+                                long_video=True)
 
     def _request_cancel(self) -> None:
         self.stop_event.set()
@@ -3166,63 +2915,13 @@ class Application:
 
     def _recover_jobs(self) -> None:
         """Recover completed outputs without resubmitting or changing the queue."""
-        if self.working:
+        if self.working or self.character_analysis_running:
             return
-        settings = copy.deepcopy(self.config["comfyui"])
-        settings["base_url"] = self.comfy_url.get().strip()
+        cfg = copy.deepcopy(self.config)
+        cfg["comfyui"]["base_url"] = self.comfy_url.get().strip()
         self._set_busy("未回収ジョブを確認中")
         self.cancel_button.configure(state="disabled")
-
-        def task():
-            recovered = 0
-            remaining = 0
-            try:
-                comfy = core.ComfyUI(settings)
-                for record in self.job_journal.recoverable(comfy.base):
-                    if record.get("context", {}).get("long_run_id"):
-                        remaining += 1
-                        self.messages.put(("progress", "長尺区間は「長尺再開」で回収してください"))
-                        continue
-                    try:
-                        prompt_id = record["prompt_id"]
-                        existing = self.history_store.find_by_prompt_id(prompt_id)
-                        if existing is not None:
-                            self.job_journal.update(record["job_id"], state="collected",
-                                                    collection_state="collected", history_id=existing.id)
-                            continue
-                        state, info = self.job_journal.inspect(comfy, record)
-                        if state != "completed":
-                            remaining += state != "failed"
-                            self.messages.put(("progress", f"{prompt_id}: {state}"))
-                            continue
-                        context = self.job_journal.context_for_history(record)
-                        result = {"status": "completed", "job_id": record["job_id"],
-                                  "prompt_id": prompt_id, "workflow_id": record["workflow_id"],
-                                  "kind": record["kind"], "parameters": record["parameters"],
-                                  "outputs": info.get("outputs", {})}
-                        images = collect_generation_outputs(comfy.base, result, record["kind"],
-                                                           journal=self.job_journal)
-                        history_id = self._record_completed_generation(
-                            result, images, context.get("request_text", ""),
-                            context["reference_image"], context["mask_image"], context["pose_image"],
-                            context["composition_image"], context.get("prompt_profile"),
-                            character_references=context["character_references"],
-                            character_traits=context.get("character_traits"),
-                            character_analysis=context.get("character_analysis"),
-                        )
-                        if history_id is not None:
-                            recovered += 1
-                        else:
-                            remaining += 1
-                    except Exception as exc:
-                        remaining += 1
-                        self.messages.put(("progress", f"回収失敗 {record['prompt_id']}: {exc}"))
-                self.messages.put(("jobs_recovered", (recovered, remaining)))
-            except Exception as exc:
-                self.messages.put(("error", str(exc)))
-            finally:
-                self.messages.put(("idle", None))
-        threading.Thread(target=task, daemon=True).start()
+        self._launch_generation(self._controller(cfg).recover, done_event="jobs_recovered")
 
     def _consume_messages(self) -> None:
         try:

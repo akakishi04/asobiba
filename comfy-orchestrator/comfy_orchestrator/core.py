@@ -22,6 +22,8 @@ from .parameters import OrchestratorError, PARAMS, check_param
 from .jobs import (JobJournal, JobCancellationRequested, JobExecutionFailed,
                    JobSubmissionRejected, run_job)
 from .input_snapshot import freeze_generation_inputs
+from .generation_runtime import build_template, preflight, early_preflight, submit_prepared
+from .model_runtime import release_comfy_before_llm
 from .prompt_cache import PromptCache, CACHE_ERRORS, make_cache_key
 from .h3 import (
     H3_MODELS,
@@ -518,8 +520,7 @@ class ComfyUI:
         return not queue["queue_running"] and not queue["queue_pending"]
 
     def free_if_idle(self) -> None:
-        queue = http_json(self.base, "/queue", timeout=self.timeout)
-        if queue.get("queue_running") or queue.get("queue_pending"):
+        if not self.queue_is_idle():
             raise OrchestratorError("ComfyUIに他の実行・待機ジョブがあります。VRAM解放せず中断しました")
         http_json(self.base, "/free", {"unload_models": True, "free_memory": True}, self.timeout, allow_empty=True)
 
@@ -752,6 +753,7 @@ def execute(
     character_traits: str | None = None,
     job_journal: JobJournal | None = None, job_context: dict | None = None,
     prompt_cache: PromptCache | None = None,
+    release_before_dry_run: bool = False,
 ) -> dict:
     """Interpret natural language, unload the chosen LLM, then run a fixed workflow.
 
@@ -853,27 +855,8 @@ def execute(
     check_cancelled()
     comfy = ComfyUI(config["comfyui"])
     if not dry_run:
-        # Fail early on uninstalled pose models without spending VRAM on an LLM.
-        for candidate_id, entry in workflows.items():
-            if candidate_id in QWEN_IDS or checkpoint_options:
-                graph = load_workflow(
-                    (config_path.resolve().parent / entry["file"]).resolve(), entry["bindings"],
-                )
-                graph = prepare_checkpoint_workflow(graph, checkpoint_options)
-                comfy.ensure_video_dependencies(graph)
-            if entry.get("kind") == "pose":
-                pose_template = load_workflow(
-                    (config_path.resolve().parent / entry["file"]).resolve(), entry["bindings"],
-                )
-                comfy.ensure_pose_dependencies(pose_template)
-            elif entry.get("kind") in VIDEO_KINDS:
-                video_template = load_workflow(
-                    (config_path.resolve().parent / entry["file"]).resolve(), entry["bindings"],
-                )
-                if h3_options:
-                    video_template = prepare_h3_workflow(video_template, h3_options, overrides)
-                comfy.ensure_video_dependencies(video_template)
-                comfy.extend_video_timeout(config["comfyui"])
+        early_preflight(comfy, config, config_path, workflows, overrides, h3_options,
+                        checkpoint_options, cancel_event)
     llm_key = "llm" if "llm" in config else "ollama"
     settings = config[llm_key]
     cache_key = None
@@ -896,9 +879,9 @@ def execute(
                 validate_plan(cached_plan, workflows, image is not None)
             except OrchestratorError:
                 cached_plan = None
-    if not dry_run and use_prompt_llm and cached_plan is None and config["comfyui"].get("free_before_llm", True):
-        note("ComfyUI: キューを確認して前回の生成モデルの解放を要求")
-        comfy.free_if_idle()
+    if use_prompt_llm and cached_plan is None:
+        release_comfy_before_llm(config["comfyui"], comfy=comfy, progress=note,
+                                 enabled=not dry_run or release_before_dry_run)
     elif not dry_run and (not use_prompt_llm or cached_plan is not None):
         note("ComfyUI: LLMを使用しないためモデルキャッシュを維持")
     check_cancelled()
@@ -997,22 +980,16 @@ def execute(
         # Seed empty in the GUI => an independent reproducible 32-bit seed.
         # Never silently inherit the fixed seed from the template JSON.
         params["seed"] = secrets.randbits(32)
-    validate_video_parameters(workflow_id, params)
     if reference_only:
         params["positive_prompt"] = ensure_h3_reference_prompt(params["positive_prompt"])
-    template = load_workflow(
-        (config_path.resolve().parent / selection["file"]).resolve(), selection["bindings"]
-    )
+    template = build_template(config_path, selection, workflow_id, params, h3_options,
+                              checkpoint_options, final=True)
     if h3_options:
-        template = prepare_h3_workflow(template, h3_options, params)
         note("H3: " + h3_model_label(h3_options["h3_model"])
              + " / Turbo " + H3_TURBO_LABELS[h3_options["h3_turbo"]]
              + f" / {params['steps']} Steps"
              + (f" / Text encoder={h3_options['h3_encoder_device']}" if "h3_encoder_device" in h3_options else "")
              + (f" / TE model={H3_ENCODER_LABELS[h3_options['h3_encoder_model']]}" if "h3_encoder_model" in h3_options else ""))
-    if workflow_id in QWEN_IDS and any(params[name] % 16 for name in ("width", "height")):
-        raise OrchestratorError("Qwen-Imageの幅・高さは16の倍数にしてください")
-    template = prepare_checkpoint_workflow(template, checkpoint_options)
     if checkpoint_options:
         note("SDXL: " + checkpoint_options["checkpoint_model"])
     saved_params = {**params, **h3_options, **checkpoint_options}
@@ -1025,29 +1002,12 @@ def execute(
     if dry_run:
         return {"status": "dry_run", "workflow_id": workflow_id, "parameters": saved_params}
 
-    check_cancelled()
-    uploaded = comfy.upload_image(image) if image is not None else None
-    uploaded_mask = comfy.upload_image(mask_image) if mask_image is not None else None
-    uploaded_pose = comfy.upload_image(pose_image) if pose_image is not None else None
-    rendered = render_workflow(
-        template, selection["bindings"], params, uploaded, uploaded_mask, uploaded_pose,
+    return submit_prepared(
+        comfy, workflow_id, selection, template, params, saved_params,
+        reference_image=image, mask_image=mask_image, pose_image=pose_image,
+        progress=note, cancel_event=cancel_event, journal=job_journal,
+        context={**(job_context or {}), "request_text": request, "composition_image": composition_image},
     )
-    check_cancelled()
-    note("ComfyUI: キューに投入")
-    context = {**(job_context or {}), "request_text": request,
-               "reference_image": image, "mask_image": mask_image,
-               "pose_image": pose_image, "composition_image": composition_image}
-    prompt_id, history, job_info = run_job(
-        comfy, rendered, workflow_id, selection["kind"], saved_params,
-        progress=note, cancel_event=cancel_event, journal=job_journal, context=context,
-    )
-    note("ComfyUI: 生成完了")
-    return {
-        "status": "completed", "workflow_id": workflow_id, "parameters": saved_params,
-        **job_info,
-        "prompt_id": prompt_id, "outputs": history.get("outputs", {}),
-        "comfy_status": history.get("status", {}),
-    }
 
 
 @freeze_generation_inputs
@@ -1091,52 +1051,17 @@ def execute_saved(
         {"workflow_id": workflow_id, "parameters": copied},
         {workflow_id: selected}, has_image,
     )
-    validate_video_parameters(workflow_id, params)
-    template = load_workflow(
-        (config_path.resolve().parent / selected["file"]).resolve(),
-        bindings,
-    )
-    if h3_options:
-        template = prepare_h3_workflow(template, h3_options, params)
-    if workflow_id in QWEN_IDS and any(params[name] % 16 for name in ("width", "height")):
-        raise OrchestratorError("Qwen-Imageの幅・高さは16の倍数にしてください")
-    template = prepare_checkpoint_workflow(template, checkpoint_options)
+    template = build_template(config_path, selected, workflow_id, params, h3_options,
+                              checkpoint_options, final=True)
     if cancel_event is not None and cancel_event.is_set():
         raise OrchestratorError("再生成開始前に中止しました")
 
     comfy = ComfyUI(config["comfyui"])
-    if workflow_id in QWEN_IDS or checkpoint_options:
-        comfy.ensure_video_dependencies(template)
-    if selected.get("kind") == "pose":
-        comfy.ensure_pose_dependencies(template)
-    elif selected.get("kind") in VIDEO_KINDS:
-        comfy.ensure_video_dependencies(template)
-        comfy.extend_video_timeout(config["comfyui"])
+    preflight(comfy, config, workflow_id, selected, template, checkpoint_options)
     if progress:
         progress("保存済みのプロンプトと生成設定を復元（LLMは使用しません）")
-    uploaded = comfy.upload_image(reference_image) if has_image else None
-    uploaded_mask = comfy.upload_image(mask_image) if mask_image is not None else None
-    uploaded_pose = comfy.upload_image(pose_image) if pose_image is not None else None
-    if cancel_event is not None and cancel_event.is_set():
-        raise OrchestratorError("再生成開始前に中止しました")
-    rendered = render_workflow(template, bindings, params, uploaded, uploaded_mask, uploaded_pose)
-    if progress:
-        progress("ComfyUI: 保存設定で再生成を開始")
-    saved_params = {**params, **h3_options, **checkpoint_options}
-    context = {**(job_context or {}), "reference_image": reference_image,
-               "mask_image": mask_image, "pose_image": pose_image}
-    prompt_id, history, job_info = run_job(
-        comfy, rendered, workflow_id, selected["kind"], saved_params,
-        progress=progress, cancel_event=cancel_event, journal=job_journal, context=context,
+    return submit_prepared(
+        comfy, workflow_id, selected, template, params, {**params, **h3_options, **checkpoint_options},
+        reference_image=reference_image, mask_image=mask_image, pose_image=pose_image,
+        progress=progress, cancel_event=cancel_event, journal=job_journal, context=job_context,
     )
-    if progress:
-        progress("ComfyUI: 再生成完了")
-    return {
-        "status": "completed",
-        "workflow_id": workflow_id,
-        "parameters": saved_params,
-        **job_info,
-        "prompt_id": prompt_id,
-        "outputs": history.get("outputs", {}),
-        "comfy_status": history.get("status", {}),
-    }

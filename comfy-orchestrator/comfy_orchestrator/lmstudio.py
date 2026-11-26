@@ -168,6 +168,18 @@ class LMStudio:
             raise OrchestratorError(f"LM Studioのロード完了を確認できません: {result}")
         return loaded_id
 
+    def unload_selected(self, instance_id, progress=None, *, label="LM Studio: 選択モデルをアンロード"):
+        """Unload only the instance acquired for this operation, if configured."""
+        if not instance_id or not self.unload_after:
+            return
+        if progress:
+            progress(label)
+        response = _request(self.settings, "/api/v1/models/unload", {"instance_id": instance_id})
+        if response.get("instance_id") != instance_id:
+            raise OrchestratorError(
+                "LM Studioのアンロード完了を確認できません。VRAM空き容量を確認してください"
+            )
+
     def interpret(
         self, text: str, workflows: dict, image: Path | None,
         progress: Callable[[str], None] | None = None,
@@ -473,14 +485,7 @@ class LMStudio:
             result = _request(self.settings, "/v1/chat/completions", request)
             return read_json_reply(result, "生成プロンプト")
         finally:
-            if instance_id and self.unload_after:
-                if progress:
-                    progress("LM Studio: 選択モデルをアンロード")
-                response = _request(self.settings, "/api/v1/models/unload", {"instance_id": instance_id})
-                if response.get("instance_id") != instance_id:
-                    raise OrchestratorError(
-                        "LM Studioのアンロード完了を確認できません。VRAM競合を避けるため生成を中止します"
-                    )
+            self.unload_selected(instance_id, progress)
 
     def analyze_character_references(
         self, images: list[Path] | tuple[Path, ...],
@@ -652,17 +657,7 @@ class LMStudio:
                 )
             return analysis
         finally:
-            if instance_id and self.unload_after:
-                info("LM Studio: キャラ特徴抽出後に選択モデルをアンロード")
-                response = _request(
-                    self.settings, "/api/v1/models/unload",
-                    {"instance_id": instance_id},
-                )
-                if response.get("instance_id") != instance_id:
-                    raise OrchestratorError(
-                        "LM Studioモデルのアンロードが確認できません。"
-                        "VRAM空き容量を確認してください"
-                    )
+            self.unload_selected(instance_id, info, label="LM Studio: キャラ特徴抽出後に選択モデルをアンロード")
 
     def revise_character_description(
         self, current: str, instruction: str,
@@ -753,15 +748,4 @@ class LMStudio:
             )
             return normalize_approved(answer.get("description_ja"))
         finally:
-            if instance_id and self.unload_after:
-                if progress:
-                    progress("LM Studio: キャラ説明の修正後にモデルをアンロード")
-                response = _request(
-                    self.settings, "/api/v1/models/unload",
-                    {"instance_id": instance_id},
-                )
-                if response.get("instance_id") != instance_id:
-                    raise OrchestratorError(
-                        "LM Studioモデルのアンロードが確認できません。"
-                        "VRAM空き容量を確認してください"
-                    )
+            self.unload_selected(instance_id, progress, label="LM Studio: キャラ説明の修正後にモデルをアンロード")
