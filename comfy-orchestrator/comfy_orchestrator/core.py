@@ -23,6 +23,7 @@ from .jobs import (JobJournal, JobCancellationRequested, JobExecutionFailed,
                    JobSubmissionRejected, run_job)
 from .input_snapshot import freeze_generation_inputs
 from .h3_guide import prepare_guide_workflow, validate_guide_inputs
+from . import h3_prompt
 from .generation_runtime import build_template, preflight, early_preflight, submit_prepared
 from .model_runtime import release_comfy_before_llm, record_model_event
 from .prompt_cache import PromptCache, CACHE_ERRORS, make_cache_key
@@ -273,6 +274,10 @@ def load_config(path: Path) -> dict:
         h3_profile = config["llm"].get("h3_prompt_profile", DEFAULT_H3_PROFILE)
         if not isinstance(h3_profile, str) or h3_profile not in H3_PROFILES:
             raise OrchestratorError("llm.h3_prompt_profile は " + ", ".join(H3_PROFILES) + " から選択してください")
+        if config["llm"].get("h3_prompt_format", h3_prompt.LEGACY) not in (h3_prompt.LEGACY, h3_prompt.FORMAT):
+            raise OrchestratorError("llm.h3_prompt_format は h3_official_v1 または legacy です")
+        if not isinstance(config["llm"].get("h3_reference_vision", True), bool):
+            raise OrchestratorError("llm.h3_reference_vision は真偽値です")
         if not isinstance(config["llm"].get("send_reference_to_llm", False), bool):
             raise OrchestratorError("llm.send_reference_to_llm は真偽値です")
     for key, item in config["workflows"].items():
@@ -862,6 +867,8 @@ def execute(
                         checkpoint_options, cancel_event)
     llm_key = "llm" if "llm" in config else "ollama"
     settings = config[llm_key]
+    official_h3 = (set(workflows) == {H3_I2V_ID} and h3_prompt.enabled(settings)
+                   and settings.get("provider", "lmstudio" if llm_key == "llm" else "ollama") == "lmstudio")
     cache_key = None
     cached_plan = None
     if use_prompt_llm and prompt_cache is not None:
@@ -871,8 +878,11 @@ def execute(
             hints = {"i2v_only": i2v_only, "reference_only": reference_only,
                      "frames": overrides.get("frames") if H3_I2V_ID in workflows else None,
                      "denoise": overrides.get("denoise")}
-            sources = {} if i2v_only else {"image": image, "pose": pose_image,
-                                           "mask": mask_image, "composition": composition_image}
+            if official_h3:
+                sources = {"image": image} if settings.get("h3_reference_vision", True) else {}
+            else:
+                sources = {} if i2v_only else {"image": image, "pose": pose_image,
+                                               "mask": mask_image, "composition": composition_image}
             cache_key = make_cache_key(request, settings, workflows, hints, sources, character_traits)
             cached_plan = prompt_cache.get(cache_key)
         except CACHE_ERRORS as exc:
@@ -908,10 +918,10 @@ def execute(
     elif not use_prompt_llm:
         # The image is the primary conditioning; avoid a needless LLM load.
         note("I2V: 参照画像のみ（LLMを使用しません）")
-        plan = {
-            "workflow_id": selected_workflow,
-            "parameters": {"positive_prompt": H3_REF2VA_DEFAULT_PROMPT if reference_only else I2V_DEFAULT_PROMPT},
-        }
+        default_prompt = H3_REF2VA_DEFAULT_PROMPT if reference_only else I2V_DEFAULT_PROMPT
+        if official_h3:
+            default_prompt = h3_prompt.compile_prompt(h3_prompt.default_sections(reference_only), reference_only)
+        plan = {"workflow_id": selected_workflow, "parameters": {"positive_prompt": default_prompt}}
     elif provider == "lmstudio":
         from .lmstudio import LMStudio
         from .prompt_profiles import is_i2i_context
@@ -937,7 +947,7 @@ def execute(
         # same image used by pose ControlNet, while ComfyUI still receives it
         # through the separate "pose" binding. In I2I, prefer the source image.
         vision_reference = (
-            None if i2v_only else
+            image if official_h3 else None if i2v_only else
             composition_image if composition_image is not None else
             image if image is not None else pose_image
         )

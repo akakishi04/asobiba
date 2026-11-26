@@ -484,7 +484,9 @@
     "send_reference_to_llm": false,
     "t2i_prompt_profile": "illustrious_v2",
     "i2i_prompt_profile": "preserve_edit_v1",
-    "h3_prompt_profile": "h3_illustration_v1"
+    "h3_prompt_profile": "h3_illustration_v1",
+    "h3_prompt_format": "h3_official_v1",
+    "h3_reference_vision": true
   },
   "ui": {
     "workflow": "wai_t2i_basic",

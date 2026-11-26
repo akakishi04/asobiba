@@ -13,6 +13,8 @@ CONFIG = ROOT / "config.example.json"
 class ImageOnlyI2VTests(unittest.TestCase):
     def setUp(self):
         self.config = core.load_config(CONFIG)
+        # These tests exercise the exact pre-official prompt/replay contract.
+        self.config["llm"]["h3_prompt_format"] = "legacy"
         self.config["llm"]["send_reference_to_llm"] = False
 
     def test_h3_and_wan_accept_blank_request_without_llm(self):

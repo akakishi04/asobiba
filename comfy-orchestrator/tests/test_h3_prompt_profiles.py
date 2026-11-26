@@ -75,7 +75,7 @@ class H3ProfileTests(unittest.TestCase):
             calls = []
             logs = []
             settings = dict(self.config["llm"], model="local-test", h3_prompt_profile=profile,
-                            send_reference_to_llm=False, _h3_duration_seconds=10.125)
+                            h3_prompt_format="legacy", send_reference_to_llm=False, _h3_duration_seconds=10.125)
             def request(_settings, route, payload=None):
                 calls.append((route, payload))
                 if route == "/v1/chat/completions":

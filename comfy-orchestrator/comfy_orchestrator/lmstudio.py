@@ -18,6 +18,7 @@ from .core import OrchestratorError, _open_json, plan_schema, HOST_VIDEO_IDS, H3
 from .character_refs import observation_schema, intersection_schema, validate_images
 from .character_repair import repair_model_analysis
 from .model_runtime import record_model_event
+from . import h3_prompt
 from .prompt_profiles import (
     DEFAULT_T2I_PROFILE, T2I_PROFILE_LEGACY,
     DEFAULT_I2I_PROFILE, I2I_PROFILE_LEGACY,
@@ -145,6 +146,7 @@ class LMStudio:
                 f"LM Studioにモデル {self.model!r} がありません。GUIの「モデルを更新」から選択してください"
             )
         capabilities = matching.get("capabilities")
+        self._vision_supported = capabilities.get("vision") if isinstance(capabilities, dict) else None
         if self.settings.get("send_reference_to_llm", False) and getattr(self, "_has_visual_input", False):
             # Older LM Studio versions may not report capabilities; only reject
             # models explicitly identified as text-only.
@@ -192,6 +194,8 @@ class LMStudio:
     ) -> dict:
         if not isinstance(self.model, str) or not self.model.strip() or self.model == "SELECT_IN_GUI":
             raise OrchestratorError("LM Studioのモデルを選択してください")
+        if is_h3_context(workflows) and h3_prompt.enabled(self.settings):
+            return h3_prompt.interpret_single(self, text, workflows, image, progress)
         instance_id: str | None = None
         self._has_visual_input = (
             image is not None and self.settings.get("send_reference_to_llm", False)

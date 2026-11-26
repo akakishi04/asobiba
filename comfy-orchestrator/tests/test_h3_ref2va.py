@@ -17,6 +17,8 @@ MODEL = "ref2va:" + FILENAME
 class Ref2VATests(unittest.TestCase):
     def setUp(self):
         self.config = core.load_config(CONFIG)
+        # These tests exercise the exact pre-official prompt/replay contract.
+        self.config["llm"]["h3_prompt_format"] = "legacy"
         self.entry = self.config["workflows"][core.H3_I2V_ID]
         self.graph = core.load_workflow(ROOT / self.entry["file"], self.entry["bindings"])
         self.options = {

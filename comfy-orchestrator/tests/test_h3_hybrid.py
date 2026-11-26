@@ -15,6 +15,8 @@ FILE = "Eros/10Eros_Max_8stepTurbo_v1.0_hybrid_activation_learned_compact_w4w6in
 class HybridTests(unittest.TestCase):
     def setUp(self):
         self.config = core.load_config(CONFIG)
+        # These tests exercise the exact pre-official prompt/replay contract.
+        self.config["llm"]["h3_prompt_format"] = "legacy"
         entry = self.config["workflows"][core.H3_I2V_ID]
         self.graph = core.load_workflow(ROOT / entry["file"], entry["bindings"])
 

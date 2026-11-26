@@ -8,6 +8,7 @@ from tkinter import ttk, messagebox, scrolledtext
 
 from .long_video import project_cut_lengths, first_changed_cut
 from .parameters import OrchestratorError
+from .h3_prompt import FORMAT as H3_OFFICIAL_FORMAT
 from .timeline import FPS, format_cut_seconds, parse_cut_seconds, validate_cut_frames, validate_prompt_plan, GUIDE_CONNECTION_FRAMES
 from .ui_theme import style_text_widget
 from .video_preview import VideoPreview
@@ -34,7 +35,10 @@ class ProjectDraft:
         self.current = 0
 
     def plan(self):
-        return {"common": self.common.strip(), "segments": [p.strip() for p in self.parts]}
+        plan = {"common": self.common.strip(), "segments": [p.strip() for p in self.parts]}
+        if self.original and self.original.get("format") == H3_OFFICIAL_FORMAT:
+            plan["format"] = H3_OFFICIAL_FORMAT
+        return plan
 
     def changed_from(self):
         if self.original is None:
@@ -325,8 +329,9 @@ class ProjectWorkspace(ttk.Frame):
             overlap = d.manifest.get("overlap_frames", 0)
             method = ("ガイド 最大22f" if overlap == GUIDE_CONNECTION_FRAMES
                       else f"旧助走 最大{overlap}f" if overlap else "従来接続")
+            prompt_format = " · H3公式形式" if d.original and d.original.get("format") == H3_OFFICIAL_FORMAT else ""
             self.summary.set(f"{len(d.cuts)}カット / {format_cut_seconds(sum(d.cuts))}秒 / "
-                             f"有効 {d.valid_prefix()}件 · {status} · {method}")
+                             f"有効 {d.valid_prefix()}件 · {status} · {method}{prompt_format}")
         finally:
             self._updating = False
         self._states()

@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 
 from .parameters import OrchestratorError, check_param
+from . import h3_prompt
 
 FPS = 24
 MIN_CUT_FRAMES = FPS
@@ -144,19 +145,33 @@ def segment_windows(frames: list[int], seconds: int | float, *, cut_frames=None,
 
 def validate_prompt_plan(value: dict, count: int) -> dict:
     """Reject missing, extra or empty segments rather than guessing or repeating."""
-    if not isinstance(value, dict) or set(value) != {"common", "segments"}:
+    if not isinstance(value, dict) or set(value) not in ({"common", "segments"}, {"format", "common", "segments"}):
         raise OrchestratorError("長尺計画には共通プロンプトと区間別プロンプトが必要です")
+    official = value.get("format") == h3_prompt.FORMAT
+    if "format" in value and not official:
+        raise OrchestratorError("未対応の長尺プロンプト形式です")
     common, segments = value["common"], value["segments"]
+    if official:
+        common = h3_prompt.validate_common(common)
     if not isinstance(common, str) or len(common) > MAX_PART:
         raise OrchestratorError(f"共通プロンプトは{MAX_PART}文字以内にしてください")
     if not isinstance(segments, list) or len(segments) != count:
         raise OrchestratorError(f"区間別プロンプトは{count}件必要です")
     result = []
     for i, part in enumerate(segments):
-        if not isinstance(part, str) or not part.strip() or len(part) > MAX_PART:
+        if not isinstance(part, str) or not part.strip() or len(part) > (5000 if official else MAX_PART):
             raise OrchestratorError(f"区間{i + 1}のプロンプトが空欄または長すぎます")
+        if official:
+            fields, ref = h3_prompt.parse_sections(part)
+            if i and ref:
+                raise OrchestratorError("Ref2VAの6セクション形式は最初のカットだけに使用できます")
+            h3_prompt.validate_sections(fields, ref, later_cut=i > 0)
+            part = h3_prompt.section_text(fields, ref)
         result.append(part.strip())
-    return {"common": common.strip(), "segments": result}
+    plan = {"common": common.strip(), "segments": result}
+    if official:
+        plan["format"] = h3_prompt.FORMAT
+    return plan
 
 
 def prompt_for_segment(plan: dict, index: int, *, guide_frames=0) -> str:
@@ -253,7 +268,7 @@ def _batched_plan(settings, request_fn, instance_id, system, payload, note, chec
 def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: int,
                       reference_only: bool = False, *, cut_frames=None, progress=None,
                       cancel_event=None, prompt_cache=None, release_comfy=True,
-                      overlap_frames=0) -> dict:
+                      overlap_frames=0, image=None) -> dict:
     """Plan text in one model session; large timelines use outline plus batches."""
     from . import core
     from .lmstudio import LMStudio, _request, read_json_reply
@@ -271,6 +286,10 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
     windows = segment_windows(frames, seconds, cut_frames=cut_frames, overlap_frames=overlap_frames)
     count = len(windows)
     check_cancel()
+    if h3_prompt.enabled(config["llm"]):
+        return h3_prompt.plan_long(config, request, windows, reference_only, image=image,
+                                   progress=progress, cancel_event=cancel_event,
+                                   prompt_cache=prompt_cache, release_comfy=release_comfy)
     if not request.strip():
         # Preserve the existing image-only option, which needs no LLM.
         return validate_prompt_plan({

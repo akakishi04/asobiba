@@ -15,7 +15,7 @@ import uuid
 from fractions import Fraction
 from pathlib import Path
 
-from . import core
+from . import core, h3_prompt
 from .jobs import JobCancellationRequested, JobExecutionFailed, UnknownLongJob
 from .timeline import (validate_prompt_plan, prompt_for_segment, validate_cut_frames,
                        generation_frames_for_cuts, segment_windows, validate_overlap_frames,
@@ -128,7 +128,7 @@ def continuation_parameters(first: dict, index: int, frames: int) -> dict:
 
 
 def planned_segment_parameters(base: dict, prompt_plan: dict, index: int, frames: int,
-                               *, lead_in_frames=0, guide_frames=0) -> dict:
+                               *, lead_in_frames=0, guide_frames=0, kept_frames=None) -> dict:
     """Apply only the approved prompt for this interval, including segment zero."""
     p = dict(base)
     model = p.get("h3_model")
@@ -138,6 +138,13 @@ def planned_segment_parameters(base: dict, prompt_plan: dict, index: int, frames
     # The ordinary parameter validator accepts signed 63-bit nonnegative seeds.
     # Wrap on its actual domain, not an unsigned 64-bit domain.
     p["seed"] = (int(base["seed"]) + index) % (core.PARAMS["seed"][2] + 1)
+    if prompt_plan.get("format") == h3_prompt.FORMAT:
+        p["positive_prompt"] = h3_prompt.compile_cut(
+            prompt_plan, index, index == 0 and core.h3_ref2va_filename(model) is not None,
+            kept_frames=kept_frames, trim_frames=lead_in_frames, guide_frames=guide_frames,
+        )
+        core.check_param("seed", p["seed"])
+        return p
     p["positive_prompt"] = prompt_for_segment(prompt_plan, index, guide_frames=guide_frames)
     if index and guide_frames:
         p["positive_prompt"] = (
@@ -159,6 +166,21 @@ def planned_segment_parameters(base: dict, prompt_plan: dict, index: int, frames
         p["positive_prompt"] = core.ensure_h3_reference_prompt(p["positive_prompt"])
     core.check_param("seed", p["seed"])
     return p
+
+
+def validate_structured_timing(prompt_plan, windows, overrides):
+    """Fail before creating a revision or submitting any generation job."""
+    if prompt_plan is None or prompt_plan.get("format") != h3_prompt.FORMAT:
+        return
+    reference_only = core.h3_ref2va_filename(overrides.get("h3_model")) is not None
+    for i, w in enumerate(windows):
+        try:
+            h3_prompt.compile_cut(prompt_plan, i, reference_only and i == 0,
+                                  kept_frames=w["output_frames"],
+                                  trim_frames=w["trim_start_frames"],
+                                  guide_frames=w.get("guide_frames", 0))
+        except core.OrchestratorError as exc:
+            raise core.OrchestratorError(f"カット{i+1}: {exc}") from exc
 
 
 class FFmpeg:
@@ -367,6 +389,7 @@ class LongVideoStore:
         plan = [w["generation_frames"] for w in windows]
         if prompt_plan is not None:
             prompt_plan = validate_prompt_plan(prompt_plan, len(plan))
+            validate_structured_timing(prompt_plan, windows, p)
         p.setdefault("seed", secrets.randbits(32))
         source = Path(source)
         if not source.is_file() or source.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
@@ -445,7 +468,7 @@ def first_changed_cut(manifest, prompt_plan, cut_frames):
     if old is None:
         raise core.OrchestratorError("旧形式の計画なしプロジェクトは編集できません")
     old_cuts = project_cut_lengths(manifest)
-    if old["common"] != prompt_plan["common"]:
+    if old["common"] != prompt_plan["common"] or old.get("format") != prompt_plan.get("format"):
         return 0
     for i, (old_text, new_text) in enumerate(zip(old["segments"], prompt_plan["segments"])):
         if old_text != new_text or old_cuts[i] != cut_frames[i]:
@@ -537,6 +560,7 @@ def edit_project(store, manifest, journal, prompt_plan, cut_frames, *, regenerat
     new_cuts = manifest.get("cut_frames") if same_schedule else cuts
     new_windows = schedule_windows(new_seconds, effective["frames"], new_cuts,
                                    overlap_frames=overlap)
+    validate_structured_timing(approved, new_windows, effective)
     old_windows = manifest_windows(manifest)
     boundary = connection_changed_from(manifest, cuts, overlap)
     if boundary is not None:
@@ -734,6 +758,7 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
     prompt_plan = None
     if "prompt_plan" in manifest:
         prompt_plan = validate_prompt_plan(manifest["prompt_plan"], len(plan))
+        validate_structured_timing(prompt_plan, windows, p)
     folder = store.folder(manifest["run_id"])
     source = store.asset(manifest, manifest["source"])
     if not source.is_file():
@@ -805,8 +830,9 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
                             media.last_frame(clips[-1][0], anchor_frames, image, cancel_event)
                     params = planned_segment_parameters(
                         manifest["first_parameters"] if i else p, prompt_plan, i, plan[i],
-                        lead_in_frames=windows[i]["trim_start_frames"] if overlap else 0,
-                        guide_frames=guide_count,
+                        lead_in_frames=(windows[i]["trim_start_frames"]
+                                        if overlap or prompt_plan.get("format") == h3_prompt.FORMAT else 0),
+                        guide_frames=guide_count, kept_frames=windows[i]["output_frames"],
                     )
                     if manifest.get("cut_seeds") is not None:
                         params["seed"] = manifest["cut_seeds"][i]
@@ -820,8 +846,12 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
             elif i == 0:
                 image = source
                 overrides = {**p, "frames": plan[i]}
+                # A legacy unplanned run repeats segment zero's prose; keep
+                # its original prompt contract rather than mixing H3 schemas.
+                legacy_config = ({**config, "llm": {**config["llm"], "h3_prompt_format": h3_prompt.LEGACY}}
+                                 if "llm" in config and h3_prompt.enabled(config["llm"]) else config)
                 result = core.execute(
-                    config, config_path, manifest["request"], image=image,
+                    legacy_config, config_path, manifest["request"], image=image,
                     selected_workflow=core.H3_I2V_ID, overrides=overrides,
                     progress=progress, cancel_event=cancel_event, job_journal=journal,
                     job_context={"long_run_id": manifest["run_id"], "long_segment": i,

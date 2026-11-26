@@ -43,6 +43,7 @@ from .timeline import (plan_long_prompts, CUSTOM_CUTS, validate_cut_frames,
                        CONTINUATION_OVERLAP_FRAMES, GUIDE_CONNECTION_FRAMES,
                        default_cut_frames, generation_frames_for_cuts, format_cut_seconds)
 from .timeline_ui import edit_cut_durations
+from .h3_prompt import FORMAT as H3_OFFICIAL_FORMAT
 from .project_ui import ProjectWorkspace
 from .mode_settings import ModeSettings
 from .input_snapshot import copy_frozen_asset
@@ -156,6 +157,8 @@ def bootstrap_config() -> dict:
     config["llm"].setdefault("t2i_prompt_profile", DEFAULT_T2I_PROFILE)
     config["llm"].setdefault("i2i_prompt_profile", DEFAULT_I2I_PROFILE)
     config["llm"].setdefault("h3_prompt_profile", DEFAULT_H3_PROFILE)
+    config["llm"].setdefault("h3_prompt_format", H3_OFFICIAL_FORMAT)
+    config["llm"].setdefault("h3_reference_vision", True)
     config.setdefault("workflows", {})
     for workflow_id, entry in example.get("workflows", {}).items():
         config["workflows"].setdefault(workflow_id, copy.deepcopy(entry))
@@ -3113,7 +3116,7 @@ class Application:
                     source = copy_frozen_asset(image, Path(temporary), "source")
                     plan = plan_long_prompts(
                         cfg, prompt, frames, seconds, reference_only, cut_frames=cut_frames,
-                        overlap_frames=overlap_frames,
+                        overlap_frames=overlap_frames, image=source,
                         progress=lambda line: self.messages.put(("progress", line)),
                         cancel_event=self.stop_event, prompt_cache=cache, release_comfy=True,
                     )
