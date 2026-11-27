@@ -200,15 +200,12 @@ def prompt_plan_schema(count: int) -> dict:
 
 
 def _request_plan(settings, request_fn, instance_id, system, payload, schema, name):
-    from .lmstudio import read_json_reply
-    reply = request_fn(settings, "/v1/chat/completions", {
-        "model": instance_id,
-        "messages": [{"role": "system", "content": system},
-                     {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
-        "stream": False, "temperature": 0.2,
-        "max_tokens": settings.get("max_tokens", 4096),
-        "response_format": {"type": "json_schema", "json_schema": {"name": name, "schema": schema}},
-    })
+    from .prompt_inference import structured_payload, read_json_reply
+    reply = request_fn(settings, "/v1/chat/completions", structured_payload(
+        instance_id, [{"role": "system", "content": system},
+                      {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
+        name, schema, max_tokens=settings.get("max_tokens", 4096),
+    ))
     return read_json_reply(reply, "長尺プロンプト計画")
 
 
@@ -271,7 +268,7 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
                       overlap_frames=0, image=None, text_only=False, translation_cache=None) -> dict:
     """Plan text and optionally review it in Japanese in the same model session."""
     from . import core
-    from .lmstudio import LMStudio, _request, read_json_reply
+    from .lmstudio import LMStudio, _request
     from .prompt_cache import CACHE_ERRORS, content_sha256, make_cache_key
     from .prompt_review import prepare_plan_review
     from .prompt_profiles import DEFAULT_H3_PROFILE, apply_h3_profile

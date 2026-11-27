@@ -5,11 +5,12 @@ import copy
 import json
 
 from . import h3_prompt as hp
+from .prompt_inference import check_cancel, request_validated
 from .parameters import OrchestratorError, check_param
 # Retain the previous review imports as a compatibility entry point.
 from .prompt_review import (TranslationCache, protect, restore, TOKEN, prepare_plan_review,
                             JA_FIELDS, TRANSLATION_POLICY, PROTECTED, VERSION,
-                            TRANSLATION_CACHE_LIMIT, _translate)
+                            TRANSLATION_CACHE_LIMIT, _translate, translate_pending, ReviewInterrupted)
 
 
 def cut_context(manifest, plan, cuts, index):
@@ -82,7 +83,7 @@ def _english_common(client, instance, japanese, official, progress, cancel_event
         if set(value) != {"text"}:
             raise OrchestratorError("共通プロンプトの翻訳形式が不正です")
         return _check_common(value["text"], official)
-    return hp._reply(client, instance,
+    return request_validated(client, instance,
                      "Translate the edited Japanese text faithfully into natural English. "
                      "Preserve all constraints and user edits; add no events, labels or details. "
                      "Return only persistent common conditions, not individual cut actions.",
@@ -130,7 +131,7 @@ def _english_cut(client, instance, context, common, official, operation, japanes
             "technical settings. This project retains its legacy prompt format."
         )
         schema = hp.object_schema(("text",), {"text": 1600})
-    return hp._reply(client, instance, system, json.dumps(payload, ensure_ascii=False),
+    return request_validated(client, instance, system, json.dumps(payload, ensure_ascii=False),
                      schema, "h3_cut_from_japanese" if operation == "apply" else "h3_cut_rewrite",
                      lambda value: _compile_cut(value, official, context, common), progress, cancel_event,
                      translation_chars=len(japanese) if operation == "apply" else None)
@@ -184,7 +185,7 @@ def edit_prompts(config, manifest, plan, cuts, index, operation, cache, *,
             result["rewritten_indices"] = list(targets)
         return result
 
-    hp._check_cancel(cancel_event)
+    check_cancel(cancel_event)
     review_only = operation in ("translate", "translate_all")
     # Cache-only review never loads/unloads models or frees ComfyUI.
     if review_only and not cache.missing(after, None if operation == "translate_all" else index):
@@ -197,7 +198,7 @@ def edit_prompts(config, manifest, plan, cuts, index, operation, cache, *,
     instance = None
     try:
         release_comfy_before_llm(config["comfyui"], progress=note)
-        hp._check_cancel(cancel_event)
+        check_cancel(cancel_event)
         instance = client._ensure_loaded()
         if operation == "apply" and "common" in japanese:
             note("共通プロンプトの日本語編集を英語へ反映")
@@ -207,7 +208,7 @@ def edit_prompts(config, manifest, plan, cuts, index, operation, cache, *,
             # context on the evolving plan, in playback order; no job or saved
             # revision is touched, and a failed/cancelled batch is not published.
             for done, target in enumerate(targets, 1):
-                hp._check_cancel(cancel_event)
+                check_cancel(cancel_event)
                 note(f"プロンプト再生成 {done}/{len(targets)}: カット{target+1}")
                 context = cut_context(manifest, after, cuts, target)
                 after["segments"][target] = _english_cut(
@@ -227,32 +228,22 @@ def edit_prompts(config, manifest, plan, cuts, index, operation, cache, *,
                 hp.compile_cut(after, index, context["reference_only"],
                                kept_frames=context["retained_frames"], trim_frames=context["trim_frames"],
                                guide_frames=context["guide_frames"], text_only=context.get("text_only", False))
-        # Review actual English, not the user's edited Japanese. Each
-        # outstanding prompt is its own inference, in one loaded session.
-        from .jobs import JobCancellationRequested
+        # Review actual English, not the user's edited Japanese.
         pending = (cache.missing(after, indices=targets) if operation == "regenerate"
                    else cache.missing(after, None if operation == "translate_all" else index))
-        total = len(pending)
-        completed = 0
-        for label, kind, raw in pending:
-            hp._check_cancel(cancel_event)
-            title = (f"日本語訳 {completed+1}/{total}: {label}"
-                     if operation == "translate_all" or len(targets) > 1 else f"日本語訳: {label}")
-            note(title)
-            try:
-                value = _translate(client, instance, kind, raw, official,
-                                   lambda line: note(f"{title} / {line}") if operation == "translate_all" else note(line),
-                                   cancel_event)
-            except JobCancellationRequested:
-                raise
-            except OrchestratorError as exc:
-                if operation == "translate_all":
-                    raise OrchestratorError(f"{label}の日本語訳で停止しました（{completed}/{total}件完了）。"
-                                            f"完了分は保持しています。\n{exc}") from exc
-                raise
-            cache.put(kind, raw, official, value)
-            completed += 1
-        hp._check_cancel(cancel_event)
+        try:
+            completed = translate_pending(
+                client, instance, pending, cache, official, note, cancel_event,
+                numbered=operation == "translate_all" or len(targets) > 1,
+                detailed_progress=operation == "translate_all",
+            )
+        except ReviewInterrupted as exc:
+            if operation == "translate_all":
+                raise OrchestratorError(
+                    f"{exc.label}の日本語訳で停止しました（{exc.completed}/{exc.total}件完了）。"
+                    f"完了分は保持しています。\n{exc.original}"
+                ) from exc.original
+            raise exc.original from None
         if operation == "translate_all":
             note(f"一括翻訳完了: {completed}件")
         return review_result(completed)

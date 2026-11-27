@@ -18,6 +18,7 @@ from .core import OrchestratorError, _open_json, plan_schema, HOST_VIDEO_IDS, H3
 from .character_refs import observation_schema, intersection_schema, validate_images
 from .character_repair import repair_model_analysis
 from .model_runtime import record_model_event
+from .prompt_inference import structured_payload, read_json_reply
 from . import h3_prompt
 from .prompt_profiles import (
     DEFAULT_T2I_PROFILE, T2I_PROFILE_LEGACY,
@@ -102,24 +103,6 @@ def composition_schema() -> dict:
         "required": list(COMPOSITION_FIELDS),
         "additionalProperties": False,
     }
-
-
-def read_json_reply(result: dict, label: str) -> dict:
-    """Validate an LM Studio structured response without trusting its content."""
-    choices = result.get("choices")
-    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
-        raise OrchestratorError(f"LM Studioの{label}応答形式が不正です")
-    message = choices[0].get("message")
-    raw = message.get("content") if isinstance(message, dict) else None
-    if not isinstance(raw, str):
-        raise OrchestratorError(f"LM Studioの{label}がJSON文字列を返しませんでした")
-    try:
-        parsed = json.loads(raw)
-    except ValueError as exc:
-        raise OrchestratorError(f"LM Studioの{label}のJSONを解析できません: {raw[:150]}") from exc
-    if not isinstance(parsed, dict):
-        raise OrchestratorError(f"LM Studioの{label}はJSONオブジェクトが必要です")
-    return parsed
 
 
 def format_composition_observation(observation: dict) -> str:
@@ -415,9 +398,8 @@ class LMStudio:
                     "Do NOT infer hidden body parts, character identity, clothing designs "
                     "or unobserved scenery. Keep every field short and factual."
                 )
-                observation_request = {
-                    "model": instance_id,
-                    "messages": [
+                observation_request = structured_payload(
+                    instance_id, [
                         {"role": "system", "content": observation_system},
                         {
                             "role": "user",
@@ -434,17 +416,9 @@ class LMStudio:
                             ],
                         },
                     ],
-                    "stream": False,
-                    "temperature": 0.0,
-                    "max_tokens": self.settings.get("max_tokens", 4096),
-                    "response_format": {
-                        "type": "json_schema",
-                        "json_schema": {
-                            "name": "comfy_visual_observation",
-                            "schema": composition_schema(),
-                        },
-                    },
-                }
+                    "comfy_visual_observation", composition_schema(),
+                    max_tokens=self.settings.get("max_tokens", 4096), temperature=0.0,
+                )
                 observed = read_json_reply(
                     _request(self.settings, "/v1/chat/completions", observation_request),
                     "画像観察",
@@ -482,17 +456,11 @@ class LMStudio:
                     f"LM Studio: {task_label}"
                     f"（応答待ち上限 {self.settings.get('inference_timeout_seconds', 600)} 秒）"
                 )
-            request = {
-                "model": instance_id,
-                "messages": [{"role": "system", "content": system}, message],
-                "stream": False,
-                "temperature": 0.2,
-                "max_tokens": self.settings.get("max_tokens", 4096),
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": {"name": "comfy_plan", "schema": plan_schema(workflows)},
-                },
-            }
+            request = structured_payload(
+                instance_id, [{"role": "system", "content": system}, message],
+                "comfy_plan", plan_schema(workflows),
+                max_tokens=self.settings.get("max_tokens", 4096),
+            )
             result = _request(self.settings, "/v1/chat/completions", request)
             return read_json_reply(result, "生成プロンプト")
         finally:
@@ -522,17 +490,10 @@ class LMStudio:
                 progress(value)
 
         def structured(messages: list[dict], schema_name: str, schema: dict) -> dict:
-            payload = {
-                "model": instance_id,
-                "messages": messages,
-                "stream": False,
-                "temperature": 0,
-                "max_tokens": self.settings.get("max_tokens", 4096),
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": {"name": schema_name, "schema": schema},
-                },
-            }
+            payload = structured_payload(
+                instance_id, messages, schema_name, schema,
+                max_tokens=self.settings.get("max_tokens", 4096), temperature=0,
+            )
             return read_json_reply(
                 _request(self.settings, "/v1/chat/completions", payload),
                 "キャラクター特徴抽出",
@@ -700,9 +661,8 @@ class LMStudio:
             if progress:
                 progress("LM Studio: 自然文の修正指示を適用中")
             instance_id = self._ensure_loaded()
-            payload = {
-                "model": instance_id,
-                "messages": [
+            payload = structured_payload(
+                instance_id, [
                     {
                         "role": "system",
                         "content": (
@@ -732,27 +692,17 @@ class LMStudio:
                         }, ensure_ascii=False),
                     },
                 ],
-                "stream": False,
-                "temperature": 0,
-                "max_tokens": self.settings.get("max_tokens", 4096),
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "comfy_character_revision_ja",
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "description_ja": {
-                                    "type": "string", "minLength": 1,
-                                    "maxLength": 3000,
-                                },
-                            },
-                            "required": ["description_ja"],
-                            "additionalProperties": False,
-                        },
+                "comfy_character_revision_ja",
+                {
+                    "type": "object",
+                    "properties": {
+                        "description_ja": {"type": "string", "minLength": 1, "maxLength": 3000},
                     },
+                    "required": ["description_ja"],
+                    "additionalProperties": False,
                 },
-            }
+                max_tokens=self.settings.get("max_tokens", 4096), temperature=0,
+            )
             answer = read_json_reply(
                 _request(self.settings, "/v1/chat/completions", payload),
                 "キャラ説明の自然文修正",

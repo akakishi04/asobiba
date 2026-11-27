@@ -24,7 +24,7 @@ def make_cache_key(request, settings, workflows, hints, sources, character_trait
     policy = Path(__file__).parent
     version = {name: content_sha256(policy / name) for name in (
         "core.py", "lmstudio.py", "prompt_profiles.py", "parameters.py", "prompt_cache.py",
-        "h3_prompt.py",
+        "h3_prompt.py", "prompt_inference.py",
     )}
     identity = {
         "version": version, "request": request, "settings": settings,

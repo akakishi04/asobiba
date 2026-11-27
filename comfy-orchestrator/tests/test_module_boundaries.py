@@ -7,6 +7,7 @@ from comfy_orchestrator import long_video, long_video_plan, project_store, video
 from comfy_orchestrator import prompt_edit, prompt_review
 from comfy_orchestrator import app_config, generation_form, history_presentation, gui
 from comfy_orchestrator import output_views, settings_ui, prompt_viewer, generation_view, task_controller
+from comfy_orchestrator import prompt_inference, project_draft, project_ui, h3_prompt, lmstudio
 from comfy_orchestrator.parameters import OrchestratorError
 
 
@@ -67,6 +68,27 @@ class ModuleBoundariesTests(unittest.TestCase):
             state = history_presentation.history_action_state([entry], workflows, working=True)
             self.assertFalse(state["restore"] or state["request"] or state["use_as_source"])
 
+    def test_prompt_and_draft_compatibility_entry_points(self):
+        self.assertIs(lmstudio.read_json_reply, prompt_inference.read_json_reply)
+        self.assertIs(h3_prompt._reply, prompt_inference.request_validated)
+        self.assertIs(project_ui.ProjectDraft, project_draft.ProjectDraft)
+        self.assertIs(project_ui.ProjectAction, project_draft.ProjectAction)
+
+    def test_structured_payload_does_not_change_user_or_model_parameters(self):
+        messages = [{"role": "system", "content": "instructions"},
+                    {"role": "user", "content": [{"type": "text", "text": "request"}]}]
+        schema = {"type": "object", "properties": {}}
+        payload = prompt_inference.structured_payload("instance", messages, "test", schema,
+                                                      max_tokens=128, temperature=0)
+        self.assertEqual(payload, {"model": "instance", "messages": messages, "stream": False,
+                                  "temperature": 0, "max_tokens": 128,
+                                  "response_format": {"type": "json_schema",
+                                                      "json_schema": {"name": "test", "schema": schema}}})
+        self.assertEqual(prompt_inference.read_json_reply(
+            {"choices": [{"message": {"content": '{"a":1}'}}]}, "test"), {"a": 1})
+        with self.assertRaises(OrchestratorError):
+            prompt_inference.read_json_reply({"choices": [{"message": {"content": "[]"}}]}, "test")
+
     def test_ui_views_do_not_import_application(self):
         for module in (output_views, settings_ui, prompt_viewer, generation_view):
             tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
@@ -79,7 +101,8 @@ class ModuleBoundariesTests(unittest.TestCase):
 
     def test_extracted_services_do_not_import_gui_or_long_video_runner(self):
         for module in (long_video_plan, project_store, video_media, prompt_review,
-                       generation_form, history_presentation, app_config, task_controller):
+                       generation_form, history_presentation, app_config, task_controller,
+                       prompt_inference, project_draft):
             syntax = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
             for node in ast.walk(syntax):
                 if isinstance(node, ast.ImportFrom):

@@ -10,6 +10,7 @@ import json
 import re
 
 from . import h3_prompt as hp
+from .prompt_inference import check_cancel, request_validated
 from .parameters import OrchestratorError
 from .prompt_cache import PromptCache, CACHE_ERRORS
 
@@ -156,10 +157,47 @@ def _translate(client, instance, kind, source, official, progress, cancel_event)
             result[key] = restore(text.strip(), tokens[key])
         return _jp_text(result)
 
-    return hp._reply(client, instance, TRANSLATION_POLICY,
+    return request_validated(client, instance, TRANSLATION_POLICY,
                      json.dumps(masked, ensure_ascii=False), hp.object_schema(fields, limits),
                      "h3_japanese_review", validate, progress, cancel_event,
                      translation_chars=sum(len(value) for value in masked.values()))
+
+
+class ReviewInterrupted(OrchestratorError):
+    """One item failed; earlier validated translations remain cached."""
+    def __init__(self, label, completed, total, original):
+        self.label = label
+        self.completed = completed
+        self.total = total
+        self.original = original
+        super().__init__(str(original))
+
+
+def translate_pending(client, instance_id, pending, cache, official, progress, cancel_event, *,
+                      numbered=False, detailed_progress=False):
+    """Translate each distinct pending entry once; do not publish English edits."""
+    from .jobs import JobCancellationRequested
+    completed = 0
+    total = len(pending)
+    for label, kind, raw in pending:
+        check_cancel(cancel_event)
+        title = f"日本語訳 {completed+1}/{total}: {label}" if numbered else f"日本語訳: {label}"
+        if progress:
+            progress(title)
+        try:
+            value = _translate(
+                client, instance_id, kind, raw, official,
+                (lambda line: progress(f"{title} / {line}")) if detailed_progress and progress else progress,
+                cancel_event,
+            )
+        except JobCancellationRequested:
+            raise
+        except OrchestratorError as exc:
+            raise ReviewInterrupted(label, completed, total, exc) from exc
+        cache.put(kind, raw, official, value)
+        completed += 1
+    check_cancel(cancel_event)
+    return completed
 
 
 # Exact source strings for the deterministic image-only plans. These are
@@ -198,14 +236,14 @@ def prepare_plan_review(config, plan, cache, *, client=None, instance_id=None,
         if progress:
             progress(line)
 
-    hp._check_cancel(cancel_event)
+    check_cancel(cancel_event)
     official = plan.get("format") == hp.FORMAT
     pending = cache.missing(plan)
     if not pending:
         return
     if fixed:
         for label, kind, raw in pending:
-            hp._check_cancel(cancel_event)
+            check_cancel(cancel_event)
             fields = _fields(kind, raw, official)
             if not all(value in _DEFAULT_REVIEW for value in fields.values()):
                 note(f"日本語訳: {label}の固定訳が未登録です。英語計画を保持します")
@@ -221,20 +259,18 @@ def prepare_plan_review(config, plan, cache, *, client=None, instance_id=None,
             settings = dict(config["llm"], send_reference_to_llm=False)
             if release_comfy:
                 release_comfy_before_llm(config["comfyui"], progress=note)
-            hp._check_cancel(cancel_event)
+            check_cancel(cancel_event)
             client = LMStudio(settings)
             instance_id = client._ensure_loaded()
-        for label, kind, raw in pending:
-            hp._check_cancel(cancel_event)
-            title = f"日本語訳 {completed+1}/{total}: {label}"
-            note(title)
-            value = _translate(client, instance_id, kind, raw, official,
-                               lambda line: note(f"{title} / {line}"), cancel_event)
-            cache.put(kind, raw, official, value)
-            completed += 1
+        completed = translate_pending(
+            client, instance_id, pending, cache, official, note, cancel_event,
+            numbered=True, detailed_progress=True,
+        )
         note(f"日本語訳完了: {completed}件")
     except JobCancellationRequested:
         raise
+    except ReviewInterrupted as exc:
+        note(f"日本語訳を中断しました（{exc.completed}/{exc.total}件完了）。英語計画と完了分を保持します: {exc.original}")
     except OrchestratorError as exc:
         note(f"日本語訳を中断しました（{completed}/{total}件完了）。英語計画と完了分を保持します: {exc}")
     finally:
@@ -243,4 +279,4 @@ def prepare_plan_review(config, plan, cache, *, client=None, instance_id=None,
                 client.unload_selected(instance_id, note)
             except OrchestratorError as exc:
                 note(f"日本語訳後のモデル解放失敗: {exc}")
-    hp._check_cancel(cancel_event)
+    check_cancel(cancel_event)
