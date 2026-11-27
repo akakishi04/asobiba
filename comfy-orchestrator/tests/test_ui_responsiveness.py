@@ -10,6 +10,8 @@ from unittest.mock import Mock, patch
 from comfy_orchestrator import core, gui
 from comfy_orchestrator.history import HistoryStore
 from comfy_orchestrator.generation_view import GenerationView
+from comfy_orchestrator.history_refresh import HistoryRefresh
+from comfy_orchestrator.output_views import HistoryView
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -95,18 +97,17 @@ class ResponsivenessTests(unittest.TestCase):
             seen.append(threading.get_ident())
             return []
         store = SimpleNamespace(list_entries=read, import_legacy_outputs=Mock())
-        app = SimpleNamespace(working=False, _history_refresh_running=False,
-                              _history_refresh_pending=None, history_store=store, messages=queue.Queue())
-        gui.Application._refresh_history(app, "new", scan_legacy=False)
-        self.assertEqual(app.messages.get(timeout=5), ("history_loaded", ([], "new", None)))
+        messages = queue.Queue()
+        refresh = HistoryRefresh(store, messages.put)
+        refresh.request("new", scan_legacy=False)
+        self.assertEqual(messages.get(timeout=5), ("history_loaded", ([], "new", None)))
         self.assertNotEqual(seen[0], main)
         store.import_legacy_outputs.assert_not_called()
 
     def test_hidden_history_tab_never_loads_preview(self):
-        app = SimpleNamespace(history_panel=".history", tabs=Mock(), _selected_history=Mock())
-        app.tabs.select.return_value = ".result"
-        gui.Application._history_selection_changed(app)
-        app._selected_history.assert_not_called()
+        view = SimpleNamespace(selected_entries=Mock())
+        HistoryView.refresh_selection(view, {}, working=False, visible=False)
+        view.selected_entries.assert_not_called()
 
     def test_identical_history_snapshot_does_not_rebuild_tree(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -119,9 +120,9 @@ class ResponsivenessTests(unittest.TestCase):
             table = Mock()
             table.selection.return_value = (entry.id,)
             table.get_children.return_value = (entry.id,)
-            app = SimpleNamespace(history_table=table, history_entries={entry.id: entry},
-                                  _history_selection_changed=Mock(), history_details=Mock())
-            gui.Application._apply_history_entries(app, [store.get(entry.id)])
+            view = SimpleNamespace(history_table=table, history_entries={entry.id: entry},
+                                   on_selection=Mock(), history_details=Mock())
+            HistoryView.apply_entries(view, [store.get(entry.id)])
             table.delete.assert_not_called()
             table.insert.assert_not_called()
             table.item.assert_not_called()

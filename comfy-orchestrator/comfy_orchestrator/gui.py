@@ -80,7 +80,10 @@ from .prompt_viewer import show_prompt_details, show_saved_character_features, s
 from .output_views import ResultView, HistoryView, ResultActions, HistoryActions
 from .settings_ui import ConnectionPanel, ConnectionVariables, ConnectionActions
 from .generation_view import GenerationView, GenerationVariables, GenerationActions
-from .task_controller import TaskController
+from .task_controller import TaskController, EventRouter
+from .history_refresh import HistoryRefresh
+from .result_state import ResultReviewState
+from .preview_geometry import preview_subsample
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -132,24 +135,6 @@ def initial_window_bounds(screen_width: int, screen_height: int) -> tuple[int, i
     return width, height, x, y, min_width, min_height
 
 
-def preview_subsample(
-    image_width: int, image_height: int, viewport_width: int,
-    viewport_height: int, maximum: int,
-) -> int:
-    """Integer downscale factor fitting an image into its available viewport.
-
-    Tk PhotoImage uses integer subsampling. Small or still-unmapped viewports
-    fall back to a conservative capped preview size.
-    """
-    safe_width = max(80, min(maximum, viewport_width if viewport_width >= 40 else maximum))
-    safe_height = max(80, min(maximum, viewport_height if viewport_height >= 40 else maximum))
-    return max(
-        1,
-        (image_width + safe_width - 1) // safe_width,
-        (image_height + safe_height - 1) // safe_height,
-    )
-
-
 class Application:
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -162,27 +147,15 @@ class Application:
         self.tasks = TaskController()
         self.messages = self.tasks.messages
         self.stop_event = self.tasks.stop_event
-        self.image_paths: list[Path] = []
-        self.preview_photo: tk.PhotoImage | None = None
         self.config = bootstrap_config()
         self.history_store = HistoryStore(ROOT)
         self.job_journal = JobJournal(self.history_store.data / "jobs")
         self.long_video_store = LongVideoStore(self.history_store.data / "long_videos")
         self.prompt_cache = PromptCache(ROOT / ".cache" / "prompt_plans.sqlite3")
-        self.history_entries: dict[str, HistoryEntry] = {}
-        self._history_refresh_running = False
-        self._history_refresh_pending: tuple[str | None, bool] | None = None
-        self._history_selection_key = None
-        self._history_preview_key = None
+        self.history_refresh = HistoryRefresh(self.history_store, self.messages.put)
         self._generation_ui_key = None
-        self.history_preview_photo: tk.PhotoImage | None = None
         self.latest_composition_report = ""
-        self.latest_prompt_plan: dict | None = None
-        self.latest_prompt_profile: str | None = None
-        self.latest_request_text: str | None = None
-        self.latest_character_traits: str | None = None
-        self.latest_character_analysis: dict | None = None
-        self.latest_character_references: tuple[Path, ...] = ()
+        self.review = ResultReviewState()
         self.character_references, self.character_analysis, self.character_traits = (
             load_character_sheet(ROOT)
         )
@@ -191,6 +164,7 @@ class Application:
         self.character_feature_store = CharacterFeatureStore(self.history_store.data / "character_features.sqlite3")
         self._variables()
         self._build()
+        self.event_router = self._build_event_router()
         self._refresh_generation_models()
         self._refresh_history()
         self.root.after(100, self._consume_messages)
@@ -321,7 +295,6 @@ class Application:
         self.timing_status = tk.StringVar(value="")
         self._operations_window = None
         self._operations_pending = False
-        self.result_info = tk.StringVar(value="")
         self.character_status = tk.StringVar(
             value=character_status_label(self.character_references, self.character_traits)
         )
@@ -531,8 +504,7 @@ class Application:
         self.tabs = ttk.Notebook(right)
         self.tabs.pack(fill="both", expand=True)
         self.result_panel = ResultView(
-            self.tabs, self.result_info, ResultActions(
-                select_image=self._show_selected_image,
+            self.tabs, ResultActions(
                 open_image=self._open_image,
                 open_outputs=self._open_outputs,
                 show_prompt=self._show_prompt_preview,
@@ -557,27 +529,6 @@ class Application:
             ),
         )
         self.tabs.add(self.history_panel, text="履歴")
-        # Keep the existing widget handles for the application event router.
-        # The panels, not Application, construct and own these widgets.
-        self.image_label = self.result_panel.image_label
-        self.result_video = self.result_panel.result_video
-        self.images_list = self.result_panel.images_list
-        self.open_button = self.result_panel.open_button
-        self.result_prompt_button = self.result_panel.result_prompt_button
-        self.result_tools = self.result_panel.result_tools
-        self.history_table = self.history_panel.history_table
-        self.history_details = self.history_panel.history_details
-        self.history_image = self.history_panel.history_image
-        self.history_video = self.history_panel.history_video
-        self.history_open_button = self.history_panel.history_open_button
-        self.history_request_button = self.history_panel.history_request_button
-        self.history_restore_button = self.history_panel.history_restore_button
-        self.history_compare_button = self.history_panel.history_compare_button
-        self.same_seed_button = self.history_panel.same_seed_button
-        self.new_seed_button = self.history_panel.new_seed_button
-        self.history_prompt_button = self.history_panel.history_prompt_button
-        self.history_character_button = self.history_panel.history_character_button
-        self.history_tools = self.history_panel.history_tools
         self.project_workspace = ProjectWorkspace(
             self.tabs, self.long_video_store, on_refresh=self._refresh_projects,
             on_action=self._project_action, on_load=self._restore_project_inputs,
@@ -673,7 +624,7 @@ class Application:
         colors = apply_ttk_theme(self.root, self.dark_mode.get())
         style_text_widget(self.prompt, colors)
         style_text_widget(self.log, colors, muted=True)
-        style_text_widget(self.images_list, colors)
+        style_text_widget(self.result_panel.images_list, colors)
         if hasattr(self, "project_workspace"):
             self.project_workspace.apply_theme(colors)
         self.form_canvas.configure(background=colors["surface"])
@@ -954,89 +905,17 @@ class Application:
         self.log.configure(state="disabled")
 
     def _refresh_history(self, select_id: str | None = None, *, scan_legacy: bool = True) -> None:
-        """Read SQLite and enumerate files off the Tk event loop."""
-        scan_legacy = scan_legacy and not self.working
-        if self._history_refresh_running:
-            previous = self._history_refresh_pending
-            self._history_refresh_pending = (
-                select_id if select_id is not None else (previous[0] if previous else None),
-                scan_legacy or bool(previous and previous[1]),
-            )
-            return
-        self._history_refresh_running = True
-        store = self.history_store
-        messages = self.messages
-
-        def task():
-            try:
-                if scan_legacy:
-                    store.import_legacy_outputs(limit=500)
-                entries = store.list_entries(limit=500)
-                messages.put(("history_loaded", (entries, select_id, None)))
-            except Exception as exc:
-                messages.put(("history_loaded", (None, select_id, str(exc))))
-
-        threading.Thread(target=task, daemon=True).start()
+        self.history_refresh.request(select_id, scan_legacy=scan_legacy, working=self.working)
 
     def _finish_history_refresh(self, entries, select_id, error) -> None:
-        self._history_refresh_running = False
-        if error is not None:
-            self._log("履歴の読み込みに失敗: " + error)
-        pending = self._history_refresh_pending
-        self._history_refresh_pending = None
-        if pending is not None:
-            # A completion/refresh arrived during the read. Fetch the newer
-            # snapshot rather than rendering two consecutive full snapshots.
-            self._refresh_history(
-                select_id=pending[0] if pending[0] is not None else select_id,
-                scan_legacy=pending[1],
-            )
-        elif entries is not None:
-            self._apply_history_entries(entries, select_id)
-
-    _history_row = staticmethod(history_row)
-
-    def _apply_history_entries(self, entries, select_id: str | None = None) -> None:
-        """Apply only changed rows; preserve scroll/selection on normal refresh."""
-        table = self.history_table
-        old_selected = tuple(table.selection())
-        old_entries = self.history_entries
-        new_entries = {entry.id: entry for entry in entries}
-        self.history_entries = new_entries
-        obsolete = [item for item in table.get_children() if item not in new_entries]
-        if obsolete:
-            table.delete(*obsolete)
-        for entry in entries:
-            old = old_entries.get(entry.id)
-            if old is not None and old == entry:
-                continue
-            title, values = self._history_row(entry)
-            if old is None:
-                table.insert("", "end", iid=entry.id, text=title, values=values)
-            else:
-                table.item(entry.id, text=title, values=values)
-        ordered = tuple(new_entries)
-        if tuple(table.get_children()) != ordered:
-            table.set_children("", *ordered)
-        requested = (select_id,) if select_id else old_selected
-        available = tuple(entry_id for entry_id in requested if entry_id in new_entries)
-        if available != tuple(table.selection()):
-            table.selection_set(*available)
-        if select_id and available:
-            table.see(available[0])
-        if (old_selected != available or any(old_entries.get(key) != new_entries.get(key) for key in available)):
-            self._history_selection_key = None
-            self._history_preview_key = None
-        self._history_selection_changed()
-        if not entries:
-            self.history_details.set("まだ保存された生成結果がありません")
+        self.history_refresh.complete(
+            entries, select_id, error, working=self.working,
+            on_entries=self.history_panel.apply_entries,
+            on_error=lambda text: self._log("履歴の読み込みに失敗: " + text),
+        )
 
     def _selected_history(self) -> list[HistoryEntry]:
-        return [
-            self.history_entries[entry_id]
-            for entry_id in self.history_table.selection()
-            if entry_id in self.history_entries
-        ]
+        return self.history_panel.selected_entries()
 
     def _one_history(self) -> HistoryEntry | None:
         selected = self._selected_history()
@@ -1045,113 +924,18 @@ class Application:
     def _output_tab_changed(self, _event=None) -> None:
         # Only a visible pane may own an active decoder.
         if self.tabs.select() != str(self.result_panel):
-            self.result_video.stop()
+            self.result_panel.result_video.stop()
         if self.tabs.select() != str(self.history_panel):
-            self.history_video.stop()
+            self.history_panel.history_video.stop()
         if hasattr(self, "project_workspace") and self.tabs.select() != str(self.project_workspace):
             self.project_workspace.stop_preview()
         self._history_selection_changed()
 
-    def _set_result_video(self, path: Path | None) -> None:
-        if not hasattr(self, "result_video"):
-            return
-        self.result_video.set_source(path)
-        if path is not None:
-            self.image_label.pack_forget()
-            self.result_video.pack(fill="both", expand=True)
-        else:
-            self.result_video.pack_forget()
-            if not self.image_label.winfo_manager():
-                self.image_label.pack(fill="both", expand=True)
-
-    def _set_history_video(self, path: Path | None) -> None:
-        if not hasattr(self, "history_video"):
-            return
-        self.history_video.set_source(path)
-        if path is not None:
-            self.history_image.pack_forget()
-            self.history_video.pack(fill="x", pady=(0, 4))
-        else:
-            self.history_video.pack_forget()
-            if not self.history_image.winfo_manager():
-                self.history_image.pack(fill="x", pady=(0, 4))
-
     def _history_selection_changed(self, _event=None) -> None:
-        # The Result tab does not need hidden history thumbnails or file checks.
-        if hasattr(self, "history_panel") and self.tabs.select() != str(self.history_panel):
-            return
-        selected = self._selected_history()
-        selection_key = (tuple(entry.id for entry in selected), self.working)
-        if getattr(self, "_history_selection_key", None) == selection_key:
-            return
-        self._history_selection_key = selection_key
-        state = "normal" if history_can_replay(selected, self.config["workflows"], working=self.working) else "disabled"
-        self.same_seed_button.configure(state=state)
-        self.new_seed_button.configure(state=state)
-
-        if hasattr(self, "history_open_button"):
-            actions = history_action_state(selected, self.config["workflows"], working=self.working)
-            for button, key in (
-                (self.history_open_button, "open"), (self.history_restore_button, "restore"),
-                (self.history_compare_button, "compare"), (self.history_prompt_button, "prompt"),
-            ):
-                button.configure(state="normal" if actions[key] else "disabled")
-            if hasattr(self, "history_request_button"):
-                self.history_request_button.configure(state="normal" if actions["request"] else "disabled")
-            if hasattr(self, "history_character_button"):
-                self.history_character_button.configure(state="normal" if actions["character"] else "disabled")
-            if actions["use_as_source"]:
-                self.history_tools.pack(fill="x", pady=(4, 0))
-            else:
-                self.history_tools.pack_forget()
-        if not selected:
-            if hasattr(self, "history_video"):
-                self._set_history_video(None)
-            self._history_preview_key = None
-            self.history_details.set("")
-            self.history_image.configure(image="", text="")
-            self.history_preview_photo = None
-            return
-        if len(selected) > 1:
-            if hasattr(self, "history_video"):
-                self._set_history_video(None)
-            self._history_preview_key = None
-            self.history_details.set(f"{len(selected)}件選択中")
-            self.history_image.configure(image="", text="")
-            self.history_preview_photo = None
-            return
-
-        entry = selected[0]
-        self.history_details.set(history_summary(entry))
-        image = entry.first_image
-        exists = image is not None and image.is_file()
-        preview_key = (entry.id, image, exists)
-        if getattr(self, "_history_preview_key", None) == preview_key:
-            return
-        self._history_preview_key = preview_key
-        if hasattr(self, "history_video"):
-            self._set_history_video(image if exists and is_video_output(image) else None)
-        if not exists:
-            self.history_preview_photo = None
-            self.history_image.configure(image="", text="画像ファイルが見つかりません")
-            return
-        if is_video_output(image):
-            self.history_preview_photo = None
-            self.history_image.configure(image="", text="動画")
-            return
-        try:
-            photo = tk.PhotoImage(file=str(image))
-            scale = preview_subsample(
-                photo.width(), photo.height(),
-                self.history_image.winfo_width(), self.history_image.winfo_height(), 120,
-            )
-            self.history_preview_photo = photo.subsample(scale, scale)
-            self.history_image.configure(image=self.history_preview_photo, text="")
-        except (tk.TclError, OSError):
-            self.history_preview_photo = None
-            self.history_image.configure(
-                image="", text="プレビュー非対応"
-            )
+        self.history_panel.refresh_selection(
+            self.config["workflows"], working=self.working,
+            visible=self.tabs.select() == str(self.history_panel),
+        )
 
     def _restore_selected_character_traits(self) -> None:
         if self.working or self.character_analysis_running:
@@ -1398,9 +1182,8 @@ class Application:
             self.timing_status.set("経過 00:00")
         if hasattr(self, "project_workspace"):
             self.project_workspace.set_enabled(False)
-        for name in ("result_video", "history_video"):
-            if hasattr(self, name):
-                getattr(self, name).set_enabled(False)
+        self.result_panel.set_busy(True)
+        self.history_panel.set_busy(True)
         self.run_button.configure(state="disabled")
         self.preview_button.configure(state="disabled")
         self.cancel_button.configure(state="normal")
@@ -1408,15 +1191,6 @@ class Application:
             self.free_memory_button.configure(state="disabled")
         if hasattr(self, "recover_jobs_button"):
             self.recover_jobs_button.configure(state="disabled")
-        self.same_seed_button.configure(state="disabled")
-        self.new_seed_button.configure(state="disabled")
-        if hasattr(self, "history_request_button"):
-            self.history_request_button.configure(state="disabled")
-        if hasattr(self, "history_character_button"):
-            self.history_character_button.configure(state="disabled")
-        if hasattr(self, "history_restore_button"):
-            self.history_restore_button.configure(state="disabled")
-            self.history_tools.pack_forget()
         self.progress_bar.start(12)
         self.status.set(label)
 
@@ -1441,11 +1215,9 @@ class Application:
         if not self._save_settings():
             return
         cfg = copy.deepcopy(self.config)
-        self.latest_prompt_profile = entry.prompt_profile
-        self.latest_request_text = entry.request_text
-        self.latest_character_traits = entry.character_traits
-        self.latest_character_analysis = entry.character_analysis
-        self.latest_character_references = entry.character_references
+        self.review.begin(request_text=entry.request_text, profile=entry.prompt_profile,
+                          character_traits=entry.character_traits, character_analysis=entry.character_analysis,
+                          character_references=entry.character_references)
         self._set_busy("保存した設定を使って再生成中（LLMは呼び出しません）")
         self._log(
             f"再生成: {entry.workflow_id} / "
@@ -1578,31 +1350,12 @@ class Application:
         self._open_prompt_details(details, from_history=True)
 
     def _show_prompt_preview(self) -> None:
-        """Inspect the most recent result/dry-run without changing history."""
-        result = self.latest_prompt_plan
-        if not result or not isinstance(result.get("parameters"), dict):
-            messagebox.showinfo(
-                "生成タグ", "「解釈のみテスト」または画像生成を実行してください。",
-            )
+        """Inspect the last completed result/dry-run with its own metadata."""
+        details = self.review.details()
+        if details is None:
+            messagebox.showinfo("生成タグ", "「解釈のみテスト」または画像生成を実行してください。")
             return
-        params = result["parameters"]
-        workflow_id = result.get("workflow_id", "")
-        kind = self.config.get("workflows", {}).get(workflow_id, {}).get("kind")
-        self._open_prompt_details({
-            "workflow_id": workflow_id,
-            "kind": kind,
-            "profile": self.latest_prompt_profile,
-            "request_text": self.latest_request_text,
-            "positive_prompt": params.get("positive_prompt", ""),
-            "negative_prompt": params.get("negative_prompt"),
-            "seed": params.get("seed"),
-            "steps": params.get("steps"),
-            "cfg": params.get("cfg"),
-            "denoise": params.get("denoise"),
-            "character_traits": self.latest_character_traits,
-            "character_analysis": self.latest_character_analysis,
-            "character_references": self.latest_character_references,
-        }, from_history=False)
+        self._open_prompt_details(details, from_history=False)
 
     def _open_prompt_details(self, details: dict, *, from_history: bool) -> None:
         show_prompt_details(self.root, details, from_history=from_history,
@@ -1808,11 +1561,7 @@ class Application:
         self.status.set(f"生成結果を{label}の参照画像に設定しました")
 
     def _current_output_to_i2i(self) -> None:
-        selected = self.images_list.curselection()
-        index = selected[0] if selected else 0
-        self._use_as_i2i_source(
-            self.image_paths[index] if index < len(self.image_paths) else None
-        )
+        self._use_as_i2i_source(self.result_panel.selected_path())
 
     def _history_output_to_i2i(self) -> None:
         entry = self._one_history()
@@ -1822,12 +1571,7 @@ class Application:
         self._use_as_i2i_source(entry.first_image)
 
     def _current_output_to_i2v(self) -> None:
-        selected = self.images_list.curselection()
-        index = selected[0] if selected else 0
-        self._use_as_i2i_source(
-            self.image_paths[index] if index < len(self.image_paths) else None,
-            core.H3_I2V_ID,
-        )
+        self._use_as_i2i_source(self.result_panel.selected_path(), core.H3_I2V_ID)
 
     def _history_output_to_i2v(self) -> None:
         entry = self._one_history()
@@ -1944,15 +1688,10 @@ class Application:
         self.cancel_button.configure(state="disabled")
 
         def task():
-            try:
-                core.ComfyUI(settings).free_if_idle()
-                self.messages.put(("progress", "ComfyUI: メモリ解放要求を送信しました"))
-            except Exception as exc:
-                self.messages.put(("error", str(exc)))
-            finally:
-                self.messages.put(("idle", None))
+            core.ComfyUI(settings).free_if_idle()
+            return "ComfyUI: メモリ解放要求を送信しました"
 
-        threading.Thread(target=task, daemon=True).start()
+        self._launch_generation(task, done_event="progress")
 
     def _check_connections(self) -> None:
         llm = copy.deepcopy(self.config["llm"])
@@ -2099,12 +1838,9 @@ class Application:
             except (OSError, ValueError, core.OrchestratorError) as exc:
                 messagebox.showerror("キャラ参照", str(exc))
                 return
-        self.latest_character_traits = approved_traits
-        self.latest_character_references = approved_images
-        self.latest_character_analysis = approved_analysis
         self.latest_composition_report = ""
         kind = cfg["workflows"][selected]["kind"]
-        self.latest_prompt_profile = (
+        profile = (
             None if not use_prompt_llm else
             cfg["llm"].get("t2i_prompt_profile", DEFAULT_T2I_PROFILE)
             if kind == "t2i" else
@@ -2113,7 +1849,6 @@ class Application:
             cfg["llm"].get("h3_prompt_profile", DEFAULT_H3_PROFILE)
             if selected == core.H3_I2V_ID else None
         )
-        self.latest_request_text = prompt
         continuous = self.generation_mode.get() == "continuous"
         if continuous:
             if hasattr(self, "project_workspace") and not self.project_workspace.confirm_replace():
@@ -2149,16 +1884,17 @@ class Application:
                 return
             self._start_long_prompt_plan(
                 cfg, prompt, image, overrides, long_seconds, frames, media,
-                prompt_cache, dry_run, self.latest_prompt_profile, cut_frames=cut_frames,
+                prompt_cache, dry_run, profile, cut_frames=cut_frames,
                 overlap_frames=overlap_frames,
             )
             return
+        self.review.begin(request_text=prompt, profile=profile, character_traits=approved_traits,
+                          character_analysis=approved_analysis, character_references=approved_images)
         self._set_busy("解釈テスト中..." if dry_run else "生成準備中...")
         self._log("開始: " + ("解釈のみテスト" if dry_run else "動画生成" if is_video else "画像生成")
                   + (f" / model={cfg['llm']['model']}" if use_prompt_llm else " / LLMなし"))
 
         controller = self._controller(cfg, prompt_cache)
-        profile = self.latest_prompt_profile
         self._launch_generation(lambda: controller.generate(
             prompt, selected, overrides, image=image, dry_run=dry_run,
             mask_image=mask, pose_image=pose, composition_image=composition,
@@ -2389,11 +2125,6 @@ class Application:
                 return
         cfg = self._project_config(manifest)
         cache = self.prompt_cache if self.use_prompt_cache.get() else None
-        self.latest_request_text = manifest["request"]
-        self.latest_prompt_profile = manifest.get("profile")
-        self.latest_character_traits = None
-        self.latest_character_references = ()
-        self.latest_character_analysis = None
         self._run_project_action(manifest, action, cfg, cache, overrides=overrides, source=source,
                                  overlap_frames=overlap_frames)
 
@@ -2403,6 +2134,8 @@ class Application:
             raise core.OrchestratorError("長尺プロジェクト操作が不正です")
         if action.action in ("generate", "generate_join") and manifest["backend"] != cfg["comfyui"]["base_url"].rstrip("/"):
             raise core.OrchestratorError("保存時と同じComfyUI接続先にしてください")
+        if action.action in ("generate_join", "join"):
+            self.review.begin(request_text=manifest["request"], profile=manifest.get("profile"))
         self._set_busy("長尺プロジェクト処理中")
 
         def task():
@@ -2472,223 +2205,229 @@ class Application:
         self.cancel_button.configure(state="disabled")
         self._launch_generation(self._controller(cfg).recover, done_event="jobs_recovered")
 
+    def _build_event_router(self):
+        return EventRouter({
+            "progress": self._on_event_progress,
+            "timing": self._on_event_timing,
+            "operations_report": self._on_event_operations_report,
+            "operations_error": self._on_event_operations_error,
+            "projects_loaded": self._on_event_projects_loaded,
+            "long_plan_ready": self._finish_long_prompt_plan,
+            "project_translation_cache_updated": self._on_event_project_translation_cache_updated,
+            "project_prompt_edited": self._on_event_project_prompt_edited,
+            "long_project_saved": self._on_event_long_project_saved,
+            "long_project_checkpoint": self._on_event_long_project_checkpoint,
+            "long_project_done": self._on_event_long_project_done,
+            "confirm_unknown_long_job": self._on_event_confirm_unknown_long_job,
+            "character_analysis_done": self._on_event_character_analysis_done,
+            "character_analysis_error": self._on_event_character_analysis_error,
+            "character_revision_done": self._on_event_character_revision_done,
+            "character_revision_error": self._on_event_character_revision_error,
+            "check": self._on_event_check,
+            "generation_models": self._on_event_generation_models,
+            "generation_models_error": self._on_event_generation_models_error,
+            "models": self._on_event_models,
+            "history_loaded": lambda data: self._finish_history_refresh(*data),
+            "cancel_requested": self._on_event_cancel_requested,
+            "jobs_recovered": self._on_event_jobs_recovered,
+            "done": self._on_event_done,
+            "error": self._on_event_error,
+            "idle": self._on_event_idle,
+        })
+
     def _consume_messages(self) -> None:
-        # Yield between bursts of worker events instead of monopolizing Tk.
+        # A failed UI callback must not strand an already queued idle event.
         for kind, data in self.tasks.drain():
-            if kind == "progress":
-                if data.startswith("【構図認識結果】\n"):
-                    self.latest_composition_report = data.split("\n", 1)[1]
-                    self.status.set("構図認識が完了しました（認識結果...から確認可能）")
-                else:
-                    self.status.set(data)
-                self._log(data)
-            elif kind == "timing":
-                self.tasks.update_estimate(data)
-                self._tick_timing()
-            elif kind == "operations_report":
-                self._operations_pending = False
-                if self._operations_window is not None and self._operations_window.is_open():
-                    self._operations_window.update(*data)
-            elif kind == "operations_error":
-                self._operations_pending = False
-                self._log("運用情報の取得失敗: " + data)
-                if self._operations_window is not None and self._operations_window.is_open():
-                    self._operations_window.summary.set("取得失敗: " + data[:180])
-            elif kind == "projects_loaded":
-                serial, projects, preferred, open_preferred = data
-                if serial == self._project_refresh_serial:
-                    self.project_workspace.set_projects(projects, preferred, open_preferred=open_preferred)
-            elif kind == "long_plan_ready":
-                self._finish_long_prompt_plan(data)
-            elif kind == "project_translation_cache_updated":
-                self.project_workspace.accept_prompt_result(*data)
-            elif kind == "project_prompt_edited":
-                run_id, cuts, result = data
-                batch_review = "translated_count" in result
-                if self.stop_event.is_set() and not batch_review:
-                    self.status.set("プロンプト編集を中止しました")
-                elif self.project_workspace.accept_prompt_result(run_id, cuts, result):
-                    changed = result["before"] != result["after"]
-                    if batch_review:
-                        self.status.set(f"一括翻訳: {result['translated_count']}件完了（英語原文変更なし）")
-                    else:
-                        self.status.set("プロンプト編集完了（未保存・動画未生成）" if changed else "日本語訳を表示しました")
-                else:
-                    self.status.set("計画が変わったため編集結果を適用しませんでした")
-            elif kind == "long_project_saved":
-                self._preferred_long_project_id = data["run_id"]
-                self.project_workspace.load(data, preserve_selection=True, restore_inputs=False)
-                self._refresh_projects(data["run_id"])
-                self._log("長尺プロジェクト保存: " + data["run_id"])
-            elif kind == "long_project_checkpoint":
-                self.project_workspace.checkpoint(data)
-            elif kind == "long_project_done":
-                self._preferred_long_project_id = data
-                self.status.set("長尺プロジェクト保存済み")
-            elif kind == "confirm_unknown_long_job":
-                record, answered, decision = data
-                try:
-                    if not self.stop_event.is_set():
-                        decision["retry"] = messagebox.askyesno(
-                            "状態不明の長尺ジョブ",
-                            "前回ジョブの実行結果が確認できません。ComfyUI側に結果や待機・実行中のジョブがないことを確認してください。\n"
-                            "この記録を失敗扱いにして同じ区間を再生成しますか？\n"
-                            "以前に生成済みだった場合、再生成になる可能性があります。\n\nID: " + record["prompt_id"],
-                        )
-                finally:
-                    answered.set()
-            elif kind == "character_analysis_done":
-                dialog, analysis = data
-                self.character_analysis_running = False
-                dialog.finish(analysis=analysis)
-                self._log("キャラ参照画像の共通特徴を抽出。編集・確定待ち")
-                self.status.set("キャラ特徴を編集して確定してください")
-            elif kind == "character_analysis_error":
-                dialog, error = data
-                self.character_analysis_running = False
-                dialog.finish(error=error)
-                self._log("キャラ特徴抽出エラー: " + error)
-                self.status.set("キャラ特徴抽出に失敗しました")
-            elif kind == "character_revision_done":
-                dialog, revised = data
-                self.character_analysis_running = False
-                dialog.finish_revision(revised_text=revised)
-                self._log("自然文のキャラ説明修正案が完成（未確定）")
-                self.status.set("キャラ説明の修正案を確認して確定してください")
-            elif kind == "character_revision_error":
-                dialog, error = data
-                self.character_analysis_running = False
-                dialog.finish_revision(error=error)
-                self._log("自然文でのキャラ説明修正エラー: " + error)
-                self.status.set("自然文による説明修正に失敗しました")
-            elif kind == "check":
-                for line in data:
-                    self._log(line)
-                self.status.set("接続確認が完了しました")
-            elif kind == "generation_models":
-                url, inventory = data
-                if url == self.comfy_url.get().strip():
-                    self.generation_inventory = inventory
-                    self._apply_generation_model_choices()
-                    choices = core.installed_model_choices(inventory)
-                    self._log(f"ComfyUIモデル: SDXL {len(choices['sdxl'])}件 / H3 {len(choices['h3'])}件")
-            elif kind == "generation_models_error":
-                self._log("ComfyUIモデル一覧を更新できません: " + data)
-            elif kind == "models":
-                names = [item["key"] for item in data]
-                self.model_box.configure(values=names)
-                if self.model.get() not in names and names:
-                    self.model.set(names[0])
-                self._log(f"LM Studioモデル: {len(names)}件。必要なモデルを選択して設定を保存してください。")
-                self.status.set(f"モデル一覧を更新: {len(names)}件")
-            elif kind == "history_loaded":
-                self._finish_history_refresh(*data)
-            elif kind == "cancel_requested":
-                self.status.set("停止要求送信済み（終了未確認）")
-                self._log(data)
-            elif kind == "jobs_recovered":
-                recovered, remaining = data
-                self.status.set(f"回収 {recovered}件 / 未回収 {remaining}件")
-                self._refresh_history(scan_legacy=False)
-            elif kind == "done":
-                result, images, history_id = data
-                self.latest_prompt_plan = result
-                self.result_prompt_button.configure(state="normal")
-                if result["status"] == "dry_run":
-                    self._log("解釈結果:\n" + json.dumps(result, ensure_ascii=False, indent=2))
-                    self.status.set("解釈テスト完了（ComfyUI未実行）")
-                    self.tabs.select(0)
-                    self._show_prompt_preview()
-                else:
-                    self.image_paths = images
-                    self.images_list.delete(0, "end")
-                    for file in images:
-                        self.images_list.insert("end", file.name)
-                    if len(images) > 1:
-                        self.images_list.pack(fill="x", pady=(0, 5))
-                    else:
-                        self.images_list.pack_forget()
-                    if images:
-                        self.images_list.selection_set(0)
-                        self._display_image(images[0])
-                        self.open_button.configure(state="normal")
-                    else:
-                        self._set_result_video(None)
-                        self.preview_photo = None
-                        self.image_label.configure(image="", text="出力なし")
-                        self.result_info.set("")
-                        self.result_tools.pack_forget()
-                        self.open_button.configure(state="disabled")
-                    self._log("生成完了: " + json.dumps(result.get("parameters", {}), ensure_ascii=False))
-                    if history_id is None:
-                        self.status.set("出力保存済み / 履歴未登録（未回収結果または長尺再開で回収）")
-                    else:
-                        self.status.set("動画生成完了" if any(is_video_output(p) for p in images) else "画像生成完了")
-                    self.tabs.select(0)
-                    self._refresh_history(select_id=history_id, scan_legacy=False)
-            elif kind == "error":
-                self._log("ERROR: " + data)
-                self.status.set("エラー: " + data[:110])
-                messagebox.showerror("処理エラー", data)
-            elif kind == "idle":
-                self._tick_timing(finished=True)
-                self.tasks.finish()
-                if hasattr(self, "project_workspace"):
-                    self.project_workspace.set_enabled(True)
-                    if self._project_visible:
-                        self._refresh_projects()
-                for name in ("result_video", "history_video"):
-                    if hasattr(self, name):
-                        getattr(self, name).set_enabled(True)
-                self.run_button.configure(state="normal")
-                self.preview_button.configure(state="normal")
-                self.cancel_button.configure(state="disabled")
-                if hasattr(self, "free_memory_button"):
-                    self.free_memory_button.configure(state="normal")
-                if hasattr(self, "recover_jobs_button"):
-                    self.recover_jobs_button.configure(state="normal")
-                self.progress_bar.stop()
-                self._history_selection_changed()
+            try:
+                if not self.event_router.dispatch(kind, data):
+                    self._log("未登録のイベント: " + kind)
+            except Exception as exc:
+                self.root.report_callback_exception(type(exc), exc, exc.__traceback__)
         if self.root.winfo_exists():
             if self.working:
                 self._tick_timing()
             self.root.after(15 if not self.messages.empty() else 100, self._consume_messages)
 
-    def _show_selected_image(self, _event=None) -> None:
-        selected = self.images_list.curselection()
-        if selected and selected[0] < len(self.image_paths):
-            self._display_image(self.image_paths[selected[0]])
-
-    def _display_image(self, path: Path) -> None:
-        if hasattr(self, "result_video"):
-            self._set_result_video(path if is_video_output(path) else None)
-        if path.suffix.lower() in IMAGE_EXTENSIONS:
-            self.result_tools.pack(fill="x", pady=(5, 0))
+    def _on_event_progress(self, data):
+        if data.startswith("【構図認識結果】\n"):
+            self.latest_composition_report = data.split("\n", 1)[1]
+            self.status.set("構図認識が完了しました（認識結果...から確認可能）")
         else:
-            self.result_tools.pack_forget()
-        if is_video_output(path):
-            self.preview_photo = None
-            self.image_label.configure(image="", text="動画")
-            self.result_info.set(path.name if len(self.image_paths) == 1 else "")
-            return
+            self.status.set(data)
+        self._log(data)
+
+    def _on_event_timing(self, data):
+        self.tasks.update_estimate(data)
+        self._tick_timing()
+
+    def _on_event_operations_report(self, data):
+        self._operations_pending = False
+        if self._operations_window is not None and self._operations_window.is_open():
+            self._operations_window.update(*data)
+
+    def _on_event_operations_error(self, data):
+        self._operations_pending = False
+        self._log("運用情報の取得失敗: " + data)
+        if self._operations_window is not None and self._operations_window.is_open():
+            self._operations_window.summary.set("取得失敗: " + data[:180])
+
+    def _on_event_projects_loaded(self, data):
+        serial, projects, preferred, open_preferred = data
+        if serial == self._project_refresh_serial:
+            self.project_workspace.set_projects(projects, preferred, open_preferred=open_preferred)
+
+    def _on_event_project_translation_cache_updated(self, data):
+        self.project_workspace.accept_prompt_result(*data)
+
+    def _on_event_project_prompt_edited(self, data):
+        run_id, cuts, result = data
+        batch_review = "translated_count" in result
+        if self.stop_event.is_set() and not batch_review:
+            self.status.set("プロンプト編集を中止しました")
+        elif self.project_workspace.accept_prompt_result(run_id, cuts, result):
+            changed = result["before"] != result["after"]
+            if batch_review:
+                self.status.set(f"一括翻訳: {result['translated_count']}件完了（英語原文変更なし）")
+            else:
+                self.status.set("プロンプト編集完了（未保存・動画未生成）" if changed else "日本語訳を表示しました")
+        else:
+            self.status.set("計画が変わったため編集結果を適用しませんでした")
+
+    def _on_event_long_project_saved(self, data):
+        self._preferred_long_project_id = data["run_id"]
+        self.project_workspace.load(data, preserve_selection=True, restore_inputs=False)
+        self._refresh_projects(data["run_id"])
+        self._log("長尺プロジェクト保存: " + data["run_id"])
+
+    def _on_event_long_project_checkpoint(self, data):
+        self.project_workspace.checkpoint(data)
+
+    def _on_event_long_project_done(self, data):
+        self._preferred_long_project_id = data
+        self.status.set("長尺プロジェクト保存済み")
+
+    def _on_event_confirm_unknown_long_job(self, data):
+        record, answered, decision = data
         try:
-            photo = tk.PhotoImage(file=str(path))
-            scale = preview_subsample(
-                photo.width(), photo.height(),
-                self.image_label.winfo_width(), self.image_label.winfo_height(), 400,
-            )
-            self.preview_photo = photo.subsample(scale, scale)
-            self.image_label.configure(image=self.preview_photo, text="")
-        except tk.TclError:
-            self.preview_photo = None
-            self.image_label.configure(image="", text="プレビュー非対応")
-        self.result_info.set(path.name if len(self.image_paths) == 1 else "")
+            if not self.stop_event.is_set():
+                decision["retry"] = messagebox.askyesno(
+                    "状態不明の長尺ジョブ",
+                    "前回ジョブの実行結果が確認できません。ComfyUI側に結果や待機・実行中のジョブがないことを確認してください。\n"
+                    "この記録を失敗扱いにして同じ区間を再生成しますか？\n"
+                    "以前に生成済みだった場合、再生成になる可能性があります。\n\nID: " + record["prompt_id"],
+                )
+        finally:
+            answered.set()
+
+    def _on_event_character_analysis_done(self, data):
+        dialog, analysis = data
+        self.character_analysis_running = False
+        dialog.finish(analysis=analysis)
+        self._log("キャラ参照画像の共通特徴を抽出。編集・確定待ち")
+        self.status.set("キャラ特徴を編集して確定してください")
+
+    def _on_event_character_analysis_error(self, data):
+        dialog, error = data
+        self.character_analysis_running = False
+        dialog.finish(error=error)
+        self._log("キャラ特徴抽出エラー: " + error)
+        self.status.set("キャラ特徴抽出に失敗しました")
+
+    def _on_event_character_revision_done(self, data):
+        dialog, revised = data
+        self.character_analysis_running = False
+        dialog.finish_revision(revised_text=revised)
+        self._log("自然文のキャラ説明修正案が完成（未確定）")
+        self.status.set("キャラ説明の修正案を確認して確定してください")
+
+    def _on_event_character_revision_error(self, data):
+        dialog, error = data
+        self.character_analysis_running = False
+        dialog.finish_revision(error=error)
+        self._log("自然文でのキャラ説明修正エラー: " + error)
+        self.status.set("自然文による説明修正に失敗しました")
+
+    def _on_event_check(self, data):
+        for line in data:
+            self._log(line)
+        self.status.set("接続確認が完了しました")
+
+    def _on_event_generation_models(self, data):
+        url, inventory = data
+        if url == self.comfy_url.get().strip():
+            self.generation_inventory = inventory
+            self._apply_generation_model_choices()
+            choices = core.installed_model_choices(inventory)
+            self._log(f"ComfyUIモデル: SDXL {len(choices['sdxl'])}件 / H3 {len(choices['h3'])}件")
+
+    def _on_event_generation_models_error(self, data):
+        self._log("ComfyUIモデル一覧を更新できません: " + data)
+
+    def _on_event_models(self, data):
+        names = [item["key"] for item in data]
+        self.model_box.configure(values=names)
+        if self.model.get() not in names and names:
+            self.model.set(names[0])
+        self._log(f"LM Studioモデル: {len(names)}件。必要なモデルを選択して設定を保存してください。")
+        self.status.set(f"モデル一覧を更新: {len(names)}件")
+
+    def _on_event_cancel_requested(self, data):
+        self.status.set("停止要求送信済み（終了未確認）")
+        self._log(data)
+
+    def _on_event_jobs_recovered(self, data):
+        recovered, remaining = data
+        self.status.set(f"回収 {recovered}件 / 未回収 {remaining}件")
+        self._refresh_history(scan_legacy=False)
+
+    def _on_event_done(self, data):
+        result, images, history_id = data
+        self.review.publish(result, self.config.get("workflows", {}))
+        self.result_panel.mark_prompt_available()
+        if result["status"] == "dry_run":
+            self._log("解釈結果:\n" + json.dumps(result, ensure_ascii=False, indent=2))
+            self.status.set("解釈テスト完了（ComfyUI未実行）")
+            self.tabs.select(0)
+            self._show_prompt_preview()
+        else:
+            self.result_panel.show_outputs(images)
+            self._log("生成完了: " + json.dumps(result.get("parameters", {}), ensure_ascii=False))
+            if history_id is None:
+                self.status.set("出力保存済み / 履歴未登録（未回収結果または長尺再開で回収）")
+            else:
+                self.status.set("動画生成完了" if any(is_video_output(p) for p in images) else "画像生成完了")
+            self.tabs.select(0)
+            self._refresh_history(select_id=history_id, scan_legacy=False)
+
+    def _on_event_error(self, data):
+        self._log("ERROR: " + data)
+        self.status.set("エラー: " + data[:110])
+        messagebox.showerror("処理エラー", data)
+
+    def _on_event_idle(self, data):
+        self._tick_timing(finished=True)
+        self.tasks.finish()
+        self.review.finish()
+        if hasattr(self, "project_workspace"):
+            self.project_workspace.set_enabled(True)
+            if self._project_visible:
+                self._refresh_projects()
+        self.result_panel.set_busy(False)
+        self.history_panel.set_busy(False)
+        self.run_button.configure(state="normal")
+        self.preview_button.configure(state="normal")
+        self.cancel_button.configure(state="disabled")
+        if hasattr(self, "free_memory_button"):
+            self.free_memory_button.configure(state="normal")
+        if hasattr(self, "recover_jobs_button"):
+            self.recover_jobs_button.configure(state="normal")
+        self.progress_bar.stop()
+        self._history_selection_changed()
 
     def _open_image(self) -> None:
-        selected = self.images_list.curselection()
-        index = selected[0] if selected else 0
-        if index < len(self.image_paths):
-            self._open_path(self.image_paths[index])
+        path = self.result_panel.selected_path()
+        if path is not None:
+            self._open_path(path)
 
     def _open_outputs(self) -> None:
         OUTPUTS.mkdir(parents=True, exist_ok=True)
@@ -2710,9 +2449,8 @@ class Application:
             "実行中", "現在の操作の進捗表示は終了します。ComfyUI側の生成ジョブは停止しません。閉じますか？"
         ):
             return
-        for name in ("result_video", "history_video"):
-            if hasattr(self, name):
-                getattr(self, name).stop()
+        self.result_panel.result_video.stop()
+        self.history_panel.history_video.stop()
         if hasattr(self, "project_workspace"):
             self.project_workspace.stop_preview()
         self.root.destroy()

@@ -119,3 +119,20 @@ class TaskController:
         elif self._label in ("生成待ち", "残カット生成待ち"):
             text += " 計測中"
         return text
+
+
+class EventRouter:
+    """Explicit UI-side routing; workers only publish data, never call handlers."""
+    def __init__(self, handlers):
+        self._handlers = dict(handlers)
+
+    @property
+    def kinds(self):
+        return frozenset(self._handlers)
+
+    def dispatch(self, kind, data):
+        handler = self._handlers.get(kind)
+        if handler is None:
+            return False
+        handler(data)
+        return True

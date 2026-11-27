@@ -9,7 +9,7 @@ from comfy_orchestrator import app_config, generation_form, history_presentation
 from comfy_orchestrator import output_views, settings_ui, prompt_viewer, generation_view, task_controller
 from comfy_orchestrator import prompt_inference, project_draft, project_ui, h3_prompt, lmstudio
 from comfy_orchestrator import core, workflow_registry, configuration, http_api, comfy_client, ollama_client
-from comfy_orchestrator import generation_runtime, model_runtime
+from comfy_orchestrator import generation_runtime, model_runtime, history_refresh, result_state, preview_geometry
 from comfy_orchestrator.parameters import OrchestratorError
 
 
@@ -127,7 +127,7 @@ class ModuleBoundariesTests(unittest.TestCase):
     def test_extracted_services_do_not_import_gui_or_long_video_runner(self):
         for module in (long_video_plan, project_store, video_media, prompt_review,
                        generation_form, history_presentation, app_config, task_controller,
-                       prompt_inference, project_draft):
+                       prompt_inference, project_draft, history_refresh, result_state, preview_geometry):
             syntax = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
             for node in ast.walk(syntax):
                 if isinstance(node, ast.ImportFrom):

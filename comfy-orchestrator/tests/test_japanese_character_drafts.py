@@ -312,7 +312,7 @@ class NaturalLanguageRevisionTests(unittest.TestCase):
         self.assertNotIn("self.on_confirm(", source)
         self.assertIn(
             "character_revision_done",
-            inspect.getsource(gui.Application._consume_messages),
+            inspect.getsource(gui.Application._build_event_router),
         )
 
 if __name__ == "__main__":
