@@ -8,7 +8,7 @@ from .h3 import h3_model_label, H3_TURBO_LABELS
 from .generation_form import WORKFLOW_NAMES
 from .history import HistoryEntry
 from .long_video_plan import LONG_VIDEO_ID
-from .output_collection import is_video_output
+from .output_collection import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, is_video_output
 from .prompt_profiles import T2I_PROFILE_LABELS, I2I_PROFILE_LABELS, H3_PROFILE_LABELS
 
 
@@ -94,7 +94,9 @@ def history_summary(entry: HistoryEntry) -> str:
             details.append("Turbo " + turbo)
     if policy_label:
         details.append(policy_label)
-    if entry.legacy:
+    if entry.kind == "frame":
+        details = [f"動画フレーム · {p.get('material_frame', '?')}f"]
+    elif entry.legacy:
         details = ["旧履歴"]
     return "  ·  ".join(details)
 
@@ -125,10 +127,14 @@ def history_action_state(selected, workflows, *, working):
     comparable = ((len(selected) == 2 and all(e.first_image and e.first_image.is_file()
                                             and not is_video_output(e.first_image) for e in selected))
                   or bool(still and single.reference_image and single.reference_image.is_file()))
+    material = bool(single and any(
+        path is not None and path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
+        for path in (*getattr(single, "images", (single.first_image,)), single.reference_image)
+    ))
     return {
         "open": exists, "restore": restorable, "compare": comparable,
         "prompt": bool(single and history_prompt_details(single)),
         "request": history_request_text(single) is not None and not working,
         "character": bool(single and single.character_traits and not working),
-        "use_as_source": still and not working,
+        "use_as_source": material and not working,
     }

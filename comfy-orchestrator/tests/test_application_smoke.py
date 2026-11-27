@@ -93,6 +93,27 @@ class ApplicationSmokeTests(unittest.TestCase):
                     root.update_idletasks()
                     self.assertFalse(callback_errors, callback_errors)
 
+                    # Transfer changes only explicitly selected fields and never
+                    # executes a generation or silently restores the old project.
+                    from comfy_orchestrator.material_transfer import Material, Transfer
+                    material = Material("test", output.resolve())
+                    original_text = app.prompt.get("1.0", "end-1c")
+                    app._apply_material_transfer(Transfer(material, "video", None, {}), output)
+                    self.assertEqual(app.generation_mode.get(), "video")
+                    self.assertEqual(app.reference_image.get(), str(output))
+                    self.assertEqual(app.prompt.get("1.0", "end-1c"), original_text)
+                    app._apply_material_transfer(Transfer(material, "continuous", "new scene",
+                        {"h3_steps": "8", "seed": "77"}), output)
+                    self.assertEqual(app.generation_mode.get(), "continuous")
+                    self.assertIsNone(app.project_workspace.draft)
+                    self.assertEqual(app.prompt.get("1.0", "end-1c"), "new scene")
+                    self.assertEqual(app.seed.get(), "77")
+                    self.assertEqual(app.tabs.select(), str(app.project_workspace))
+                    app.generation_mode.set("image")
+                    app._on_generation_mode_choice()
+                    root.update_idletasks()
+                    self.assertFalse(callback_errors, callback_errors)
+
                     # Usage is captured at the real transport boundary in a worker,
                     # and the operations panel renders persisted totals without an API.
                     from comfy_orchestrator import lmstudio

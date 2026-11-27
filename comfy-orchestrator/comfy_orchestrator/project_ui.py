@@ -280,6 +280,33 @@ class ProjectWorkspace(ttk.Frame):
             # reference image/prompt with an unrelated previous project.
             self.selection.set("")
 
+    def clear_draft(self):
+        """Detach the editor; never delete or revise the saved project."""
+        self.draft = None
+        self._updating = True
+        try:
+            if self._row_update_pending is not None:
+                self.after_cancel(self._row_update_pending)
+                self._row_update_pending = None
+            self._missing_clips.clear()
+            self._ja_baseline = {"common": None, "cut": None}
+            self.selection.set("")
+            self.summary.set("")
+            self.cuts.delete(*self.cuts.get_children())
+            self.duration.set("")
+            self.cut_title.set("")
+            for widget in (self.common, self.cut_prompt):
+                widget.configure(state="normal")
+                widget.delete("1.0", "end")
+                widget.edit_modified(False)
+                widget.edit_reset()
+            self.preview.set_source(None)
+            self.preview_info.set("")
+            self.views.select(self.edit_page)
+        finally:
+            self._updating = False
+        self._states()
+
     def load(self, manifest, *, preserve_selection=False, restore_inputs=True):
         old = self.draft
         self.draft = ProjectDraft(manifest)

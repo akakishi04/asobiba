@@ -82,6 +82,8 @@ from .task_controller import TaskController, EventRouter
 from .history_refresh import HistoryRefresh
 from .result_state import ResultReviewState
 from .llm_usage import UsageStore
+from .material_transfer import DESTINATIONS, available_materials, extract_material
+from .material_ui import MaterialDialog, FramePicker
 from .single_prompt import SinglePromptDraft
 from .single_prompt_ui import SinglePromptWindow
 from .preview_geometry import preview_subsample
@@ -159,6 +161,8 @@ class Application:
         self._generation_ui_key = None
         self.latest_composition_report = ""
         self.review = ResultReviewState()
+        self._result_material_context = {}
+        self._pending_material_transfer = None
         self.single_draft = None
         self.single_window = None
         self._single_refresh = False
@@ -527,8 +531,7 @@ class Application:
                 open_image=self._open_image,
                 open_outputs=self._open_outputs,
                 show_prompt=self._show_prompt_preview,
-                use_i2i=self._current_output_to_i2i,
-                use_i2v=self._current_output_to_i2v,
+                use_material=self._current_output_material,
             ),
         )
         self.tabs.add(self.result_panel, text="結果")
@@ -543,8 +546,7 @@ class Application:
                 show_prompt=self._show_selected_history_prompt,
                 refresh=self._refresh_history,
                 restore_character=self._restore_selected_character_traits,
-                use_i2i=self._history_output_to_i2i,
-                use_i2v=self._history_output_to_i2v,
+                use_material=self._history_output_material,
             ),
         )
         self.tabs.add(self.history_panel, text="履歴")
@@ -1635,47 +1637,108 @@ class Application:
             self._log(f"部分修正マスクを保存: {result.name}")
             self.status.set("修正範囲を指定しました。自然文を入力して生成してください")
 
-    def _use_as_i2i_source(self, path: Path | None, workflow_id: str = "wai_i2i_basic") -> None:
-        label = "I2V" if workflow_id in core.HOST_VIDEO_IDS else "I2I"
-        if self.working:
-            messagebox.showwarning(label, "現在の処理が終了してから画像を指定してください")
-            return
-        if path is None or not path.is_file() or path.suffix.lower() not in IMAGE_EXTENSIONS:
-            messagebox.showerror(label, "静止画像を選択してください")
-            return
-        self._source_change_lock = True
-        try:
-            self.mask_image.set("")
-            self.pose_image.set("")
-            self._last_reference_image = ""
-            self.reference_image.set(str(path))
-        finally:
-            self._source_change_lock = False
-        self._on_reference_image_changed()
-        if hasattr(self, "generation_mode"):
-            self.generation_mode.set(workflow_generation_mode(self.config, workflow_id))
-        self.workflow.set(workflow_id)
-        self._update_generation_controls()
-        self.tabs.select(0)
-        self.prompt.focus_set()
-        self.status.set(f"生成結果を{label}の参照画像に設定しました")
+    def _current_output_material(self):
+        context = self._result_material_context
+        self._choose_material(
+            available_materials(self.result_panel.image_paths), context=context,
+            preferred=self.result_panel.selected_path(), player=self.result_panel.result_video,
+        )
 
-    def _current_output_to_i2i(self) -> None:
-        self._use_as_i2i_source(self.result_panel.selected_path())
-
-    def _history_output_to_i2i(self) -> None:
+    def _history_output_material(self):
         entry = self._one_history()
         if entry is None:
-            messagebox.showinfo("I2I", "画像を1件選択してください")
             return
-        self._use_as_i2i_source(entry.first_image)
+        context = {"workflow": entry.workflow_id, "parameters": entry.parameters,
+                   "profile": entry.prompt_profile, "request": history_request_text(entry),
+                   "history_id": entry.id}
+        self._choose_material(available_materials(entry.images, entry.reference_image),
+                              context=context, preferred=entry.first_image,
+                              player=self.history_panel.history_video)
 
-    def _current_output_to_i2v(self) -> None:
-        self._use_as_i2i_source(self.result_panel.selected_path(), core.H3_I2V_ID)
+    def _choose_material(self, materials, *, context, preferred=None, player=None):
+        if self.working or self.character_analysis_running:
+            return
+        destinations = tuple(mode for mode, (_, workflow) in DESTINATIONS.items()
+                             if workflow in self.config["workflows"])
+        if not materials or not destinations:
+            messagebox.showwarning("素材", "使用可能な素材・ワークフローがありません")
+            return
+        transfer = MaterialDialog(
+            self.root, materials, destinations, workflow=context.get("workflow", ""),
+            parameters=context.get("parameters"), profile=context.get("profile"),
+            request=context.get("request"), preferred=preferred,
+            mode=self.generation_mode.get(),
+        ).result
+        if transfer is None:
+            return
+        if transfer.mode == "continuous" and not self.project_workspace.confirm_replace():
+            return
+        source = transfer.material.path
+        if is_video_output(source):
+            ratio = 0.0
+            if player is not None and player.source == source and player.session is not None:
+                ratio = float(player.position.get())
+                player.stop()
+            picker = FramePicker(self.root, source, initial_ratio=ratio)
+            picker.wait_visibility()
+            picker.grab_set()
+            self.root.wait_window(picker)
+            if picker.result is None:
+                return
+            frame, stamp = picker.result
+            self._pending_material_transfer = transfer
+            self._set_busy("フレームを保存中")
+            self._launch_generation(lambda: extract_material(
+                self.history_store, source, frame, stamp=stamp,
+                source_history_id=context.get("history_id"), cancel_event=self.stop_event,
+            ), done_event="material_frame_ready", cancel_as_progress=True)
+        else:
+            self._apply_material_transfer(transfer, source)
 
-    def _history_output_to_i2v(self) -> None:
-        entry = self._one_history()
-        self._use_as_i2i_source(entry.first_image if entry else None, core.H3_I2V_ID)
+    def _apply_material_transfer(self, transfer, source):
+        if source is None or not source.is_file() or source.suffix.lower() not in IMAGE_EXTENSIONS:
+            messagebox.showerror("素材", "静止画像が見つかりません")
+            return
+        mode = transfer.mode
+        label, workflow = DESTINATIONS[mode]
+        if workflow not in self.config["workflows"]:
+            messagebox.showerror("素材", "使用先ワークフローが未登録です")
+            return
+        if mode == "continuous":
+            # The user confirmed replacement before the optional extraction.
+            # Invalidate older project list replies; detach, not delete, the plan.
+            self._project_refresh_serial += 1
+            self.project_workspace.clear_draft()
+        self._source_change_lock = True
+        try:
+            for variable in (self.mask_image, self.pose_image, self.composition_image):
+                variable.set("")
+            self.reference_image.set(str(source))
+            self._last_reference_image = str(source)
+            self.generation_mode.set(mode)
+            self.workflow.set(workflow)
+            self._sync_workflow_choice()
+            for name, value in transfer.settings.items():
+                getattr(self, name).set(value)
+            if transfer.request is not None:
+                self.prompt.edit_separator()
+                self.prompt.replace("1.0", "end-1c", transfer.request)
+                self.prompt.edit_separator()
+        finally:
+            self._source_change_lock = False
+        self._generation_ui_key = None
+        self._update_generation_controls()
+        self.tabs.select(self.project_workspace if mode == "continuous" else self.result_panel)
+        self.prompt.focus_set()
+        self.status.set(f"{label}の参照画像に設定しました")
+
+    def _on_material_frame_ready(self, entry):
+        self._refresh_history(select_id=entry.id, scan_legacy=False)
+        transfer = self._pending_material_transfer
+        self._pending_material_transfer = None
+        if transfer is not None and not self.stop_event.is_set():
+            # Execute the UI transfer only after the foreground worker goes idle.
+            self._pending_material_transfer = (transfer, entry.first_image)
 
     def _open_history_output(self) -> None:
         entry = self._one_history()
@@ -2352,6 +2415,7 @@ class Application:
             "operations_error": self._on_event_operations_error,
             "projects_loaded": self._on_event_projects_loaded,
             "long_plan_ready": self._finish_long_prompt_plan,
+            "material_frame_ready": self._on_material_frame_ready,
             "single_prompt_ready": self._on_single_prompt_ready,
             "single_prompt_changed": self._on_single_prompt_changed,
             "project_translation_cache_updated": self._on_event_project_translation_cache_updated,
@@ -2613,6 +2677,11 @@ class Application:
             self._show_prompt_preview()
         else:
             self.result_panel.show_outputs(images)
+            review = self.review.details() or {}
+            self._result_material_context = {
+                "workflow": result.get("workflow_id", ""), "parameters": copy.deepcopy(result.get("parameters", {})),
+                "profile": review.get("profile"), "request": review.get("request_text"), "history_id": history_id,
+            }
             self._log("生成完了: " + json.dumps(result.get("parameters", {}), ensure_ascii=False))
             if history_id is None:
                 self.status.set("出力保存済み / 履歴未登録（未回収結果または長尺再開で回収）")
@@ -2660,6 +2729,9 @@ class Application:
                 if self._single_refresh:
                     self.single_window.reload()
             self._single_refresh = False
+        pending, self._pending_material_transfer = self._pending_material_transfer, None
+        if isinstance(pending, tuple):
+            self._apply_material_transfer(*pending)
 
     def _open_image(self) -> None:
         path = self.result_panel.selected_path()

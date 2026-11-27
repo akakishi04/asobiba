@@ -68,13 +68,19 @@ class FFmpeg:
             raise OrchestratorError("動画のフレーム情報を取得できません") from exc
 
     def last_frame(self, clip: Path, frames: int, target: Path, cancel_event=None):
+        self.extract_frame(clip, frames, target, cancel_event)
+
+    def extract_frame(self, clip: Path, frame: int, target: Path, cancel_event=None):
+        """Decode an exact one-based frame number, independent of nominal FPS."""
+        if type(frame) is not int or frame < 1:
+            raise OrchestratorError("フレーム番号は1以上の整数です")
         temporary = target.with_name(target.stem + ".part.png")
         try:
             self._run([self.ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
-                       "-threads", "2", "-i", clip, "-vf", f"select=eq(n\\,{frames - 1})",
+                       "-threads", "2", "-i", clip, "-map", "0:v:0", "-vf", f"select=eq(n\\,{frame - 1})",
                        "-frames:v", "1", "-threads", "2", temporary], cancel_event)
             if not temporary.is_file() or temporary.stat().st_size == 0:
-                raise OrchestratorError("最終フレームを取得できません")
+                raise OrchestratorError("指定フレームを取得できません")
             temporary.replace(target)
         finally:
             temporary.unlink(missing_ok=True)

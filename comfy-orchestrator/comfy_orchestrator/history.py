@@ -224,6 +224,29 @@ class HistoryStore:
         assert result is not None
         return result
 
+    def record_frame(self, *, source: Path, frame: int, image: Path, source_history_id=None) -> HistoryEntry:
+        """Index a derived still without inventing generation parameters or a seed."""
+        from .output_collection import VIDEO_EXTENSIONS
+        if (type(frame) is not int or frame < 1 or source.suffix.lower() not in VIDEO_EXTENSIONS
+                or image.suffix.lower() != ".png"):
+            raise HistoryError("動画フレームの保存情報が不正です")
+        source_name = self._relative_output(source)
+        image_name = self._relative_output(image)
+        row_id = uuid.uuid4().hex
+        parameters = {"material_source": source_name, "material_frame": frame}
+        if source_history_id is not None:
+            parameters["material_source_history_id"] = str(source_history_id)
+        with self._connection() as con:
+            con.execute("""
+                INSERT INTO generations
+                (id,created_at,prompt_id,workflow_id,kind,request_text,
+                 parameters_json,images_json,reference_file,legacy)
+                VALUES (?,?,?,?,?,?,?,?,NULL,1)
+            """, (row_id, datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                  "frame:" + row_id, "material_frame", "frame", f"{source.name} / {frame}f",
+                  json.dumps(parameters, ensure_ascii=False), json.dumps([image_name])))
+        return self.get(row_id)
+
     def _read_row(self, row: sqlite3.Row) -> HistoryEntry:
         try:
             relative_images = json.loads(row["images_json"])

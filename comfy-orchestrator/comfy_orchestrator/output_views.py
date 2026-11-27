@@ -19,8 +19,7 @@ class ResultActions:
     open_image: Callable
     open_outputs: Callable
     show_prompt: Callable
-    use_i2i: Callable
-    use_i2v: Callable
+    use_material: Callable
 
 
 class ResultView(ttk.Frame):
@@ -52,13 +51,8 @@ class ResultView(ttk.Frame):
         self.result_prompt_button = ttk.Button(row, text="プロンプト", command=actions.show_prompt, state="disabled")
         self.result_prompt_button.grid(row=0, column=2, sticky="ew")
         self.result_tools = ttk.Frame(preview_actions)
-        self.result_tools.columnconfigure(0, weight=1)
-        self.result_tools.columnconfigure(1, weight=1)
-        ttk.Button(self.result_tools, text="I2Iに使用", command=actions.use_i2i).grid(
-            row=0, column=0, sticky="ew", padx=(0, 4))
-        ttk.Button(self.result_tools, text="I2Vに使用", command=actions.use_i2v).grid(
-            row=0, column=1, sticky="ew")
-
+        self.material_button = ttk.Button(self.result_tools, text="素材として使用…", command=actions.use_material)
+        self.material_button.pack(fill="x")
 
     def set_video(self, path: Path | None) -> None:
         self.result_video.set_source(path)
@@ -77,7 +71,7 @@ class ResultView(ttk.Frame):
 
     def display_image(self, path: Path) -> None:
         self.set_video(path if is_video_output(path) else None)
-        if path.suffix.lower() in IMAGE_EXTENSIONS:
+        if path.is_file() and (path.suffix.lower() in IMAGE_EXTENSIONS or is_video_output(path)):
             self.result_tools.pack(fill="x", pady=(5, 0))
         else:
             self.result_tools.pack_forget()
@@ -130,6 +124,7 @@ class ResultView(ttk.Frame):
 
     def set_busy(self, busy):
         self.result_video.set_enabled(not busy)
+        self.material_button.configure(state="disabled" if busy else "normal")
 
 
 @dataclass(frozen=True)
@@ -143,8 +138,7 @@ class HistoryActions:
     show_prompt: Callable
     refresh: Callable
     restore_character: Callable
-    use_i2i: Callable
-    use_i2v: Callable
+    use_material: Callable
 
 
 class HistoryView(ttk.Frame):
@@ -225,12 +219,8 @@ class HistoryView(ttk.Frame):
             command=actions.restore_character, state="disabled", style="Compact.TButton")
         self.history_character_button.pack(fill="x", pady=(4, 0))
         self.history_tools = ttk.Frame(history_actions)
-        self.history_tools.columnconfigure(0, weight=1)
-        self.history_tools.columnconfigure(1, weight=1)
-        ttk.Button(self.history_tools, text="I2Iに使用", command=actions.use_i2i, style="Compact.TButton").grid(
-            row=0, column=0, sticky="ew", padx=(0, 4))
-        ttk.Button(self.history_tools, text="I2Vに使用", command=actions.use_i2v, style="Compact.TButton").grid(
-            row=0, column=1, sticky="ew")
+        ttk.Button(self.history_tools, text="素材として使用…", command=actions.use_material,
+                   style="Compact.TButton").pack(fill="x")
 
     def apply_entries(self, entries, select_id: str | None = None) -> None:
         """Apply only changed rows; preserve scroll/selection on normal refresh."""
