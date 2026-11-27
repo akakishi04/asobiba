@@ -250,6 +250,45 @@ class ProjectWorkspaceTests(unittest.TestCase):
         gui.Application._run_primary(app)
         app._start.assert_called_once_with(False)
 
+    def test_project_layout_keeps_batch_actions_next_to_table(self):
+        import inspect
+        source = inspect.getsource(ProjectWorkspace.__init__)
+        self.assertIn('selectmode="extended"', source)
+        self.assertIn('ttk.Panedwindow(self.edit_page, orient="vertical")', source)
+        self.assertIn('self.rewrite_button = ttk.Button(selection_bar,', source)
+        self.assertIn('self.cut_prompt.pack(fill="both", expand=True', source)
+        self.assertNotIn("新規計画を作成するか", source)
+        build = inspect.getsource(gui.Application._build)
+        self.assertNotIn('text="生成設定"', build)
+        self.assertNotIn('self.resume_long_button', build)
+
+    def test_multi_selection_keeps_a_single_editor_anchor_and_order(self):
+        draft = ProjectDraft(self.manifest)
+        draft.select_cuts((2, 0, 2), 2)
+        self.assertEqual(draft.selected_indices(), (0, 2))
+        self.assertEqual(draft.current, 2)
+        draft.select_cuts((0, 1), None)
+        self.assertEqual(draft.selected_indices(), (0, 1))
+        self.assertEqual(draft.current, 0)
+        draft.select_cuts((), None)
+        self.assertEqual(draft.selected_indices(), (0,))
+
+    def test_multi_selection_disables_single_cut_video_actions(self):
+        draft = ProjectDraft(self.manifest)
+        self.manifest["segments"] = [{}, {}, {}]
+        draft.select_cuts((0, 2), 0)
+        fake = SimpleNamespace(draft=draft, enabled=True, _missing_clips=set())
+        actions = ProjectWorkspace.available_actions(fake)
+        self.assertFalse(actions["regenerate"])
+        self.assertFalse(actions["preview"])
+        self.assertTrue(actions["save"])
+        self.assertTrue(actions["generate_join"])
+        self.assertTrue(actions["join"])
+        draft.select_cuts((2,), 2)
+        actions = ProjectWorkspace.available_actions(fake)
+        self.assertTrue(actions["regenerate"])
+        self.assertTrue(actions["preview"])
+
     def test_project_menu_states_match_available_clips(self):
         draft = ProjectDraft(self.manifest)
         fake = SimpleNamespace(draft=draft, enabled=True, _missing_clips=set())

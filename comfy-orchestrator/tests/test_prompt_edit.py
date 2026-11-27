@@ -306,6 +306,117 @@ class PromptEditTests(unittest.TestCase):
         self.assertEqual(context["previous_cut_prompt"], "Edited preceding plan.")
         self.assertEqual(context["previous_prompt_source"], "planned")
 
+    def test_batch_rewrite_uses_updated_previous_prompt_and_one_model_session(self):
+        manifest = self.project(complete=True)
+        before = copy.deepcopy(manifest)
+        contexts, translations = [], []
+        self.cache.put("common", self.plan["common"], False, "共通")
+        def response(settings, route, payload):
+            name = payload["response_format"]["json_schema"]["name"]
+            body = json.loads(payload["messages"][1]["content"])
+            if name == "h3_cut_rewrite":
+                contexts.append(body)
+                return reply({"text": f"Rewritten cut {body['cut']}."})
+            translations.append(body["text"])
+            return reply({"text": "訳 " + body["text"]})
+        result, load, _ = self.run_edit(manifest, self.plan, "regenerate", response,
+                                       index=2, selected_indices=(2, 1, 2), instruction="同じ傘")
+        self.assertEqual([c["cut"] for c in contexts], [2, 3])
+        self.assertEqual(contexts[0]["previous_cut_prompt"], "Executed prompt 1.")
+        self.assertEqual(contexts[1]["previous_cut_prompt"], "Rewritten cut 2.")
+        self.assertEqual(contexts[1]["previous_prompt_source"], "planned")
+        self.assertTrue(all(c["repair_instruction"] == "同じ傘" for c in contexts))
+        self.assertEqual(translations, ["Rewritten cut 2.", "Rewritten cut 3."])
+        self.assertEqual(result["rewritten_indices"], [1, 2])
+        self.assertEqual(result["after"]["segments"], [self.plan["segments"][0], *translations])
+        self.assertEqual(result["after"]["common"], self.plan["common"])
+        self.assertEqual(manifest, before)
+        load.assert_called_once()
+        draft = ProjectDraft(manifest)
+        draft.select_cuts((2, 1), 2)
+        fake = SimpleNamespace(draft=draft, _load_cut=Mock(), _refresh_rows=Mock())
+        self.assertTrue(ProjectWorkspace.accept_prompt_result(fake, manifest["run_id"], self.cuts, result))
+        self.assertEqual(draft.plan(), result["after"])
+        self.assertEqual(draft.valid_prefix(), 1)
+
+    def test_nonadjacent_batch_preserves_unselected_cut(self):
+        manifest = self.project()
+        self.cache.put("common", self.plan["common"], False, "共通")
+        def response(settings, route, payload):
+            name = payload["response_format"]["json_schema"]["name"]
+            body = json.loads(payload["messages"][1]["content"])
+            return reply({"text": f"Rewritten {body['cut']}."} if name == "h3_cut_rewrite" else {"text": "訳"})
+        result, _, _ = self.run_edit(manifest, self.plan, "regenerate", response,
+                                    index=0, selected_indices=(0, 2))
+        self.assertEqual(result["after"]["segments"], ["Rewritten 1.", self.plan["segments"][1], "Rewritten 3."])
+
+    def test_batch_rewrite_error_leaves_original_plan_unchanged(self):
+        manifest = self.project()
+        before = copy.deepcopy(manifest)
+        original_plan = copy.deepcopy(self.plan)
+        attempted = []
+        def response(settings, route, payload):
+            body = json.loads(payload["messages"][1]["content"])
+            attempted.append(body["cut"])
+            if body["cut"] == 2:
+                raise core.OrchestratorError("通信失敗")
+            return reply({"text": "New first cut."})
+        with self.assertRaises(core.OrchestratorError):
+            self.run_edit(manifest, self.plan, "regenerate", response,
+                          index=0, selected_indices=(0, 1))
+        self.assertIn(2, attempted)
+        self.assertEqual(manifest, before)
+        self.assertEqual(self.plan, original_plan)
+
+    def test_batch_rewrite_cancel_does_not_publish_partial_plan(self):
+        import threading
+        manifest = self.project()
+        before = copy.deepcopy(manifest)
+        original_plan = copy.deepcopy(self.plan)
+        stop = threading.Event()
+        def response(settings, route, payload):
+            stop.set()
+            return reply({"text": "Rewritten."})
+        with self.assertRaises(JobCancellationRequested):
+            self.run_edit(manifest, self.plan, "regenerate", response,
+                          index=0, selected_indices=(0, 2), cancel_event=stop)
+        self.assertEqual(self.plan, original_plan)
+        self.assertEqual(manifest, before)
+
+    def test_batch_dispatch_and_worker_result_selection_guard(self):
+        manifest = self.project()
+        draft = ProjectDraft(manifest)
+        draft.select_cuts((0, 2), 2)
+        fake = SimpleNamespace(enabled=True, draft=draft, on_prompt_action=Mock(),
+                               _read=Mock(return_value=True), translation_cache=self.cache,
+                               _load_cut=Mock(), _refresh_rows=Mock())
+        with patch("comfy_orchestrator.project_ui.simpledialog.askstring", return_value="修正"):
+            ProjectWorkspace._prompt_action(fake, "regenerate")
+        fake.on_prompt_action.assert_called_once_with(
+            manifest, self.plan, self.cuts, 2, "regenerate", {}, "修正", self.cache,
+            selected_indices=(0, 2))
+        after = copy.deepcopy(self.plan)
+        after["segments"][0] = "New first."
+        after["segments"][2] = "New third."
+        result = {"before": self.plan, "after": after, "index": 2, "rewritten_indices": [0, 2]}
+        draft.select_cuts((2,), 2)
+        self.assertFalse(ProjectWorkspace.accept_prompt_result(fake, manifest["run_id"], self.cuts, result))
+        self.assertEqual(draft.plan(), self.plan)
+        draft.select_cuts((0, 2), 2)
+        after["segments"][1] = "Unexpected change."
+        self.assertFalse(ProjectWorkspace.accept_prompt_result(fake, manifest["run_id"], self.cuts, result))
+        self.assertEqual(draft.plan(), self.plan)
+
+    def test_invalid_batch_targets_rejected_before_loading(self):
+        manifest = self.project()
+        with patch.object(lmstudio, "list_models") as load:
+            for selected in ((), (-1, 1), (1, 3), (True, 1), (0, 2)):
+                with self.subTest(selected=selected):
+                    with self.assertRaises(core.OrchestratorError):
+                        edit_prompts(self.config, manifest, self.plan, self.cuts, 1,
+                                     "regenerate", self.cache, selected_indices=selected)
+            load.assert_not_called()
+
     def test_edited_japanese_only_translates_changed_field_and_reviews_new_english(self):
         manifest = self.project()
         self.cache.put("common", self.plan["common"], False, "ピンクの傘を維持。")

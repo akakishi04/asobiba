@@ -77,14 +77,16 @@ class TranslationCache:
         self._load_keys((key,))
         return self.memory.get(key)
 
-    def missing(self, plan, index=None):
+    def missing(self, plan, index=None, *, indices=None):
         """Untranslated distinct, nonempty texts in playback order.
 
         index=None covers common plus every cut; an index restricts review
-        to the current cut. Identical cut text needs translation only once.
+        to the current cut; indices restricts it to multiple selected cuts.
+        Identical cut text needs translation only once.
         """
         official = plan.get("format") == hp.FORMAT
-        indices = range(len(plan["segments"])) if index is None else (index,)
+        if indices is None:
+            indices = range(len(plan["segments"])) if index is None else (index,)
         candidates = [("共通", "common", plan["common"])]
         candidates.extend((f"カット{i+1}", "cut", plan["segments"][i]) for i in indices)
         targets = {}
@@ -287,7 +289,7 @@ def _english_cut(client, instance, context, common, official, operation, japanes
 
 
 def edit_prompts(config, manifest, plan, cuts, index, operation, cache, *,
-                 japanese=None, instruction="", progress=None, cancel_event=None):
+                 japanese=None, instruction="", progress=None, cancel_event=None, selected_indices=None):
     """Run one model session if needed. Returns new draft text, never saves a revision."""
     from .lmstudio import LMStudio
     from .model_runtime import release_comfy_before_llm
@@ -296,6 +298,14 @@ def edit_prompts(config, manifest, plan, cuts, index, operation, cache, *,
         raise OrchestratorError("プロンプト操作が不正です")
     if type(index) is not int or not 0 <= index < len(cuts) or len(plan["segments"]) != len(cuts):
         raise OrchestratorError("カット番号が不正です")
+    targets = (index,)
+    if selected_indices is not None:
+        if operation != "regenerate" or not isinstance(selected_indices, (list, tuple)):
+            raise OrchestratorError("再生成対象の指定が不正です")
+        if not selected_indices or any(type(i) is not int or not 0 <= i < len(cuts)
+                                       for i in selected_indices) or index not in selected_indices:
+            raise OrchestratorError("再生成対象のカット番号が不正です")
+        targets = tuple(sorted(set(selected_indices)))
     official = plan.get("format") == hp.FORMAT
     before = copy.deepcopy(plan)
     after = copy.deepcopy(plan)
@@ -322,6 +332,8 @@ def edit_prompts(config, manifest, plan, cuts, index, operation, cache, *,
                   "japanese": {kind: cache.get(kind, source(kind), official) for kind in ("common", "cut")}}
         if operation == "translate_all":
             result["translated_count"] = translated_count
+        if operation == "regenerate":
+            result["rewritten_indices"] = list(targets)
         return result
 
     hp._check_cancel(cancel_event)
@@ -329,7 +341,7 @@ def edit_prompts(config, manifest, plan, cuts, index, operation, cache, *,
     # Cache-only review never loads/unloads models or frees ComfyUI.
     if review_only and not cache.missing(after, None if operation == "translate_all" else index):
         return review_result()
-    context = None if review_only else cut_context(manifest, plan, cuts, index)
+    context = cut_context(manifest, plan, cuts, index) if operation == "apply" else None
     settings = dict(config["llm"], send_reference_to_llm=False)
     if settings.get("model", "") in ("", "SELECT_IN_GUI"):
         raise OrchestratorError("LM Studioのモデルを選択してください")
@@ -342,13 +354,24 @@ def edit_prompts(config, manifest, plan, cuts, index, operation, cache, *,
         if operation == "apply" and "common" in japanese:
             note("共通プロンプトの日本語編集を英語へ反映")
             after["common"] = _english_common(client, instance, japanese["common"], official, note, cancel_event)
-        if operation == "regenerate" or operation == "apply" and "cut" in japanese:
-            note(f"カット{index+1}: " + ("プロンプト再生成" if operation == "regenerate" else "日本語編集を英語へ反映"))
+        if operation == "regenerate":
+            # All selected rewrites are staged in a private draft. Recompute
+            # context on the evolving plan, in playback order; no job or saved
+            # revision is touched, and a failed/cancelled batch is not published.
+            for done, target in enumerate(targets, 1):
+                hp._check_cancel(cancel_event)
+                note(f"プロンプト再生成 {done}/{len(targets)}: カット{target+1}")
+                context = cut_context(manifest, after, cuts, target)
+                after["segments"][target] = _english_cut(
+                    client, instance, context, after["common"], official, operation, "",
+                    instruction, note, cancel_event, H3_PROFILE_INSTRUCTIONS.get(
+                        settings.get("h3_prompt_profile", DEFAULT_H3_PROFILE), ""))
+        elif operation == "apply" and "cut" in japanese:
+            note(f"カット{index+1}: 日本語編集を英語へ反映")
             context["common"] = after["common"]
             after["segments"][index] = _english_cut(
-                client, instance, context, after["common"], official, operation, japanese.get("cut", ""),
-                instruction, note, cancel_event, H3_PROFILE_INSTRUCTIONS.get(
-                    settings.get("h3_prompt_profile", DEFAULT_H3_PROFILE), ""))
+                client, instance, context, after["common"], official, operation, japanese["cut"],
+                instruction, note, cancel_event)
         if operation == "apply" and "common" in japanese and official:
             # A changed common field must fit the already-authored selected cut.
             text = after["segments"][index]
@@ -359,12 +382,14 @@ def edit_prompts(config, manifest, plan, cuts, index, operation, cache, *,
         # Review actual English, not the user's edited Japanese. Each
         # outstanding prompt is its own inference, in one loaded session.
         from .jobs import JobCancellationRequested
-        pending = cache.missing(after, None if operation == "translate_all" else index)
+        pending = (cache.missing(after, indices=targets) if operation == "regenerate"
+                   else cache.missing(after, None if operation == "translate_all" else index))
         total = len(pending)
         completed = 0
         for label, kind, raw in pending:
             hp._check_cancel(cancel_event)
-            title = f"日本語訳 {completed+1}/{total}: {label}" if operation == "translate_all" else f"日本語訳: {label}"
+            title = (f"日本語訳 {completed+1}/{total}: {label}"
+                     if operation == "translate_all" or len(targets) > 1 else f"日本語訳: {label}")
             note(title)
             try:
                 value = _translate(client, instance, kind, raw, official,

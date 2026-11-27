@@ -725,7 +725,7 @@ class Application:
         main.add(left, weight=3)
         main.add(right, weight=2)
 
-        self.prompt_panel = prompt_panel = ttk.LabelFrame(left, text="生成", padding=8, style="Section.TLabelframe")
+        self.prompt_panel = prompt_panel = ttk.Frame(left, padding=(8, 4))
         prompt_panel.pack(fill="both", expand=True, padx=(0, 6))
 
         # Reserve space for actions FIRST so a short screen never hides "Generate".
@@ -833,9 +833,6 @@ class Application:
         for col in (1, 3):
             settings.columnconfigure(col, weight=1)
         ttk.Separator(settings).grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 8))
-        ttk.Label(settings, text="生成設定", style="FieldHeading.TLabel").grid(
-            row=1, column=0, columnspan=4, sticky="w", pady=(0, 6),
-        )
         self.parameter_widgets = {}
 
         def field(row, column, label, variable, key, *, choices=None, span=1, width=8):
@@ -872,12 +869,8 @@ class Application:
         field(10, 0, "接続方式", self.h3_connection, "h3_long",
               choices=tuple(H3_CONNECTION_LABELS.values()), span=3, width=18)
         field(11, 0, "計画用合計尺", self.h3_long_target, "h3_long",
-              choices=(*CONTINUOUS_TARGETS, CUSTOM_CUTS), span=2, width=8)
-        self.resume_long_button = ttk.Button(settings, text="プロジェクト", command=self._resume_long_video,
-                                             style="Compact.TButton")
-        self.resume_long_button.grid(row=11, column=3, sticky="ew", pady=3, padx=(4, 0))
-        self.parameter_widgets["h3_long"].append(self.resume_long_button)
-        cut_button = ttk.Button(settings, text="計画用カット尺…", command=self._edit_cut_durations)
+              choices=(*CONTINUOUS_TARGETS, CUSTOM_CUTS), span=3, width=8)
+        cut_button = ttk.Button(settings, text="カット尺…", command=self._edit_cut_durations)
         cut_button.grid(row=12, column=0, columnspan=2, sticky="ew", pady=3)
         cut_summary = ttk.Label(settings, textvariable=self.h3_cut_summary)
         cut_summary.grid(row=12, column=2, columnspan=2, sticky="w", padx=(6, 0))
@@ -1418,9 +1411,8 @@ class Application:
         self._generation_ui_key = ui_key
         if hasattr(self, "project_workspace"):
             self._sync_project_visibility(generation_mode == "continuous")
-            self.prompt_panel.configure(text="生成")
         if hasattr(self, "prompt_title"):
-            self.prompt_title.configure(text="プロンプト（新規計画用）" if generation_mode == "continuous" else "プロンプト")
+            self.prompt_title.configure(text="計画プロンプト" if generation_mode == "continuous" else "プロンプト")
         if hasattr(self, "parameter_widgets"):
             for key, widgets in self.parameter_widgets.items():
                 for widget in widgets:
@@ -2818,7 +2810,7 @@ class Application:
 
     def _sync_cut_summary(self, *_args):
         if self.h3_long_target.get() != CUSTOM_CUTS:
-            self.h3_cut_summary.set("プリセット")
+            self.h3_cut_summary.set("")
         elif self._custom_cut_frames is None:
             self.h3_cut_summary.set("未設定")
         else:
@@ -3156,7 +3148,8 @@ class Application:
         self._refresh_projects(manifest["run_id"])
         self.status.set("長尺計画を保存しました。カットを編集して生成できます")
 
-    def _edit_project_prompt(self, manifest, plan, cuts, index, operation, japanese, instruction, cache):
+    def _edit_project_prompt(self, manifest, plan, cuts, index, operation, japanese, instruction, cache,
+                             *, selected_indices=None):
         """Capture the selected draft; translation/rewrite never creates a video job."""
         if self.working or self.character_analysis_running:
             raise core.OrchestratorError("現在の処理が終了してから操作してください")
@@ -3166,13 +3159,14 @@ class Application:
         snapshot = copy.deepcopy(manifest)
         plan = copy.deepcopy(plan)
         cuts = list(cuts)
-        self._set_busy("未翻訳プロンプトの一括翻訳中" if operation == "translate_all" else "カットのプロンプト編集・翻訳中")
+        self._set_busy("一括翻訳中" if operation == "translate_all" else
+                       "プロンプト再生成中" if operation == "regenerate" else "プロンプト編集中")
 
         def task():
             try:
                 result = edit_prompts(
                     cfg, snapshot, plan, cuts, index, operation, cache,
-                    japanese=dict(japanese), instruction=instruction,
+                    japanese=dict(japanese), instruction=instruction, selected_indices=selected_indices,
                     progress=lambda line: self.messages.put(("progress", line)),
                     cancel_event=self.stop_event,
                 )
