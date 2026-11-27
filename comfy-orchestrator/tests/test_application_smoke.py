@@ -69,7 +69,7 @@ class ApplicationSmokeTests(unittest.TestCase):
                     app._set_busy("test")
                     self.assertTrue(app.working)
                     self.assertEqual(str(app.run_button.cget("state")), "disabled")
-                    output = local / "sample.png"
+                    output = app.history_store.outputs / "sample.png"
                     image = tk.PhotoImage(master=root, width=4, height=4)
                     image.put("#ffffff", to=(0, 0, 4, 4))
                     image.write(str(output), format="png")

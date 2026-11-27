@@ -1,5 +1,6 @@
 """DB-wide queries, paging and non-destructive metadata mutations."""
 import json
+from contextlib import closing
 import queue
 import sqlite3
 import tempfile
@@ -95,7 +96,7 @@ class HistoryLibraryTests(unittest.TestCase):
         root = self.root / "old"
         (root / "data").mkdir(parents=True)
         database = root / "data" / "history.sqlite3"
-        with sqlite3.connect(database) as con:
+        with closing(sqlite3.connect(database)) as con, con:
             con.execute("""CREATE TABLE generations (
                 id TEXT PRIMARY KEY, created_at TEXT NOT NULL, prompt_id TEXT UNIQUE NOT NULL,
                 workflow_id TEXT NOT NULL, kind TEXT NOT NULL, request_text TEXT NOT NULL,
