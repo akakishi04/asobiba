@@ -286,7 +286,7 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
     windows = segment_windows(frames, seconds, cut_frames=cut_frames, overlap_frames=overlap_frames)
     count = len(windows)
     check_cancel()
-    if h3_prompt.enabled(config["llm"]):
+    if h3_prompt.enabled(config.get("llm", {})):
         return h3_prompt.plan_long(config, request, windows, reference_only, image=image,
                                    progress=progress, cancel_event=cancel_event,
                                    prompt_cache=prompt_cache, release_comfy=release_comfy)

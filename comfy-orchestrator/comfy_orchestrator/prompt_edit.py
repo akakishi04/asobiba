@@ -1,0 +1,330 @@
+"""Japanese review/edit and context-aware rewrite of one long-video cut.
+
+English remains the executable source of truth. Japanese translations are
+read-only cache entries until a deliberate edit is translated back and approved
+in the editable project draft. No operation in this module generates video.
+"""
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+import re
+
+from . import h3_prompt as hp
+from .parameters import OrchestratorError, check_param
+from .prompt_cache import PromptCache, CACHE_ERRORS
+
+JA_FIELDS = {
+    "integrated_multimodal_description": "映像・動作・カメラ・台詞",
+    "subject_definitions": "参照対象",
+    "summary": "生成概要",
+    "retention_analysis": "参照要素の維持・変更",
+    "detailed_description": "映像・動作・カメラ・台詞",
+    "overall_soundscape": "環境音・効果音",
+    "non_diegetic_music": "BGM",
+}
+TRANSLATION_POLICY = """Translate every sentence of the supplied English H3 prompt into natural Japanese.
+This is a faithful review translation, never a summary, enhancement or new prompt.
+Do not add, omit, soften, combine or reinterpret visual facts, conditions, actions,
+timing, camera, audio, prohibitions or uncertainty. Preserve every protected token
+__H3KEEP_0000__ etc. exactly once in the same sequence within its own field.
+Return only the requested JSON keys. Use Japanese for the surrounding prose."""
+PROTECTED = re.compile(
+    r'<d>.*?</d>|<scenetrans>|<cutoff>|<(?:Picture|Subject|Video|Audio) \d+>'
+    r'|\[Shot \d+\]|\[(?:reference generation|keyframe completion)(?: \+ (?:reference generation|keyframe completion))*\]'
+    r'|\(S\d+(?:,S\d+)*\)|\d{2}:\d{2}\.\d{3}'
+    r'|\b(?:fully_preserved|partially_preserved|attribute_transfer|weak_reference|N/A)\b'
+    r'|"[^"\n]*"', re.S
+)
+TOKEN = re.compile(r"__H3KEEP_\d{4}__")
+VERSION = "h3_ja_review_v1"
+
+
+def _key(kind, source, official):
+    encoded = json.dumps([VERSION, kind, bool(official), source], ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+class TranslationCache:
+    """Separate local cache; never part of a saved generation plan or its digest."""
+    def __init__(self, database):
+        self.disk = PromptCache(database)
+        self.memory = {}
+
+    def get(self, kind, source, official):
+        if not source.strip():
+            return ""
+        key = _key(kind, source, official)
+        if key not in self.memory:
+            try:
+                row = self.disk.get(key)
+            except CACHE_ERRORS:
+                row = None
+            if isinstance(row, dict) and isinstance(row.get("japanese"), str) and row["japanese"].strip():
+                self.memory[key] = row["japanese"]
+        return self.memory.get(key)
+
+    def put(self, kind, source, official, japanese):
+        if not source.strip():
+            return
+        key = _key(kind, source, official)
+        self.memory[key] = japanese
+        try:
+            self.disk.put(key, {"japanese": japanese})
+        except CACHE_ERRORS:
+            # In-session review still works if the optional disk cache fails.
+            pass
+
+
+def protect(text):
+    if TOKEN.search(text):
+        raise OrchestratorError("翻訳対象に予約済みの保護トークンがあります")
+    values = []
+    def token(match):
+        values.append(match.group())
+        return f"__H3KEEP_{len(values)-1:04d}__"
+    return PROTECTED.sub(token, text), values
+
+
+def restore(text, values):
+    expected = [f"__H3KEEP_{i:04d}__" for i in range(len(values))]
+    if TOKEN.findall(text) != expected:
+        raise OrchestratorError("日本語訳で参照・台詞・時刻の保護トークンが変化しました")
+    return TOKEN.sub(lambda m: values[int(m.group()[9:13])], text)
+
+
+def _fields(kind, source, official):
+    if kind == "cut" and official:
+        return hp.parse_sections(source)[0]
+    return {"text": source}
+
+
+def _jp_text(fields):
+    if set(fields) == {"text"}:
+        return fields["text"]
+    return "\n\n".join(f"【{JA_FIELDS[key]}】\n{value}" for key, value in fields.items())
+
+
+def _translate(client, instance, kind, source, official, progress, cancel_event):
+    if not source.strip():
+        return ""
+    fields = _fields(kind, source, official)
+    masked, tokens = {}, {}
+    for key, value in fields.items():
+        masked[key], tokens[key] = protect(value)
+    limits = {key: min(15000, max(1600, len(value) * 5 + 256)) for key, value in masked.items()}
+
+    def validate(value):
+        if set(value) != set(fields):
+            raise OrchestratorError("日本語訳の項目が一致しません")
+        result = {}
+        for key in fields:
+            text = value[key]
+            if not isinstance(text, str) or not text.strip() or len(text) > limits[key]:
+                raise OrchestratorError("日本語訳が空欄または長すぎます")
+            result[key] = restore(text.strip(), tokens[key])
+        return _jp_text(result)
+
+    return hp._reply(client, instance, TRANSLATION_POLICY,
+                     json.dumps(masked, ensure_ascii=False), hp.object_schema(fields, limits),
+                     "h3_japanese_review", validate, progress, cancel_event)
+
+
+def cut_context(manifest, plan, cuts, index):
+    """Use the executed preceding prompt only when that prefix is still valid."""
+    from .long_video import first_changed_cut, project_cut_lengths, schedule_windows
+    from . import core
+    from .timeline import validate_cut_frames
+    if not 0 <= index < len(cuts) or len(plan["segments"]) != len(cuts):
+        raise OrchestratorError("カット番号が不正です")
+    old_cuts = project_cut_lengths(manifest)
+    same = cuts == old_cuts
+    if not same:
+        validate_cut_frames(cuts)
+    windows = schedule_windows(manifest["seconds"] if same else sum(cuts) / 24,
+                               manifest["overrides"]["frames"],
+                               manifest.get("cut_frames") if same else cuts,
+                               overlap_frames=manifest.get("overlap_frames", 0))
+    changed = first_changed_cut(manifest, plan, cuts)
+    previous = plan["segments"][index-1] if index else ""
+    origin = "planned" if previous else "none"
+    if index and (changed is None or changed >= index) and len(manifest["segments"]) >= index:
+        actual = manifest["segments"][index-1].get("parameters", {}).get("positive_prompt")
+        if isinstance(actual, str) and actual.strip():
+            previous, origin = actual, "executed_prompt"
+    ref = index == 0 and core.h3_ref2va_filename(manifest["overrides"].get("h3_model")) is not None
+    w = windows[index]
+    return {
+        "original_request": manifest["request"], "common": plan["common"],
+        "previous_cut_prompt": previous, "previous_prompt_source": origin,
+        "current_cut_prompt": plan["segments"][index],
+        "next_cut_prompt": plan["segments"][index+1] if index+1 < len(cuts) else "",
+        "cut": index + 1, "retained_seconds": cuts[index] / 24,
+        "retained_frames": cuts[index], "guide_frames": w.get("guide_frames", 0),
+        "trim_frames": w["trim_start_frames"], "reference_only": ref,
+    }
+
+
+def _check_common(text, official):
+    if not isinstance(text, str) or len(text.strip()) > 1600:
+        raise OrchestratorError("共通プロンプトは1600文字以内です")
+    return hp.validate_common(text) if official else text.strip()
+
+
+def _compile_cut(value, official, context, common):
+    if official:
+        ref = context["reference_only"]
+        fields = hp.validate_sections(value, ref, kept_frames=context["retained_frames"],
+                                      later_cut=context["cut"] > 1)
+        hp.compile_prompt(fields, ref, common=common, kept_frames=context["retained_frames"],
+                          trim_frames=context["trim_frames"], guide_frames=context["guide_frames"],
+                          later_cut=context["cut"] > 1)
+        text = hp.section_text(fields, ref)
+        if len(text) > 5000:
+            raise OrchestratorError("H3カットのプロンプトが長すぎます")
+        return text
+    if set(value) != {"text"} or not isinstance(value["text"], str):
+        raise OrchestratorError("旧形式のカットは自然文で指定してください")
+    text = value["text"].strip()
+    if not text or len(text) > 1600:
+        raise OrchestratorError("旧形式のカットは1～1600文字です")
+    check_param("positive_prompt", " ".join((common, text)))
+    return text
+
+
+def _english_common(client, instance, japanese, official, progress, cancel_event):
+    if not japanese.strip():
+        return ""
+    def validate(value):
+        if set(value) != {"text"}:
+            raise OrchestratorError("共通プロンプトの翻訳形式が不正です")
+        return _check_common(value["text"], official)
+    return hp._reply(client, instance,
+                     "Translate the edited Japanese text faithfully into natural English. "
+                     "Preserve all constraints and user edits; add no events, labels or details. "
+                     "Return only persistent common conditions, not individual cut actions.",
+                     japanese, hp.object_schema(("text",), {"text": 1600}),
+                     "h3_common_from_japanese", validate, progress, cancel_event)
+
+
+def _english_cut(client, instance, context, common, official, operation, japanese, instruction,
+                 progress, cancel_event, style=""):
+    if operation == "apply":
+        system = (
+            "Translate the edited Japanese cut into English faithfully, retaining all its visual, "
+            "camera, motion, timing and audio conditions and exact spoken/visible text. "
+            "Do not re-plan, invent or delete actions. The Japanese section headings are editorial guides. "
+            "The previous English prompt is context only; the edited Japanese is authoritative."
+        )
+        payload = {**context, "edited_japanese": japanese}
+    else:
+        system = (
+            "Rewrite ONLY the selected cut as a physically coherent continuation. Infer the "
+            "preceding end state from the previous cut prompt, not from observed video. "
+            "Preserve object identity, color, shape, position, hand contacts and clothing; "
+            "describe how the body and objects interact and transition through actual movement. "
+            "If an important object was outside the frame, bring it into view coherently rather "
+            "than conjuring another object. Avoid resetting pose, repeating prior actions or speech, "
+            "and unnecessary events. Preserve the intended next cut's starting state where feasible. "
+            "Use the existing selected cut's intended action unless the user's repair instruction changes it. "
+            "Do not rewrite the common prompt or any neighboring cut. Fit action to the retained duration."
+        )
+        payload = {**context, "repair_instruction": instruction}
+    if operation == "regenerate" and style:
+        system += "\nRendering/motion preset (user instructions take priority):\n" + style
+    if official:
+        ref = context["reference_only"]
+        system += "\n" + hp.POLICY + "\n" + (hp.REF_POLICY if ref else hp.BASE_POLICY)
+        if context["cut"] > 1:
+            system += "\nUse three base fields and no Picture/Subject/Video/Audio labels. The host adds continuity and shifts cut-local times."
+        schema = hp.schema(ref)
+    else:
+        system += (
+            "\nReturn a single concise natural English text field, without H3 section headings or "
+            "technical settings. This project retains its legacy prompt format."
+        )
+        schema = hp.object_schema(("text",), {"text": 1600})
+    return hp._reply(client, instance, system, json.dumps(payload, ensure_ascii=False),
+                     schema, "h3_cut_from_japanese" if operation == "apply" else "h3_cut_rewrite",
+                     lambda value: _compile_cut(value, official, context, common), progress, cancel_event)
+
+
+def edit_prompts(config, manifest, plan, cuts, index, operation, cache, *,
+                 japanese=None, instruction="", progress=None, cancel_event=None):
+    """Run one model session if needed. Returns new draft text, never saves a revision."""
+    from .lmstudio import LMStudio
+    from .model_runtime import release_comfy_before_llm
+    from .prompt_profiles import H3_PROFILE_INSTRUCTIONS, DEFAULT_H3_PROFILE
+    if operation not in ("translate", "apply", "regenerate"):
+        raise OrchestratorError("プロンプト操作が不正です")
+    if type(index) is not int or not 0 <= index < len(cuts) or len(plan["segments"]) != len(cuts):
+        raise OrchestratorError("カット番号が不正です")
+    official = plan.get("format") == hp.FORMAT
+    before = copy.deepcopy(plan)
+    after = copy.deepcopy(plan)
+    japanese = dict(japanese or {})
+    if not set(japanese) <= {"common", "cut"} or any(
+            not isinstance(v, str) or len(v) > 18000 for v in japanese.values()):
+        raise OrchestratorError("日本語の編集内容が不正です")
+    if operation == "apply" and not japanese:
+        raise OrchestratorError("日本語の編集内容がありません")
+    if operation != "apply" and japanese:
+        raise OrchestratorError("日本語の変更を反映してから操作してください")
+    if not isinstance(instruction, str) or len(instruction) > 2000:
+        raise OrchestratorError("修正指示は2000文字以内です")
+
+    def note(line):
+        if progress:
+            progress(line)
+
+    def source(kind):
+        return after["common"] if kind == "common" else after["segments"][index]
+
+    hp._check_cancel(cancel_event)
+    # Cache-only review never loads or unloads models or frees ComfyUI.
+    if operation == "translate":
+        cached = {kind: cache.get(kind, source(kind), official) for kind in ("common", "cut")}
+        if all(v is not None for v in cached.values()):
+            return {"before": before, "after": after, "index": index, "japanese": cached}
+    context = cut_context(manifest, plan, cuts, index) if operation != "translate" else None
+    settings = dict(config["llm"], send_reference_to_llm=False)
+    if settings.get("model", "") in ("", "SELECT_IN_GUI"):
+        raise OrchestratorError("LM Studioのモデルを選択してください")
+    client = LMStudio(settings)
+    instance = None
+    try:
+        release_comfy_before_llm(config["comfyui"], progress=note)
+        hp._check_cancel(cancel_event)
+        instance = client._ensure_loaded()
+        if operation == "apply" and "common" in japanese:
+            note("共通プロンプトの日本語編集を英語へ反映")
+            after["common"] = _english_common(client, instance, japanese["common"], official, note, cancel_event)
+        if operation == "regenerate" or operation == "apply" and "cut" in japanese:
+            note(f"カット{index+1}: " + ("プロンプト再生成" if operation == "regenerate" else "日本語編集を英語へ反映"))
+            context["common"] = after["common"]
+            after["segments"][index] = _english_cut(
+                client, instance, context, after["common"], official, operation, japanese.get("cut", ""),
+                instruction, note, cancel_event, H3_PROFILE_INSTRUCTIONS.get(
+                    settings.get("h3_prompt_profile", DEFAULT_H3_PROFILE), ""))
+        if operation == "apply" and "common" in japanese and official:
+            # A changed common field must fit the already-authored selected cut.
+            text = after["segments"][index]
+            if text.strip():
+                hp.compile_cut(after, index, context["reference_only"],
+                               kept_frames=context["retained_frames"], trim_frames=context["trim_frames"],
+                               guide_frames=context["guide_frames"])
+        # Review the actual new English rather than echoing the user's Japanese.
+        result = {}
+        for kind in ("common", "cut"):
+            raw = source(kind)
+            value = cache.get(kind, raw, official)
+            if value is None:
+                note("日本語訳: " + ("共通" if kind == "common" else f"カット{index+1}"))
+                value = _translate(client, instance, kind, raw, official, note, cancel_event)
+                cache.put(kind, raw, official, value)
+            result[kind] = value
+        hp._check_cancel(cancel_event)
+        return {"before": before, "after": after, "index": index, "japanese": result}
+    finally:
+        client.unload_selected(instance, note)

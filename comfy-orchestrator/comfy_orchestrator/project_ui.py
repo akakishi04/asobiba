@@ -4,11 +4,12 @@ from __future__ import annotations
 import os
 import tkinter as tk
 from dataclasses import dataclass
-from tkinter import ttk, messagebox, scrolledtext
+from tkinter import ttk, messagebox, scrolledtext, simpledialog
 
 from .long_video import project_cut_lengths, first_changed_cut
 from .parameters import OrchestratorError
 from .h3_prompt import FORMAT as H3_OFFICIAL_FORMAT
+from .prompt_edit import TranslationCache
 from .timeline import FPS, format_cut_seconds, parse_cut_seconds, validate_cut_frames, validate_prompt_plan, GUIDE_CONNECTION_FRAMES
 from .ui_theme import style_text_widget
 from .video_preview import VideoPreview
@@ -67,13 +68,18 @@ class ProjectDraft:
 
 class ProjectWorkspace(ttk.Frame):
     """Project picker, cut editor and video preview in the main application."""
-    def __init__(self, master, store, *, on_refresh, on_action, on_load=None, on_actions_changed=None):
+    def __init__(self, master, store, *, on_refresh, on_action, on_load=None, on_actions_changed=None,
+                 on_prompt_action=None):
         super().__init__(master, padding=6)
         self.store = store
         self.on_refresh = on_refresh
         self.on_action = on_action
         self.on_load = on_load
         self.on_actions_changed = on_actions_changed
+        self.on_prompt_action = on_prompt_action
+        self.translation_cache = TranslationCache(store.root.parent / "h3_japanese.sqlite3")
+        self._display_language = "日本語"
+        self._ja_baseline = {"common": None, "cut": None}
         self.draft = None
         self.projects = []
         self.enabled = True
@@ -116,6 +122,22 @@ class ProjectWorkspace(ttk.Frame):
         self.external_button = ttk.Button(self.preview_page, text="外部プレイヤーで開く", command=self._external)
         self.external_button.pack(fill="x", pady=(4, 0))
 
+        language_bar = ttk.Frame(self.edit_page)
+        language_bar.pack(fill="x", pady=(0, 3))
+        self.prompt_language = tk.StringVar(value=self._display_language)
+        self.language_box = ttk.Combobox(language_bar, textvariable=self.prompt_language,
+                                         values=("日本語", "H3用英語"), state="readonly", width=10)
+        self.language_box.pack(side="left")
+        self.language_box.bind("<<ComboboxSelected>>", self._switch_language)
+        self.translate_button = ttk.Button(language_bar, text="日本語訳", command=lambda: self._prompt_action("translate"),
+                                           style="Compact.TButton")
+        self.translate_button.pack(side="left", padx=2)
+        self.apply_ja_button = ttk.Button(language_bar, text="編集反映", command=lambda: self._prompt_action("apply"),
+                                          style="Compact.TButton")
+        self.apply_ja_button.pack(side="left", padx=2)
+        self.revert_ja_button = ttk.Button(language_bar, text="元に戻す", command=self._revert_japanese,
+                                           style="Compact.TButton")
+        self.revert_ja_button.pack(side="left", padx=2)
         ttk.Label(self.edit_page, text="共通プロンプト").pack(anchor="w")
         self.common = scrolledtext.ScrolledText(self.edit_page, height=2, wrap="word",
                                                 undo=True, font=("Meiryo UI", 10))
@@ -151,7 +173,14 @@ class ProjectWorkspace(ttk.Frame):
         self.delete_button.pack(side="right")
         self.add_button = ttk.Button(bar, text="追加", command=self._add, style="Compact.TButton")
         self.add_button.pack(side="right", padx=3)
-        self.cut_prompt = scrolledtext.ScrolledText(self.edit_page, height=3, wrap="word",
+        prompt_bar = ttk.Frame(self.edit_page)
+        prompt_bar.pack(fill="x", pady=(0, 2))
+        ttk.Label(prompt_bar, text="カット別プロンプト").pack(side="left")
+        self.rewrite_button = ttk.Button(prompt_bar, text="プロンプト再生成",
+                                         command=lambda: self._prompt_action("regenerate"),
+                                         style="Compact.TButton")
+        self.rewrite_button.pack(side="right")
+        self.cut_prompt = scrolledtext.ScrolledText(self.edit_page, height=5, wrap="word",
                                                      undo=True, font=("Meiryo UI", 10))
         self.cut_prompt.pack(fill="x", pady=(0, 2))
         self.cut_prompt.bind("<<Modified>>", self._changed)
@@ -173,9 +202,20 @@ class ProjectWorkspace(ttk.Frame):
     def _states(self):
         exists = self.draft is not None
         editable = exists and self.draft.original is not None and self.enabled
-        for widget in (self.common, self.cut_prompt, self.duration_entry,
-                       self.apply_button, self.add_button, self.delete_button):
-            widget.configure(state="normal" if editable else "disabled")
+        pending = bool(self._edited_japanese()) if editable else False
+        japanese = self._display_language == "日本語"
+        for kind, widget in (("common", self.common), ("cut", self.cut_prompt)):
+            ready = editable and (not japanese or self._ja_baseline[kind] is not None)
+            widget.configure(state="normal" if ready else "disabled")
+        for widget in (self.duration_entry, self.apply_button, self.add_button, self.delete_button):
+            widget.configure(state="normal" if editable and not pending else "disabled")
+        self.language_box.configure(state="readonly" if editable else "disabled")
+        service = editable and self.on_prompt_action is not None
+        self.translate_button.configure(state="normal" if service and japanese and not pending
+                                        and any(v is None for v in self._ja_baseline.values()) else "disabled")
+        self.apply_ja_button.configure(state="normal" if service and japanese and pending else "disabled")
+        self.revert_ja_button.configure(state="normal" if editable and japanese and pending else "disabled")
+        self.rewrite_button.configure(state="normal" if service and not pending else "disabled")
         self.selection.configure(state="readonly" if self.enabled else "disabled")
         self.refresh_button.configure(state="normal" if self.enabled else "disabled")
         available = self.available_actions()
@@ -189,12 +229,14 @@ class ProjectWorkspace(ttk.Frame):
         d = self.draft
         active = self.enabled and d is not None
         editable = active and d.original is not None
+        pending = bool(getattr(self, "_ja_baseline", None) and self._edited_japanese())
+        editable = editable and not pending
         return {"save": editable, "generate": editable, "regenerate": editable,
-                "generate_join": active,
-                "join": active and d.valid_prefix() == len(d.cuts) and not d.dirty() and not self._missing_clips,
+                "generate_join": active and not pending,
+                "join": active and not pending and d.valid_prefix() == len(d.cuts) and not d.dirty() and not self._missing_clips,
                 "preview": active and d.current < len(d.manifest["segments"])}
 
-    def _read(self, *, strict=True):
+    def _read(self, *, strict=True, allow_japanese_edits=False):
         if not self.draft or self.draft.original is None:
             return True
         d = self.draft
@@ -206,13 +248,24 @@ class ProjectWorkspace(ttk.Frame):
             if strict:
                 messagebox.showerror("カット設定", str(exc), parent=self)
                 return False
-        d.common = self.common.get("1.0", "end-1c")
-        d.parts[d.current] = self.cut_prompt.get("1.0", "end-1c")
+        if self._display_language == "日本語":
+            if self._edited_japanese() and not allow_japanese_edits:
+                if strict:
+                    messagebox.showwarning("日本語の未反映編集",
+                                           "「編集反映」で英語に反映するか「元に戻す」を押してください。",
+                                           parent=self)
+                return False
+        else:
+            d.common = self.common.get("1.0", "end-1c")
+            d.parts[d.current] = self.cut_prompt.get("1.0", "end-1c")
         return True
 
     def confirm_replace(self):
         if self.draft is None:
             return True
+        if self._edited_japanese():
+            return messagebox.askyesno("未反映の日本語編集",
+                                       "未反映の日本語編集と未保存の計画編集を破棄しますか？", parent=self)
         if not self._read():
             return messagebox.askyesno("未保存の編集", "不正な秒数を含む未保存の編集を破棄しますか？", parent=self)
         if not self.draft.dirty():
@@ -251,10 +304,6 @@ class ProjectWorkspace(ttk.Frame):
         self._updating = True
         self.preview.set_source(None)
         self.views.select(self.edit_page)
-        self.common.configure(state="normal")
-        self.common.delete("1.0", "end")
-        self.common.insert("1.0", self.draft.common)
-        self.common.edit_modified(False)
         self._load_cut()
         self._updating = False
         self._refresh_rows()
@@ -285,14 +334,102 @@ class ProjectWorkspace(ttk.Frame):
             return
         self.load(self.projects[i])
 
+    def _edited_japanese(self):
+        if self._display_language != "日本語" or not self.draft or not self.draft.original:
+            return {}
+        edited = {}
+        for kind, widget in (("common", self.common), ("cut", self.cut_prompt)):
+            baseline = self._ja_baseline[kind]
+            if baseline is not None:
+                value = widget.get("1.0", "end-1c").strip()
+                if value != baseline.strip():
+                    edited[kind] = value
+        return edited
+
     def _load_cut(self):
         d = self.draft
         self.duration.set(format_cut_seconds(d.cuts[d.current]))
-        self.cut_prompt.configure(state="normal")
-        self.cut_prompt.delete("1.0", "end")
-        self.cut_prompt.insert("1.0", d.parts[d.current] if d.original else "旧形式の区間")
-        self.cut_prompt.edit_modified(False)
-        self.cut_prompt.edit_reset()
+        raw = {"common": d.common.strip(), "cut": d.parts[d.current].strip() if d.original else ""}
+        official = bool(d.original and d.original.get("format") == H3_OFFICIAL_FORMAT)
+        self._ja_baseline = {"common": None, "cut": None}
+        for kind, widget in (("common", self.common), ("cut", self.cut_prompt)):
+            value = raw[kind]
+            if not d.original:
+                value = "旧形式の区間" if kind == "cut" else ""
+            elif self._display_language == "日本語":
+                translated = self.translation_cache.get(kind, value, official)
+                self._ja_baseline[kind] = translated
+                value = translated if translated is not None else "「日本語訳」で確認できます"
+            widget.configure(state="normal")
+            widget.delete("1.0", "end")
+            widget.insert("1.0", value)
+            widget.edit_modified(False)
+            widget.edit_reset()
+
+    def _switch_language(self, _event=None):
+        target = self.prompt_language.get()
+        if target == self._display_language:
+            return
+        if not self.enabled or not self.draft or not self._read():
+            self.prompt_language.set(self._display_language)
+            return
+        self._display_language = target
+        self._updating = True
+        try:
+            self._load_cut()
+        finally:
+            self._updating = False
+        self._refresh_rows()
+
+    def _revert_japanese(self):
+        if self.enabled and self.draft and self._display_language == "日本語":
+            self._updating = True
+            try:
+                self._load_cut()
+            finally:
+                self._updating = False
+            self._refresh_rows()
+
+    def _prompt_action(self, operation):
+        d = self.draft
+        if not self.enabled or not d or not d.original or self.on_prompt_action is None:
+            return
+        if not self._read(allow_japanese_edits=operation == "apply"):
+            return
+        edited = self._edited_japanese() if operation == "apply" else {}
+        if operation == "apply" and not edited:
+            return
+        instruction = ""
+        if operation == "regenerate":
+            instruction = simpledialog.askstring(
+                "カットのプロンプト再生成",
+                f"カット{d.current+1}の修正指示（空欄で前後の内容を基に再生成）",
+                parent=self,
+            )
+            if instruction is None:
+                return
+        try:
+            self.on_prompt_action(d.manifest, d.plan(), list(d.cuts), d.current,
+                                  operation, edited, instruction, self.translation_cache)
+        except (OSError, ValueError, KeyError, OrchestratorError) as exc:
+            messagebox.showerror("プロンプト編集", str(exc), parent=self)
+
+    def accept_prompt_result(self, run_id, cuts, result):
+        """Worker results may only update the exact draft they were derived from."""
+        d = self.draft
+        if (not d or d.manifest["run_id"] != run_id or d.current != result["index"]
+                or d.cuts != cuts or d.plan() != result["before"]):
+            return False
+        after = result["after"]
+        d.common = after["common"]
+        d.parts[d.current] = after["segments"][d.current]
+        self._updating = True
+        try:
+            self._load_cut()
+        finally:
+            self._updating = False
+        self._refresh_rows()
+        return True
 
     def _update_clip_presence(self):
         self._missing_clips = {i for i, segment in enumerate(self.draft.manifest["segments"])
@@ -323,7 +460,7 @@ class ProjectWorkspace(ttk.Frame):
             if self.cuts.selection() != (str(d.current),):
                 self.cuts.selection_set(str(d.current))
                 self.cuts.see(str(d.current))
-            status = "未保存の編集あり" if d.dirty() else {
+            status = "日本語の未反映編集あり" if self._edited_japanese() else "未保存の編集あり" if d.dirty() else {
                 "draft": "計画保存", "generating": "途中", "ready_to_join": "結合待ち", "completed": "完成",
             }.get(d.manifest["state"], d.manifest["state"])
             overlap = d.manifest.get("overlap_frames", 0)

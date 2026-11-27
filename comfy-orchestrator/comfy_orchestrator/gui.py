@@ -45,6 +45,7 @@ from .timeline import (plan_long_prompts, CUSTOM_CUTS, validate_cut_frames,
 from .timeline_ui import edit_cut_durations
 from .h3_prompt import FORMAT as H3_OFFICIAL_FORMAT
 from .project_ui import ProjectWorkspace
+from .prompt_edit import edit_prompts
 from .mode_settings import ModeSettings
 from .input_snapshot import copy_frozen_asset
 from .mask_editor import edit_mask
@@ -952,6 +953,7 @@ class Application:
             self.tabs, self.long_video_store, on_refresh=self._refresh_projects,
             on_action=self._project_action, on_load=self._restore_project_inputs,
             on_actions_changed=self._project_actions_changed,
+            on_prompt_action=self._edit_project_prompt,
         )
         self.tabs.add(self.project_workspace, text="プロジェクト")
         self.tabs.hide(self.project_workspace)
@@ -3145,6 +3147,29 @@ class Application:
         self._refresh_projects(manifest["run_id"])
         self.status.set("長尺計画を保存しました。カットを編集して生成できます")
 
+    def _edit_project_prompt(self, manifest, plan, cuts, index, operation, japanese, instruction, cache):
+        """Capture the selected draft; translation/rewrite never creates a video job."""
+        if self.working or self.character_analysis_running:
+            raise core.OrchestratorError("現在の処理が終了してから操作してください")
+        cfg = self._project_config(manifest)
+        if cfg["llm"]["model"] in ("", "SELECT_IN_GUI"):
+            raise core.OrchestratorError("LM Studioのモデルを選択してください")
+        snapshot = copy.deepcopy(manifest)
+        plan = copy.deepcopy(plan)
+        cuts = list(cuts)
+        self._set_busy("カットのプロンプト編集・翻訳中")
+
+        def task():
+            result = edit_prompts(
+                cfg, snapshot, plan, cuts, index, operation, cache,
+                japanese=dict(japanese), instruction=instruction,
+                progress=lambda line: self.messages.put(("progress", line)),
+                cancel_event=self.stop_event,
+            )
+            return snapshot["run_id"], cuts, result
+
+        self._launch_generation(task, done_event="project_prompt_edited")
+
     def _project_action(self, manifest, action):
         if self.working or self.character_analysis_running:
             raise core.OrchestratorError("現在の処理が終了してから操作してください")
@@ -3302,6 +3327,15 @@ class Application:
                         self.project_workspace.set_projects(projects, preferred, open_preferred=open_preferred)
                 elif kind == "long_plan_ready":
                     self._finish_long_prompt_plan(data)
+                elif kind == "project_prompt_edited":
+                    run_id, cuts, result = data
+                    if self.stop_event.is_set():
+                        self.status.set("プロンプト編集を中止しました")
+                    elif self.project_workspace.accept_prompt_result(run_id, cuts, result):
+                        changed = result["before"] != result["after"]
+                        self.status.set("プロンプト編集完了（未保存・動画未生成）" if changed else "日本語訳を表示しました")
+                    else:
+                        self.status.set("計画が変わったため編集結果を適用しませんでした")
                 elif kind == "long_project_saved":
                     self._preferred_long_project_id = data["run_id"]
                     self.project_workspace.load(data, preserve_selection=True, restore_inputs=False)
