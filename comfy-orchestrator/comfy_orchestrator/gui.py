@@ -76,6 +76,7 @@ from .prompt_viewer import show_prompt_details, show_saved_character_features, s
 from .output_views import ResultView, HistoryView, ResultActions, HistoryActions
 from .settings_ui import ConnectionPanel, ConnectionVariables, ConnectionActions
 from .generation_view import GenerationView, GenerationVariables, GenerationActions
+from .h3_model_picker import model_choices as h3_picker_choices, select_model_key
 from .task_controller import TaskController, EventRouter
 from .history_refresh import HistoryRefresh
 from .result_state import ResultReviewState
@@ -236,7 +237,13 @@ class Application:
         self._sync_cut_summary()
         model_key = options.get("h3_model", "int8")
         turbo_key = options.get("h3_turbo", "off")
+        # The existing full label is the stable, mode-specific saved state.
+        # The short model name and input mode are presentation variables only.
         self.h3_model = tk.StringVar(value=core.h3_model_label(model_key))
+        self.h3_model_display = tk.StringVar(value="")
+        self.h3_input_mode = tk.StringVar(value="")
+        self._h3_picker_models = ()
+        self._h3_picker_state = None
         self.generation_inventory = None
         self.checkpoint_model = tk.StringVar(value=options.get("checkpoint_model", core.DEFAULT_SDXL_CHECKPOINT))
         self.qwen_steps = tk.StringVar(value=str(options.get("qwen_steps", 50)))
@@ -430,7 +437,8 @@ class Application:
                 i2i_profile=self.i2i_profile,
                 h3_profile=self.h3_profile,
                 checkpoint_model=self.checkpoint_model,
-                h3_model=self.h3_model,
+                h3_model=self.h3_model_display,
+                h3_input_mode=self.h3_input_mode,
                 h3_turbo=self.h3_turbo,
                 h3_performance=self.h3_performance,
             ), GenerationActions(
@@ -449,6 +457,7 @@ class Application:
                 sync_steps=self._sync_h3_steps,
                 performance_changed=self._on_h3_performance_choice,
                 model_changed=self._on_h3_model_choice,
+                input_mode_changed=self._on_h3_input_mode_choice,
                 run=self._run_primary,
                 preview=self._run_secondary,
                 cancel=self._request_cancel,
@@ -490,6 +499,9 @@ class Application:
         self.h3_profile_box = self.generation_view.h3_profile_box
         self.checkpoint_box = self.generation_view.checkpoint_box
         self.h3_model_box = self.generation_view.h3_model_box
+        self.h3_input_mode_box = self.generation_view.h3_input_mode_box
+        self.h3_model.trace_add("write", self._sync_h3_model_picker)
+        self._sync_h3_model_picker()
         self.h3_turbo_box = self.generation_view.h3_turbo_box
         self.h3_performance_box = self.generation_view.h3_performance_box
         self.run_button = self.generation_view.run_button
@@ -754,12 +766,70 @@ class Application:
             options["h3_encoder_model"] = encoder
         return options
 
+    def _sync_h3_model_picker(self, *_args):
+        """Project the exact model key into two short, independent controls."""
+        if not hasattr(self, "h3_input_mode_box"):
+            return
+        current = core.h3_model_from_label(self.h3_model.get())
+        installed = (tuple(core.H3_MODEL_LABELS) if self.generation_inventory is None
+                     else core.installed_model_choices(self.generation_inventory)["h3"])
+        models = h3_picker_choices(installed, current)
+        choice = next((item for item in models if item.contains(current)), None)
+        if choice is None:
+            # Keep invalid stored configuration visible as invalid rather than
+            # silently selecting another model.
+            self.h3_model_display.set(self.h3_model.get())
+            self.h3_input_mode.set("")
+            self.h3_model_box.configure(values=tuple(item.label for item in models))
+            self.h3_input_mode_box.configure(values=(), state="disabled")
+            self._h3_picker_models = models
+            self._h3_picker_state = None
+            return
+        has_image = bool(self.reference_image.get().strip())
+        mode = choice.display_mode(current, has_image=has_image)
+        modes = choice.mode_options(has_image=has_image)
+        labels = tuple(item.label for item in models)
+        state = (models, choice.label, mode, modes)
+        self._h3_picker_models = models
+        if self._h3_picker_state != state:
+            self._h3_picker_state = state
+            self.h3_model_box.configure(values=labels)
+            self.h3_input_mode_box.configure(values=modes, state="readonly" if len(modes) > 1 else "disabled")
+        if self.h3_model_display.get() != choice.label:
+            self.h3_model_display.set(choice.label)
+        if self.h3_input_mode.get() != mode:
+            self.h3_input_mode.set(mode)
+
     def _on_h3_model_choice(self, _event=None) -> None:
+        choice = next((item for item in self._h3_picker_models
+                       if item.label == self.h3_model_display.get()), None)
+        if choice is None:
+            self._sync_h3_model_picker()
+            return
+        previous = core.h3_model_from_label(self.h3_model.get())
+        key = select_model_key(choice, previous, has_image=bool(self.reference_image.get().strip()))
+        self.h3_model.set(core.h3_model_label(key))
         # Different merged/quantized weights have not been validated with Turbo.
         # Start their comparison without an additional LoRA; user may opt in.
-        if self._h3_choices()["h3_model"] not in ("int8", "w4a8"):
+        if key not in ("int8", "w4a8"):
             self.h3_turbo.set("OFF")
         self._sync_h3_steps()
+
+    def _on_h3_input_mode_choice(self, _event=None) -> None:
+        current = core.h3_model_from_label(self.h3_model.get())
+        choice = next((item for item in self._h3_picker_models if item.contains(current)), None)
+        if choice is None:
+            self._sync_h3_model_picker()
+            return
+        mode = self.h3_input_mode.get()
+        if mode not in choice.mode_options(has_image=bool(self.reference_image.get().strip())):
+            self._sync_h3_model_picker()
+            return
+        key = choice.key_for_mode(mode)
+        if key is not None and key != current:
+            self.h3_model.set(core.h3_model_label(key))
+            self._sync_h3_steps()
+        self._sync_h3_model_picker()
 
     def _on_h3_performance_choice(self, _event=None) -> None:
         performance = self._h3_choices().get("h3_performance", "standard")
@@ -1594,16 +1664,11 @@ class Application:
             messagebox.showinfo("履歴", "保存済みファイルを1件選択してください")
 
     def _apply_generation_model_choices(self) -> None:
+        self._sync_h3_model_picker()
         if self.generation_inventory is None:
             return
         choices = core.installed_model_choices(self.generation_inventory)
-        # Preserve selected values even when a model was removed: never silently
-        # change the actual generation weights on refresh or history restore.
-        h3 = [core.h3_model_label(key) for key in choices["h3"]]
-        current = self.h3_model.get()
-        if current not in h3:
-            h3.append(current)
-        self.h3_model_box.configure(values=h3)
+        # Preserve selected values even when a model was removed.
         checkpoint = [name for name in choices["sdxl"]
                       if self._active_workflow() == "wai_t2i_basic" or core.sdxl_checkpoint_kind(name) != "turbo"]
         current = self.checkpoint_model.get()

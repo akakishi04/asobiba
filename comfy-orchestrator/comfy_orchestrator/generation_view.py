@@ -10,7 +10,7 @@ from typing import Callable
 import tkinter as tk
 from tkinter import ttk, scrolledtext
 
-from .h3 import H3_MODEL_LABELS, H3_TURBO_LABELS, H3_PERFORMANCE_LABELS
+from .h3 import H3_TURBO_LABELS, H3_PERFORMANCE_LABELS
 from .file_drop import register_file_drop
 from .generation_form import (
     RESOLUTION_PRESETS, CUSTOM_RESOLUTION, VIDEO_RESOLUTIONS, VIDEO_FRAME_COUNTS,
@@ -58,6 +58,7 @@ class GenerationVariables:
     h3_profile: tk.Variable
     checkpoint_model: tk.Variable
     h3_model: tk.Variable
+    h3_input_mode: tk.Variable
     h3_turbo: tk.Variable
     h3_performance: tk.Variable
 
@@ -79,6 +80,7 @@ class GenerationActions:
     sync_steps: Callable
     performance_changed: Callable
     model_changed: Callable
+    input_mode_changed: Callable
     run: Callable
     preview: Callable
     cancel: Callable
@@ -225,14 +227,14 @@ class GenerationView(ttk.Frame):
         field(2, 0, "解像度", variables.h3_size, "h3", choices=H3_RESOLUTIONS, span=3, width=18)
         field(3, 0, "長さ (24fps)", variables.h3_duration, "h3", choices=tuple(H3_DURATIONS), span=3, width=18)
         self.h3_duration_title = self.parameter_widgets["h3"][-2]
-        field(10, 0, "接続方式", variables.h3_connection, "h3_long",
+        field(11, 0, "接続方式", variables.h3_connection, "h3_long",
               choices=tuple(H3_CONNECTION_LABELS.values()), span=3, width=18)
-        field(11, 0, "計画用合計尺", variables.h3_long_target, "h3_long",
+        field(12, 0, "計画用合計尺", variables.h3_long_target, "h3_long",
               choices=(*CONTINUOUS_TARGETS, CUSTOM_CUTS), span=3, width=8)
         cut_button = ttk.Button(settings, text="カット尺…", command=actions.edit_cut_durations)
-        cut_button.grid(row=12, column=0, columnspan=2, sticky="ew", pady=3)
+        cut_button.grid(row=13, column=0, columnspan=2, sticky="ew", pady=3)
         cut_summary = ttk.Label(settings, textvariable=variables.h3_cut_summary)
-        cut_summary.grid(row=12, column=2, columnspan=2, sticky="w", padx=(6, 0))
+        cut_summary.grid(row=13, column=2, columnspan=2, sticky="w", padx=(6, 0))
         self.parameter_widgets["h3_long"].extend((cut_button, cut_summary))
 
         field(2, 0, "解像度", variables.hunyuan_size, "hunyuan", choices=HUNYUAN_RESOLUTIONS, span=3, width=18)
@@ -262,14 +264,16 @@ class GenerationView(ttk.Frame):
                                     choices=(variables.checkpoint_model.get(),), span=3, width=18)
         self.checkpoint_box.bind("<<ComboboxSelected>>", actions.sync_steps)
         self.h3_model_box = field(8, 0, "モデル", variables.h3_model, "h3",
-                                  choices=tuple(dict.fromkeys((*H3_MODEL_LABELS.values(), variables.h3_model.get()))),
-                                  span=3, width=18)
-        self.h3_turbo_box = field(9, 0, "追加Turbo", variables.h3_turbo, "h3_turbo",
+                                  choices=(), span=3, width=18)
+        self.h3_input_mode_box = field(9, 0, "入力方式", variables.h3_input_mode, "h3",
+                                       choices=(), span=3, width=18)
+        self.h3_turbo_box = field(10, 0, "追加Turbo", variables.h3_turbo, "h3_turbo",
                                   choices=tuple(H3_TURBO_LABELS.values()), span=3, width=18)
-        self.h3_performance_box = field(9, 0, "高速化", variables.h3_performance, "h3_performance",
+        self.h3_performance_box = field(10, 0, "高速化", variables.h3_performance, "h3_performance",
                                         choices=tuple(H3_PERFORMANCE_LABELS.values()), span=3, width=18)
         self.h3_performance_box.bind("<<ComboboxSelected>>", actions.performance_changed)
         self.h3_model_box.bind("<<ComboboxSelected>>", actions.model_changed)
+        self.h3_input_mode_box.bind("<<ComboboxSelected>>", actions.input_mode_changed)
         self.h3_turbo_box.bind("<<ComboboxSelected>>", actions.sync_steps)
         for widgets in self.parameter_widgets.values():
             for widget in widgets:
