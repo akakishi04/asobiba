@@ -5,12 +5,14 @@ from dataclasses import dataclass
 from typing import Callable
 from pathlib import Path
 import tkinter as tk
+import base64
 from tkinter import ttk
 
 from .video_preview import VideoPreview
 from .preview_geometry import preview_subsample
 from .output_collection import IMAGE_EXTENSIONS, is_video_output
 from .history import HistoryEntry, HistoryQuery, HistoryPage
+from .history_thumbnails import ThumbnailLoader
 from .history_presentation import history_row, history_summary, history_can_replay, history_action_state
 
 
@@ -157,6 +159,11 @@ class HistoryView(ttk.Frame):
         self._query_pending = None
         self._history_read_pending = False
         self._busy = False
+        self._thumb_loader = ThumbnailLoader()
+        self._thumb_timer = None
+        self._thumb_key = None
+        self._thumb_photos = {}
+        self._thumb_visible = False
         history_actions = ttk.Frame(self)
         history_actions.pack(side="bottom", fill="x", pady=(5, 0))
         history_meta = ttk.Frame(self)
@@ -171,6 +178,9 @@ class HistoryView(ttk.Frame):
         box.pack(side="left", padx=(4, 0))
         self.favorite_filter = tk.BooleanVar(master=self, value=False)
         ttk.Checkbutton(filter_bar, text="★", variable=self.favorite_filter).pack(side="left", padx=4)
+        self.thumbnail_mode = tk.BooleanVar(master=self, value=False)
+        ttk.Checkbutton(filter_bar, text="サムネイル", variable=self.thumbnail_mode,
+                        command=self._toggle_thumbnails).pack(side="left")
         pages = ttk.Frame(self)
         pages.pack(fill="x", pady=(0, 4))
         self.archive_filter = tk.BooleanVar(master=self, value=False)
@@ -198,6 +208,7 @@ class HistoryView(ttk.Frame):
             table_holder, columns=history_columns, show="tree headings",
             selectmode="extended", height=6,
         )
+        ttk.Style(self).configure("HistoryThumb.Treeview", rowheight=54)
         self.history_table.heading("#0", text="プロンプト")
         self.history_table.column("#0", width=160, minwidth=90, stretch=True)
         self.history_table.heading("date", text="日時 ↓", command=self._sort_date)
@@ -261,6 +272,64 @@ class HistoryView(ttk.Frame):
         ttk.Button(self.history_tools, text="素材として使用…", command=actions.use_material,
                    style="Compact.TButton").pack(fill="x")
 
+    def _toggle_thumbnails(self):
+        enabled = self.thumbnail_mode.get()
+        self.history_table.configure(style="HistoryThumb.Treeview" if enabled else "Treeview")
+        self._stop_thumbnails(clear=True)
+        self._refresh_thumbnails()
+
+    def _stop_thumbnails(self, *, clear=False):
+        self._thumb_loader.cancel()
+        if self._thumb_timer is not None:
+            self.after_cancel(self._thumb_timer)
+            self._thumb_timer = None
+        self._thumb_key = None
+        if clear:
+            for row_id in self.history_table.get_children():
+                self.history_table.item(row_id, image="")
+            self._thumb_photos.clear()
+
+    def _refresh_thumbnails(self):
+        if (not self.thumbnail_mode.get() or not self._thumb_visible
+                or self._busy or self._history_read_pending):
+            if self._thumb_timer is not None:
+                self._stop_thumbnails()
+            return
+        items = tuple((entry.id, entry.first_image) for entry in self.history_entries.values()
+                      if entry.first_image is not None)
+        if items == self._thumb_key:
+            return
+        self._stop_thumbnails(clear=True)
+        self._thumb_key = items
+        if items:
+            self._thumb_loader.request(items)
+            self._thumb_timer = self.after(50, self._poll_thumbnails)
+
+    def _poll_thumbnails(self):
+        self._thumb_timer = None
+        finished = False
+        for row_id, raw in self._thumb_loader.drain():
+            if row_id is None:
+                finished = True
+                continue
+            if raw is None or row_id not in self.history_entries or not self.history_table.exists(row_id):
+                continue
+            try:
+                photo = tk.PhotoImage(master=self, data=base64.b64encode(raw), format="png")
+                self._thumb_photos[row_id] = photo
+                self.history_table.item(row_id, image=photo)
+            except tk.TclError:
+                pass
+        if not finished:
+            self._thumb_timer = self.after(80, self._poll_thumbnails)
+
+    def destroy(self):
+        if self._query_pending is not None:
+            self.after_cancel(self._query_pending)
+            self._query_pending = None
+        self._stop_thumbnails(clear=True)
+        super().destroy()
+
     def query(self):
         kinds = {"すべて": "all", "画像": "image", "単発動画": "video",
                  "連続動画": "continuous", "動画フレーム": "frame", "旧履歴": "legacy"}
@@ -271,6 +340,7 @@ class HistoryView(ttk.Frame):
     def _filter_changed(self, *_args):
         self._history_offset = 0
         self._history_read_pending = True
+        self._stop_thumbnails()
         # Old rows remain visible while reading, but cannot be acted on after
         # the search changed. Deselect immediately; latest result wins.
         self.history_table.selection_remove(*self.history_table.selection())
@@ -297,6 +367,7 @@ class HistoryView(ttk.Frame):
         if 0 <= offset < self._history_total:
             self._history_offset = offset
             self._history_read_pending = True
+            self._stop_thumbnails()
             self.history_table.selection_remove(*self.history_table.selection())
             self.on_selection()
             self.prev_page.configure(state="disabled")
@@ -374,7 +445,10 @@ class HistoryView(ttk.Frame):
                 self.history_image.pack(fill="x", pady=(0, 4))
 
     def refresh_selection(self, workflows, *, working, visible) -> None:
-        # The Result tab does not need hidden history thumbnails or file checks.
+        # Only decode thumbnails when their tab is visible and generation idle.
+        if hasattr(self, "_thumb_loader"):
+            self._thumb_visible = visible
+            self._refresh_thumbnails()
         if not visible:
             return
         selected = self.selected_entries()
@@ -458,6 +532,7 @@ class HistoryView(ttk.Frame):
         self.history_video.set_enabled(not busy)
         self._busy = busy
         if busy:
+            self._stop_thumbnails()
             self.favorite_button.configure(state="disabled")
             self.archive_button.configure(state="disabled")
             for button in (self.same_seed_button, self.new_seed_button, self.history_request_button,

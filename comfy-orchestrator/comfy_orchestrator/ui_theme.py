@@ -91,6 +91,7 @@ def apply_ttk_theme(root: tk.Tk, dark: bool = True) -> dict[str, str]:
         "Treeview", background=p["input"], fieldbackground=p["input"],
         foreground=p["text"], rowheight=26, borderwidth=0,
     )
+    style.configure("HistoryThumb.Treeview", rowheight=54)
     style.map(
         "Treeview", background=[("selected", p["accent"])],
         foreground=[("selected", "#FFFFFF")],

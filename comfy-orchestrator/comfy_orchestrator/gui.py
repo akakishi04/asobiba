@@ -1013,6 +1013,8 @@ class Application:
 
     def _on_history_flags_changed(self, _data):
         self.status.set("履歴を更新しました")
+        self.history_panel._history_read_pending = True
+        self.history_panel.history_table.selection_remove(*self.history_panel.history_table.selection())
         self._refresh_history(scan_legacy=False)
 
     def _selected_history(self) -> list[HistoryEntry]:

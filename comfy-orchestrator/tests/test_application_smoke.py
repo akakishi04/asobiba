@@ -102,6 +102,12 @@ class ApplicationSmokeTests(unittest.TestCase):
                     app.history_panel.apply_page(app.history_store.query_entries(app.history_panel.query()),
                                                  entry.id)
                     self.assertEqual(app.history_panel.selected_entries()[0].id, entry.id)
+                    app.history_panel.thumbnail_mode.set(True)
+                    app.history_panel._toggle_thumbnails()
+                    self.assertEqual(str(app.history_panel.history_table.cget("style")), "HistoryThumb.Treeview")
+                    app.history_panel.thumbnail_mode.set(False)
+                    app.history_panel._toggle_thumbnails()
+                    self.assertEqual(str(app.history_panel.history_table.cget("style")), "Treeview")
                     app.history_store.set_flags([entry.id], favorite=True)
                     app.history_panel.favorite_filter.set(True)
                     page = app.history_store.query_entries(app.history_panel.query())

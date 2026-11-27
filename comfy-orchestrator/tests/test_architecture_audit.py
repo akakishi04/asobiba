@@ -52,7 +52,7 @@ class ArchitectureAuditTests(unittest.TestCase):
                     "generation_controller", "long_video", "long_video_plan",
                     "project_store", "project_draft", "prompt_inference", "prompt_edit",
                     "prompt_review", "history_refresh", "task_controller", "result_state", "single_prompt", "llm_usage",
-                    "material_transfer")
+                    "material_transfer", "history_thumbnails")
         for name in backends:
             tree = ast.parse((PACKAGE / f"{name}.py").read_text(encoding="utf-8"))
             for node in ast.walk(tree):
