@@ -81,6 +81,17 @@ concrete terms, followed by the action and its ending state. Fill only details
 needed to make the user's scene coherent. No Picture, Subject, Video or Audio
 reference labels and no first-frame alignment instruction. The first generated
 clip establishes the visual continuity for subsequent clips."""
+RETENTION_POLICY = """In retention_analysis, write exactly one line for every label
+defined at the start of a subject_definitions line. Use this literal syntax:
+<Subject 1> (appears in [Shot 1]): fully_preserved - retain the subject's appearance.
+If <Picture 1> itself has its own definition, it also needs its own retention line.
+Choose exactly ONE of fully_preserved, partially_preserved, attribute_transfer,
+weak_reference for each label, according to the user's intended changes. Keep the
+underscores, colon before the category, and ASCII hyphen before a concrete reason.
+Use the label at the start of the line, no Markdown bullets or bold formatting.
+A source-picture citation inside a Subject definition does not define another label.
+The example is formatting only; do not copy its retention decision or content."""
+
 REF_POLICY = """Ref2VA: the one input image is a visual reference, not automatically
 the opening frame. Return six fields. In subject_definitions define each used
 <Subject N> on its own line, citing the source <Picture 1>; a standalone
@@ -91,7 +102,8 @@ retention_analysis gives one line per defined label, using fully_preserved,
 partially_preserved, attribute_transfer or weak_reference, restricted to its role.
 detailed_description starts with a style sentence before [Shot 1], then the
 concrete audiovisual timeline using the defined labels consistently.
-Distinguish which attributes are retained from changes in pose, scene and framing."""
+Distinguish which attributes are retained from changes in pose, scene and framing.
+""" + RETENTION_POLICY
 
 LONG_POLICY = """Plan the entire continuous video as ordered host cut windows.
 Here a host cut means a generation interval, not necessarily a cinematic cut.
@@ -124,7 +136,14 @@ def object_schema(fields, limits=LIMITS):
 
 
 def schema(reference_only):
-    return object_schema(fields_for(reference_only))
+    value = object_schema(fields_for(reference_only))
+    if reference_only:
+        value["properties"]["retention_analysis"]["description"] = (
+            "One line per defined label. Example: <Subject 1> (appears in [Shot 1]): "
+            "fully_preserved - retain the subject's appearance. Choose exactly one of "
+            + ", ".join(RETENTION) + ". Preserve the literal colon, underscores and hyphen."
+        )
+    return value
 
 
 def _bad(message):
@@ -146,6 +165,62 @@ def _time_value(match):
     if second >= 60:
         raise _bad("カット時刻の秒は00～59にしてください")
     return (minute * 60 + second) * 1000 + milli
+
+
+# Preserve already canonical lines. Only normalize an otherwise unambiguous
+# label/category/reason line; never choose a category or invent a missing reason.
+_RETENTION_VARIANTS = "|".join(re.escape(kind).replace("_", r"[_ \t-]+") for kind in RETENTION)
+_RETENTION_LINE = re.compile(
+    r"^\s*(?:[-*•]\s+|\d+[.)]\s+)?(?:\*\*)?"
+    r"(?P<label><(?:Subject|Picture) \d+>)(?:\*\*)?"
+    r"(?P<qualifier>\s*\([^()\n]+\))?"
+    r"\s*(?::|：|[-–—])\s*(?:\*\*|\x60)?"
+    r"(?P<category>" + _RETENTION_VARIANTS + r")(?:\*\*|\x60)?"
+    r"\s*(?:(?:[-–—:：])\s*(?P<reason>\S.*)|\((?P<parenthesized>[^()\n]+)\))$",
+    re.IGNORECASE,
+)
+
+
+def _retention_error(label, reason):
+    return _bad(
+        f"{label} のretention_analysisが不正です（{reason}）。"
+        f"Use one line: {label}: fully_preserved - reason; "
+        "or partially_preserved / attribute_transfer / weak_reference as appropriate."
+    )
+
+
+def normalize_retention(text, defined):
+    seen = set()
+    lines = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        match = _RETENTION_LINE.fullmatch(line)
+        if match is None:
+            label_match = LABEL.search(line)
+            label = label_match.group(0) if label_match else next(iter(sorted(defined)))
+            raise _retention_error(label, "書式・分類・理由のいずれかが不正")
+        label = match["label"]
+        if label not in defined:
+            raise _retention_error(label, "未定義のラベル")
+        if label in seen:
+            raise _retention_error(label, "複数の維持方針")
+        seen.add(label)
+        category = re.sub(r"[_ \t-]+", "_", match["category"].lower())
+        qualifier = match["qualifier"] or ""
+        reason = (match["reason"] or match["parenthesized"]).strip()
+        # Do not treat an alternative category as the explanation.
+        if not reason or re.match(r"^(?:" + _RETENTION_VARIANTS + r")(?:\b|$)", reason, re.IGNORECASE):
+            raise _retention_error(label, "維持方針が曖昧")
+        canonical = f"{label}{qualifier}: {category} - {reason}"
+        # Keep already documented forms byte-for-byte when possible.
+        lines.append(line if line == canonical else canonical)
+    for label in sorted(defined - seen):
+        raise _retention_error(label, "維持方針が未記述")
+    result = "\n".join(lines)
+    if len(result) > LIMITS["retention_analysis"]:
+        raise _bad("retention_analysis が長すぎます")
+    return result
 
 
 def validate_sections(value, reference_only, *, kept_frames=None, later_cut=False):
@@ -205,11 +280,7 @@ def validate_sections(value, reference_only, *, kept_frames=None, later_cut=Fals
         types = task.group(1).split(" + ") if task else []
         if not types or len(types) != len(set(types)) or not set(types) <= {"reference generation", "keyframe completion"}:
             raise _bad("Ref2VA summaryのタスク種別が不正です")
-        for label in defined:
-            lines = [line for line in result["retention_analysis"].splitlines() if line.strip().startswith(label)]
-            if len(lines) != 1 or not any(re.search(r":\s*" + kind + r"\s*-\s*\S", lines[0])
-                                          for kind in RETENTION):
-                raise _bad(f"{label} のretention_analysisが不正です")
+        result["retention_analysis"] = normalize_retention(result["retention_analysis"], defined)
     elif any(kind == "Subject" for kind, _ in labels) or (later_cut and labels):
         raise _bad("開始フレーム/ガイド用本文にRef2VAラベルがあります")
     return result

@@ -67,6 +67,62 @@ class H3OfficialPromptTests(unittest.TestCase):
         with self.assertRaises(core.OrchestratorError):
             hp.compile_prompt(ref, True)
 
+    def test_retention_formatting_variants_normalize_without_changing_decision(self):
+        expected = "<Subject 1> (appears in [Shot 1]): partially_preserved - retain hair; change pose."
+        for line in (
+            "<Subject 1> (appears in [Shot 1]): partially_preserved - retain hair; change pose.",
+            "- <Subject 1> (appears in [Shot 1]): Partially Preserved — retain hair; change pose.",
+            "**<Subject 1>** (appears in [Shot 1])： **partially_preserved**: retain hair; change pose.",
+            "1. <Subject 1> (appears in [Shot 1]) - partially-preserved – retain hair; change pose.",
+            "<Subject 1> (appears in [Shot 1]): partially_preserved (retain hair; change pose.)",
+        ):
+            with self.subTest(line=line):
+                fields = hp.default_sections(True)
+                fields["retention_analysis"] = line
+                actual = hp.validate_sections(fields, True)
+                self.assertEqual(actual["retention_analysis"], expected)
+                self.assertEqual(actual["detailed_description"], fields["detailed_description"])
+                self.assertEqual(hp.validate_sections(actual, True), actual)
+
+    def test_retention_never_invents_missing_or_ambiguous_decisions(self):
+        for line in (
+            "<Subject 1>: retain appearance.",
+            "<Subject 1>: fully_preserved",
+            "<Subject 1>: totally_preserved - retain appearance.",
+            "<Subject 1>: fully_preserved / weak_reference - reason",
+            "<Subject 1>: fully_preserved — weak_reference",
+            "<Subject 1>: fully_preserved - weak_reference",
+            "<Subject 1>: fully_preserved - reason\n- <Subject 1>: weak_reference - other",
+            "<Subject 1>: fully_preserved — reason\n<Subject 1>: weak_reference — other",
+            "<Picture 1>: fully_preserved — reason",
+        ):
+            with self.subTest(line=line), self.assertRaisesRegex(core.OrchestratorError, "retention_analysis"):
+                fields = hp.default_sections(True)
+                fields["retention_analysis"] = line
+                hp.compile_prompt(fields, True)
+        fields = hp.default_sections(True)
+        fields["subject_definitions"] += "\n<Picture 1> defines the background."
+        fields["retention_analysis"] = "<Subject 1>: fully_preserved - retain appearance."
+        with self.assertRaisesRegex(core.OrchestratorError, "<Picture 1>.*retention_analysis"):
+            hp.compile_prompt(fields, True)
+
+    def test_ref2va_inference_accepts_format_variants_without_retry(self):
+        self.config["llm"].update(h3_reference_vision=False, _h3_reference_only=True)
+        fields = hp.default_sections(True)
+        fields["retention_analysis"] = "- <Subject 1>: Attribute Transfer — retain the coat color."
+        catalog = [{"key": "test", "capabilities": {"vision": False},
+                    "loaded_instances": [{"id": "instance"}]}]
+        with patch.object(lmstudio, "list_models", return_value=catalog), \
+                patch.object(lmstudio, "_request", return_value=reply(fields)) as req:
+            result = hp.interpret_single(lmstudio.LMStudio(self.config["llm"]), "動く", self.workflows, self.source)
+        req.assert_called_once()
+        self.assertIn("<Subject 1>: attribute_transfer - retain the coat color.",
+                      result["parameters"]["positive_prompt"])
+        payload = req.call_args.args[2]
+        self.assertIn("Use this literal syntax", payload["messages"][0]["content"])
+        self.assertIn("description", payload["response_format"]["json_schema"]["schema"]
+                      ["properties"]["retention_analysis"])
+
     def test_single_vision_observes_once_and_compiles_in_core(self):
         calls = []
         observation = {name: "visible blue coat" if name == "appearance" else "unknown" for name in hp.OBS_FIELDS}

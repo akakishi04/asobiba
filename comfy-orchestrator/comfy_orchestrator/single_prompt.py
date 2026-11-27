@@ -193,6 +193,7 @@ class SinglePromptDraft:
             "Never include the host-added opening-frame header."
             + (" No source images exist; establish the scene from text and do not use reference labels."
                if self.text_only else "")
+            + ("\n" + hp.RETENTION_POLICY if self.reference_only else "")
             if self.official else
             "Use concise comma-separated English visual tags and preserve tag weights."
             if self.workflow_id in SDXL_WORKFLOW_IDS else

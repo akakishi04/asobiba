@@ -132,4 +132,4 @@ def request_validated(client, instance_id, system, user_content, response_schema
                 raise
             feedback = "\nCorrect the invalid structured output and return the complete JSON again. Validation error: " + str(exc)[:220]
             if progress:
-                progress("H3: プロンプト形式を1回修正します")
+                progress("H3: プロンプト形式を1回修正します: " + str(exc)[:220])
