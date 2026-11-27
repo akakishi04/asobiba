@@ -79,6 +79,8 @@ from .generation_view import GenerationView, GenerationVariables, GenerationActi
 from .task_controller import TaskController, EventRouter
 from .history_refresh import HistoryRefresh
 from .result_state import ResultReviewState
+from .single_prompt import SinglePromptDraft
+from .single_prompt_ui import SinglePromptWindow
 from .preview_geometry import preview_subsample
 
 
@@ -152,6 +154,11 @@ class Application:
         self._generation_ui_key = None
         self.latest_composition_report = ""
         self.review = ResultReviewState()
+        self.single_draft = None
+        self.single_window = None
+        self._single_refresh = False
+        self._single_submit = False
+        self._single_success = False
         self.character_references, self.character_analysis, self.character_traits = (
             load_character_sheet(ROOT)
         )
@@ -863,7 +870,7 @@ class Application:
         if hasattr(self, "preview_button"):
             if not self.preview_button.winfo_manager():
                 self.preview_button.pack(side="left", padx=(0, 6), before=self.cancel_button)
-            self.preview_button.configure(text="新規計画" if generation_mode == "continuous" else "解釈テスト")
+            self.preview_button.configure(text="新規計画" if generation_mode == "continuous" else "プロンプト確認")
         if hasattr(self, "long_actions_button"):
             if generation_mode == "continuous":
                 if not self.long_actions_button.winfo_manager():
@@ -1881,9 +1888,20 @@ class Application:
                 overlap_frames=overlap_frames,
             )
             return
+        if dry_run:
+            controller = self._controller(cfg, prompt_cache)
+            cache = self.project_workspace.translation_cache
+            self._set_busy("プロンプト作成中")
+            self._launch_generation(lambda: SinglePromptDraft.prepare(
+                controller, prompt, selected, overrides, image=image, mask_image=mask,
+                pose_image=pose, composition_image=composition, prompt_profile=profile,
+                character_references=approved_images, character_traits=approved_traits,
+                character_analysis=approved_analysis, cache=cache,
+            ), done_event="single_prompt_ready", cancel_as_progress=True)
+            return
         self.review.begin(request_text=prompt, profile=profile, character_traits=approved_traits,
                           character_analysis=approved_analysis, character_references=approved_images)
-        self._set_busy("解釈テスト中..." if dry_run else "生成準備中...")
+        self._set_busy("生成準備中...")
         self._log("開始: " + ("解釈のみテスト" if dry_run else "動画生成" if is_video else "画像生成")
                   + (f" / model={cfg['llm']['model']}" if use_prompt_llm else " / LLMなし"))
 
@@ -2199,6 +2217,8 @@ class Application:
             "operations_error": self._on_event_operations_error,
             "projects_loaded": self._on_event_projects_loaded,
             "long_plan_ready": self._finish_long_prompt_plan,
+            "single_prompt_ready": self._on_single_prompt_ready,
+            "single_prompt_changed": self._on_single_prompt_changed,
             "project_translation_cache_updated": self._on_event_project_translation_cache_updated,
             "project_prompt_edited": self._on_event_project_prompt_edited,
             "long_project_saved": self._on_event_long_project_saved,
@@ -2233,6 +2253,54 @@ class Application:
             if self.working:
                 self._tick_timing()
             self.root.after(15 if not self.messages.empty() else 100, self._consume_messages)
+
+    def _on_single_prompt_ready(self, draft):
+        if self.stop_event.is_set():
+            draft.close()
+            self.status.set("プロンプト作成を中止しました")
+            return
+        self.single_draft = draft
+        self.status.set("プロンプト確認")
+
+    def _on_single_prompt_changed(self, operation):
+        self._single_refresh = True
+        if self.single_window and operation == "translate":
+            self.single_window._display_language = "日本語"
+        self.status.set("プロンプト確認")
+
+    def _close_single_prompt(self):
+        if self.single_window is not None:
+            self.single_window.destroy()
+            self.single_window = None
+        if self.single_draft is not None:
+            self.single_draft.close()
+            self.single_draft = None
+        self._single_submit = self._single_success = self._single_refresh = False
+
+    def _single_prompt_action(self, operation, **kwargs):
+        if self.working or self.single_draft is None:
+            return
+        draft = self.single_draft
+        cache = self.project_workspace.translation_cache
+        if operation == "generate":
+            context = draft.context
+            self.review.begin(request_text=draft.request, profile=context["prompt_profile"],
+                              character_traits=context["character_traits"],
+                              character_analysis=context["character_analysis"])
+            self._single_submit, self._single_success = True, False
+            self._set_busy("確認済みプロンプトで生成中")
+            self.single_window.set_busy(True)
+            self._launch_generation(draft.generate)
+        else:
+            self._set_busy("プロンプト編集中")
+            self.single_window.set_busy(True)
+            def task():
+                if operation == "translate":
+                    draft.translate(cache)
+                else:
+                    draft.revise(operation, cache, **kwargs)
+                return operation
+            self._launch_generation(task, done_event="single_prompt_changed", cancel_as_progress=True)
 
     def _on_event_progress(self, data):
         if data.startswith("【構図認識結果】\n"):
@@ -2368,7 +2436,16 @@ class Application:
 
     def _on_event_done(self, data):
         result, images, history_id = data
+        if self._single_submit:
+            draft = self.single_draft
+            context = draft.context
+            self.review.begin(request_text=draft.request, profile=context["prompt_profile"],
+                              character_traits=context["character_traits"],
+                              character_analysis=context["character_analysis"],
+                              character_references=draft.review_references)
         self.review.publish(result, self.config.get("workflows", {}))
+        if self._single_submit and result["status"] != "dry_run":
+            self._single_success = True
         self.result_panel.mark_prompt_available()
         if result["status"] == "dry_run":
             self._log("解釈結果:\n" + json.dumps(result, ensure_ascii=False, indent=2))
@@ -2388,7 +2465,7 @@ class Application:
     def _on_event_error(self, data):
         self._log("ERROR: " + data)
         self.status.set("エラー: " + data[:110])
-        messagebox.showerror("処理エラー", data)
+        messagebox.showerror("処理エラー", data, parent=self.single_window or self.root)
 
     def _on_event_idle(self, data):
         self._tick_timing(finished=True)
@@ -2409,6 +2486,21 @@ class Application:
             self.recover_jobs_button.configure(state="normal")
         self.progress_bar.stop()
         self._history_selection_changed()
+        if self._single_success:
+            self._close_single_prompt()
+        elif self.single_draft is not None:
+            self._single_submit = False
+            if self.single_window is None:
+                self.single_window = SinglePromptWindow(
+                    self.root, self.single_draft, self.project_workspace.translation_cache,
+                    on_action=self._single_prompt_action, on_close=self._close_single_prompt,
+                    on_cancel=self._request_cancel, status=self.status,
+                )
+            else:
+                self.single_window.set_busy(False)
+                if self._single_refresh:
+                    self.single_window.reload()
+            self._single_refresh = False
 
     def _open_image(self) -> None:
         path = self.result_panel.selected_path()
@@ -2435,6 +2527,8 @@ class Application:
             "実行中", "現在の操作の進捗表示は終了します。ComfyUI側の生成ジョブは停止しません。閉じますか？"
         ):
             return
+        if not self.working:
+            self._close_single_prompt()
         self.result_panel.result_video.stop()
         self.history_panel.history_video.stop()
         if hasattr(self, "project_workspace"):

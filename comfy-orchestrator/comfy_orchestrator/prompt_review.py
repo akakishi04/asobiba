@@ -157,9 +157,15 @@ def _translate(client, instance, kind, source, official, progress, cancel_event)
             result[key] = restore(text.strip(), tokens[key])
         return _jp_text(result)
 
-    return request_validated(client, instance, TRANSLATION_POLICY,
+    policy = TRANSLATION_POLICY
+    if kind.startswith("single:"):
+        policy = ("Translate the supplied generation prompt faithfully into readable Japanese. "
+                  "Preserve the meaning of every visual tag and negative constraint, and keep weights and protected tokens exact. "
+                  "Do not summarize, add details, or change the meaning. Return only the requested JSON.")
+    return request_validated(client, instance, policy,
                      json.dumps(masked, ensure_ascii=False), hp.object_schema(fields, limits),
-                     "h3_japanese_review", validate, progress, cancel_event,
+                     "single_japanese_review" if kind.startswith("single:") else "h3_japanese_review",
+                     validate, progress, cancel_event,
                      translation_chars=sum(len(value) for value in masked.values()))
 
 

@@ -132,6 +132,24 @@ class GenerationController:
         return self.finish(result, kind, request, image, mask_image=mask_image,
                            pose_image=pose_image, composition_image=composition_image, **context)
 
+    def generate_prepared(self, request, workflow_id, parameters, *, image=None, mask_image=None,
+                          pose_image=None, composition_image=None, prompt_profile=None,
+                          character_references=(), character_traits=None, character_analysis=None):
+        """Execute an explicitly reviewed plan, bypassing prompt interpretation."""
+        kind = self.config["workflows"][workflow_id]["kind"]
+        context = {"request_text": request, "prompt_profile": prompt_profile,
+                   "composition_image": composition_image,
+                   "character_references": character_references,
+                   "character_traits": character_traits, "character_analysis": character_analysis}
+        result = core.execute_saved(
+            self.config, self.config_path, workflow_id, parameters,
+            reference_image=image, mask_image=mask_image, pose_image=pose_image,
+            progress=self.progress, cancel_event=self.cancel_event,
+            job_journal=self.journal, job_context=context,
+        )
+        return self.finish(result, kind, request, image, mask_image=mask_image, pose_image=pose_image,
+                           **{key: value for key, value in context.items() if key != "request_text"})
+
     def replay(self, entry, *, new_seed=False):
         refs = entry.character_references
         refs_ok = all(p.is_file() for p in refs)

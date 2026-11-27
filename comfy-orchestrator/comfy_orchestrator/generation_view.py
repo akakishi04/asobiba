@@ -279,7 +279,7 @@ class GenerationView(ttk.Frame):
             action_row, text="画像生成", style="Run.TButton", command=actions.run
         )
         self.run_button.pack(side="left", fill="x", expand=True, padx=(0, 6))
-        self.preview_button = ttk.Button(action_row, text="解釈テスト", command=actions.preview)
+        self.preview_button = ttk.Button(action_row, text="プロンプト確認", command=actions.preview)
         self.preview_button.pack(side="left", padx=(0, 6))
         self.cancel_button = ttk.Button(
             action_row, text="生成中止", command=actions.cancel, state="disabled"

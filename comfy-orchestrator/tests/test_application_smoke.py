@@ -61,6 +61,37 @@ class ApplicationSmokeTests(unittest.TestCase):
                     app.tabs.select(app.history_panel)
                     root.update_idletasks()
                     self.assertFalse(callback_errors, callback_errors)
+
+                    # The new review modal uses real Tk controls but no service.
+                    from comfy_orchestrator.single_prompt import SinglePromptDraft
+                    from unittest.mock import Mock
+                    temporary = tempfile.TemporaryDirectory()
+                    controller = Mock(config=config, cancel_event=app.stop_event)
+                    draft = SinglePromptDraft(controller, {
+                        "workflow_id": "wai_t2i_basic",
+                        "parameters": {"positive_prompt": "tree", "negative_prompt": "", "seed": 9},
+                    }, "tree", {}, {"prompt_profile": None, "character_traits": None,
+                                     "character_analysis": None, "character_references": ()}, temporary)
+                    try:
+                        root.deiconify()
+                        root.update_idletasks()
+                        app._set_busy("review")
+                        app.event_router.dispatch("single_prompt_ready", draft)
+                        app.event_router.dispatch("idle", None)
+                        root.update_idletasks()
+                        window = app.single_window
+                        self.assertIsNotNone(window)
+                        self.assertEqual(window.language.get(), "英語")
+                        window.editors["positive_prompt"].delete("1.0", "end")
+                        window.editors["positive_prompt"].insert("1.0", "edited tree")
+                        window._read()
+                        self.assertEqual(draft.parameters["positive_prompt"], "edited tree")
+                        app._close_single_prompt()
+                        self.assertIsNone(app.single_window)
+                        self.assertFalse(Path(temporary.name).exists())
+                        self.assertFalse(callback_errors, callback_errors)
+                    finally:
+                        draft.close()
         finally:
             root.destroy()
 
