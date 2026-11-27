@@ -10,7 +10,7 @@ from tkinter import ttk
 from .video_preview import VideoPreview
 from .preview_geometry import preview_subsample
 from .output_collection import IMAGE_EXTENSIONS, is_video_output
-from .history import HistoryEntry
+from .history import HistoryEntry, HistoryQuery, HistoryPage
 from .history_presentation import history_row, history_summary, history_can_replay, history_action_state
 
 
@@ -139,6 +139,7 @@ class HistoryActions:
     refresh: Callable
     restore_character: Callable
     use_material: Callable
+    change_flags: Callable
 
 
 class HistoryView(ttk.Frame):
@@ -149,10 +150,47 @@ class HistoryView(ttk.Frame):
         self._history_preview_key = None
         self.history_preview_photo = None
         self.on_selection = actions.select
+        self.on_refresh = actions.refresh
+        self._history_offset = 0
+        self._history_total = 0
+        self._history_page_size = 50
+        self._query_pending = None
+        self._history_read_pending = False
+        self._busy = False
         history_actions = ttk.Frame(self)
         history_actions.pack(side="bottom", fill="x", pady=(5, 0))
         history_meta = ttk.Frame(self)
         history_meta.pack(side="bottom", fill="x", pady=(5, 0))
+        filter_bar = ttk.Frame(self)
+        filter_bar.pack(fill="x", pady=(0, 4))
+        self.search_text = tk.StringVar(master=self, value="")
+        ttk.Entry(filter_bar, textvariable=self.search_text, width=16).pack(side="left", fill="x", expand=True)
+        self.kind_filter = tk.StringVar(master=self, value="すべて")
+        kinds = ("すべて", "画像", "単発動画", "連続動画", "動画フレーム", "旧履歴")
+        box = ttk.Combobox(filter_bar, textvariable=self.kind_filter, values=kinds, width=9, state="readonly")
+        box.pack(side="left", padx=(4, 0))
+        self.favorite_filter = tk.BooleanVar(master=self, value=False)
+        ttk.Checkbutton(filter_bar, text="★", variable=self.favorite_filter).pack(side="left", padx=4)
+        pages = ttk.Frame(self)
+        pages.pack(fill="x", pady=(0, 4))
+        self.archive_filter = tk.BooleanVar(master=self, value=False)
+        ttk.Checkbutton(pages, text="非表示", variable=self.archive_filter).pack(side="left")
+        self.favorite_button = ttk.Button(pages, text="★追加", state="disabled",
+                                          command=lambda: actions.change_flags("favorite"))
+        self.favorite_button.pack(side="left", padx=(4, 0))
+        self.archive_button = ttk.Button(pages, text="非表示にする", state="disabled",
+                                         command=lambda: actions.change_flags("archived"))
+        self.archive_button.pack(side="left", padx=(4, 0))
+        self.next_page = ttk.Button(pages, text="›", width=3, state="disabled", command=lambda: self._page(1))
+        self.next_page.pack(side="right")
+        self.page_text = tk.StringVar(master=self, value="0件")
+        ttk.Label(pages, textvariable=self.page_text).pack(side="right", padx=4)
+        self.prev_page = ttk.Button(pages, text="‹", width=3, state="disabled", command=lambda: self._page(-1))
+        self.prev_page.pack(side="right")
+        self._oldest_first = False
+        for variable in (self.search_text, self.kind_filter, self.favorite_filter, self.archive_filter):
+            variable.trace_add("write", self._filter_changed)
+
         history_columns = ("date", "workflow", "seed")
         table_holder = ttk.Frame(self)
         table_holder.pack(fill="both", expand=True)
@@ -162,7 +200,7 @@ class HistoryView(ttk.Frame):
         )
         self.history_table.heading("#0", text="プロンプト")
         self.history_table.column("#0", width=160, minwidth=90, stretch=True)
-        self.history_table.heading("date", text="日時")
+        self.history_table.heading("date", text="日時 ↓", command=self._sort_date)
         self.history_table.column("date", width=94, minwidth=80, stretch=False)
         self.history_table.heading("workflow", text="種別")
         self.history_table.column("workflow", width=62, minwidth=54, stretch=False)
@@ -177,7 +215,8 @@ class HistoryView(ttk.Frame):
         table_holder.columnconfigure(0, weight=1)
         table_holder.rowconfigure(0, weight=1)
         self.history_table.bind("<<TreeviewSelect>>", actions.select)
-        self.history_table.bind("<Double-1>", lambda _e: actions.restore())
+        self.history_table.bind("<Double-1>", lambda e: actions.restore()
+                                if self.history_table.identify_region(e.x, e.y) in ("tree", "cell") else None)
 
         self.history_details = tk.StringVar(value="")
         ttk.Label(
@@ -222,6 +261,64 @@ class HistoryView(ttk.Frame):
         ttk.Button(self.history_tools, text="素材として使用…", command=actions.use_material,
                    style="Compact.TButton").pack(fill="x")
 
+    def query(self):
+        kinds = {"すべて": "all", "画像": "image", "単発動画": "video",
+                 "連続動画": "continuous", "動画フレーム": "frame", "旧履歴": "legacy"}
+        return HistoryQuery(self.search_text.get().strip()[:1000], kinds[self.kind_filter.get()],
+                            self.favorite_filter.get(), self.archive_filter.get(),
+                            self._oldest_first, self._history_offset, self._history_page_size)
+
+    def _filter_changed(self, *_args):
+        self._history_offset = 0
+        self._history_read_pending = True
+        # Old rows remain visible while reading, but cannot be acted on after
+        # the search changed. Deselect immediately; latest result wins.
+        self.history_table.selection_remove(*self.history_table.selection())
+        self.on_selection()
+        self.favorite_button.configure(state="disabled")
+        self.archive_button.configure(state="disabled")
+        self.prev_page.configure(state="disabled")
+        self.next_page.configure(state="disabled")
+        if self._query_pending is not None:
+            self.after_cancel(self._query_pending)
+        self._query_pending = self.after(250, self._refresh_query)
+
+    def _refresh_query(self):
+        self._query_pending = None
+        self.on_refresh(scan_legacy=False)
+
+    def _sort_date(self):
+        self._oldest_first = not self._oldest_first
+        self.history_table.heading("date", text="日時 ↑" if self._oldest_first else "日時 ↓")
+        self._filter_changed()
+
+    def _page(self, direction):
+        offset = self._history_offset + direction * self._history_page_size
+        if 0 <= offset < self._history_total:
+            self._history_offset = offset
+            self._history_read_pending = True
+            self.history_table.selection_remove(*self.history_table.selection())
+            self.on_selection()
+            self.prev_page.configure(state="disabled")
+            self.next_page.configure(state="disabled")
+            self.on_refresh(scan_legacy=False)
+
+    def apply_page(self, page, select_id=None):
+        if not isinstance(page, HistoryPage):
+            self.apply_entries(page, select_id)
+            return
+        if page.query != self.query():
+            return
+        self._history_read_pending = False
+        self._history_offset, self._history_total = page.offset, page.total
+        start = page.offset + 1 if page.total else 0
+        self.page_text.set(f"{start}–{page.offset + len(page.entries)} / {page.total}件")
+        self.prev_page.configure(state="normal" if page.offset else "disabled")
+        self.next_page.configure(state="normal" if page.offset + len(page.entries) < page.total else "disabled")
+        self.apply_entries(page.entries, select_id)
+        if not page.entries:
+            self.history_details.set("該当する素材がありません")
+
     def apply_entries(self, entries, select_id: str | None = None) -> None:
         """Apply only changed rows; preserve scroll/selection on normal refresh."""
         table = self.history_table
@@ -258,6 +355,8 @@ class HistoryView(ttk.Frame):
             self.history_details.set("まだ保存された生成結果がありません")
 
     def selected_entries(self) -> list[HistoryEntry]:
+        if getattr(self, "_history_read_pending", False):
+            return []
         return [
             self.history_entries[entry_id]
             for entry_id in self.history_table.selection()
@@ -279,6 +378,13 @@ class HistoryView(ttk.Frame):
         if not visible:
             return
         selected = self.selected_entries()
+        if hasattr(self, "favorite_button"):
+            all_favorite = bool(selected) and all(entry.favorite for entry in selected)
+            self.favorite_button.configure(text="★解除" if all_favorite else "★追加",
+                                           state="normal" if selected and not working else "disabled")
+            all_archived = bool(selected) and all(entry.archived for entry in selected)
+            self.archive_button.configure(text="履歴に戻す" if all_archived else "非表示にする",
+                                          state="normal" if selected and not working else "disabled")
         selection_key = (tuple(entry.id for entry in selected), working)
         if getattr(self, "_history_selection_key", None) == selection_key:
             return
@@ -350,7 +456,10 @@ class HistoryView(ttk.Frame):
 
     def set_busy(self, busy):
         self.history_video.set_enabled(not busy)
+        self._busy = busy
         if busy:
+            self.favorite_button.configure(state="disabled")
+            self.archive_button.configure(state="disabled")
             for button in (self.same_seed_button, self.new_seed_button, self.history_request_button,
                            self.history_character_button, self.history_restore_button):
                 button.configure(state="disabled")

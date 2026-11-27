@@ -57,8 +57,11 @@ def history_row(entry: HistoryEntry) -> tuple:
         timestamp = datetime.fromisoformat(timestamp).astimezone().strftime("%m/%d %H:%M")
     except (ValueError, OverflowError):
         timestamp = timestamp[:16]
-    return (short or "(プロンプトなし)",
-            (timestamp, entry.kind.upper(), str(entry.parameters.get("seed", "—"))))
+    title = short or "(プロンプトなし)"
+    if getattr(entry, "favorite", False):
+        title = "★ " + title
+    kind = "連続" if entry.workflow_id == LONG_VIDEO_ID else "素材" if entry.kind == "frame" else entry.kind.upper()
+    return (title, (timestamp, kind, str(entry.parameters.get("seed", "—"))))
 
 def history_summary(entry: HistoryEntry) -> str:
     p = entry.parameters

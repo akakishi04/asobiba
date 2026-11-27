@@ -43,10 +43,31 @@ class HistoryEntry:
     character_references: tuple[Path, ...] = ()
     character_traits: str | None = None
     character_analysis: dict | None = None
+    favorite: bool = False
+    archived: bool = False
 
     @property
     def first_image(self) -> Path | None:
         return self.images[0] if self.images else None
+
+
+@dataclass(frozen=True)
+class HistoryQuery:
+    text: str = ""
+    kind: str = "all"
+    favorite_only: bool = False
+    archived: bool = False
+    oldest_first: bool = False
+    offset: int = 0
+    limit: int = 50
+
+
+@dataclass(frozen=True)
+class HistoryPage:
+    query: HistoryQuery
+    entries: tuple[HistoryEntry, ...]
+    total: int
+    offset: int
 
 
 class HistoryStore:
@@ -93,6 +114,13 @@ class HistoryStore:
             ):
                 if column not in columns:
                     con.execute(f"ALTER TABLE generations ADD COLUMN {column} TEXT")
+            for name in ("favorite", "archived"):
+                if name not in columns:
+                    con.execute(f"ALTER TABLE generations ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0")
+            con.execute(
+                "CREATE INDEX IF NOT EXISTS history_visible_idx "
+                "ON generations(archived, created_at DESC, id DESC)"
+            )
             con.execute(
                 "CREATE INDEX IF NOT EXISTS history_recent_idx "
                 "ON generations(created_at DESC, id DESC)"
@@ -309,6 +337,7 @@ class HistoryStore:
             character_analysis=(
                 character_data["analysis"] if character_data else None
             ),
+            favorite=bool(row["favorite"]), archived=bool(row["archived"]),
         )
 
     def list_entries(self, limit: int = 200) -> list[HistoryEntry]:
@@ -320,6 +349,80 @@ class HistoryStore:
                 (limit,),
             ).fetchall()
         return [self._read_row(row) for row in rows]
+
+    def query_entries(self, query: HistoryQuery, *, select_id=None) -> HistoryPage:
+        """Search all indexed history, including rows outside the recent window."""
+        from .workflow_registry import VIDEO_KINDS
+        from .long_video_plan import LONG_VIDEO_ID
+        if (not isinstance(query, HistoryQuery) or not isinstance(query.text, str)
+                or len(query.text) > 1000 or query.kind not in
+                ("all", "image", "video", "continuous", "frame", "legacy")
+                or type(query.offset) is not int or query.offset < 0
+                or type(query.limit) is not int or not 1 <= query.limit <= 200):
+            raise HistoryError("履歴の検索条件が不正です")
+        where = ["archived = ?"]
+        values = [int(query.archived)]
+        if query.favorite_only:
+            where.append("favorite = 1")
+        if query.kind == "continuous":
+            where.append("workflow_id = ?")
+            values.append(LONG_VIDEO_ID)
+        elif query.kind == "video":
+            where.append("kind IN (" + ",".join("?" for _ in VIDEO_KINDS) + ") AND workflow_id <> ?")
+            values.extend(sorted(VIDEO_KINDS))
+            values.append(LONG_VIDEO_ID)
+        elif query.kind == "image":
+            where.append("kind IN ('t2i','i2i','inpaint','pose')")
+        elif query.kind in ("frame", "legacy"):
+            where.append("kind = ?")
+            values.append(query.kind)
+        for word in query.text.split()[:32]:
+            # Literal substring search: %, _ and quotes are not SQL wildcards.
+            where.append("""instr(lower(request_text || ' ' || parameters_json || ' ' ||
+                         images_json || ' ' || workflow_id || ' ' ||
+                         coalesce(prompt_profile, '') || ' ' || coalesce(character_data_json, '')), lower(?)) > 0""")
+            values.append(word)
+        clause = " AND ".join("(" + item + ")" for item in where)
+        direction = "ASC" if query.oldest_first else "DESC"
+        order = f"created_at {direction}, id {direction}"
+        with self._connection() as con:
+            # One read transaction gives the count and page the same snapshot.
+            con.execute("BEGIN")
+            total = con.execute("SELECT COUNT(*) FROM generations WHERE " + clause, values).fetchone()[0]
+            offset = min(query.offset // query.limit * query.limit,
+                         ((total - 1) // query.limit * query.limit) if total else 0)
+            if select_id:
+                target = con.execute(f"""SELECT position FROM (
+                    SELECT id, row_number() OVER (ORDER BY {order}) AS position
+                    FROM generations WHERE {clause}
+                ) WHERE id = ?""", [*values, select_id]).fetchone()
+                if target is not None:
+                    offset = (target["position"] - 1) // query.limit * query.limit
+            rows = con.execute(f"SELECT * FROM generations WHERE {clause} "
+                               f"ORDER BY {order} LIMIT ? OFFSET ?",
+                               [*values, query.limit, offset]).fetchall()
+        return HistoryPage(query, tuple(self._read_row(row) for row in rows), total, offset)
+
+    def set_flags(self, ids, *, favorite=None, archived=None):
+        """Atomic reversible metadata changes only; no output is moved or deleted."""
+        if isinstance(ids, str):
+            raise HistoryError("履歴IDの一覧を指定してください")
+        ids = tuple(dict.fromkeys(ids))
+        if not ids or len(ids) > 200 or any(not isinstance(key, str) or not key for key in ids):
+            raise HistoryError("履歴を1～200件選択してください")
+        fields = {name: value for name, value in (("favorite", favorite), ("archived", archived))
+                  if value is not None}
+        if not fields or any(type(value) is not bool for value in fields.values()):
+            raise HistoryError("履歴フラグが不正です")
+        marks = ",".join("?" for _ in ids)
+        with self._connection() as con:
+            con.execute("BEGIN IMMEDIATE")
+            found = con.execute(f"SELECT COUNT(*) FROM generations WHERE id IN ({marks})", ids).fetchone()[0]
+            if found != len(ids):
+                raise HistoryError("一部の履歴が見つかりません")
+            assignments = ", ".join(name + "=?" for name in fields)
+            con.execute(f"UPDATE generations SET {assignments} WHERE id IN ({marks})",
+                        [*(int(value) for value in fields.values()), *ids])
 
     def list_character_entries(self, limit: int = 200) -> list[HistoryEntry]:
         """Confirmed character text, even if its original images are missing."""

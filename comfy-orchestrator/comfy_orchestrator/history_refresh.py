@@ -11,13 +11,14 @@ class HistoryRefresh:
         self.running = False
         self.pending = None
 
-    def request(self, select_id=None, *, scan_legacy=True, working=False):
+    def request(self, select_id=None, *, scan_legacy=True, working=False, query=None):
         scan_legacy = scan_legacy and not working
         if self.running:
             previous = self.pending
             self.pending = (
                 select_id if select_id is not None else (previous[0] if previous else None),
                 scan_legacy or bool(previous and previous[1]),
+                query,
             )
             return
         self.running = True
@@ -26,7 +27,8 @@ class HistoryRefresh:
             try:
                 if scan_legacy:
                     self.store.import_legacy_outputs(limit=500)
-                entries = self.store.list_entries(limit=500)
+                entries = (self.store.query_entries(query, select_id=select_id)
+                           if query is not None else self.store.list_entries(limit=500))
                 self.emit(("history_loaded", (entries, select_id, None)))
             except Exception as exc:
                 self.emit(("history_loaded", (None, select_id, str(exc))))
@@ -40,6 +42,6 @@ class HistoryRefresh:
         pending, self.pending = self.pending, None
         if pending is not None:
             self.request(pending[0] if pending[0] is not None else select_id,
-                         scan_legacy=pending[1], working=working)
+                         scan_legacy=pending[1], working=working, query=pending[2])
         elif entries is not None:
             on_entries(entries, select_id)

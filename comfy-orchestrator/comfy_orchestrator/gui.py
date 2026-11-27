@@ -547,6 +547,7 @@ class Application:
                 refresh=self._refresh_history,
                 restore_character=self._restore_selected_character_traits,
                 use_material=self._history_output_material,
+                change_flags=self._change_history_flags,
             ),
         )
         self.tabs.add(self.history_panel, text="履歴")
@@ -981,14 +982,38 @@ class Application:
         self.log.configure(state="disabled")
 
     def _refresh_history(self, select_id: str | None = None, *, scan_legacy: bool = True) -> None:
-        self.history_refresh.request(select_id, scan_legacy=scan_legacy, working=self.working)
+        self.history_refresh.request(select_id, scan_legacy=scan_legacy, working=self.working,
+                                     query=self.history_panel.query())
 
     def _finish_history_refresh(self, entries, select_id, error) -> None:
         self.history_refresh.complete(
             entries, select_id, error, working=self.working,
-            on_entries=self.history_panel.apply_entries,
-            on_error=lambda text: self._log("履歴の読み込みに失敗: " + text),
+            on_entries=self.history_panel.apply_page,
+            on_error=self._history_read_error,
         )
+
+    def _history_read_error(self, text):
+        self._log("履歴の読み込みに失敗: " + text)
+        self.history_panel.history_details.set("履歴の読み込みに失敗しました。更新してください")
+
+    def _change_history_flags(self, field):
+        if self.working or self.character_analysis_running:
+            return
+        entries = self._selected_history()
+        if not entries or field not in ("favorite", "archived"):
+            return
+        value = not all(getattr(entry, field) for entry in entries)
+        if field == "archived" and value and not messagebox.askyesno(
+                "履歴を非表示", f"{len(entries)}件を通常の履歴から非表示にします。ファイルは削除しません。"):
+            return
+        ids = tuple(entry.id for entry in entries)
+        self._set_busy("履歴を更新中")
+        self._launch_generation(lambda: self.history_store.set_flags(ids, **{field: value}),
+                                done_event="history_flags_changed")
+
+    def _on_history_flags_changed(self, _data):
+        self.status.set("履歴を更新しました")
+        self._refresh_history(scan_legacy=False)
 
     def _selected_history(self) -> list[HistoryEntry]:
         return self.history_panel.selected_entries()
@@ -2433,6 +2458,7 @@ class Application:
             "generation_models_error": self._on_event_generation_models_error,
             "models": self._on_event_models,
             "history_loaded": lambda data: self._finish_history_refresh(*data),
+            "history_flags_changed": self._on_history_flags_changed,
             "cancel_requested": self._on_event_cancel_requested,
             "jobs_recovered": self._on_event_jobs_recovered,
             "done": self._on_event_done,

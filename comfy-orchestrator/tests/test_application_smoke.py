@@ -93,6 +93,30 @@ class ApplicationSmokeTests(unittest.TestCase):
                     root.update_idletasks()
                     self.assertFalse(callback_errors, callback_errors)
 
+                    # The library's DB-wide query and metadata changes also use
+                    # the same real history widgets.
+                    from comfy_orchestrator.history import HistoryQuery
+                    entry = app.history_store.record(prompt_id="smoke-history", workflow_id="wai_t2i_basic",
+                        kind="t2i", request_text="library test", parameters={"positive_prompt": "tree"},
+                        images=[output])
+                    app.history_panel.apply_page(app.history_store.query_entries(app.history_panel.query()),
+                                                 entry.id)
+                    self.assertEqual(app.history_panel.selected_entries()[0].id, entry.id)
+                    app.history_store.set_flags([entry.id], favorite=True)
+                    app.history_panel.favorite_filter.set(True)
+                    page = app.history_store.query_entries(app.history_panel.query())
+                    app.history_panel.apply_page(page, entry.id)
+                    self.assertEqual(app.history_panel.selected_entries()[0].favorite, True)
+                    app.history_store.set_flags([entry.id], archived=True)
+                    app.history_panel.apply_page(app.history_store.query_entries(app.history_panel.query()))
+                    self.assertEqual(app.history_panel.selected_entries(), [])
+                    app.history_panel.archive_filter.set(True)
+                    app.history_panel.apply_page(app.history_store.query_entries(app.history_panel.query()), entry.id)
+                    self.assertTrue(app.history_panel.selected_entries()[0].archived)
+                    self.assertTrue(output.is_file())
+                    app.history_panel.favorite_filter.set(False)
+                    app.history_panel.archive_filter.set(False)
+
                     # Transfer changes only explicitly selected fields and never
                     # executes a generation or silently restores the old project.
                     from comfy_orchestrator.material_transfer import Material, Transfer
