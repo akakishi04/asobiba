@@ -26,21 +26,20 @@ from .generation_runtime import preflight_long
 from .model_runtime import release_comfy_before_llm, memory_stats
 from .storage_report import storage_report
 from .operations_ui import OperationsWindow
+# Keep historical public helper imports for external callers.
 from .output_collection import output_media, output_images, output_destination
 from .comparison import ComparisonWindow
-from .history import HistoryStore, HistoryEntry, HistoryError
+from .history import HistoryStore, HistoryEntry
 from .jobs import JobJournal, JobCancellationRequested
 from .prompt_cache import PromptCache, CACHE_ERRORS
-from .long_video_plan import (LONG_VIDEO_ID, LONG_TARGETS, LongVideoPaused, continuation_model,
-                              segment_plan, first_changed_cut, project_cut_lengths,
+from .long_video_plan import (LONG_VIDEO_ID, LONG_TARGETS, segment_plan, first_changed_cut,
                               connection_changed_from, manifest_windows, long_generation_model)
 from .project_store import LongVideoStore, edit_project, restore_project_plan, project_generation_inputs
 from .video_media import FFmpeg
 from .timeline import (plan_long_prompts, CUSTOM_CUTS, validate_cut_frames,
-                       CONTINUATION_OVERLAP_FRAMES, GUIDE_CONNECTION_FRAMES,
+                       GUIDE_CONNECTION_FRAMES,
                        default_cut_frames, generation_frames_for_cuts, format_cut_seconds)
 from .timeline_ui import edit_cut_durations
-from .h3_prompt import FORMAT as H3_OFFICIAL_FORMAT
 from .project_ui import ProjectWorkspace
 from .prompt_edit import edit_prompts
 from .mode_settings import ModeSettings
@@ -51,8 +50,6 @@ from .character_ui import CharacterReferenceWindow, choose_history_traits
 from .character_features import CharacterFeatureStore
 from .file_drop import enable_native_dnd
 from .character_refs import (
-    validate_images as validate_character_images,
-    normalize_approved as normalize_character_traits,
     validate_character_selection, character_status_label,
     save_character_sheet, load_character_sheet, clear_character_sheet,
 )
@@ -74,8 +71,7 @@ from .generation_form import (
     qwen_overrides, hunyuan_overrides, h3_overrides,
 )
 from .app_config import load_local_config, write_local_config
-from .history_presentation import (history_request_text, history_prompt_details, history_row,
-                                   history_summary, history_can_replay, history_action_state)
+from .history_presentation import history_request_text, history_prompt_details
 from .prompt_viewer import show_prompt_details, show_saved_character_features, show_composition_report
 from .output_views import ResultView, HistoryView, ResultActions, HistoryActions
 from .settings_ui import ConnectionPanel, ConnectionVariables, ConnectionActions
@@ -546,9 +542,6 @@ class Application:
         install_native_ime_font(self.prompt)
         self._log("GUI起動。LM StudioのDeveloper画面でLocal Serverを起動してください。")
         self._log("設定は comfy-orchestrator/config.json に保存され、Gitには含まれません。")
-
-    def _toggle_connection_settings(self) -> None:
-        self.settings_panel.toggle()
 
     def _toggle_extra_references(self) -> None:
         self._extra_references = not self._extra_references
@@ -2182,13 +2175,6 @@ class Application:
             join_only=join_only, auto_join=auto_join,
             on_checkpoint=lambda state: self.messages.put(("long_project_checkpoint", copy.deepcopy(state))),
         )
-
-    def _resume_long_video(self) -> None:
-        if self.generation_mode.get() != "continuous":
-            return
-        self.tabs.select(self.project_workspace)
-        if not self.working:
-            self._refresh_projects(getattr(self, "_preferred_long_project_id", None))
 
     def _request_cancel(self) -> None:
         self.tasks.cancel()

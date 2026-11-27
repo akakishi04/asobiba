@@ -53,12 +53,22 @@ class VideoPreviewTests(unittest.TestCase):
         instance.release.assert_called_once()
 
     def test_tab_switch_stops_hidden_player(self):
-        app = SimpleNamespace(tabs=Mock(), result_panel=".result", history_panel=".history",
-                              result_video=Mock(), history_video=Mock(), _history_selection_changed=Mock())
+        class Panel:
+            def __init__(self, name, player_name):
+                self.name = name
+                setattr(self, player_name, Mock())
+
+            def __str__(self):
+                return self.name
+
+        result = Panel(".result", "result_video")
+        history = Panel(".history", "history_video")
+        app = SimpleNamespace(tabs=Mock(), result_panel=result, history_panel=history,
+                              _history_selection_changed=Mock())
         app.tabs.select.return_value = ".history"
         gui.Application._output_tab_changed(app)
-        app.result_video.stop.assert_called_once()
-        app.history_video.stop.assert_not_called()
+        result.result_video.stop.assert_called_once()
+        history.history_video.stop.assert_not_called()
         app._history_selection_changed.assert_called_once()
 
 

@@ -9,7 +9,6 @@ from pathlib import Path
 
 from . import core, output_collection
 from .history import HistoryError
-from .jobs import JobCancellationRequested
 from .task_controller import worker_events  # compatibility export
 from .long_video import run_long_video
 

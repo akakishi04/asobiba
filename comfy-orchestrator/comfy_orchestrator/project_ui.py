@@ -9,7 +9,7 @@ from .project_draft import ProjectDraft, ProjectAction, available_project_action
 from .parameters import OrchestratorError
 from .h3_prompt import FORMAT as H3_OFFICIAL_FORMAT
 from .prompt_review import TranslationCache
-from .timeline import FPS, format_cut_seconds, parse_cut_seconds, validate_cut_frames, validate_prompt_plan, GUIDE_CONNECTION_FRAMES
+from .timeline import FPS, format_cut_seconds, parse_cut_seconds, GUIDE_CONNECTION_FRAMES
 from .ui_theme import style_text_widget
 from .video_preview import VideoPreview
 from .ime_font import install_native_ime_font
