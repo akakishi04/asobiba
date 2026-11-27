@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 from types import SimpleNamespace
 
-from comfy_orchestrator import core, gui, lmstudio
+from comfy_orchestrator import core, gui, lmstudio, http_api
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "config.example.json"
@@ -34,7 +34,7 @@ class InstalledModelsTests(unittest.TestCase):
                 return {}
             field = "ckpt_name" if kind == "CheckpointLoaderSimple" else "unet_name"
             return {kind: {"input": {"required": {field: [["example.safetensors"]]}}}}
-        with patch.object(core, "http_json", side_effect=info) as api:
+        with patch.object(http_api, "http_json", side_effect=info) as api:
             inventory = core.ComfyUI(self.config["comfyui"]).list_generation_models()
         self.assertEqual(inventory["UnetLoaderGGUF"], ())
         self.assertEqual(api.call_count, 3)

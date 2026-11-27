@@ -101,7 +101,7 @@ def repair_model_analysis(observations: list[dict], synthesis: dict) -> dict:
     mistakes, retaining valid records and the original observation report.
     Never silently grants support to a feature with a missing/bad image list.
     """
-    from .core import OrchestratorError
+    from .parameters import OrchestratorError
 
     if not isinstance(observations, list) or not isinstance(synthesis, dict):
         raise OrchestratorError("キャラ認識結果がJSONオブジェクトになっていません")

@@ -14,7 +14,9 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
-from .core import OrchestratorError, _open_json, plan_schema, HOST_VIDEO_IDS, H3_I2V_ID, QWEN_IDS
+from .parameters import OrchestratorError
+from .http_api import _open_json
+from .workflow_registry import plan_schema, HOST_VIDEO_IDS, H3_I2V_ID, QWEN_IDS
 from .character_refs import observation_schema, intersection_schema, validate_images
 from .character_repair import repair_model_analysis
 from .model_runtime import record_model_event

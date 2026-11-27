@@ -8,6 +8,7 @@ from comfy_orchestrator import prompt_edit, prompt_review
 from comfy_orchestrator import app_config, generation_form, history_presentation, gui
 from comfy_orchestrator import output_views, settings_ui, prompt_viewer, generation_view, task_controller
 from comfy_orchestrator import prompt_inference, project_draft, project_ui, h3_prompt, lmstudio
+from comfy_orchestrator import core, workflow_registry, configuration, http_api, comfy_client, ollama_client
 from comfy_orchestrator.parameters import OrchestratorError
 
 
@@ -88,6 +89,26 @@ class ModuleBoundariesTests(unittest.TestCase):
             {"choices": [{"message": {"content": '{"a":1}'}}]}, "test"), {"a": 1})
         with self.assertRaises(OrchestratorError):
             prompt_inference.read_json_reply({"choices": [{"message": {"content": "[]"}}]}, "test")
+
+    def test_core_compatibility_exports_use_owner_implementations(self):
+        for name in ("compatible_workflows", "load_workflow", "render_workflow", "validate_plan",
+                     "plan_schema", "validate_video_parameters", "installed_model_choices"):
+            self.assertIs(getattr(core, name), getattr(workflow_registry, name))
+        self.assertIs(core.load_config, configuration.load_config)
+        self.assertIs(core.ComfyUI, comfy_client.ComfyUI)
+        self.assertIs(core.Ollama, ollama_client.Ollama)
+        self.assertIs(core.http_json, http_api.http_json)
+        self.assertIs(core.APIHTTPError, http_api.APIHTTPError)
+
+    def test_backend_and_workflow_modules_do_not_depend_on_core(self):
+        for module in (workflow_registry, configuration, http_api, comfy_client, ollama_client):
+            tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom):
+                    self.assertNotEqual(node.module, "core")
+                    self.assertFalse(any(alias.name == "core" for alias in node.names))
+                elif isinstance(node, ast.Import):
+                    self.assertFalse(any(alias.name.endswith(".core") for alias in node.names))
 
     def test_ui_views_do_not_import_application(self):
         for module in (output_views, settings_ui, prompt_viewer, generation_view):

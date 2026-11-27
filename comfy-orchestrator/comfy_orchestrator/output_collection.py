@@ -8,7 +8,7 @@ import urllib.request
 from pathlib import Path
 
 from .parameters import OrchestratorError
-from .core import VIDEO_KINDS
+from .workflow_registry import VIDEO_KINDS
 
 VIDEO_EXTENSIONS = frozenset({".mp4", ".webm", ".mov", ".mkv"})
 IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp"})

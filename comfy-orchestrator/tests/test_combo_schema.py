@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import patch
 
-from comfy_orchestrator import core
+from comfy_orchestrator import core, http_api
 
 
 def schema(field, spec):
@@ -20,10 +20,10 @@ class ComboSchemaTests(unittest.TestCase):
             "COMBO", {"display_name": "backend", "default": "pytorch attention",
                       "multiselect": False,
                       "options": ["pytorch attention", "comfy kitchen attention"]}])}
-        with patch.object(core, "http_json", return_value=info):
+        with patch.object(http_api, "http_json", return_value=info):
             self.comfy.ensure_video_dependencies(graph)
         info["ModelAttentionBackend"]["input"]["required"]["attention"][1]["options"].pop()
-        with patch.object(core, "http_json", return_value=info):
+        with patch.object(http_api, "http_json", return_value=info):
             with self.assertRaisesRegex(core.OrchestratorError, "Attention backend"):
                 self.comfy.ensure_video_dependencies(graph)
 
@@ -46,7 +46,7 @@ class ComboSchemaTests(unittest.TestCase):
                 return {}
             field = "ckpt_name" if node == "CheckpointLoaderSimple" else "unet_name"
             return {node: schema(field, ["COMBO", {"options": ["model.safetensors"]}])}
-        with patch.object(core, "http_json", side_effect=api):
+        with patch.object(http_api, "http_json", side_effect=api):
             self.assertEqual(self.comfy.list_generation_models(), {
                 "CheckpointLoaderSimple": ("model.safetensors",),
                 "UNETLoader": ("model.safetensors",), "UnetLoaderGGUF": ()})
@@ -54,7 +54,7 @@ class ComboSchemaTests(unittest.TestCase):
     def test_controlnet_modern_combo(self):
         graph = {"1": {"class_type": "ControlNetLoader",
                        "inputs": {"control_net_name": "pose.safetensors"}}}
-        with patch.object(core, "http_json", return_value={
+        with patch.object(http_api, "http_json", return_value={
                 "ControlNetLoader": schema("control_net_name", ["COMBO", {"options": ["pose.safetensors"]}])}):
             self.comfy.ensure_pose_dependencies(graph)
 

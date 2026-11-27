@@ -9,7 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from comfy_orchestrator import core, gui, lmstudio
+from comfy_orchestrator import core, gui, lmstudio, http_api
 from comfy_orchestrator.history import HistoryStore
 from comfy_orchestrator.jobs import JobJournal, JobSubmissionRejected, UnknownLongJob, run_job
 from comfy_orchestrator.long_video import existing_result
@@ -31,7 +31,7 @@ class StabilityTests(unittest.TestCase):
         comfy = core.ComfyUI({"base_url": self.backend})
         for status, expected in ((400, "failed"), (422, "failed"), (503, "unknown")):
             error = core.APIHTTPError(status, self.backend + "/prompt", "test")
-            with patch.object(core, "http_json", side_effect=error):
+            with patch.object(http_api, "http_json", side_effect=error):
                 with self.assertRaises(core.OrchestratorError):
                     run_job(comfy, {}, "wf", "t2i", {}, journal=self.journal)
             rows = [self.journal.read(path.parent.name) for path in self.journal.root.glob("*/record.json")]

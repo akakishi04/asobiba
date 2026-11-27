@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from comfy_orchestrator import core, lmstudio
+from comfy_orchestrator import core, lmstudio, http_api
 from comfy_orchestrator.prompt_cache import PromptCache, make_cache_key
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,7 +51,7 @@ class PromptCacheTests(unittest.TestCase):
     def test_identical_uploads_have_same_content_name(self):
         other = self.root / "different_name.png"
         other.write_bytes(self.image.read_bytes())
-        with patch.object(core, "_open_json", return_value={"name": "accepted.png"}) as api:
+        with patch.object(http_api, "_open_json", return_value={"name": "accepted.png"}) as api:
             comfy = core.ComfyUI(self.config["comfyui"])
             comfy.upload_image(self.image)
             comfy.upload_image(other)

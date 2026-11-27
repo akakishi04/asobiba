@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from comfy_orchestrator import core, gui, lmstudio
+from comfy_orchestrator import core, gui, lmstudio, http_api
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "config.example.json"
@@ -116,12 +116,12 @@ class H3VariantTests(unittest.TestCase):
                 return {node: {"input": {"required": {field: [choices]}}}}
             return info
         comfy = core.ComfyUI(self.config["comfyui"])
-        with patch.object(core, "http_json", side_effect=mock_info(None)):
+        with patch.object(http_api, "http_json", side_effect=mock_info(None)):
             comfy.ensure_video_dependencies(graph)
-        with patch.object(core, "http_json", side_effect=mock_info("node")):
+        with patch.object(http_api, "http_json", side_effect=mock_info("node")):
             with self.assertRaisesRegex(core.OrchestratorError, "ClipProj Apply"):
                 comfy.ensure_video_dependencies(graph)
-        with patch.object(core, "http_json", side_effect=mock_info("matrix")):
+        with patch.object(http_api, "http_json", side_effect=mock_info("matrix")):
             with self.assertRaisesRegex(core.OrchestratorError, "clip_projections"):
                 comfy.ensure_video_dependencies(graph)
 
@@ -181,7 +181,7 @@ class H3VariantTests(unittest.TestCase):
             field = loaders[node]
             choices = [] if node == "LoraLoaderModelOnly" else [n["inputs"][field] for n in graph.values() if n["class_type"] == node]
             return {node: {"input": {"required": {field: [choices]}}}}
-        with patch.object(core, "http_json", side_effect=info):
+        with patch.object(http_api, "http_json", side_effect=info):
             with self.assertRaisesRegex(core.OrchestratorError, "turbo_4step_v1.3"):
                 core.ComfyUI(self.config["comfyui"]).ensure_video_dependencies(graph)
 

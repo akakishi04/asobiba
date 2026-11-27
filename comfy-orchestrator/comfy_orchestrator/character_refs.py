@@ -112,7 +112,7 @@ def intersection_schema() -> dict:
 
 
 def validate_images(paths) -> tuple[Path, ...]:
-    from .core import OrchestratorError
+    from .parameters import OrchestratorError
 
     if not isinstance(paths, (list, tuple)) or not MIN_CHARACTER_IMAGES <= len(paths) <= MAX_CHARACTER_IMAGES:
         raise OrchestratorError("キャラ参照は2～4枚の画像を指定してください")
@@ -139,7 +139,7 @@ def add_character_image_files(
     One image is allowed while building a list, but the extraction step still
     requires 2-4 unique images. Any bad file rejects the entire new batch.
     """
-    from .core import OrchestratorError
+    from .parameters import OrchestratorError
 
     if not isinstance(existing, (tuple, list)) or not isinstance(incoming, (tuple, list)):
         raise OrchestratorError("画像ファイルの指定が不正です")
@@ -171,7 +171,7 @@ def normalize_analysis(observations: list[dict], synthesis: dict) -> dict:
 
     The VLM estimates semantic agreement; human review is still mandatory.
     """
-    from .core import OrchestratorError
+    from .parameters import OrchestratorError
 
     count = len(observations)
     if not MIN_CHARACTER_IMAGES <= count <= MAX_CHARACTER_IMAGES:
@@ -389,7 +389,7 @@ def format_evidence(analysis: dict) -> str:
 
 
 def normalize_approved(text: str) -> str:
-    from .core import OrchestratorError
+    from .parameters import OrchestratorError
 
     if not isinstance(text, str):
         raise OrchestratorError("確定キャラ特徴は文章で指定してください")
@@ -402,7 +402,7 @@ def normalize_approved(text: str) -> str:
 
 def validate_character_selection(images, analysis, approved):
     """A confirmed text-only sheet is valid without any visual evidence."""
-    from .core import OrchestratorError
+    from .parameters import OrchestratorError
 
     clean = normalize_approved(approved)
     if analysis is None:
@@ -424,7 +424,7 @@ def save_character_sheet(
     root: Path, images: tuple[Path, ...], analysis: dict | None, approved: str,
 ) -> None:
     """Persist the last explicitly approved sheet locally (not in git)."""
-    from .core import OrchestratorError
+    from .parameters import OrchestratorError
 
     paths, clean = validate_character_selection(images, analysis, approved)
     if analysis is not None:

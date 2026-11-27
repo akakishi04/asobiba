@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from comfy_orchestrator import core, gui, history, lmstudio
+from comfy_orchestrator import core, gui, history, lmstudio, http_api
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -94,7 +94,7 @@ class VideoTests(unittest.TestCase):
                 return {node: {"input": {"required": {"clip_name": [[]]}}}}
             return {node: {}}
         comfy = core.ComfyUI(self.config["comfyui"])
-        with patch.object(core, "http_json", side_effect=info):
+        with patch.object(http_api, "http_json", side_effect=info):
             with self.assertRaisesRegex(core.OrchestratorError, "umt5_xxl"):
                 comfy.ensure_video_dependencies(graph)
 

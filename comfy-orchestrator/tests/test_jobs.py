@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from comfy_orchestrator import core
+from comfy_orchestrator import core, http_api
 from comfy_orchestrator.jobs import JobJournal, JobCancellationRequested, run_job
 
 
@@ -66,14 +66,14 @@ class JobTests(unittest.TestCase):
         cfg = {"base_url": self.comfy.base}
         stopped = threading.Event()
         stopped.set()
-        with patch.object(core, "http_json", side_effect=[
+        with patch.object(http_api, "http_json", side_effect=[
             {"system": {"comfyui_version": "0.46.3"}}, {}, {},
         ]) as api:
             with self.assertRaises(JobCancellationRequested):
                 core.ComfyUI(cfg).wait("target", cancel_event=stopped, cancel_remote=True)
         self.assertEqual(api.call_args_list[1].args[1:3], ("/queue", {"delete": ["target"]}))
         self.assertEqual(api.call_args_list[2].args[1:3], ("/interrupt", {"prompt_id": "target"}))
-        with patch.object(core, "http_json", return_value={"system": {"comfyui_version": "0.40.0"}}) as api:
+        with patch.object(http_api, "http_json", return_value={"system": {"comfyui_version": "0.40.0"}}) as api:
             with self.assertRaises(core.OrchestratorError):
                 core.ComfyUI(cfg).wait("target", cancel_event=stopped, cancel_remote=True)
         api.assert_called_once()

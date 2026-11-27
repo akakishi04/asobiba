@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch, Mock
 
-from comfy_orchestrator import core, gui, lmstudio
+from comfy_orchestrator import core, gui, lmstudio, http_api
 from comfy_orchestrator.prompt_profiles import apply_h3_profile, DEFAULT_H3_PROFILE
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -169,7 +169,7 @@ class Ref2VATests(unittest.TestCase):
                 return {kind: {}}
             field = fields[kind]
             return {kind: {"input": {"required": {field: [[n["inputs"][field] for n in graph.values() if n["class_type"] == kind]]}}}}
-        with patch.object(core, "http_json", side_effect=info):
+        with patch.object(http_api, "http_json", side_effect=info):
             with self.assertRaisesRegex(core.OrchestratorError, "MiniMaxH3ReferenceToVideo"):
                 core.ComfyUI(self.config["comfyui"]).ensure_video_dependencies(graph)
 

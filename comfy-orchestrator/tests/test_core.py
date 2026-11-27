@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from comfy_orchestrator import core
+from comfy_orchestrator import core, http_api
 
 
 TEMPLATE = {
@@ -114,7 +114,7 @@ class ConfigFixture(unittest.TestCase):
                 return {"fake-id": {"outputs": {"6": {"images": [{"filename": "out.png"}]}}, "status": {"completed": True}}}
             raise AssertionError(route)
 
-        with patch.object(core, "http_json", side_effect=fake_http), patch.object(core.ComfyUI, "upload_image", return_value="person.png"):
+        with patch.object(http_api, "http_json", side_effect=fake_http), patch.object(core.ComfyUI, "upload_image", return_value="person.png"):
             result = core.execute(core.load_config(self.config_path), self.config_path, "picture", image)
         self.assertEqual(result["prompt_id"], "fake-id")
         self.assertEqual(calls, ["/queue", "/free", "/api/generate", "/api/generate", "/prompt", "/history/fake-id"])
@@ -131,24 +131,24 @@ class ConfigFixture(unittest.TestCase):
                 return {"response": json.dumps(plan)}
             raise core.OrchestratorError("unload failed")
 
-        with patch.object(core, "http_json", side_effect=failed_unload):
+        with patch.object(http_api, "http_json", side_effect=failed_unload):
             with self.assertRaisesRegex(core.OrchestratorError, "unload failed"):
                 core.execute(core.load_config(self.config_path), self.config_path, "picture", image)
         self.assertNotIn("/prompt", calls)
 
     def test_free_endpoint_accepts_empty_http_200_body(self):
         # Current ComfyUI POST /free returns HTTP 200 without JSON.
-        with patch.object(core.urllib.request, "urlopen", return_value=io.BytesIO(b"")):
+        with patch.object(http_api.urllib.request, "urlopen", return_value=io.BytesIO(b"")):
             response = core.http_json("http://127.0.0.1:8188", "/free", {"unload_models": True}, allow_empty=True)
         self.assertEqual(response, {})
-        with patch.object(core.urllib.request, "urlopen", return_value=io.BytesIO(b"")):
+        with patch.object(http_api.urllib.request, "urlopen", return_value=io.BytesIO(b"")):
             with self.assertRaisesRegex(core.OrchestratorError, "APIがJSON"):
                 core.http_json("http://127.0.0.1:8188", "/queue")
 
     def test_busy_queue_does_not_unload_or_invoke_llm(self):
         image = self.root / "person.png"
         image.write_bytes(b"fake png")
-        with patch.object(core, "http_json", return_value={"queue_running": [[1]], "queue_pending": []}) as api:
+        with patch.object(http_api, "http_json", return_value={"queue_running": [[1]], "queue_pending": []}) as api:
             with self.assertRaisesRegex(core.OrchestratorError, "他の実行"):
                 core.execute(core.load_config(self.config_path), self.config_path, "picture", image)
         self.assertEqual(api.call_count, 1)
@@ -161,7 +161,7 @@ class ConfigFixture(unittest.TestCase):
         def fake_http(base, route, payload=None, timeout=60, allow_empty=False):
             calls.append(route)
             return {"response": json.dumps(plan)} if payload.get("prompt") else {"done": True}
-        with patch.object(core, "http_json", side_effect=fake_http):
+        with patch.object(http_api, "http_json", side_effect=fake_http):
             result = core.execute(core.load_config(self.config_path), self.config_path, "picture", dry_run=True)
         self.assertEqual(result["status"], "dry_run")
         self.assertEqual(calls, ["/api/generate", "/api/generate"])

@@ -365,7 +365,7 @@ def _system(workflows, settings, reference_only, *, text_only=False):
 
 
 def interpret_single(client, text, workflows, image, progress=None):
-    from .core import H3_I2V_ID
+    from .workflow_registry import H3_I2V_ID
     ref = bool(client.settings.get("_h3_reference_only", False))
     seconds = client.settings.get("_h3_duration_seconds", 124 / 24)
     frames = round(seconds * 24)

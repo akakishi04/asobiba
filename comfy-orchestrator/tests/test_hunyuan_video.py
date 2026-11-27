@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from comfy_orchestrator import core, gui, lmstudio
+from comfy_orchestrator import core, gui, lmstudio, http_api
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "config.example.json"
@@ -57,7 +57,7 @@ class HunyuanTests(unittest.TestCase):
                 required[field] = [[n["inputs"][field] for n in self.graph.values()
                                     if n["class_type"] == kind and field != "clip_name2"]]
             return {kind: {"input": {"required": required}}}
-        with patch.object(core, "http_json", side_effect=fake_info):
+        with patch.object(http_api, "http_json", side_effect=fake_info):
             with self.assertRaisesRegex(core.OrchestratorError, "byt5_small_glyphxl"):
                 core.ComfyUI(self.config["comfyui"]).ensure_video_dependencies(self.graph)
 

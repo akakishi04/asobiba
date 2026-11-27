@@ -290,7 +290,7 @@ implied, and avoid uncontrolled shaking that obscures the action.
 
 def is_h3_context(workflows: dict) -> bool:
     """Apply H3 profiles only to the registered local FL2VA workflow."""
-    from .core import H3_I2V_ID
+    from .workflow_registry import H3_I2V_ID
 
     return set(workflows) == {H3_I2V_ID} and workflows[H3_I2V_ID].get("kind") == "i2v"
 

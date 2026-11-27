@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from comfy_orchestrator import core, gui, history, lmstudio, mask_editor
+from comfy_orchestrator import core, gui, history, lmstudio, mask_editor, http_api
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -216,7 +216,7 @@ class WorkflowTests(unittest.TestCase):
                     "input": {"required": {"control_net_name": [["other-model.safetensors"]]}}
                 }}
             raise AssertionError(route)
-        with patch.object(core, "http_json", side_effect=mock_http):
+        with patch.object(http_api, "http_json", side_effect=mock_http):
             with self.assertRaisesRegex(core.OrchestratorError, "OpenPose用ControlNetモデルがありません"):
                 core.ComfyUI(self.cfg["comfyui"]).ensure_pose_dependencies(workflow)
 
@@ -232,7 +232,7 @@ class WorkflowTests(unittest.TestCase):
             if route == "/object_info/DWPreprocessor":
                 return {}
             raise AssertionError(route)
-        with patch.object(core, "http_json", side_effect=mock_http):
+        with patch.object(http_api, "http_json", side_effect=mock_http):
             with self.assertRaisesRegex(core.OrchestratorError, "comfyui_controlnet_aux"):
                 core.ComfyUI(self.cfg["comfyui"]).ensure_pose_dependencies(workflow)
 
