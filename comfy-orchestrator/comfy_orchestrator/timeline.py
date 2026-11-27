@@ -268,11 +268,12 @@ def _batched_plan(settings, request_fn, instance_id, system, payload, note, chec
 def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: int,
                       reference_only: bool = False, *, cut_frames=None, progress=None,
                       cancel_event=None, prompt_cache=None, release_comfy=True,
-                      overlap_frames=0, image=None, text_only=False) -> dict:
-    """Plan text in one model session; large timelines use outline plus batches."""
+                      overlap_frames=0, image=None, text_only=False, translation_cache=None) -> dict:
+    """Plan text and optionally review it in Japanese in the same model session."""
     from . import core
     from .lmstudio import LMStudio, _request, read_json_reply
     from .prompt_cache import CACHE_ERRORS, content_sha256, make_cache_key
+    from .prompt_edit import prepare_plan_review
     from .prompt_profiles import DEFAULT_H3_PROFILE, apply_h3_profile
 
     def note(text):
@@ -290,13 +291,16 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
         return h3_prompt.plan_long(config, request, windows, reference_only, image=image,
                                    progress=progress, cancel_event=cancel_event,
                                    prompt_cache=prompt_cache, release_comfy=release_comfy,
-                                   text_only=text_only)
+                                   text_only=text_only, translation_cache=translation_cache)
     if not request.strip():
         # Preserve the existing image-only option, which needs no LLM.
-        return validate_prompt_plan({
+        result = validate_prompt_plan({
             "common": "Preserve the supplied subject appearance and visual style.",
             "segments": ["Natural coherent motion, without introducing new actions or scenery."] * count,
         }, count)
+        prepare_plan_review(config, result, translation_cache, progress=note,
+                            cancel_event=cancel_event, fixed=True)
+        return result
     settings = {**config["llm"], "send_reference_to_llm": False}
     if not settings.get("model") or settings["model"] == "SELECT_IN_GUI":
         raise OrchestratorError("LM Studioのモデルを選択してください")
@@ -318,6 +322,8 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
                     pass
                 else:
                     note("長尺プロンプト: 解釈キャッシュを使用")
+                    prepare_plan_review(config, result, translation_cache, progress=note,
+                                        cancel_event=cancel_event, release_comfy=release_comfy)
                     return result
         except CACHE_ERRORS as exc:
             note(f"長尺キャッシュ読込失敗（通常処理を継続）: {exc}")
@@ -367,12 +373,15 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
             ), count)
         else:
             result = _batched_plan(settings, _request, instance_id, system, payload, note, check_cancel)
+        check_cancel()
+        if key is not None:
+            try:
+                prompt_cache.put(key, result)
+            except CACHE_ERRORS as exc:
+                note(f"長尺キャッシュ保存失敗（通常処理を継続）: {exc}")
+        prepare_plan_review(config, result, translation_cache, client=client, instance_id=instance_id,
+                            progress=note, cancel_event=cancel_event)
     finally:
         client.unload_selected(instance_id, note)
     check_cancel()
-    if key is not None:
-        try:
-            prompt_cache.put(key, result)
-        except CACHE_ERRORS as exc:
-            note(f"長尺キャッシュ保存失敗（通常処理を継続）: {exc}")
     return result

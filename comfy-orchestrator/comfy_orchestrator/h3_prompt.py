@@ -524,11 +524,13 @@ def _validate_batch(value, batch, first_ref, common=None, *, text_only=False):
 
 
 def plan_long(config, request, windows, reference_only, *, image=None, progress=None,
-              cancel_event=None, prompt_cache=None, release_comfy=True, text_only=False):
+              cancel_event=None, prompt_cache=None, release_comfy=True, text_only=False,
+              translation_cache=None):
     from . import core
     from .lmstudio import LMStudio
     from .prompt_cache import CACHE_ERRORS, make_cache_key
     from .model_runtime import release_comfy_before_llm
+    from .prompt_edit import prepare_plan_review
     from .timeline import validate_prompt_plan, prompt_plan_schema
 
     def note(message):
@@ -539,9 +541,12 @@ def plan_long(config, request, windows, reference_only, *, image=None, progress=
     if text_only and (image is not None or reference_only or not request.strip()):
         raise OrchestratorError("参照画像なしの連続生成には自然文が必要です（T2VA）")
     if not request.strip():
-        return validate_prompt_plan({"format": FORMAT, "common": "",
+        result = validate_prompt_plan({"format": FORMAT, "common": "",
             "segments": [section_text(default_sections(reference_only and w["index"] == 1),
                                        reference_only and w["index"] == 1) for w in windows]}, len(windows))
+        prepare_plan_review(config, result, translation_cache, progress=note,
+                            cancel_event=cancel_event, fixed=True)
+        return result
     settings = dict(config["llm"], send_reference_to_llm=False)
     if not settings.get("model") or settings["model"] == "SELECT_IN_GUI":
         raise OrchestratorError("LM Studioのモデルを選択してください")
@@ -567,6 +572,8 @@ def plan_long(config, request, windows, reference_only, *, image=None, progress=
                     pass
                 else:
                     note("H3長尺: 解釈キャッシュを使用")
+                    prepare_plan_review(config, valid, translation_cache, progress=note,
+                                        cancel_event=cancel_event, release_comfy=release_comfy)
                     return valid
         except CACHE_ERRORS as exc:
             note(f"H3キャッシュ読込失敗: {exc}")
@@ -642,12 +649,15 @@ def plan_long(config, request, windows, reference_only, *, image=None, progress=
                                                       text_only=text_only), note, cancel_event)
                     segments.extend(parts)
         result = validate_prompt_plan({"format": FORMAT, "common": common, "segments": segments}, len(windows))
+        _check_cancel(cancel_event)
+        if key is not None:
+            try:
+                prompt_cache.put(key, result)
+            except CACHE_ERRORS as exc:
+                note(f"H3キャッシュ保存失敗: {exc}")
+        prepare_plan_review(config, result, translation_cache, client=client, instance_id=instance_id,
+                            progress=note, cancel_event=cancel_event)
     finally:
         client.unload_selected(instance_id, note)
     _check_cancel(cancel_event)
-    if key is not None:
-        try:
-            prompt_cache.put(key, result)
-        except CACHE_ERRORS as exc:
-            note(f"H3キャッシュ保存失敗: {exc}")
     return result

@@ -164,6 +164,90 @@ def _translate(client, instance, kind, source, official, progress, cancel_event)
                      translation_chars=sum(len(value) for value in masked.values()))
 
 
+# Exact source strings for the deterministic image-only plans. These are
+# intentionally keyed by English text, so changing a template cannot silently
+# attach an obsolete Japanese translation to a new prompt.
+_DEFAULT_REVIEW = {
+    "Preserve the supplied subject appearance and visual style.": "参照対象の外見と画風を維持する。",
+    "Natural coherent motion, without introducing new actions or scenery.": "新たな動作や風景を加えず、自然で一貫した動きを続ける。",
+    "Natural quiet ambience and subtle sounds of the visible motion.": "自然で静かな環境音と、映像内の動きに伴うかすかな音。",
+    "N/A": "N/A",
+    "<Subject 1> is the visible subject or visual motif in <Picture 1>, including its established appearance and style.": "<Subject 1> は <Picture 1> に写る対象または視覚的モチーフで、既存の外見と画風を含む。",
+    "[reference generation] Bring <Subject 1> into a coherent naturally moving shot.": "[reference generation] <Subject 1> を、一貫性のある自然な動きのショットとして描く。",
+    "<Subject 1> (appears in [Shot 1]): fully_preserved - retain the defined appearance and visual style.": "<Subject 1>（[Shot 1] に登場）：fully_preserved - 定義された外見と画風を維持する。",
+    "The reference determines the visual style. [Shot 1] <Subject 1> moves naturally with consistent proportions and coherent framing.": "参照画像が画風を決める。[Shot 1] <Subject 1> は一貫したプロポーションと構図を保ちながら自然に動く。",
+    "[Shot 1] The supplied image determines the initial composition, subject and rendering style. Natural coherent movement develops continuously, retaining visible identity and spatial relationships.": "[Shot 1] 参照画像が初期構図、対象、描画スタイルを決める。見えている対象の同一性と空間的な位置関係を維持し、自然で一貫した動きが連続して展開する。",
+}
+
+
+def prepare_plan_review(config, plan, cache, *, client=None, instance_id=None,
+                        progress=None, cancel_event=None, release_comfy=True, fixed=False):
+    """Best-effort Japanese review of a validated English plan.
+
+    Fresh inference supplies its existing loaded session. Cached English plans
+    acquire a session only if translations are missing. Image-only defaults
+    have exact built-in translations and never need an LLM. Translation errors
+    preserve the English plan and previously cached translations; cancellation
+    retains its normal semantics and is not reported as a translation failure.
+    """
+    if cache is None:
+        return
+    from .jobs import JobCancellationRequested
+    from .lmstudio import LMStudio
+    from .model_runtime import release_comfy_before_llm
+
+    def note(line):
+        if progress:
+            progress(line)
+
+    hp._check_cancel(cancel_event)
+    official = plan.get("format") == hp.FORMAT
+    pending = cache.missing(plan)
+    if not pending:
+        return
+    if fixed:
+        for label, kind, raw in pending:
+            hp._check_cancel(cancel_event)
+            fields = _fields(kind, raw, official)
+            if not all(value in _DEFAULT_REVIEW for value in fields.values()):
+                note(f"日本語訳: {label}の固定訳が未登録です。英語計画を保持します")
+                continue
+            cache.put(kind, raw, official, _jp_text({k: _DEFAULT_REVIEW[v] for k, v in fields.items()}))
+        return
+
+    own_session = client is None
+    completed = 0
+    total = len(pending)
+    try:
+        if own_session:
+            settings = dict(config["llm"], send_reference_to_llm=False)
+            if release_comfy:
+                release_comfy_before_llm(config["comfyui"], progress=note)
+            hp._check_cancel(cancel_event)
+            client = LMStudio(settings)
+            instance_id = client._ensure_loaded()
+        for label, kind, raw in pending:
+            hp._check_cancel(cancel_event)
+            title = f"日本語訳 {completed+1}/{total}: {label}"
+            note(title)
+            value = _translate(client, instance_id, kind, raw, official,
+                               lambda line: note(f"{title} / {line}"), cancel_event)
+            cache.put(kind, raw, official, value)
+            completed += 1
+        note(f"日本語訳完了: {completed}件")
+    except JobCancellationRequested:
+        raise
+    except OrchestratorError as exc:
+        note(f"日本語訳を中断しました（{completed}/{total}件完了）。英語計画と完了分を保持します: {exc}")
+    finally:
+        if own_session and client is not None and instance_id is not None:
+            try:
+                client.unload_selected(instance_id, note)
+            except OrchestratorError as exc:
+                note(f"日本語訳後のモデル解放失敗: {exc}")
+    hp._check_cancel(cancel_event)
+
+
 def cut_context(manifest, plan, cuts, index):
     """Use the executed preceding prompt only when that prefix is still valid."""
     from .long_video import first_changed_cut, project_cut_lengths, schedule_windows

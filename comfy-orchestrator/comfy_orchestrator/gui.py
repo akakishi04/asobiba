@@ -3111,7 +3111,8 @@ class Application:
         text_only = image is None
         overrides = long_generation_model(overrides, text_only=text_only)
         reference_only = core.h3_ref2va_filename(overrides.get("h3_model")) is not None
-        self._set_busy("長尺プロンプト計画中（T2VA開始）" if text_only else "長尺プロンプト計画中")
+        translation_cache = self.project_workspace.translation_cache
+        self._set_busy("計画生成中")
 
         def task():
             try:
@@ -3122,6 +3123,7 @@ class Application:
                         overlap_frames=overlap_frames, image=source, text_only=text_only,
                         progress=lambda line: self.messages.put(("progress", line)),
                         cancel_event=self.stop_event, prompt_cache=cache, release_comfy=True,
+                        translation_cache=translation_cache,
                     )
                     if self.stop_event.is_set():
                         raise JobCancellationRequested("長尺計画を中止しました")
@@ -3146,7 +3148,8 @@ class Application:
         if self.generation_mode.get() == "continuous":
             self.tabs.select(self.project_workspace)
         self._refresh_projects(manifest["run_id"])
-        self.status.set("長尺計画を保存しました。カットを編集して生成できます")
+        missing = len(self.project_workspace.translation_cache.missing(manifest["prompt_plan"]))
+        self.status.set(f"計画保存済み · 未翻訳 {missing}件" if missing else "計画保存済み")
 
     def _edit_project_prompt(self, manifest, plan, cuts, index, operation, japanese, instruction, cache,
                              *, selected_indices=None):
