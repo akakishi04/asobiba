@@ -218,11 +218,16 @@ class PromptProfileTests(unittest.TestCase):
 
     def test_gui_exposes_readonly_prompt_version_and_inspector(self):
         import inspect
+        from comfy_orchestrator.generation_view import GenerationView
+        from comfy_orchestrator.output_views import ResultView
         source = inspect.getsource(gui.Application._build)
-        self.assertIn("self.t2i_profile_box", source)
-        self.assertIn("state=\"readonly\"", source)
-        self.assertIn('self.result_prompt_button', source)
-        self.assertIn('command=self._show_prompt_preview', source)
+        form = inspect.getsource(GenerationView.__init__)
+        result = inspect.getsource(ResultView.__init__)
+        self.assertIn("self.t2i_profile_box", form)
+        self.assertIn('state="readonly"', form)
+        self.assertIn("self.result_prompt_button", result)
+        self.assertIn("command=actions.show_prompt", result)
+        self.assertIn("show_prompt=self._show_prompt_preview", source)
         self.assertTrue(
             callable(getattr(gui.Application, "_show_prompt_preview", None))
         )

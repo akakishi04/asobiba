@@ -10,8 +10,7 @@ from pathlib import Path
 from . import core, output_collection
 from .history import HistoryError
 from .jobs import JobCancellationRequested
-from .timing import observe
-from .long_video_plan import LongVideoPaused
+from .task_controller import worker_events  # compatibility export
 from .long_video import run_long_video
 
 
@@ -219,20 +218,3 @@ class GenerationController:
         return recovered, remaining
 
 
-def worker_events(operation, emit, *, done_event="done", long_video=False):
-    """Consistent worker terminal events; operation must not access Tk widgets."""
-    try:
-        with observe(emit):
-            result = operation()
-        emit((done_event, result))
-    except JobCancellationRequested as exc:
-        if long_video:
-            emit(("progress", str(exc) + " / 長尺再開から続行できます"))
-        else:
-            emit(("cancel_requested", str(exc)))
-    except LongVideoPaused as exc:
-        emit(("progress", str(exc) + " / 長尺再開から続行できます"))
-    except Exception as exc:
-        emit(("error", str(exc)))
-    finally:
-        emit(("idle", None))

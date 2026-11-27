@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 from comfy_orchestrator import gui
 from comfy_orchestrator.output_views import ResultView, HistoryView
+from comfy_orchestrator.generation_view import GenerationView
 
 
 class InitialGeometryTests(unittest.TestCase):
@@ -59,9 +60,10 @@ class InitialGeometryTests(unittest.TestCase):
             source.index('footer.pack(side="bottom", fill="x")'),
             source.index('main = ttk.Panedwindow(layout, orient="horizontal")'),
         )
+        form_source = inspect.getsource(GenerationView.__init__)
         self.assertLess(
-            source.index('action_row.pack(side="bottom", fill="x"'),
-            source.index('form_holder = ttk.Frame(prompt_panel)'),
+            form_source.index('action_row.pack(side="bottom", fill="x"'),
+            form_source.index('form_holder = ttk.Frame(prompt_panel)'),
         )
         history_source = inspect.getsource(HistoryView.__init__)
         result_source = inspect.getsource(ResultView.__init__)
@@ -73,9 +75,9 @@ class InitialGeometryTests(unittest.TestCase):
             result_source.index('preview_actions.pack(side="bottom"'),
             result_source.index('self.image_label = ttk.Label('),
         )
-        self.assertIn('self.form_canvas.create_window(', source)
-        self.assertIn('self.form_canvas.configure(yscrollcommand=', source)
-        self.assertIn('for col in (1, 3):', source)
+        self.assertIn('self.form_canvas.create_window(', form_source)
+        self.assertIn('self.form_canvas.configure(yscrollcommand=', form_source)
+        self.assertIn('for col in (1, 3):', form_source)
         self.assertIn('preview_meta.pack(side="bottom", fill="x")', result_source)
         self.assertIn('history_meta.pack(side="bottom", fill="x"', history_source)
         self.assertNotIn('self.root.geometry("1240x910")', source)
@@ -114,11 +116,11 @@ class ScrollingTests(unittest.TestCase):
         fake = SimpleNamespace(options_form=form, form_canvas=canvas)
 
         event = SimpleNamespace(widget=child, num=None, delta=-120)
-        self.assertEqual(gui.Application._on_form_mousewheel(fake, event), "break")
+        self.assertEqual(GenerationView._on_form_mousewheel(fake, event), "break")
         self.assertEqual(canvas.scrolled, [(3, "units")])
 
         event.widget = SimpleNamespace(master=None)
-        self.assertIsNone(gui.Application._on_form_mousewheel(fake, event))
+        self.assertIsNone(GenerationView._on_form_mousewheel(fake, event))
         self.assertEqual(len(canvas.scrolled), 1)
 
     def test_scroll_fallback_for_linux_mouse_wheel(self):
@@ -127,7 +129,7 @@ class ScrollingTests(unittest.TestCase):
         canvas = self.Canvas()
         fake = SimpleNamespace(options_form=form, form_canvas=canvas)
         event = SimpleNamespace(widget=child, num=4, delta=0)
-        self.assertEqual(gui.Application._on_form_mousewheel(fake, event), "break")
+        self.assertEqual(GenerationView._on_form_mousewheel(fake, event), "break")
         self.assertEqual(canvas.scrolled, [(-3, "units")])
 
     def test_no_scroll_when_all_settings_already_fit(self):
@@ -136,7 +138,7 @@ class ScrollingTests(unittest.TestCase):
         canvas = self.Canvas(0.0, 1.0)
         fake = SimpleNamespace(options_form=form, form_canvas=canvas)
         self.assertIsNone(
-            gui.Application._on_form_mousewheel(
+            GenerationView._on_form_mousewheel(
                 fake, SimpleNamespace(widget=child, delta=-120, num=None),
             )
         )
@@ -147,9 +149,9 @@ class ScrollingTests(unittest.TestCase):
         fake = SimpleNamespace(
             form_canvas=canvas, form_window="inner", _sync_form_scrollregion=lambda: None,
         )
-        gui.Application._size_form_to_canvas(fake, 450)
+        GenerationView._size_form_to_canvas(fake, 450)
         self.assertEqual(canvas.items, [("inner", {"width": 450})])
-        gui.Application._sync_form_scrollregion(fake)
+        GenerationView._sync_form_scrollregion(fake)
         self.assertEqual(canvas.configured, [{"scrollregion": (0, 0, 350, 890)}])
 
     def test_log_panel_is_hidden_on_start_and_can_be_shown(self):

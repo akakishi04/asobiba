@@ -654,3 +654,5 @@ H3のLLMリクエスト失敗時には処理の種類（h3_japanese_review 等�
 長尺のスケジュール・カット差分判定は `long_video_plan.py`、manifestの保存・改訂は `project_store.py`、フレーム抽出・結合は `video_media.py`、実行・再開は `long_video.py` が担当します。日本語訳・保護トークン・翻訳キャッシュは `prompt_review.py` に集約し、`prompt_edit.py` はプロンプトの編集・再生成に専念します。既存の入口・保存形式・生成仕様は維持します。
 
 GUIでは生成方式・表示判定・パラメータ変換を `generation_form.py`、設定ファイルの読込・検証・保存を `app_config.py`、接続／設定パネルを `settings_ui.py`、結果・履歴の画面部品を `output_views.py`、履歴の表示・操作可否判定を `history_presentation.py`、閲覧ダイアログを `prompt_viewer.py` に分離しました。UI部品は明示的に渡された操作コールバックを利用し、Applicationを逆参照しません。画面配置・設定値・操作・保存形式は変更しません。
+
+生成入力のスクロール、参照欄、設定グリッド、操作バーは `generation_view.py` が所有します。変数と操作コールバックを明示的に渡し、Applicationを逆参照しません。前景タスクの状態・中止イベント・進捗キュー・経過時間表示は `task_controller.py` に分離し、計画作成も既存生成と同じ終了イベント処理を利用します。UIスレッドでのイベント処理は一度に24件までのままです。

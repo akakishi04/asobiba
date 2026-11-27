@@ -10,12 +10,10 @@ import copy
 from dataclasses import replace
 import json
 import os
-import queue
 import secrets
 import sqlite3
 import threading
 import tempfile
-import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -23,10 +21,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from . import core, output_collection
-from .generation_controller import GenerationController, record_history, worker_events, active_aux_inputs
+from .generation_controller import GenerationController, record_history, active_aux_inputs
 from .generation_runtime import preflight_long
 from .model_runtime import release_comfy_before_llm, memory_stats
-from .timing import format_elapsed
 from .storage_report import storage_report
 from .operations_ui import OperationsWindow
 from .output_collection import output_media, output_images, output_destination
@@ -52,7 +49,7 @@ from .mask_editor import edit_mask
 from .lmstudio import list_models, LMStudio
 from .character_ui import CharacterReferenceWindow, choose_history_traits
 from .character_features import CharacterFeatureStore
-from .file_drop import enable_native_dnd, register_file_drop
+from .file_drop import enable_native_dnd
 from .character_refs import (
     validate_images as validate_character_images,
     normalize_approved as normalize_character_traits,
@@ -82,6 +79,8 @@ from .history_presentation import (history_request_text, history_prompt_details,
 from .prompt_viewer import show_prompt_details, show_saved_character_features, show_composition_report
 from .output_views import ResultView, HistoryView, ResultActions, HistoryActions
 from .settings_ui import ConnectionPanel, ConnectionVariables, ConnectionActions
+from .generation_view import GenerationView, GenerationVariables, GenerationActions
+from .task_controller import TaskController
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -160,9 +159,9 @@ class Application:
         )
         self.root.geometry(f"{width}x{height}+{x}+{y}")
         self.root.minsize(min_width, min_height)
-        self.messages: queue.Queue = queue.Queue()
-        self.working = False
-        self.stop_event = threading.Event()
+        self.tasks = TaskController()
+        self.messages = self.tasks.messages
+        self.stop_event = self.tasks.stop_event
         self.image_paths: list[Path] = []
         self.preview_photo: tk.PhotoImage | None = None
         self.config = bootstrap_config()
@@ -176,8 +175,6 @@ class Application:
         self._history_selection_key = None
         self._history_preview_key = None
         self._generation_ui_key = None
-        self._form_width = None
-        self._form_bounds = None
         self.history_preview_photo: tk.PhotoImage | None = None
         self.latest_composition_report = ""
         self.latest_prompt_plan: dict | None = None
@@ -198,6 +195,10 @@ class Application:
         self._refresh_history()
         self.root.after(100, self._consume_messages)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    @property
+    def working(self):
+        return self.tasks.working if hasattr(self, "tasks") else False
 
     def _variables(self) -> None:
         llm = self.config["llm"]
@@ -318,11 +319,6 @@ class Application:
         self._mode_settings = ModeSettings(self, mode, options.get("mode_settings"))
         self.status = tk.StringVar(value="準備完了")
         self.timing_status = tk.StringVar(value="")
-        self._operation_started = None
-        self._estimate = None
-        self._timing_label = ""
-        self._timing_at = 0.0
-        self._last_timing_update = 0.0
         self._operations_window = None
         self._operations_pending = False
         self.result_info = tk.StringVar(value="")
@@ -421,214 +417,116 @@ class Application:
         main.add(left, weight=3)
         main.add(right, weight=2)
 
-        self.prompt_panel = prompt_panel = ttk.Frame(left, padding=(8, 4))
-        prompt_panel.pack(fill="both", expand=True, padx=(0, 6))
-
-        # Reserve space for actions FIRST so a short screen never hides "Generate".
-        action_row = ttk.Frame(prompt_panel)
-        action_row.pack(side="bottom", fill="x", pady=(8, 0))
-
-        # The editor and optional image controls now scroll independently of the
-        # generate/cancel buttons and the output/history pane.
-        form_holder = ttk.Frame(prompt_panel)
-        form_holder.pack(fill="both", expand=True)
-        self.form_canvas = tk.Canvas(
-            form_holder, background=colors["surface"],
-            highlightthickness=0, borderwidth=0, width=320, height=250,
+        self.generation_view = GenerationView(
+            left, self.root, colors, GenerationVariables(
+                editor_font_size=self.editor_font_size,
+                reference_image=self.reference_image,
+                mask_image=self.mask_image,
+                character_status=self.character_status,
+                composition_image=self.composition_image,
+                pose_image=self.pose_image,
+                pose_mode=self.pose_mode,
+                vision_composition=self.vision_composition,
+                resolution_preset=self.resolution_preset,
+                width=self.width,
+                height=self.height,
+                video_size=self.video_size,
+                video_frames=self.video_frames,
+                video_fps=self.video_fps,
+                h3_size=self.h3_size,
+                h3_duration=self.h3_duration,
+                h3_connection=self.h3_connection,
+                h3_long_target=self.h3_long_target,
+                h3_cut_summary=self.h3_cut_summary,
+                hunyuan_size=self.hunyuan_size,
+                hunyuan_frames=self.hunyuan_frames,
+                hunyuan_steps=self.hunyuan_steps,
+                steps=self.steps,
+                cfg=self.cfg,
+                qwen_steps=self.qwen_steps,
+                qwen_cfg=self.qwen_cfg,
+                qwen_fixed_steps=self.qwen_fixed_steps,
+                qwen_fixed_cfg=self.qwen_fixed_cfg,
+                seed=self.seed,
+                denoise=self.denoise,
+                control_strength=self.control_strength,
+                t2i_profile=self.t2i_profile,
+                i2i_profile=self.i2i_profile,
+                h3_profile=self.h3_profile,
+                checkpoint_model=self.checkpoint_model,
+                h3_model=self.h3_model,
+                h3_turbo=self.h3_turbo,
+                h3_performance=self.h3_performance,
+            ), GenerationActions(
+                change_font=self._change_editor_font,
+                browse_image=self._browse_image,
+                edit_mask=self._edit_mask,
+                toggle_extra=self._toggle_extra_references,
+                open_character=self._open_character_references,
+                drop_character=self._drop_character_files,
+                browse_composition=self._browse_composition,
+                browse_pose=self._browse_pose,
+                pose_changed=self._on_pose_image_changed,
+                show_composition=self._show_composition_report,
+                apply_resolution=self._apply_resolution_preset,
+                edit_cut_durations=self._edit_cut_durations,
+                sync_steps=self._sync_h3_steps,
+                performance_changed=self._on_h3_performance_choice,
+                model_changed=self._on_h3_model_choice,
+                run=self._run_primary,
+                preview=self._run_secondary,
+                cancel=self._request_cancel,
+                long_action=lambda key: self.project_workspace._accept(key),
+            ),
         )
-        form_scrollbar = ttk.Scrollbar(
-            form_holder, orient="vertical", command=self.form_canvas.yview
-        )
-        self.form_canvas.configure(yscrollcommand=form_scrollbar.set)
-        self.form_canvas.pack(side="left", fill="both", expand=True)
-        form_scrollbar.pack(side="right", fill="y")
-        self.options_form = ttk.Frame(self.form_canvas)
-        self.form_window = self.form_canvas.create_window(
-            (0, 0), window=self.options_form, anchor="nw",
-        )
-        self.options_form.bind(
-            "<Configure>", lambda _e: self._sync_form_scrollregion(),
-        )
-        self.form_canvas.bind(
-            "<Configure>", lambda event: self._size_form_to_canvas(event.width),
-        )
-        self.root.bind("<MouseWheel>", self._on_form_mousewheel, add="+")
-        self.root.bind("<Button-4>", self._on_form_mousewheel, add="+")
-        self.root.bind("<Button-5>", self._on_form_mousewheel, add="+")
-
-        # One shared work surface: prompt, references, parameters, actions.
-        editor_toolbar = ttk.Frame(self.options_form)
-        editor_toolbar.pack(fill="x", pady=(0, 4))
-        self.prompt_title = ttk.Label(editor_toolbar, text="プロンプト", style="FieldHeading.TLabel")
-        self.prompt_title.pack(side="left")
-        ttk.Button(editor_toolbar, text="A+", width=3, command=lambda: self._change_editor_font(1),
-                   style="Compact.TButton").pack(side="right", padx=(4, 0))
-        ttk.Button(editor_toolbar, text="A−", width=3, command=lambda: self._change_editor_font(-1),
-                   style="Compact.TButton").pack(side="right")
-        self.prompt = scrolledtext.ScrolledText(
-            self.options_form, height=6, wrap="word",
-            font=("Meiryo UI", self.editor_font_size.get()),
-            undo=True, autoseparators=True, maxundo=100,
-            padx=14, pady=12, spacing1=3, spacing3=3,
-        )
-        self.prompt.pack(fill="x", expand=False, pady=(0, 8))
-
-        inputs = ttk.Frame(self.options_form)
-        inputs.pack(fill="x", pady=(0, 6))
-        inputs.columnconfigure(0, weight=1)
-
-        def input_row(row, label, variable, command, *, button_text="選択", editable=False):
-            frame = ttk.Frame(inputs)
-            frame.grid(row=row, column=0, sticky="ew", pady=(0, 4))
-            frame.columnconfigure(1, weight=1)
-            ttk.Label(frame, text=label, width=11, anchor="w").grid(row=0, column=0, sticky="w", padx=(0, 5))
-            entry = ttk.Entry(frame, textvariable=variable, width=8,
-                              state="normal" if editable else "readonly")
-            entry.grid(row=0, column=1, sticky="ew")
-            button = ttk.Button(frame, text=button_text, command=command, style="Compact.TButton")
-            button.grid(row=0, column=2, padx=(5, 0))
-            ttk.Button(frame, text="解除", command=lambda: variable.set(""),
-                       style="Compact.TButton").grid(row=0, column=3, padx=(4, 0))
-            return frame, button
-
-        self.reference_row, _ = input_row(0, "参照画像", self.reference_image, self._browse_image, editable=True)
-        self.mask_row, self.mask_button = input_row(1, "修正範囲", self.mask_image, self._edit_mask, button_text="範囲を塗る")
-
-        self.reference_tools = reference_tools = ttk.Frame(inputs)
-        reference_tools.grid(row=2, column=0, sticky="ew", pady=(0, 4))
-        self.extra_button = ttk.Button(reference_tools, text="追加参照 ▸",
-                                       command=self._toggle_extra_references, style="Compact.TButton")
-        self.extra_button.pack(side="left")
-        self.character_button = ttk.Button(reference_tools, textvariable=self.character_status,
-                                           command=self._open_character_references, style="Compact.TButton")
-        self.character_button.pack(side="left", padx=(6, 0))
-        for target in (reference_tools, self.character_button):
-            register_file_drop(target, self._drop_character_files)
-        self.composition_row, _ = input_row(3, "構図参考", self.composition_image, self._browse_composition)
-        self.pose_row, _ = input_row(4, "ポーズ画像", self.pose_image, self._browse_pose)
-        self.pose_modes = ttk.Frame(inputs)
-        self.pose_modes.grid(row=5, column=0, sticky="ew", pady=(0, 5))
-        ttk.Radiobutton(self.pose_modes, text="骨格PNG", variable=self.pose_mode,
-                        value="skeleton", command=self._on_pose_image_changed).pack(side="left", padx=(0, 14))
-        ttk.Radiobutton(self.pose_modes, text="画像から骨格検出", variable=self.pose_mode,
-                        value="photo", command=self._on_pose_image_changed).pack(side="left")
-        self.vision_row = ttk.Frame(inputs)
-        self.vision_row.grid(row=6, column=0, sticky="ew", pady=(0, 4))
-        self.vision_checkbox = ttk.Checkbutton(self.vision_row, text="LLMで画像を解析",
-                                              variable=self.vision_composition)
-        self.vision_checkbox.pack(side="left")
-        ttk.Button(self.vision_row, text="認識結果", command=self._show_composition_report,
-                   style="Compact.TButton").pack(side="right")
+        self.generation_view.pack(fill="both", expand=True, padx=(0, 6))
+        # Existing application actions still use these handles; the view owns
+        # their construction and local geometry.
+        self.prompt_panel = self.generation_view
+        self.form_canvas = self.generation_view.form_canvas
+        self.options_form = self.generation_view.options_form
+        self.form_window = self.generation_view.form_window
+        self.prompt_title = self.generation_view.prompt_title
+        self.prompt = self.generation_view.prompt
+        self.reference_row = self.generation_view.reference_row
+        self.mask_row = self.generation_view.mask_row
+        self.reference_tools = self.generation_view.reference_tools
+        self.extra_button = self.generation_view.extra_button
+        self.character_button = self.generation_view.character_button
+        self.composition_row = self.generation_view.composition_row
+        self.pose_row = self.generation_view.pose_row
+        self.pose_modes = self.generation_view.pose_modes
+        self.vision_row = self.generation_view.vision_row
+        self.vision_checkbox = self.generation_view.vision_checkbox
+        self.parameter_widgets = self.generation_view.parameter_widgets
+        self.resolution_box = self.generation_view.resolution_box
+        self.width_entry = self.generation_view.width_entry
+        self.height_entry = self.generation_view.height_entry
+        self.h3_duration_title = self.generation_view.h3_duration_title
+        self.steps_entry = self.generation_view.steps_entry
+        self.cfg_entry = self.generation_view.cfg_entry
+        self.seed_entry = self.generation_view.seed_entry
+        self.random_seed_button = self.generation_view.random_seed_button
+        self.denoise_entry = self.generation_view.denoise_entry
+        self.strength_entry = self.generation_view.strength_entry
+        self.t2i_profile_box = self.generation_view.t2i_profile_box
+        self.i2i_profile_box = self.generation_view.i2i_profile_box
+        self.h3_profile_box = self.generation_view.h3_profile_box
+        self.checkpoint_box = self.generation_view.checkpoint_box
+        self.h3_model_box = self.generation_view.h3_model_box
+        self.h3_turbo_box = self.generation_view.h3_turbo_box
+        self.h3_performance_box = self.generation_view.h3_performance_box
+        self.run_button = self.generation_view.run_button
+        self.preview_button = self.generation_view.preview_button
+        self.cancel_button = self.generation_view.cancel_button
+        self.long_actions_button = self.generation_view.long_actions_button
+        self.long_actions_menu = self.generation_view.long_actions_menu
+        self._long_menu_keys = self.generation_view._long_menu_keys
+        self.mask_button = self.generation_view.mask_button
         self.reference_image.trace_add("write", lambda *_args: self._on_reference_image_changed())
         self.mask_image.trace_add("write", lambda *_args: self._on_mask_image_changed())
         self.pose_image.trace_add("write", lambda *_args: self._on_pose_image_changed())
         self.composition_image.trace_add("write", self._on_composition_image_changed)
-
-        settings = ttk.Frame(self.options_form)
-        settings.pack(fill="x", pady=(0, 4))
-        for col in (1, 3):
-            settings.columnconfigure(col, weight=1)
-        ttk.Separator(settings).grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 8))
-        self.parameter_widgets = {}
-
-        def field(row, column, label, variable, key, *, choices=None, span=1, width=8):
-            title = ttk.Label(settings, text=label)
-            title.grid(row=row, column=column, sticky="w", padx=(0, 6), pady=3)
-            if choices is None:
-                widget = ttk.Entry(settings, textvariable=variable, width=width)
-            else:
-                widget = ttk.Combobox(settings, textvariable=variable, values=choices,
-                                      state="readonly", width=width)
-            widget.grid(row=row, column=column+1, columnspan=span, sticky="ew",
-                        padx=(0, 8) if span == 1 and column == 0 else 0, pady=3)
-            self.parameter_widgets.setdefault(key, []).extend((title, widget))
-            return widget
-
-        # Resolution always occupies the same row, irrespective of workflow.
-        self.resolution_box = field(2, 0, "解像度", self.resolution_preset, "resolution",
-                                    choices=(*RESOLUTION_PRESETS, CUSTOM_RESOLUTION), span=3, width=18)
-        self.resolution_box.bind("<<ComboboxSelected>>", self._apply_resolution_preset)
-        self.width_entry = field(3, 0, "幅", self.width, "custom_size")
-        self.height_entry = field(3, 2, "高さ", self.height, "custom_size")
-        source_title = ttk.Label(settings, text="解像度")
-        source_title.grid(row=2, column=0, sticky="w", padx=(0, 6), pady=3)
-        source_value = ttk.Label(settings, text="元画像サイズ")
-        source_value.grid(row=2, column=1, columnspan=3, sticky="w", pady=3)
-        self.parameter_widgets["source_size"] = [source_title, source_value]
-
-        field(2, 0, "解像度", self.video_size, "wan", choices=VIDEO_RESOLUTIONS, span=3, width=18)
-        field(3, 0, "フレーム数", self.video_frames, "wan", choices=VIDEO_FRAME_COUNTS)
-        field(3, 2, "FPS", self.video_fps, "wan", choices=("16", "24", "30"), width=5)
-        field(2, 0, "解像度", self.h3_size, "h3", choices=H3_RESOLUTIONS, span=3, width=18)
-        field(3, 0, "長さ (24fps)", self.h3_duration, "h3", choices=tuple(H3_DURATIONS), span=3, width=18)
-        self.h3_duration_title = self.parameter_widgets["h3"][-2]
-        field(10, 0, "接続方式", self.h3_connection, "h3_long",
-              choices=tuple(H3_CONNECTION_LABELS.values()), span=3, width=18)
-        field(11, 0, "計画用合計尺", self.h3_long_target, "h3_long",
-              choices=(*CONTINUOUS_TARGETS, CUSTOM_CUTS), span=3, width=8)
-        cut_button = ttk.Button(settings, text="カット尺…", command=self._edit_cut_durations)
-        cut_button.grid(row=12, column=0, columnspan=2, sticky="ew", pady=3)
-        cut_summary = ttk.Label(settings, textvariable=self.h3_cut_summary)
-        cut_summary.grid(row=12, column=2, columnspan=2, sticky="w", padx=(6, 0))
-        self.parameter_widgets["h3_long"].extend((cut_button, cut_summary))
-
-        field(2, 0, "解像度", self.hunyuan_size, "hunyuan", choices=HUNYUAN_RESOLUTIONS, span=3, width=18)
-        field(3, 0, "フレーム数 (24fps)", self.hunyuan_frames, "hunyuan",
-              choices=VIDEO_FRAME_COUNTS, span=3)
-        field(4, 0, "Steps", self.hunyuan_steps, "hunyuan", choices=("8", "12"), span=3)
-        self.steps_entry = field(4, 0, "Steps", self.steps, "steps")
-        self.cfg_entry = field(4, 2, "CFG", self.cfg, "cfg")
-        field(4, 0, "Steps", self.qwen_steps, "qwen_steps")
-        field(4, 2, "CFG", self.qwen_cfg, "qwen_steps")
-        field(4, 0, "Steps", self.qwen_fixed_steps, "qwen_fixed").configure(state="readonly")
-        field(4, 2, "CFG", self.qwen_fixed_cfg, "qwen_fixed").configure(state="readonly")
-        self.seed_entry = field(5, 0, "Seed", self.seed, "seed", span=2)
-        self.random_seed_button = ttk.Button(settings, text="ランダム", style="Compact.TButton",
-                                             command=lambda: self.seed.set(""))
-        self.random_seed_button.grid(row=5, column=3, sticky="ew", pady=3)
-        self.parameter_widgets["seed"].append(self.random_seed_button)
-        self.denoise_entry = field(6, 0, "Denoise", self.denoise, "denoise", span=3)
-        self.strength_entry = field(6, 0, "ポーズ強度", self.control_strength, "strength", span=3)
-        self.t2i_profile_box = field(7, 0, "プロンプト方式", self.t2i_profile, "t2i_profile",
-                                     choices=tuple(T2I_PROFILE_LABELS.values()), span=3, width=18)
-        self.i2i_profile_box = field(7, 0, "プロンプト方式", self.i2i_profile, "i2i_profile",
-                                     choices=tuple(I2I_PROFILE_LABELS.values()), span=3, width=18)
-        self.h3_profile_box = field(7, 0, "プロンプト方式", self.h3_profile, "h3_profile",
-                                    choices=tuple(H3_PROFILE_LABELS.values()), span=3, width=18)
-        self.checkpoint_box = field(8, 0, "モデル", self.checkpoint_model, "checkpoint",
-                                    choices=(self.checkpoint_model.get(),), span=3, width=18)
-        self.checkpoint_box.bind("<<ComboboxSelected>>", self._sync_h3_steps)
-        self.h3_model_box = field(8, 0, "モデル", self.h3_model, "h3",
-                                  choices=tuple(dict.fromkeys((*core.H3_MODEL_LABELS.values(), self.h3_model.get()))),
-                                  span=3, width=18)
-        self.h3_turbo_box = field(9, 0, "追加Turbo", self.h3_turbo, "h3_turbo",
-                                  choices=tuple(core.H3_TURBO_LABELS.values()), span=3, width=18)
-        self.h3_performance_box = field(9, 0, "高速化", self.h3_performance, "h3_performance",
-                                        choices=tuple(core.H3_PERFORMANCE_LABELS.values()), span=3, width=18)
-        self.h3_performance_box.bind("<<ComboboxSelected>>", self._on_h3_performance_choice)
-        self.h3_model_box.bind("<<ComboboxSelected>>", self._on_h3_model_choice)
-        self.h3_turbo_box.bind("<<ComboboxSelected>>", self._sync_h3_steps)
-        for widgets in self.parameter_widgets.values():
-            for widget in widgets:
-                widget.grid_remove()
-
-        self.run_button = ttk.Button(
-            action_row, text="画像生成", style="Run.TButton", command=self._run_primary
-        )
-        self.run_button.pack(side="left", fill="x", expand=True, padx=(0, 6))
-        self.preview_button = ttk.Button(action_row, text="解釈テスト", command=self._run_secondary)
-        self.preview_button.pack(side="left", padx=(0, 6))
-        self.cancel_button = ttk.Button(
-            action_row, text="生成中止", command=self._request_cancel, state="disabled"
-        )
-        self.cancel_button.pack(side="left")
-        self.long_actions_button = ttk.Menubutton(action_row, text="その他 ▾", style="Compact.TButton")
-        self.long_actions_menu = tk.Menu(self.long_actions_button, tearoff=False)
-        self.long_actions_button.configure(menu=self.long_actions_menu)
-        self._long_menu_keys = ("generate", "regenerate", "join")
-        for key, label in zip(self._long_menu_keys, ("カット生成（結合なし）", "選択以降再生成", "結合のみ")):
-            self.long_actions_menu.add_command(label=label, command=lambda k=key: self.project_workspace._accept(k),
-                                               state="disabled")
 
         self.tabs = ttk.Notebook(right)
         self.tabs.pack(fill="both", expand=True)
@@ -697,48 +595,6 @@ class Application:
         install_native_ime_font(self.prompt)
         self._log("GUI起動。LM StudioのDeveloper画面でLocal Serverを起動してください。")
         self._log("設定は comfy-orchestrator/config.json に保存され、Gitには含まれません。")
-
-    def _size_form_to_canvas(self, width: int) -> None:
-        """Match the scrollable form to its viewport without growing the window."""
-        width = max(1, width)
-        if getattr(self, "_form_width", None) != width:
-            self._form_width = width
-            self.form_canvas.itemconfigure(self.form_window, width=width)
-        self._sync_form_scrollregion()
-
-    def _sync_form_scrollregion(self) -> None:
-        bounds = self.form_canvas.bbox("all")
-        if bounds and bounds != getattr(self, "_form_bounds", None):
-            self._form_bounds = bounds
-            self.form_canvas.configure(scrollregion=bounds)
-
-    def _on_form_mousewheel(self, event):
-        """Scroll just the option form; preserve normal text-editor scrolling."""
-        widget = event.widget
-        inside_form = False
-        while widget is not None:
-            if widget is self.options_form:
-                inside_form = True
-                break
-            if isinstance(widget, (tk.Text, tk.Scrollbar, ttk.Scrollbar, tk.Listbox, ttk.Treeview)):
-                return None
-            widget = getattr(widget, "master", None)
-        if not inside_form:
-            return None
-        first, last = self.form_canvas.yview()
-        if first <= 0.0 and last >= 1.0:
-            return None
-        if getattr(event, "num", None) == 4:
-            amount = -3
-        elif getattr(event, "num", None) == 5:
-            amount = 3
-        else:
-            delta = getattr(event, "delta", 0)
-            if delta == 0:
-                return None
-            amount = -3 if delta > 0 else 3
-        self.form_canvas.yview_scroll(amount, "units")
-        return "break"
 
     def _toggle_connection_settings(self) -> None:
         self.settings_panel.toggle()
@@ -1519,12 +1375,9 @@ class Application:
             cancel_event=self.stop_event, prompt_cache=cache,
         )
 
-    def _launch_generation(self, operation, *, done_event="done", long_video=False):
-        threading.Thread(
-            target=lambda: worker_events(operation, self.messages.put,
-                                         done_event=done_event, long_video=long_video),
-            daemon=True,
-        ).start()
+    def _launch_generation(self, operation, *, done_event="done", long_video=False, cancel_as_progress=False):
+        self.tasks.launch(operation, done_event=done_event, long_video=long_video,
+                          cancel_as_progress=cancel_as_progress)
 
     def _record_completed_generation(
         self, result, images, request_text, source_image=None, mask_image=None,
@@ -1540,12 +1393,7 @@ class Application:
         )
 
     def _set_busy(self, label: str) -> None:
-        self.stop_event.clear()
-        self.working = True
-        self._operation_started = time.monotonic()
-        self._estimate = None
-        self._timing_label = ""
-        self._last_timing_update = 0.0
+        self.tasks.begin()
         if hasattr(self, "timing_status"):
             self.timing_status.set("経過 00:00")
         if hasattr(self, "project_workspace"):
@@ -2036,29 +1884,10 @@ class Application:
         self._log("LM Studioのモデル一覧を取得中...")
 
     def _tick_timing(self, *, finished=False):
-        if not hasattr(self, "timing_status") or self._operation_started is None:
+        if not hasattr(self, "timing_status"):
             return
-        now = time.monotonic()
-        if not finished and now - self._last_timing_update < 0.8:
-            return
-        self._last_timing_update = now
-        elapsed = format_elapsed(now - self._operation_started)
-        if finished:
-            self.timing_status.set("処理時間 " + elapsed)
-            self._operation_started = None
-            self._estimate = None
-            self._timing_label = ""
-            return
-        text = "経過 " + elapsed
-        if self._timing_label:
-            text += " / " + self._timing_label
-        if self._estimate is not None:
-            remaining = self._estimate.seconds - (now - self._timing_at)
-            text += (" 約" + format_elapsed(remaining) if remaining > 0 else " 推定超過")
-            text += f" (実測{self._estimate.samples}件" + ("・尺換算)" if self._estimate.scaled else ")")
-        elif self._timing_label in ("生成待ち", "残カット生成待ち"):
-            text += " 計測中"
-        if self.timing_status.get() != text:
+        text = self.tasks.timing_text(finished=finished)
+        if text is not None and self.timing_status.get() != text:
             self.timing_status.set(text)
 
     def _show_operations(self):
@@ -2451,32 +2280,25 @@ class Application:
         self._set_busy("計画生成中")
 
         def task():
-            try:
-                with tempfile.TemporaryDirectory(prefix="asobiba-long-") as temporary:
-                    source = copy_frozen_asset(image, Path(temporary), "source") if image is not None else None
-                    plan = plan_long_prompts(
-                        cfg, prompt, frames, seconds, reference_only, cut_frames=cut_frames,
-                        overlap_frames=overlap_frames, image=source, text_only=text_only,
-                        progress=lambda line: self.messages.put(("progress", line)),
-                        cancel_event=self.stop_event, prompt_cache=cache, release_comfy=True,
-                        translation_cache=translation_cache,
-                    )
-                    if self.stop_event.is_set():
-                        raise JobCancellationRequested("長尺計画を中止しました")
-                    manifest = self.long_video_store.create(
-                        cfg["comfyui"]["base_url"], prompt, source, overrides, seconds, profile,
-                        prompt_plan=plan, cut_frames=cut_frames, draft=True,
-                        overlap_frames=overlap_frames,
-                    )
-                self.messages.put(("long_plan_ready", manifest))
-            except JobCancellationRequested as exc:
-                self.messages.put(("progress", str(exc)))
-            except Exception as exc:
-                self.messages.put(("error", str(exc)))
-            finally:
-                self.messages.put(("idle", None))
+            with tempfile.TemporaryDirectory(prefix="asobiba-long-") as temporary:
+                source = copy_frozen_asset(image, Path(temporary), "source") if image is not None else None
+                plan = plan_long_prompts(
+                    cfg, prompt, frames, seconds, reference_only, cut_frames=cut_frames,
+                    overlap_frames=overlap_frames, image=source, text_only=text_only,
+                    progress=lambda line: self.messages.put(("progress", line)),
+                    cancel_event=self.stop_event, prompt_cache=cache, release_comfy=True,
+                    translation_cache=translation_cache,
+                )
+                if self.stop_event.is_set():
+                    raise JobCancellationRequested("長尺計画を中止しました")
+                manifest = self.long_video_store.create(
+                    cfg["comfyui"]["base_url"], prompt, source, overrides, seconds, profile,
+                    prompt_plan=plan, cut_frames=cut_frames, draft=True,
+                    overlap_frames=overlap_frames,
+                )
+            return manifest
 
-        threading.Thread(target=task, daemon=True).start()
+        self._launch_generation(task, done_event="long_plan_ready", cancel_as_progress=True)
 
     def _finish_long_prompt_plan(self, manifest):
         self._preferred_long_project_id = manifest["run_id"]
@@ -2636,7 +2458,7 @@ class Application:
             self._refresh_projects(getattr(self, "_preferred_long_project_id", None))
 
     def _request_cancel(self) -> None:
-        self.stop_event.set()
+        self.tasks.cancel()
         self.status.set("停止要求中")
         self._log("現在の処理の停止を要求しました。送信済みジョブは対象IDのみ停止を試みます。")
 
@@ -2651,189 +2473,182 @@ class Application:
         self._launch_generation(self._controller(cfg).recover, done_event="jobs_recovered")
 
     def _consume_messages(self) -> None:
-        try:
-            # Yield between bursts of worker events instead of monopolizing Tk.
-            for _ in range(24):
-                kind, data = self.messages.get_nowait()
-                if kind == "progress":
-                    if data.startswith("【構図認識結果】\n"):
-                        self.latest_composition_report = data.split("\n", 1)[1]
-                        self.status.set("構図認識が完了しました（認識結果...から確認可能）")
+        # Yield between bursts of worker events instead of monopolizing Tk.
+        for kind, data in self.tasks.drain():
+            if kind == "progress":
+                if data.startswith("【構図認識結果】\n"):
+                    self.latest_composition_report = data.split("\n", 1)[1]
+                    self.status.set("構図認識が完了しました（認識結果...から確認可能）")
+                else:
+                    self.status.set(data)
+                self._log(data)
+            elif kind == "timing":
+                self.tasks.update_estimate(data)
+                self._tick_timing()
+            elif kind == "operations_report":
+                self._operations_pending = False
+                if self._operations_window is not None and self._operations_window.is_open():
+                    self._operations_window.update(*data)
+            elif kind == "operations_error":
+                self._operations_pending = False
+                self._log("運用情報の取得失敗: " + data)
+                if self._operations_window is not None and self._operations_window.is_open():
+                    self._operations_window.summary.set("取得失敗: " + data[:180])
+            elif kind == "projects_loaded":
+                serial, projects, preferred, open_preferred = data
+                if serial == self._project_refresh_serial:
+                    self.project_workspace.set_projects(projects, preferred, open_preferred=open_preferred)
+            elif kind == "long_plan_ready":
+                self._finish_long_prompt_plan(data)
+            elif kind == "project_translation_cache_updated":
+                self.project_workspace.accept_prompt_result(*data)
+            elif kind == "project_prompt_edited":
+                run_id, cuts, result = data
+                batch_review = "translated_count" in result
+                if self.stop_event.is_set() and not batch_review:
+                    self.status.set("プロンプト編集を中止しました")
+                elif self.project_workspace.accept_prompt_result(run_id, cuts, result):
+                    changed = result["before"] != result["after"]
+                    if batch_review:
+                        self.status.set(f"一括翻訳: {result['translated_count']}件完了（英語原文変更なし）")
                     else:
-                        self.status.set(data)
-                    self._log(data)
-                elif kind == "timing":
-                    self._estimate = data["estimate"]
-                    self._timing_label = data["label"]
-                    self._timing_at = data["at"]
-                    self._last_timing_update = 0.0
-                    self._tick_timing()
-                elif kind == "operations_report":
-                    self._operations_pending = False
-                    if self._operations_window is not None and self._operations_window.is_open():
-                        self._operations_window.update(*data)
-                elif kind == "operations_error":
-                    self._operations_pending = False
-                    self._log("運用情報の取得失敗: " + data)
-                    if self._operations_window is not None and self._operations_window.is_open():
-                        self._operations_window.summary.set("取得失敗: " + data[:180])
-                elif kind == "projects_loaded":
-                    serial, projects, preferred, open_preferred = data
-                    if serial == self._project_refresh_serial:
-                        self.project_workspace.set_projects(projects, preferred, open_preferred=open_preferred)
-                elif kind == "long_plan_ready":
-                    self._finish_long_prompt_plan(data)
-                elif kind == "project_translation_cache_updated":
-                    self.project_workspace.accept_prompt_result(*data)
-                elif kind == "project_prompt_edited":
-                    run_id, cuts, result = data
-                    batch_review = "translated_count" in result
-                    if self.stop_event.is_set() and not batch_review:
-                        self.status.set("プロンプト編集を中止しました")
-                    elif self.project_workspace.accept_prompt_result(run_id, cuts, result):
-                        changed = result["before"] != result["after"]
-                        if batch_review:
-                            self.status.set(f"一括翻訳: {result['translated_count']}件完了（英語原文変更なし）")
-                        else:
-                            self.status.set("プロンプト編集完了（未保存・動画未生成）" if changed else "日本語訳を表示しました")
+                        self.status.set("プロンプト編集完了（未保存・動画未生成）" if changed else "日本語訳を表示しました")
+                else:
+                    self.status.set("計画が変わったため編集結果を適用しませんでした")
+            elif kind == "long_project_saved":
+                self._preferred_long_project_id = data["run_id"]
+                self.project_workspace.load(data, preserve_selection=True, restore_inputs=False)
+                self._refresh_projects(data["run_id"])
+                self._log("長尺プロジェクト保存: " + data["run_id"])
+            elif kind == "long_project_checkpoint":
+                self.project_workspace.checkpoint(data)
+            elif kind == "long_project_done":
+                self._preferred_long_project_id = data
+                self.status.set("長尺プロジェクト保存済み")
+            elif kind == "confirm_unknown_long_job":
+                record, answered, decision = data
+                try:
+                    if not self.stop_event.is_set():
+                        decision["retry"] = messagebox.askyesno(
+                            "状態不明の長尺ジョブ",
+                            "前回ジョブの実行結果が確認できません。ComfyUI側に結果や待機・実行中のジョブがないことを確認してください。\n"
+                            "この記録を失敗扱いにして同じ区間を再生成しますか？\n"
+                            "以前に生成済みだった場合、再生成になる可能性があります。\n\nID: " + record["prompt_id"],
+                        )
+                finally:
+                    answered.set()
+            elif kind == "character_analysis_done":
+                dialog, analysis = data
+                self.character_analysis_running = False
+                dialog.finish(analysis=analysis)
+                self._log("キャラ参照画像の共通特徴を抽出。編集・確定待ち")
+                self.status.set("キャラ特徴を編集して確定してください")
+            elif kind == "character_analysis_error":
+                dialog, error = data
+                self.character_analysis_running = False
+                dialog.finish(error=error)
+                self._log("キャラ特徴抽出エラー: " + error)
+                self.status.set("キャラ特徴抽出に失敗しました")
+            elif kind == "character_revision_done":
+                dialog, revised = data
+                self.character_analysis_running = False
+                dialog.finish_revision(revised_text=revised)
+                self._log("自然文のキャラ説明修正案が完成（未確定）")
+                self.status.set("キャラ説明の修正案を確認して確定してください")
+            elif kind == "character_revision_error":
+                dialog, error = data
+                self.character_analysis_running = False
+                dialog.finish_revision(error=error)
+                self._log("自然文でのキャラ説明修正エラー: " + error)
+                self.status.set("自然文による説明修正に失敗しました")
+            elif kind == "check":
+                for line in data:
+                    self._log(line)
+                self.status.set("接続確認が完了しました")
+            elif kind == "generation_models":
+                url, inventory = data
+                if url == self.comfy_url.get().strip():
+                    self.generation_inventory = inventory
+                    self._apply_generation_model_choices()
+                    choices = core.installed_model_choices(inventory)
+                    self._log(f"ComfyUIモデル: SDXL {len(choices['sdxl'])}件 / H3 {len(choices['h3'])}件")
+            elif kind == "generation_models_error":
+                self._log("ComfyUIモデル一覧を更新できません: " + data)
+            elif kind == "models":
+                names = [item["key"] for item in data]
+                self.model_box.configure(values=names)
+                if self.model.get() not in names and names:
+                    self.model.set(names[0])
+                self._log(f"LM Studioモデル: {len(names)}件。必要なモデルを選択して設定を保存してください。")
+                self.status.set(f"モデル一覧を更新: {len(names)}件")
+            elif kind == "history_loaded":
+                self._finish_history_refresh(*data)
+            elif kind == "cancel_requested":
+                self.status.set("停止要求送信済み（終了未確認）")
+                self._log(data)
+            elif kind == "jobs_recovered":
+                recovered, remaining = data
+                self.status.set(f"回収 {recovered}件 / 未回収 {remaining}件")
+                self._refresh_history(scan_legacy=False)
+            elif kind == "done":
+                result, images, history_id = data
+                self.latest_prompt_plan = result
+                self.result_prompt_button.configure(state="normal")
+                if result["status"] == "dry_run":
+                    self._log("解釈結果:\n" + json.dumps(result, ensure_ascii=False, indent=2))
+                    self.status.set("解釈テスト完了（ComfyUI未実行）")
+                    self.tabs.select(0)
+                    self._show_prompt_preview()
+                else:
+                    self.image_paths = images
+                    self.images_list.delete(0, "end")
+                    for file in images:
+                        self.images_list.insert("end", file.name)
+                    if len(images) > 1:
+                        self.images_list.pack(fill="x", pady=(0, 5))
                     else:
-                        self.status.set("計画が変わったため編集結果を適用しませんでした")
-                elif kind == "long_project_saved":
-                    self._preferred_long_project_id = data["run_id"]
-                    self.project_workspace.load(data, preserve_selection=True, restore_inputs=False)
-                    self._refresh_projects(data["run_id"])
-                    self._log("長尺プロジェクト保存: " + data["run_id"])
-                elif kind == "long_project_checkpoint":
-                    self.project_workspace.checkpoint(data)
-                elif kind == "long_project_done":
-                    self._preferred_long_project_id = data
-                    self.status.set("長尺プロジェクト保存済み")
-                elif kind == "confirm_unknown_long_job":
-                    record, answered, decision = data
-                    try:
-                        if not self.stop_event.is_set():
-                            decision["retry"] = messagebox.askyesno(
-                                "状態不明の長尺ジョブ",
-                                "前回ジョブの実行結果が確認できません。ComfyUI側に結果や待機・実行中のジョブがないことを確認してください。\n"
-                                "この記録を失敗扱いにして同じ区間を再生成しますか？\n"
-                                "以前に生成済みだった場合、再生成になる可能性があります。\n\nID: " + record["prompt_id"],
-                            )
-                    finally:
-                        answered.set()
-                elif kind == "character_analysis_done":
-                    dialog, analysis = data
-                    self.character_analysis_running = False
-                    dialog.finish(analysis=analysis)
-                    self._log("キャラ参照画像の共通特徴を抽出。編集・確定待ち")
-                    self.status.set("キャラ特徴を編集して確定してください")
-                elif kind == "character_analysis_error":
-                    dialog, error = data
-                    self.character_analysis_running = False
-                    dialog.finish(error=error)
-                    self._log("キャラ特徴抽出エラー: " + error)
-                    self.status.set("キャラ特徴抽出に失敗しました")
-                elif kind == "character_revision_done":
-                    dialog, revised = data
-                    self.character_analysis_running = False
-                    dialog.finish_revision(revised_text=revised)
-                    self._log("自然文のキャラ説明修正案が完成（未確定）")
-                    self.status.set("キャラ説明の修正案を確認して確定してください")
-                elif kind == "character_revision_error":
-                    dialog, error = data
-                    self.character_analysis_running = False
-                    dialog.finish_revision(error=error)
-                    self._log("自然文でのキャラ説明修正エラー: " + error)
-                    self.status.set("自然文による説明修正に失敗しました")
-                elif kind == "check":
-                    for line in data:
-                        self._log(line)
-                    self.status.set("接続確認が完了しました")
-                elif kind == "generation_models":
-                    url, inventory = data
-                    if url == self.comfy_url.get().strip():
-                        self.generation_inventory = inventory
-                        self._apply_generation_model_choices()
-                        choices = core.installed_model_choices(inventory)
-                        self._log(f"ComfyUIモデル: SDXL {len(choices['sdxl'])}件 / H3 {len(choices['h3'])}件")
-                elif kind == "generation_models_error":
-                    self._log("ComfyUIモデル一覧を更新できません: " + data)
-                elif kind == "models":
-                    names = [item["key"] for item in data]
-                    self.model_box.configure(values=names)
-                    if self.model.get() not in names and names:
-                        self.model.set(names[0])
-                    self._log(f"LM Studioモデル: {len(names)}件。必要なモデルを選択して設定を保存してください。")
-                    self.status.set(f"モデル一覧を更新: {len(names)}件")
-                elif kind == "history_loaded":
-                    self._finish_history_refresh(*data)
-                elif kind == "cancel_requested":
-                    self.status.set("停止要求送信済み（終了未確認）")
-                    self._log(data)
-                elif kind == "jobs_recovered":
-                    recovered, remaining = data
-                    self.status.set(f"回収 {recovered}件 / 未回収 {remaining}件")
-                    self._refresh_history(scan_legacy=False)
-                elif kind == "done":
-                    result, images, history_id = data
-                    self.latest_prompt_plan = result
-                    self.result_prompt_button.configure(state="normal")
-                    if result["status"] == "dry_run":
-                        self._log("解釈結果:\n" + json.dumps(result, ensure_ascii=False, indent=2))
-                        self.status.set("解釈テスト完了（ComfyUI未実行）")
-                        self.tabs.select(0)
-                        self._show_prompt_preview()
+                        self.images_list.pack_forget()
+                    if images:
+                        self.images_list.selection_set(0)
+                        self._display_image(images[0])
+                        self.open_button.configure(state="normal")
                     else:
-                        self.image_paths = images
-                        self.images_list.delete(0, "end")
-                        for file in images:
-                            self.images_list.insert("end", file.name)
-                        if len(images) > 1:
-                            self.images_list.pack(fill="x", pady=(0, 5))
-                        else:
-                            self.images_list.pack_forget()
-                        if images:
-                            self.images_list.selection_set(0)
-                            self._display_image(images[0])
-                            self.open_button.configure(state="normal")
-                        else:
-                            self._set_result_video(None)
-                            self.preview_photo = None
-                            self.image_label.configure(image="", text="出力なし")
-                            self.result_info.set("")
-                            self.result_tools.pack_forget()
-                            self.open_button.configure(state="disabled")
-                        self._log("生成完了: " + json.dumps(result.get("parameters", {}), ensure_ascii=False))
-                        if history_id is None:
-                            self.status.set("出力保存済み / 履歴未登録（未回収結果または長尺再開で回収）")
-                        else:
-                            self.status.set("動画生成完了" if any(is_video_output(p) for p in images) else "画像生成完了")
-                        self.tabs.select(0)
-                        self._refresh_history(select_id=history_id, scan_legacy=False)
-                elif kind == "error":
-                    self._log("ERROR: " + data)
-                    self.status.set("エラー: " + data[:110])
-                    messagebox.showerror("処理エラー", data)
-                elif kind == "idle":
-                    self._tick_timing(finished=True)
-                    self.working = False
-                    if hasattr(self, "project_workspace"):
-                        self.project_workspace.set_enabled(True)
-                        if self._project_visible:
-                            self._refresh_projects()
-                    for name in ("result_video", "history_video"):
-                        if hasattr(self, name):
-                            getattr(self, name).set_enabled(True)
-                    self.run_button.configure(state="normal")
-                    self.preview_button.configure(state="normal")
-                    self.cancel_button.configure(state="disabled")
-                    if hasattr(self, "free_memory_button"):
-                        self.free_memory_button.configure(state="normal")
-                    if hasattr(self, "recover_jobs_button"):
-                        self.recover_jobs_button.configure(state="normal")
-                    self.progress_bar.stop()
-                    self._history_selection_changed()
-        except queue.Empty:
-            pass
+                        self._set_result_video(None)
+                        self.preview_photo = None
+                        self.image_label.configure(image="", text="出力なし")
+                        self.result_info.set("")
+                        self.result_tools.pack_forget()
+                        self.open_button.configure(state="disabled")
+                    self._log("生成完了: " + json.dumps(result.get("parameters", {}), ensure_ascii=False))
+                    if history_id is None:
+                        self.status.set("出力保存済み / 履歴未登録（未回収結果または長尺再開で回収）")
+                    else:
+                        self.status.set("動画生成完了" if any(is_video_output(p) for p in images) else "画像生成完了")
+                    self.tabs.select(0)
+                    self._refresh_history(select_id=history_id, scan_legacy=False)
+            elif kind == "error":
+                self._log("ERROR: " + data)
+                self.status.set("エラー: " + data[:110])
+                messagebox.showerror("処理エラー", data)
+            elif kind == "idle":
+                self._tick_timing(finished=True)
+                self.tasks.finish()
+                if hasattr(self, "project_workspace"):
+                    self.project_workspace.set_enabled(True)
+                    if self._project_visible:
+                        self._refresh_projects()
+                for name in ("result_video", "history_video"):
+                    if hasattr(self, name):
+                        getattr(self, name).set_enabled(True)
+                self.run_button.configure(state="normal")
+                self.preview_button.configure(state="normal")
+                self.cancel_button.configure(state="disabled")
+                if hasattr(self, "free_memory_button"):
+                    self.free_memory_button.configure(state="normal")
+                if hasattr(self, "recover_jobs_button"):
+                    self.recover_jobs_button.configure(state="normal")
+                self.progress_bar.stop()
+                self._history_selection_changed()
         if self.root.winfo_exists():
             if self.working:
                 self._tick_timing()

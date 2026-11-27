@@ -78,11 +78,12 @@ class SharedLayoutTests(unittest.TestCase):
             gui.Application._overrides(fake)
 
     def test_same_prompt_reference_and_result_widgets_for_all_workflows(self):
-        source = inspect.getsource(gui.Application._build)
+        from comfy_orchestrator.generation_view import GenerationView
+        source = inspect.getsource(GenerationView.__init__)
         self.assertEqual(source.count("self.prompt = scrolledtext.ScrolledText("), 1)
         self.assertEqual(source.count("self.reference_row, _ = input_row"), 1)
         self.assertLess(source.index("self.prompt ="), source.index("self.reference_row,"))
-        self.assertEqual(source.count("self.tabs = ttk.Notebook("), 1)
+        self.assertEqual(inspect.getsource(gui.Application._build).count("self.tabs = ttk.Notebook("), 1)
         self.assertNotIn("日本語で指示を入力。", source)
         self.assertNotIn("T2Iは構図と光", source)
         self.assertNotIn("Seed空欄＝ランダム", source)

@@ -258,7 +258,8 @@ class ProjectWorkspaceTests(unittest.TestCase):
         self.assertIn('self.rewrite_button = ttk.Button(selection_bar,', source)
         self.assertIn('self.cut_prompt.pack(fill="both", expand=True', source)
         self.assertNotIn("新規計画を作成するか", source)
-        build = inspect.getsource(gui.Application._build)
+        from comfy_orchestrator.generation_view import GenerationView
+        build = inspect.getsource(GenerationView.__init__)
         self.assertNotIn('text="生成設定"', build)
         self.assertNotIn('self.resume_long_button', build)
 

@@ -6,7 +6,7 @@ from pathlib import Path
 from comfy_orchestrator import long_video, long_video_plan, project_store, video_media
 from comfy_orchestrator import prompt_edit, prompt_review
 from comfy_orchestrator import app_config, generation_form, history_presentation, gui
-from comfy_orchestrator import output_views, settings_ui, prompt_viewer
+from comfy_orchestrator import output_views, settings_ui, prompt_viewer, generation_view, task_controller
 from comfy_orchestrator.parameters import OrchestratorError
 
 
@@ -68,7 +68,7 @@ class ModuleBoundariesTests(unittest.TestCase):
             self.assertFalse(state["restore"] or state["request"] or state["use_as_source"])
 
     def test_ui_views_do_not_import_application(self):
-        for module in (output_views, settings_ui, prompt_viewer):
+        for module in (output_views, settings_ui, prompt_viewer, generation_view):
             tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
             for node in ast.walk(tree):
                 if isinstance(node, ast.ImportFrom):
@@ -79,7 +79,7 @@ class ModuleBoundariesTests(unittest.TestCase):
 
     def test_extracted_services_do_not_import_gui_or_long_video_runner(self):
         for module in (long_video_plan, project_store, video_media, prompt_review,
-                       generation_form, history_presentation, app_config):
+                       generation_form, history_presentation, app_config, task_controller):
             syntax = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
             for node in ast.walk(syntax):
                 if isinstance(node, ast.ImportFrom):

@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 
 from comfy_orchestrator import core, gui
 from comfy_orchestrator.history import HistoryStore
+from comfy_orchestrator.generation_view import GenerationView
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -60,12 +61,12 @@ class ResponsivenessTests(unittest.TestCase):
         canvas = Mock()
         canvas.bbox.return_value = (0, 0, 400, 600)
         app = SimpleNamespace(form_canvas=canvas, form_window="inner")
-        app._sync_form_scrollregion = lambda: gui.Application._sync_form_scrollregion(app)
+        app._sync_form_scrollregion = lambda: GenerationView._sync_form_scrollregion(app)
         for _ in range(100):
-            gui.Application._size_form_to_canvas(app, 400)
+            GenerationView._size_form_to_canvas(app, 400)
         canvas.itemconfigure.assert_called_once_with("inner", width=400)
         canvas.configure.assert_called_once_with(scrollregion=(0, 0, 400, 600))
-        gui.Application._size_form_to_canvas(app, 410)
+        GenerationView._size_form_to_canvas(app, 410)
         self.assertEqual(canvas.itemconfigure.call_count, 2)
         self.assertEqual(canvas.configure.call_count, 1)
 
