@@ -268,7 +268,7 @@ def _batched_plan(settings, request_fn, instance_id, system, payload, note, chec
 def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: int,
                       reference_only: bool = False, *, cut_frames=None, progress=None,
                       cancel_event=None, prompt_cache=None, release_comfy=True,
-                      overlap_frames=0, image=None) -> dict:
+                      overlap_frames=0, image=None, text_only=False) -> dict:
     """Plan text in one model session; large timelines use outline plus batches."""
     from . import core
     from .lmstudio import LMStudio, _request, read_json_reply
@@ -286,10 +286,11 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
     windows = segment_windows(frames, seconds, cut_frames=cut_frames, overlap_frames=overlap_frames)
     count = len(windows)
     check_cancel()
-    if h3_prompt.enabled(config.get("llm", {})):
+    if text_only or h3_prompt.enabled(config.get("llm", {})):
         return h3_prompt.plan_long(config, request, windows, reference_only, image=image,
                                    progress=progress, cancel_event=cancel_event,
-                                   prompt_cache=prompt_cache, release_comfy=release_comfy)
+                                   prompt_cache=prompt_cache, release_comfy=release_comfy,
+                                   text_only=text_only)
     if not request.strip():
         # Preserve the existing image-only option, which needs no LLM.
         return validate_prompt_plan({

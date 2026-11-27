@@ -38,7 +38,7 @@ from .prompt_cache import PromptCache, CACHE_ERRORS
 from .long_video import (LONG_VIDEO_ID, LONG_TARGETS, LongVideoStore, LongVideoPaused,
                          FFmpeg, continuation_model, segment_plan, edit_project, restore_project_plan,
                          first_changed_cut, project_generation_inputs, project_cut_lengths,
-                         connection_changed_from, manifest_windows)
+                         connection_changed_from, manifest_windows, long_generation_model)
 from .timeline import (plan_long_prompts, CUSTOM_CUTS, validate_cut_frames,
                        CONTINUATION_OVERLAP_FRAMES, GUIDE_CONNECTION_FRAMES,
                        default_cut_frames, generation_frames_for_cuts, format_cut_seconds)
@@ -1794,6 +1794,7 @@ class Application:
             seconds = p.pop("long_seconds", 0)
             self._preferred_long_project_id = p.pop("long_run_id", None)
             p.pop("long_prompt_plan", None)
+            p.pop("long_text_only", None)
             cuts = p.pop("long_cut_frames", None)
             p["frames"] = p.pop("long_segment_frames", 124)
             entry = replace(entry, workflow_id=core.H3_I2V_ID, parameters=p)
@@ -2880,7 +2881,8 @@ class Application:
         if not self._save_settings():
             return
         prompt = self.prompt.get("1.0", "end").strip()
-        image = Path(self.reference_image.get()).expanduser() if self.reference_image.get() else None
+        source_text = self.reference_image.get().strip()
+        image = Path(source_text).expanduser() if source_text else None
         composition = (
             Path(self.composition_image.get()).expanduser()
             if self.composition_image.get() else None
@@ -2894,7 +2896,9 @@ class Application:
         kind = self.config["workflows"][selected]["kind"]
         is_video = kind in core.VIDEO_KINDS
         mask, pose, composition = active_aux_inputs(kind, mask, pose, composition)
-        if kind == "i2v" and (image is None or image.suffix.lower() not in IMAGE_EXTENSIONS):
+        continuous = self.generation_mode.get() == "continuous"
+        text_only_long = continuous and selected == core.H3_I2V_ID and image is None
+        if kind == "i2v" and not text_only_long and (image is None or image.suffix.lower() not in IMAGE_EXTENSIONS):
             messagebox.showerror("I2V", "参照画像を1枚指定してください")
             return
         if not prompt and not core.supports_empty_i2v_request(
@@ -2961,8 +2965,7 @@ class Application:
                 messagebox.showerror("連続動画生成", "MiniMax H3を選択してください")
                 return
             try:
-                if overrides.get("h3_model") is not None:
-                    continuation_model(overrides["h3_model"])
+                overrides = long_generation_model(overrides, text_only=text_only_long)
                 overlap_frames = preferred_connection_frames(connection_frames(self.h3_connection.get()))
                 self.h3_connection.set(connection_label(overlap_frames))
                 cut_frames = None
@@ -2978,10 +2981,11 @@ class Application:
                 else:
                     long_seconds = LONG_TARGETS.get(self.h3_long_target.get(), 0)
                     frames = segment_plan(long_seconds, overrides["frames"])
-                if image is None or not image.is_file():
-                    raise core.OrchestratorError("長尺生成の参照画像がありません")
-                if image.stat().st_size > 40 * 1024 * 1024:
-                    raise core.OrchestratorError("参照画像は40MB以下にしてください")
+                if image is not None:
+                    if not image.is_file():
+                        raise core.OrchestratorError("長尺生成の参照画像がありません")
+                    if image.stat().st_size > 40 * 1024 * 1024:
+                        raise core.OrchestratorError("参照画像は40MB以下にしてください")
                 media = None  # Planning does not require FFmpeg or model preflight.
             except (OSError, core.OrchestratorError) as exc:
                 messagebox.showerror("長尺生成", str(exc))
@@ -3050,7 +3054,8 @@ class Application:
         self.prompt.delete("1.0", "end")
         self.prompt.insert("1.0", manifest["request"])
         self.prompt.edit_reset()
-        self.reference_image.set(str(self.long_video_store.asset(manifest, manifest["source"])))
+        source = self.long_video_store.source_asset(manifest)
+        self.reference_image.set(str(source) if source is not None else "")
         self.h3_model.set(core.h3_model_label(p.get("h3_model", "int8")))
         self.h3_turbo.set(core.H3_TURBO_LABELS.get(p.get("h3_turbo", "off"), "OFF"))
         self.h3_performance.set(core.H3_PERFORMANCE_LABELS.get(
@@ -3083,7 +3088,9 @@ class Application:
         try:
             manifest = self.long_video_store.load(self.long_video_store.folder(run_id) / "manifest.json")
         except (OSError, ValueError, KeyError, TypeError, core.OrchestratorError):
-            if not entry.parameters.get("long_prompt_plan") or not entry.reference_image or not entry.reference_image.is_file():
+            text_only = entry.parameters.get("long_text_only") is True
+            if (not entry.parameters.get("long_prompt_plan") or
+                    (not text_only and (not entry.reference_image or not entry.reference_image.is_file()))):
                 messagebox.showerror("履歴復元", "元の長尺プロジェクト記録と復元に必要な計画または参照画像がありません。")
                 return
             if not messagebox.askyesno("履歴復元", "元のプロジェクト記録がありません。"
@@ -3109,16 +3116,18 @@ class Application:
     def _start_long_prompt_plan(self, cfg, prompt, image, overrides, seconds, frames,
                                 media, cache, dry_run, profile, *, cut_frames=None,
                                 overlap_frames=GUIDE_CONNECTION_FRAMES):
+        text_only = image is None
+        overrides = long_generation_model(overrides, text_only=text_only)
         reference_only = core.h3_ref2va_filename(overrides.get("h3_model")) is not None
-        self._set_busy("長尺プロンプト計画中")
+        self._set_busy("長尺プロンプト計画中（T2VA開始）" if text_only else "長尺プロンプト計画中")
 
         def task():
             try:
                 with tempfile.TemporaryDirectory(prefix="asobiba-long-") as temporary:
-                    source = copy_frozen_asset(image, Path(temporary), "source")
+                    source = copy_frozen_asset(image, Path(temporary), "source") if image is not None else None
                     plan = plan_long_prompts(
                         cfg, prompt, frames, seconds, reference_only, cut_frames=cut_frames,
-                        overlap_frames=overlap_frames, image=source,
+                        overlap_frames=overlap_frames, image=source, text_only=text_only,
                         progress=lambda line: self.messages.put(("progress", line)),
                         cancel_event=self.stop_event, prompt_cache=cache, release_comfy=True,
                     )
@@ -3177,12 +3186,14 @@ class Application:
         inputs_changed = False
         boundary = None
         if action.action in ("generate", "generate_join"):
-            if not self.reference_image.get().strip():
-                raise core.OrchestratorError("左側で参照画像を指定してください")
-            overrides = self._h3_overrides()
+            source_text = self.reference_image.get().strip()
+            text_only = manifest["source"] is None
+            if text_only != (not source_text):
+                raise core.OrchestratorError("参照画像の有無を変える場合は新規計画を作成してください")
+            overrides = long_generation_model(self._h3_overrides(), text_only=text_only)
             if "seed" not in overrides:
                 overrides["seed"] = secrets.randbits(32)
-            source = Path(self.reference_image.get()).expanduser()
+            source = Path(source_text).expanduser() if source_text else None
             effective, source, inputs_changed = project_generation_inputs(
                 self.long_video_store, manifest, overrides=overrides, source=source)
             overlap_frames = connection_frames(self.h3_connection.get())
@@ -3246,7 +3257,8 @@ class Application:
             if action.action != "join" and len(updated["segments"]) < len(updated["plan"]):
                 guides = max((w.get("guide_frames", 0) for w in manifest_windows(updated)[len(updated["segments"]):]), default=0)
                 preflight_long(cfg, CONFIG, updated["overrides"], updated["plan"], cancel_event=self.stop_event,
-                               guide_frame_count=guides)
+                               guide_frame_count=guides,
+                               text_only_h3=updated["source"] is None and not updated["segments"])
             return self._complete_long_video(
                 updated, cfg, media, cache, join_only=action.action == "join",
                 auto_join=action.action != "generate",

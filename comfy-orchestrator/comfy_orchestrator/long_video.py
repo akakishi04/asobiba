@@ -108,6 +108,16 @@ def continuation_model(model: str) -> str:
     return key
 
 
+def long_generation_model(overrides, *, text_only=False):
+    """A no-image opening uses the same Hybrid weight in its base mode."""
+    p = dict(overrides)
+    if p.get("h3_model") is not None:
+        following = continuation_model(p["h3_model"])
+        if text_only:
+            p["h3_model"] = following
+    return p
+
+
 def continuation_parameters(first: dict, index: int, frames: int) -> dict:
     p = dict(first)
     model = p.get("h3_model")
@@ -128,7 +138,8 @@ def continuation_parameters(first: dict, index: int, frames: int) -> dict:
 
 
 def planned_segment_parameters(base: dict, prompt_plan: dict, index: int, frames: int,
-                               *, lead_in_frames=0, guide_frames=0, kept_frames=None) -> dict:
+                               *, lead_in_frames=0, guide_frames=0, kept_frames=None,
+                               text_only=False) -> dict:
     """Apply only the approved prompt for this interval, including segment zero."""
     p = dict(base)
     model = p.get("h3_model")
@@ -142,6 +153,7 @@ def planned_segment_parameters(base: dict, prompt_plan: dict, index: int, frames
         p["positive_prompt"] = h3_prompt.compile_cut(
             prompt_plan, index, index == 0 and core.h3_ref2va_filename(model) is not None,
             kept_frames=kept_frames, trim_frames=lead_in_frames, guide_frames=guide_frames,
+            text_only=text_only and index == 0,
         )
         core.check_param("seed", p["seed"])
         return p
@@ -168,7 +180,7 @@ def planned_segment_parameters(base: dict, prompt_plan: dict, index: int, frames
     return p
 
 
-def validate_structured_timing(prompt_plan, windows, overrides):
+def validate_structured_timing(prompt_plan, windows, overrides, *, text_only=False):
     """Fail before creating a revision or submitting any generation job."""
     if prompt_plan is None or prompt_plan.get("format") != h3_prompt.FORMAT:
         return
@@ -178,7 +190,8 @@ def validate_structured_timing(prompt_plan, windows, overrides):
             h3_prompt.compile_cut(prompt_plan, i, reference_only and i == 0,
                                   kept_frames=w["output_frames"],
                                   trim_frames=w["trim_start_frames"],
-                                  guide_frames=w.get("guide_frames", 0))
+                                  guide_frames=w.get("guide_frames", 0),
+                                  text_only=text_only and i == 0)
         except core.OrchestratorError as exc:
             raise core.OrchestratorError(f"カット{i+1}: {exc}") from exc
 
@@ -370,14 +383,15 @@ class LongVideoStore:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
 
-    def create(self, backend: str, request: str, source: Path, overrides: dict,
+    def create(self, backend: str, request: str, source: Path | None, overrides: dict,
                seconds: int | float, profile=None, *, prompt_plan=None, cut_frames=None,
                draft=False, overlap_frames=0) -> dict:
-        p = dict(overrides)
+        text_only = source is None
+        if text_only and (not request.strip() or not isinstance(prompt_plan, dict)
+                          or prompt_plan.get("format") != h3_prompt.FORMAT):
+            raise core.OrchestratorError("参照画像なしの長尺生成には自然文とH3公式形式の計画が必要です")
+        p = long_generation_model(overrides, text_only=text_only)
         core.validate_h3_video_parameters(p)
-        model = p.get("h3_model")
-        if model is not None:
-            continuation_model(model)
         overlap_frames = validate_overlap_frames(overlap_frames)
         if cut_frames is not None:
             cut_frames = validate_cut_frames(cut_frames)
@@ -389,19 +403,22 @@ class LongVideoStore:
         plan = [w["generation_frames"] for w in windows]
         if prompt_plan is not None:
             prompt_plan = validate_prompt_plan(prompt_plan, len(plan))
-            validate_structured_timing(prompt_plan, windows, p)
+            validate_structured_timing(prompt_plan, windows, p, text_only=text_only)
         p.setdefault("seed", secrets.randbits(32))
-        source = Path(source)
-        if not source.is_file() or source.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
-            raise core.OrchestratorError("長尺生成の参照画像がありません")
-        if source.stat().st_size > 40 * 1024 * 1024:
-            raise core.OrchestratorError("参照画像は40MB以下にしてください")
+        if source is not None:
+            source = Path(source)
+            if not source.is_file() or source.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+                raise core.OrchestratorError("長尺生成の参照画像がありません")
+            if source.stat().st_size > 40 * 1024 * 1024:
+                raise core.OrchestratorError("参照画像は40MB以下にしてください")
         run_id = str(uuid.uuid4())
         folder = self.folder(run_id)
         folder.mkdir()
         try:
-            name = "source" + source.suffix.lower()
-            save_snapshot(source, folder / name, self.root.parent / "asset_pool")
+            name = None
+            if source is not None:
+                name = "source" + source.suffix.lower()
+                save_snapshot(source, folder / name, self.root.parent / "asset_pool")
             manifest = {"schema": 1, "run_id": run_id, "backend": backend.rstrip("/"),
                         "request": request, "profile": profile, "source": name,
                         "overrides": p, "seconds": seconds, "plan": plan,
@@ -430,6 +447,12 @@ class LongVideoStore:
         manifest_schedule(manifest)
         if "prompt_plan" in manifest:
             manifest["prompt_plan"] = validate_prompt_plan(manifest["prompt_plan"], len(manifest["plan"]))
+        if manifest["source"] is None:
+            if (not manifest["request"].strip() or manifest.get("prompt_plan", {}).get("format") != h3_prompt.FORMAT
+                    or core.h3_ref2va_filename(manifest["overrides"].get("h3_model")) is not None):
+                raise core.OrchestratorError("参照なし長尺プロジェクトの記録が不正です")
+        elif not isinstance(manifest["source"], str) or not manifest["source"]:
+            raise core.OrchestratorError("長尺プロジェクトの参照画像記録が不正です")
         if not isinstance(manifest["segments"], list) or len(manifest["segments"]) > len(manifest["plan"]):
             raise core.OrchestratorError("長尺区間記録が不正です")
         seeds = manifest.get("cut_seeds")
@@ -449,6 +472,10 @@ class LongVideoStore:
             except (OSError, ValueError, KeyError, TypeError, core.OrchestratorError):
                 continue
         return [m for _, m in sorted(result, key=lambda item: item[0], reverse=True)]
+
+    def source_asset(self, manifest) -> Path | None:
+        name = manifest["source"]
+        return None if name is None else self.asset(manifest, name)
 
     def asset(self, manifest, name) -> Path:
         folder = self.folder(manifest["run_id"])
@@ -501,6 +528,7 @@ def project_generation_inputs(store, manifest, *, overrides=None, source=None):
     plan exists, the right editor owns its frame-accurate cut lengths.
     """
     old = manifest["overrides"]
+    saved_source = store.source_asset(manifest)
     p = dict(old)
     if overrides is not None:
         # Remove old optional model-specific selections when the new model
@@ -514,11 +542,12 @@ def project_generation_inputs(store, manifest, *, overrides=None, source=None):
         core.check_param("seed", p["seed"])
         _, options = core.split_h3_options(p, enabled=True)
         if options:
-            continuation_model(options["h3_model"])
-    saved_source = store.asset(manifest, manifest["source"])
+            p = long_generation_model(p, text_only=saved_source is None)
     selected = saved_source
     source_changed = False
     if source is not None:
+        if saved_source is None:
+            raise core.OrchestratorError("参照画像の有無を変える場合は新規計画を作成してください")
         selected = Path(source).expanduser().resolve()
         if not selected.is_file() or selected.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
             raise core.OrchestratorError("左側で有効な参照画像を指定してください")
@@ -560,7 +589,7 @@ def edit_project(store, manifest, journal, prompt_plan, cut_frames, *, regenerat
     new_cuts = manifest.get("cut_frames") if same_schedule else cuts
     new_windows = schedule_windows(new_seconds, effective["frames"], new_cuts,
                                    overlap_frames=overlap)
-    validate_structured_timing(approved, new_windows, effective)
+    validate_structured_timing(approved, new_windows, effective, text_only=selected_source is None)
     old_windows = manifest_windows(manifest)
     boundary = connection_changed_from(manifest, cuts, overlap)
     if boundary is not None:
@@ -634,8 +663,13 @@ def restore_project_plan(store, entry, fallback_backend):
     params = dict(entry.parameters)
     approved = params.get("long_prompt_plan")
     source = entry.reference_image
-    if approved is None or source is None or not source.is_file():
+    text_only = params.get("long_text_only") is True
+    if approved is None or (not text_only and (source is None or not source.is_file())):
         raise core.OrchestratorError("履歴に計画または参照画像が保存されていません")
+    if text_only:
+        if source is not None:
+            raise core.OrchestratorError("履歴の参照なし設定が不正です")
+        source = None
     base = params.get("long_base_overrides")
     if base is None:
         base = {k: v for k, v in params.items() if not k.startswith("long_") and k != "positive_prompt"}
@@ -758,10 +792,14 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
     prompt_plan = None
     if "prompt_plan" in manifest:
         prompt_plan = validate_prompt_plan(manifest["prompt_plan"], len(plan))
-        validate_structured_timing(prompt_plan, windows, p)
+        validate_structured_timing(prompt_plan, windows, p, text_only=manifest["source"] is None)
     folder = store.folder(manifest["run_id"])
-    source = store.asset(manifest, manifest["source"])
-    if not source.is_file():
+    source = store.source_asset(manifest)
+    if source is None:
+        if (not manifest["request"].strip() or prompt_plan is None or prompt_plan.get("format") != h3_prompt.FORMAT
+                or core.h3_ref2va_filename(p.get("h3_model")) is not None):
+            raise core.OrchestratorError("参照なし長尺プロジェクトの計画が不正です")
+    elif not source.is_file():
         raise core.OrchestratorError("長尺生成の元画像がありません")
     if join_only and len(manifest["segments"]) != len(plan):
         raise core.OrchestratorError("全カット生成後に結合してください")
@@ -811,7 +849,7 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
                 scratch = tempfile.TemporaryDirectory(prefix="guide-", dir=folder) if guide_count else nullcontext(None)
                 with scratch as temporary:
                     image = source
-                    extra = {}
+                    extra = {"text_only_h3": True} if i == 0 and source is None else {}
                     if i:
                         anchor_frames = continuation_anchor_count(windows[i - 1], windows[i])
                         if guide_count:
@@ -833,6 +871,7 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
                         lead_in_frames=(windows[i]["trim_start_frames"]
                                         if overlap or prompt_plan.get("format") == h3_prompt.FORMAT else 0),
                         guide_frames=guide_count, kept_frames=windows[i]["output_frames"],
+                        text_only=i == 0 and source is None,
                     )
                     if manifest.get("cut_seeds") is not None:
                         params["seed"] = manifest["cut_seeds"][i]
@@ -915,6 +954,8 @@ def run_long_video(store, manifest, config, config_path, journal, output_dir,
     first = dict(manifest["first_parameters"])
     first.update(frames=target_frames, long_segment_frames=p["frames"],
                  long_seconds=manifest["seconds"], long_run_id=manifest["run_id"])
+    if source is None:
+        first["long_text_only"] = True
     if cut_frames is not None:
         first["long_cut_frames"] = cut_frames
     if overlap:

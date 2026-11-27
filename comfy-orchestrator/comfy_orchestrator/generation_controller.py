@@ -176,7 +176,7 @@ class GenerationController:
             return manifest["run_id"]
         existing = self.history_store.find_by_prompt_id(result["prompt_id"])
         history_id = existing.id if existing else self.record(
-            result, [video], manifest["request"], store.asset(manifest, manifest["source"]),
+            result, [video], manifest["request"], store.source_asset(manifest),
             prompt_profile=manifest.get("profile"),
         )
         return result, [video], history_id

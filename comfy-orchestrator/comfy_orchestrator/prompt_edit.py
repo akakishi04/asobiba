@@ -163,6 +163,7 @@ def cut_context(manifest, plan, cuts, index):
         "cut": index + 1, "retained_seconds": cuts[index] / 24,
         "retained_frames": cuts[index], "guide_frames": w.get("guide_frames", 0),
         "trim_frames": w["trim_start_frames"], "reference_only": ref,
+        "text_only": index == 0 and manifest["source"] is None,
     }
 
 
@@ -179,7 +180,7 @@ def _compile_cut(value, official, context, common):
                                       later_cut=context["cut"] > 1)
         hp.compile_prompt(fields, ref, common=common, kept_frames=context["retained_frames"],
                           trim_frames=context["trim_frames"], guide_frames=context["guide_frames"],
-                          later_cut=context["cut"] > 1)
+                          later_cut=context["cut"] > 1, text_only=context.get("text_only", False))
         text = hp.section_text(fields, ref)
         if len(text) > 5000:
             raise OrchestratorError("H3カットのプロンプトが長すぎます")
@@ -235,7 +236,9 @@ def _english_cut(client, instance, context, common, official, operation, japanes
         system += "\nRendering/motion preset (user instructions take priority):\n" + style
     if official:
         ref = context["reference_only"]
-        system += "\n" + hp.POLICY + "\n" + (hp.REF_POLICY if ref else hp.BASE_POLICY)
+        system += "\n" + hp.POLICY + "\n" + (
+            hp.T2VA_POLICY if context.get("text_only") else hp.REF_POLICY if ref else hp.BASE_POLICY
+        )
         if context["cut"] > 1:
             system += "\nUse three base fields and no Picture/Subject/Video/Audio labels. The host adds continuity and shifts cut-local times."
         schema = hp.schema(ref)
@@ -313,7 +316,7 @@ def edit_prompts(config, manifest, plan, cuts, index, operation, cache, *,
             if text.strip():
                 hp.compile_cut(after, index, context["reference_only"],
                                kept_frames=context["retained_frames"], trim_frames=context["trim_frames"],
-                               guide_frames=context["guide_frames"])
+                               guide_frames=context["guide_frames"], text_only=context.get("text_only", False))
         # Review the actual new English rather than echoing the user's Japanese.
         result = {}
         for kind in ("common", "cut"):

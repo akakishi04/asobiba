@@ -467,8 +467,9 @@ class ProjectWorkspace(ttk.Frame):
             method = ("ガイド 最大22f" if overlap == GUIDE_CONNECTION_FRAMES
                       else f"旧助走 最大{overlap}f" if overlap else "従来接続")
             prompt_format = " · H3公式形式" if d.original and d.original.get("format") == H3_OFFICIAL_FORMAT else ""
+            opening = " · T2VA開始" if d.manifest["source"] is None else ""
             self.summary.set(f"{len(d.cuts)}カット / {format_cut_seconds(sum(d.cuts))}秒 / "
-                             f"有効 {d.valid_prefix()}件 · {status} · {method}{prompt_format}")
+                             f"有効 {d.valid_prefix()}件 · {status} · {method}{prompt_format}{opening}")
         finally:
             self._updating = False
         self._states()

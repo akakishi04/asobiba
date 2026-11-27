@@ -59,7 +59,8 @@ def early_preflight(comfy, config, config_path, workflows, parameters, h3_option
         preflight(comfy, config, workflow_id, entry, template, checkpoint_options)
 
 
-def preflight_long(config, config_path, overrides, frames, *, cancel_event=None, guide_frame_count=0):
+def preflight_long(config, config_path, overrides, frames, *, cancel_event=None, guide_frame_count=0,
+                   text_only_h3=False):
     """Check both H3 reference modes before generating a lengthy prompt plan."""
     from . import core
     from .long_video import continuation_model
@@ -84,6 +85,12 @@ def preflight_long(config, config_path, overrides, frames, *, cancel_event=None,
         effective = {**defaults, **params, "frames": max(sizes)}
         template = build_template(config_path, entry, core.H3_I2V_ID, effective, variant, {}, final=True)
         preflight(comfy, config, core.H3_I2V_ID, entry, template, {})
+    if text_only_h3:
+        check_cancel(cancel_event)
+        effective = {**defaults, **params, "frames": sizes[0]}
+        template = build_template(config_path, entry, core.H3_I2V_ID, effective, variants[0], {}, final=True)
+        preflight(comfy, config, core.H3_I2V_ID, entry,
+                  core.prepare_h3_text_workflow(template, entry["bindings"]), {})
     if guide_frame_count:
         if guide_frame_count not in GUIDE_LENGTHS:
             raise OrchestratorError("長尺ガイドの長さが不正です")

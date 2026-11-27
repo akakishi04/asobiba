@@ -283,3 +283,32 @@ def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None =
         graph["9"]["inputs"].update(scheduler="simple", steps=steps, denoise=1)
         graph["17"]["inputs"]["sampler_name"] = "euler" if ref_model is not None else "res_multistep"
     return graph
+
+
+def prepare_h3_text_workflow(template: dict, bindings: dict) -> dict:
+    """Use the native base node without first/last-frame conditioning.
+
+    Called only for the explicitly text-only first cut of a long project.
+    Preserve all model, CLIP, sampler and audio wiring.
+    """
+    graph = copy.deepcopy(template)
+    image = bindings.get("image", {})
+    loader = image.get("node")
+    cond = graph.get("104", {})
+    inputs = cond.get("inputs", {})
+    if (cond.get("class_type") != "MiniMaxH3ImageToVideo"
+            or not isinstance(loader, str)
+            or graph.get(loader, {}).get("class_type") != "LoadImage"
+            or image.get("input") != "image"
+            or inputs.get("first_frame") != [loader, 0]
+            or "last_frame" in inputs):
+        raise OrchestratorError("画像なしの長尺生成には標準H3の開始フレーム用ワークフローが必要です")
+    inputs.pop("first_frame")
+    # A custom graph might also use the image as another condition; reject
+    # that rather than accidentally leave an unprovided image dependency.
+    for node_id, node in graph.items():
+        if node_id != loader and any(isinstance(v, list) and len(v) == 2 and v[0] == loader
+                                     for v in node.get("inputs", {}).values()):
+            raise OrchestratorError("H3ワークフローに別の画像依存が残っています")
+    graph.pop(loader)
+    return graph

@@ -55,6 +55,7 @@ from .h3 import (
     ensure_h3_reference_prompt,
     split_h3_options,
     prepare_h3_workflow,
+    prepare_h3_text_workflow,
 )
 
 
@@ -1031,7 +1032,7 @@ def execute_saved(
     progress: Callable[[str], None] | None = None, cancel_event: Any = None,
     mask_image: Path | None = None, pose_image: Path | None = None,
     job_journal: JobJournal | None = None, job_context: dict | None = None,
-    guide_images=(),
+    guide_images=(), text_only_h3=False,
 ) -> dict:
     """Replay exact validated workflow inputs, without invoking or loading an LLM.
 
@@ -1042,7 +1043,18 @@ def execute_saved(
         raise OrchestratorError(f"保存されたワークフローが未登録です: {workflow_id}")
     if not isinstance(parameters, dict):
         raise OrchestratorError("保存された生成パラメータが不正です")
-    selected = config["workflows"][workflow_id]
+    registered = config["workflows"][workflow_id]
+    selected = registered
+    if text_only_h3:
+        if (workflow_id != H3_I2V_ID or reference_image is not None
+                or mask_image is not None or pose_image is not None or guide_images
+                or "image" not in registered["bindings"]):
+            raise OrchestratorError("画像なし生成はH3の参照なし開始カット専用です")
+        # Validate and render against a derived binding set, but load the
+        # registered graph normally before removing its image condition.
+        selected = {**registered, "bindings": {
+            k: v for k, v in registered["bindings"].items() if k != "image"
+        }}
     bindings = selected["bindings"]
     required = IMAGE_INPUTS.intersection(bindings)
     if required != supplied_inputs(reference_image, mask_image, pose_image):
@@ -1072,8 +1084,10 @@ def execute_saved(
         {"workflow_id": workflow_id, "parameters": copied},
         {workflow_id: selected}, has_image,
     )
-    template = build_template(config_path, selected, workflow_id, params, h3_options,
+    template = build_template(config_path, registered, workflow_id, params, h3_options,
                               checkpoint_options, final=True)
+    if text_only_h3:
+        template = prepare_h3_text_workflow(template, registered["bindings"])
     if cancel_event is not None and cancel_event.is_set():
         raise OrchestratorError("再生成開始前に中止しました")
 
@@ -1084,6 +1098,10 @@ def execute_saved(
     record_model_event("comfy_preserve_jobs")
     if progress:
         progress("保存済みのプロンプトと生成設定を復元（LLMは使用しません）")
+        if text_only_h3:
+            progress("H3 T2VA: 参照画像を使用せず最初のカットを生成")
+    if text_only_h3:
+        job_context = {**(job_context or {}), "text_only_h3": True}
     return submit_prepared(
         comfy, workflow_id, selected, template, params, {**params, **h3_options, **checkpoint_options},
         reference_image=reference_image, mask_image=mask_image, pose_image=pose_image,

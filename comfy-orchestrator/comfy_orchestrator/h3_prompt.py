@@ -73,6 +73,13 @@ then style, composition, visible subject and scene anchors, action progression a
 camera/audio. The host writes the exact first-frame alignment instruction.
 Do not write that instruction yourself. The opening image is a concrete first frame."""
 
+T2VA_POLICY = """Base T2VA: no source image or other reference assets exist for this initial clip.
+integrated_multimodal_description starts with [Shot 1] and establishes the requested
+subject, appearance, visual medium, setting, lighting and camera composition in
+concrete terms, followed by the action and its ending state. Fill only details
+needed to make the user's scene coherent. No Picture, Subject, Video or Audio
+reference labels and no first-frame alignment instruction. The first generated
+clip establishes the visual continuity for subsequent clips."""
 REF_POLICY = """Ref2VA: the one input image is a visual reference, not automatically
 the opening frame. Return six fields. In subject_definitions define each used
 <Subject N> on its own line, citing the source <Picture 1>; a standalone
@@ -239,14 +246,17 @@ def validate_common(common):
 
 
 def compile_prompt(value, reference_only, *, common="", kept_frames=None, trim_frames=0,
-                   guide_frames=0, later_cut=False):
+                   guide_frames=0, later_cut=False, text_only=False):
     """Render canonical section order; insert runtime timing inside the body.
 
     Native AddGuide supplies latent visual conditioning, not a numbered Ref2VA
     asset. The guide adaptation deliberately uses the base body without an
     unsupported Picture/Video alignment instruction.
     """
-    value = validate_sections(value, reference_only, kept_frames=kept_frames, later_cut=later_cut)
+    if text_only and (reference_only or later_cut or trim_frames or guide_frames):
+        raise _bad("T2VAは参照なしの最初のカット専用です")
+    value = validate_sections(value, reference_only, kept_frames=kept_frames,
+                              later_cut=later_cut or text_only)
     common = validate_common(common)
     key = "detailed_description" if reference_only else BASE_FIELDS[0]
     body = value[key]
@@ -272,18 +282,20 @@ def compile_prompt(value, reference_only, *, common="", kept_frames=None, trim_f
         body = body[:marker] + " " + " ".join(constraints) + " " + body[marker:].lstrip()
     value[key] = body
     prompt = section_text(value, reference_only)
-    if not reference_only and not guide_frames:
+    if not reference_only and not guide_frames and not text_only:
         prompt = I2VA_HEADER + "\n\n" + prompt
     check_param("positive_prompt", prompt)
     return prompt
 
 
-def compile_cut(plan, index, reference_only, *, kept_frames=None, trim_frames=0, guide_frames=0):
+def compile_cut(plan, index, reference_only, *, kept_frames=None, trim_frames=0, guide_frames=0,
+                text_only=False):
     fields, stored_ref = parse_sections(plan["segments"][index])
     if stored_ref != reference_only:
         raise _bad("開始カットの参照方式が変わりました。対応するH3形式へ編集するか新規計画を作成してください")
     return compile_prompt(fields, reference_only, common=plan["common"], kept_frames=kept_frames,
-                          trim_frames=trim_frames, guide_frames=guide_frames, later_cut=index > 0)
+                          trim_frames=trim_frames, guide_frames=guide_frames, later_cut=index > 0,
+                          text_only=text_only)
 
 
 def default_sections(reference_only):
@@ -315,12 +327,20 @@ def _reply(client, instance_id, system, user_content, response_schema, name, val
     feedback = ""
     for attempt in range(2):
         _check_cancel(cancel_event)
-        reply = _request(client.settings, "/v1/chat/completions", {
-            "model": instance_id, "messages": [{"role": "system", "content": system + feedback},
-                                              {"role": "user", "content": user_content}],
-            "stream": False, "temperature": 0.2, "max_tokens": client.settings.get("max_tokens", 4096),
-            "response_format": {"type": "json_schema", "json_schema": {"name": name, "schema": response_schema}},
-        })
+        max_tokens = client.settings.get("max_tokens", 4096)
+        try:
+            reply = _request(client.settings, "/v1/chat/completions", {
+                "model": instance_id, "messages": [{"role": "system", "content": system + feedback},
+                                                  {"role": "user", "content": user_content}],
+                "stream": False, "temperature": 0.2, "max_tokens": max_tokens,
+                "response_format": {"type": "json_schema", "json_schema": {"name": name, "schema": response_schema}},
+            })
+        except OrchestratorError as exc:
+            # Distinguish which request failed; never conflate the planning
+            # batch, visual observation, rewrite and Japanese review.
+            raise OrchestratorError(
+                f"H3 {name}（試行{attempt+1} / 出力上限{max_tokens} tokens）: {exc}"
+            ) from exc
         _check_cancel(cancel_event)
         try:
             return validator(read_json_reply(reply, "H3 " + name))
@@ -370,12 +390,14 @@ def observe_reference(client, instance_id, image, progress=None, cancel_event=No
     return observed
 
 
-def _system(workflows, settings, reference_only):
+def _system(workflows, settings, reference_only, *, text_only=False):
     from .prompt_profiles import H3_PROFILE_INSTRUCTIONS, DEFAULT_H3_PROFILE
     style = H3_PROFILE_INSTRUCTIONS.get(settings.get("h3_prompt_profile", DEFAULT_H3_PROFILE), "")
     return ("You are a local MiniMax H3 audiovisual prompt writer. "
             "Explicit user directions take precedence over style-preset defaults. "
-            + style + "\n\n" + POLICY + "\n" + (REF_POLICY if reference_only else BASE_POLICY)
+            + style + "\n\n" + POLICY + "\n" + (
+                T2VA_POLICY if text_only else REF_POLICY if reference_only else BASE_POLICY
+            )
             + ("\nThe preset controls rendering and motion; do not force the reference's pose, composition, "
                "background or framing unless requested." if reference_only else ""))
 
@@ -404,8 +426,9 @@ def interpret_single(client, text, workflows, image, progress=None):
         client.unload_selected(instance_id, progress)
 
 
-def _window_payload(window, ref):
-    return {"cut": window["index"], "mode": "Ref2VA" if ref else "I2VA/base",
+def _window_payload(window, ref, *, text_only=False):
+    return {"cut": window["index"], "mode": "T2VA" if text_only and window["index"] == 1
+            else "Ref2VA" if ref else "I2VA/base",
             "global_start_seconds": round(window["start_frame"] / 24, 3),
             "global_end_seconds": round(window["end_frame"] / 24, 3),
             "retained_seconds": round(window["output_frames"] / 24, 3),
@@ -423,7 +446,7 @@ def _batch_schema(batch, first_ref, include_common):
             "additionalProperties": False}
 
 
-def _validate_batch(value, batch, first_ref, common=None):
+def _validate_batch(value, batch, first_ref, common=None, *, text_only=False):
     expect = {"segments", "common"} if common is None else {"segments"}
     if set(value) != expect or not isinstance(value["segments"], dict):
         raise _bad("長尺カットのJSON形式が不正です")
@@ -440,13 +463,14 @@ def _validate_batch(value, batch, first_ref, common=None):
                                   kept_frames=w["output_frames"], later_cut=w["index"] > 1)
         compile_prompt(fields, ref, common=common, kept_frames=w["output_frames"],
                        trim_frames=w.get("trim_start_frames", int(w["index"] > 1)),
-                       guide_frames=w.get("guide_frames", 0), later_cut=w["index"] > 1)
+                       guide_frames=w.get("guide_frames", 0), later_cut=w["index"] > 1,
+                       text_only=text_only and w["index"] == 1)
         segments.append(section_text(fields, ref))
     return common, segments
 
 
 def plan_long(config, request, windows, reference_only, *, image=None, progress=None,
-              cancel_event=None, prompt_cache=None, release_comfy=True):
+              cancel_event=None, prompt_cache=None, release_comfy=True, text_only=False):
     from . import core
     from .lmstudio import LMStudio
     from .prompt_cache import CACHE_ERRORS, make_cache_key
@@ -458,6 +482,8 @@ def plan_long(config, request, windows, reference_only, *, image=None, progress=
             progress(message)
 
     _check_cancel(cancel_event)
+    if text_only and (image is not None or reference_only or not request.strip()):
+        raise OrchestratorError("参照画像なしの連続生成には自然文が必要です（T2VA）")
     if not request.strip():
         return validate_prompt_plan({"format": FORMAT, "common": "",
             "segments": [section_text(default_sections(reference_only and w["index"] == 1),
@@ -470,7 +496,8 @@ def plan_long(config, request, windows, reference_only, *, image=None, progress=
     if prompt_cache is not None:
         try:
             key = make_cache_key(request, settings, workflows,
-                                 {"task": FORMAT + "_long", "windows": windows, "reference_only": reference_only},
+                                 {"task": FORMAT + "_long", "windows": windows, "reference_only": reference_only,
+                                  "text_only": text_only},
                                  {"image": image} if settings.get("h3_reference_vision", True) else {}, None)
             cached = prompt_cache.get(key)
             if cached is not None:
@@ -480,7 +507,8 @@ def plan_long(config, request, windows, reference_only, *, image=None, progress=
                         raise _bad("旧プロンプトキャッシュ")
                     for i, w in enumerate(windows):
                         compile_cut(valid, i, reference_only and i == 0, kept_frames=w["output_frames"],
-                                    trim_frames=w.get("trim_start_frames", int(i > 0)), guide_frames=w.get("guide_frames", 0))
+                                    trim_frames=w.get("trim_start_frames", int(i > 0)), guide_frames=w.get("guide_frames", 0),
+                                    text_only=text_only and i == 0)
                 except OrchestratorError:
                     pass
                 else:
@@ -495,13 +523,18 @@ def plan_long(config, request, windows, reference_only, *, image=None, progress=
     try:
         _check_cancel(cancel_event)
         instance_id = client._ensure_loaded()
-        observed = observe_reference(client, instance_id, image, note, cancel_event)
-        system = _system(workflows, settings, reference_only) + (
+        observed = None if text_only else observe_reference(client, instance_id, image, note, cancel_event)
+        system = _system(workflows, settings, reference_only, text_only=text_only) + (
             "\nFor three-field continuation cuts, integrated_multimodal_description begins with [Shot 1]."
-            "\nUse the preceding end state as their opening, not the original reference." if reference_only else ""
+            "\nUse the preceding end state as their opening, not the original reference."
+            if reference_only or text_only else ""
         ) + "\n" + LONG_POLICY
+        if text_only:
+            system += ("\nCut 1 establishes the subject, visual style, setting and spatial details entirely "
+                       "from text. Set common to the concrete persistent visual traits that all subsequent "
+                       "cuts should preserve; do not claim an input image exists.")
         base = {"request": request, "reference_observations": observed,
-                "first_reference_mode": "Ref2VA" if reference_only else "I2VA",
+                "first_reference_mode": "T2VA" if text_only else "Ref2VA" if reference_only else "I2VA",
                 "total_seconds": round(windows[-1]["end_frame"] / 24, 3)}
         # Structured audiovisual descriptions cost more tokens than the former
         # free sentences. Bound detail batches and reuse one loaded LLM.
@@ -515,10 +548,11 @@ def plan_long(config, request, windows, reference_only, *, image=None, progress=
             batch = batches[0]
             note(f"H3長尺: {len(batch)}カットの公式プロンプト計画")
             common, segments = _reply(client, instance_id, system,
-                json.dumps({**base, "timeline": [_window_payload(w, reference_only and w["index"] == 1)
+                json.dumps({**base, "timeline": [_window_payload(w, reference_only and w["index"] == 1,
+                                                                  text_only=text_only)
                                                  for w in batch]}, ensure_ascii=False),
                 _batch_schema(batch, reference_only, True), "h3_long_batch",
-                lambda value: _validate_batch(value, batch, reference_only), note, cancel_event)
+                lambda value: _validate_batch(value, batch, reference_only, text_only=text_only), note, cancel_event)
         else:
             stride = max(1, (len(batches) + 11) // 12)
             groups = [batches[i:i+stride] for i in range(0, len(batches), stride)]
@@ -546,10 +580,12 @@ def plan_long(config, request, windows, reference_only, *, image=None, progress=
                                     "chapter_summary": outline["segments"][gi],
                                     "next_chapter": outline["segments"][gi+1] if gi+1 < len(groups) else "",
                                     "previous_cut": previous,
-                                    "timeline": [_window_payload(w, reference_only and w["index"] == 1) for w in batch]},
+                                    "timeline": [_window_payload(w, reference_only and w["index"] == 1,
+                                                                 text_only=text_only) for w in batch]},
                                    ensure_ascii=False),
                         _batch_schema(batch, reference_only, False), "h3_long_batch",
-                        lambda value: _validate_batch(value, batch, reference_only, common), note, cancel_event)
+                        lambda value: _validate_batch(value, batch, reference_only, common,
+                                                      text_only=text_only), note, cancel_event)
                     segments.extend(parts)
         result = validate_prompt_plan({"format": FORMAT, "common": common, "segments": segments}, len(windows))
     finally:
