@@ -6,18 +6,24 @@ from tkinter import ttk, Toplevel, messagebox, StringVar
 from pathlib import Path
 
 from .storage_report import format_bytes
+from .llm_usage import ACTIONS, MODES, format_count, format_summary
 
 
 class OperationsWindow:
-    def __init__(self, parent, root, *, on_refresh, on_clear_cache):
+    def __init__(self, parent, root, *, on_refresh, on_clear_cache, on_export_usage):
         self.root = Path(root)
         self.window = Toplevel(parent)
         self.window.title("運用情報")
         self.window.geometry("700x470")
         self.window.minsize(560, 410)
         self.window.transient(parent)
-        outer = ttk.Frame(self.window, padding=12)
-        outer.pack(fill="both", expand=True)
+        tabs = ttk.Notebook(self.window)
+        tabs.pack(fill="both", expand=True, padx=8, pady=8)
+        outer = ttk.Frame(tabs, padding=8)
+        tabs.add(outer, text="保存・運用")
+        usage = ttk.Frame(tabs, padding=8)
+        tabs.add(usage, text="LLM使用量")
+        self._build_usage(usage, on_refresh, on_export_usage)
         self.summary = StringVar(value="保存データを計測中…")
         ttk.Label(outer, textvariable=self.summary, wraplength=640).pack(fill="x", pady=(0, 6))
         controls = ttk.Frame(outer)
@@ -37,6 +43,86 @@ class OperationsWindow:
             self.table.column(key, width=width, anchor="e")
         self.table.pack(fill="both", expand=True)
 
+    def _build_usage(self, outer, on_refresh, on_export_usage):
+        self.usage_summary = StringVar(master=self.window, value="計測中…")
+        self.usage_status = StringVar(master=self.window, value="")
+        ttk.Label(outer, textvariable=self.usage_summary, wraplength=620).pack(fill="x", pady=(0, 6))
+        controls = ttk.Frame(outer)
+        controls.pack(side="bottom", fill="x", pady=(6, 0))
+        ttk.Button(controls, text="CSV出力", command=on_export_usage).pack(side="left")
+        ttk.Button(controls, text="更新", command=on_refresh).pack(side="right")
+        ttk.Label(outer, textvariable=self.usage_status, wraplength=620).pack(side="bottom", fill="x")
+        views = ttk.Notebook(outer)
+        views.pack(fill="both", expand=True)
+
+        def table(title, columns):
+            pane = ttk.Frame(views)
+            views.add(pane, text=title)
+            tree = ttk.Treeview(pane, columns=tuple(key for key, _, _ in columns), show="tree headings")
+            tree.heading("#0", text="操作" if title == "操作別" else "LLM / 用途")
+            tree.column("#0", width=190, minwidth=120, stretch=True)
+            for key, label, width in columns:
+                tree.heading(key, text=label)
+                tree.column(key, width=width, minwidth=48, anchor="e")
+            scroll = ttk.Scrollbar(pane, orient="vertical", command=tree.yview)
+            scroll.pack(side="right", fill="y")
+            tree.configure(yscrollcommand=scroll.set)
+            tree.pack(fill="both", expand=True)
+            return tree
+
+        self.usage_operations = table("操作別", (
+            ("time", "日時", 105), ("frames", "フレーム", 80), ("calls", "回数", 48),
+            ("input", "Input", 77), ("output", "Output", 77), ("missing", "未計測", 58),
+        ))
+        self.usage_purposes = table("モデル・用途別", (
+            ("calls", "回数", 52), ("input", "Input", 85), ("output", "Output", 85),
+            ("reasoning", "思考", 75), ("missing", "未計測", 60),
+        ))
+
+    def update_usage(self, report):
+        if report is None:
+            self.usage_summary.set("LLM使用量を取得できません")
+            for tree in (self.usage_operations, self.usage_purposes):
+                tree.delete(*tree.get_children())
+            return
+        total = report["total"]
+        self.usage_summary.set(f"累計 {total['operations']:,}操作 · " + format_summary(total))
+        self.usage_status.set("直近100操作。≥ は計測分の下限、— は取得不可。CSVには全リクエストを出力。")
+        tree = self.usage_operations
+        tree.delete(*tree.get_children())
+        for row in report["operations"]:
+            when = row["started_at"]
+            try:
+                from datetime import datetime
+                when = datetime.fromisoformat(when).astimezone().strftime("%m/%d %H:%M:%S")
+            except (ValueError, OverflowError):
+                pass
+            mode = MODES.get(row["mode"], row["mode"])
+            label = ACTIONS.get(row["action"], row["action"])
+            status = {"running": " (未完了)", "interrupted": " (中断)"}.get(row["operation_status"], "")
+            if row["recording_errors"]:
+                status += " (記録失敗)"
+            duration = f"{row['frames']}f" if row["frames"] is not None else ""
+            if row["cuts"] is not None:
+                duration += f"/{row['cuts']}cut"
+            tree.insert("", "end", text=f"{mode} {label}{status}".strip(), values=(
+                when, duration, row["calls"], format_count(row, "input_tokens"),
+                format_count(row, "output_tokens"), row["missing"],
+            ))
+        tree = self.usage_purposes
+        tree.delete(*tree.get_children())
+        models = {}
+        for row in report["purposes"]:
+            model = row["model"]
+            parent = models.get(model)
+            if parent is None:
+                parent = tree.insert("", "end", text=model, open=True)
+                models[model] = parent
+            tree.insert(parent, "end", text=row["purpose"], values=(
+                row["calls"], format_count(row, "input_tokens"), format_count(row, "output_tokens"),
+                format_count(row, "reasoning_tokens"), row["missing"],
+            ))
+
     def is_open(self):
         return bool(self.window.winfo_exists())
 
@@ -48,7 +134,8 @@ class OperationsWindow:
         except OSError as exc:
             messagebox.showerror("保存先", str(exc), parent=self.window)
 
-    def update(self, report, cache, models):
+    def update(self, report, cache, models, usage=None):
+        self.update_usage(usage)
         self.table.delete(*self.table.get_children())
         for row in report["rows"]:
             self.table.insert("", "end", text=row["name"],

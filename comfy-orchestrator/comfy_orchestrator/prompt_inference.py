@@ -75,12 +75,14 @@ def request_validated(client, instance_id, system, user_content, response_schema
         check_cancel(cancel_event)
         try:
             if native:
-                reply = _request(client.settings, "/api/v1/chat", {
-                    "model": instance_id, "system_prompt": system + feedback,
-                    "input": user_content, "stream": False, "store": False,
-                    "reasoning": "off", "temperature": 0.0,
-                    "max_output_tokens": max_tokens,
-                })
+                from .llm_usage import inference_purpose
+                with inference_purpose(name):
+                    reply = _request(client.settings, "/api/v1/chat", {
+                        "model": instance_id, "system_prompt": system + feedback,
+                        "input": user_content, "stream": False, "store": False,
+                        "reasoning": "off", "temperature": 0.0,
+                        "max_output_tokens": max_tokens,
+                    })
                 output = reply.get("output")
                 if not isinstance(output, list):
                     raise OrchestratorError("LM Studioのnative chat応答形式が不正です")

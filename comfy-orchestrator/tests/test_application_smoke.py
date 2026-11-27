@@ -93,6 +93,36 @@ class ApplicationSmokeTests(unittest.TestCase):
                     root.update_idletasks()
                     self.assertFalse(callback_errors, callback_errors)
 
+                    # Usage is captured at the real transport boundary in a worker,
+                    # and the operations panel renders persisted totals without an API.
+                    from comfy_orchestrator import lmstudio
+                    from comfy_orchestrator.operations_ui import OperationsWindow
+                    with patch.object(lmstudio, "_open_json", return_value={
+                            "usage": {"prompt_tokens": 123, "completion_tokens": 45}}):
+                        app._set_busy("usage test")
+                        def measured():
+                            lmstudio._request(config["llm"], "/v1/chat/completions", {"model": "test"})
+                            return "usage test finished"
+                        app._launch_generation(measured, done_event="progress",
+                                               usage={"action": "review", "workflow": "wai_t2i_basic"})
+                        while True:
+                            kind, data = app.messages.get(timeout=5)
+                            app.event_router.dispatch(kind, data)
+                            if kind == "idle":
+                                break
+                    usage = app.llm_usage.report()
+                    self.assertEqual((usage["total"]["input_tokens"], usage["total"]["output_tokens"]), (123, 45))
+                    self.assertIn("IN 123 / OUT 45", app.log.get("1.0", "end"))
+                    panel = OperationsWindow(root, local, on_refresh=lambda: None,
+                                             on_clear_cache=lambda: None, on_export_usage=lambda: None)
+                    try:
+                        panel.update_usage(usage)
+                        self.assertIn("IN 123 / OUT 45", panel.usage_summary.get())
+                        self.assertEqual(len(panel.usage_operations.get_children()), 1)
+                        self.assertEqual(len(panel.usage_purposes.get_children()), 1)
+                    finally:
+                        panel.window.destroy()
+
                     # The new review modal uses real Tk controls but no service.
                     from comfy_orchestrator.single_prompt import SinglePromptDraft
                     from unittest.mock import Mock

@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from .core import OrchestratorError, execute, load_config
+from .llm_usage import UsageStore
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -28,7 +29,13 @@ def main(argv: list[str] | None = None) -> int:
             if not config["workflows"]:
                 print("ワークフロー未登録。登録後に再検証してください")
         else:
-            result = execute(config, args.config, args.text, args.image, args.dry_run, selected_workflow=args.workflow)
+            store = UsageStore(args.config.resolve().parent / "data" / "llm_usage.sqlite3")
+            result = store.run(
+                lambda: execute(config, args.config, args.text, args.image, args.dry_run,
+                                selected_workflow=args.workflow),
+                action="cli_review" if args.dry_run else "cli_run",
+                workflow=args.workflow or "", notify=lambda line: print(line, file=sys.stderr),
+            )
             print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except (OrchestratorError, OSError) as exc:

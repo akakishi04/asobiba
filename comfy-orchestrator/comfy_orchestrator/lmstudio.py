@@ -16,6 +16,7 @@ from typing import Any, Callable
 
 from .parameters import OrchestratorError
 from .http_api import _open_json
+from .llm_usage import measured_request
 from .workflow_registry import plan_schema, HOST_VIDEO_IDS, H3_I2V_ID, QWEN_IDS
 from .character_refs import observation_schema, intersection_schema, validate_images
 from .character_repair import repair_model_analysis
@@ -54,6 +55,9 @@ def _request(settings: dict, route: str, payload: dict | None = None) -> dict:
         method="POST" if data is not None else "GET",
     )
     try:
+        if inference:
+            return measured_request("lmstudio", route, payload, settings.get("model"),
+                                    lambda: _open_json(request, timeout=timeout))
         return _open_json(request, timeout=timeout)
     except OrchestratorError as exc:
         if "timed out" in str(exc).lower() or "timeout" in str(exc).lower():

@@ -13,6 +13,7 @@ import os
 import secrets
 import sqlite3
 import threading
+import uuid
 import tempfile
 import urllib.parse
 import urllib.request
@@ -80,6 +81,7 @@ from .h3_model_picker import model_choices as h3_picker_choices, select_model_ke
 from .task_controller import TaskController, EventRouter
 from .history_refresh import HistoryRefresh
 from .result_state import ResultReviewState
+from .llm_usage import UsageStore
 from .single_prompt import SinglePromptDraft
 from .single_prompt_ui import SinglePromptWindow
 from .preview_geometry import preview_subsample
@@ -148,6 +150,8 @@ class Application:
         self.stop_event = self.tasks.stop_event
         self.config = bootstrap_config()
         self.history_store = HistoryStore(ROOT)
+        self.llm_usage = UsageStore(self.history_store.data / "llm_usage.sqlite3")
+        self._single_usage_group = None
         self.job_journal = JobJournal(self.history_store.data / "jobs")
         self.long_video_store = LongVideoStore(self.history_store.data / "long_videos")
         self.prompt_cache = PromptCache(ROOT / ".cache" / "prompt_plans.sqlite3")
@@ -1238,7 +1242,16 @@ class Application:
             cancel_event=self.stop_event, prompt_cache=cache,
         )
 
-    def _launch_generation(self, operation, *, done_event="done", long_video=False, cancel_as_progress=False):
+    def _launch_generation(self, operation, *, done_event="done", long_video=False, cancel_as_progress=False,
+                           usage=None):
+        if usage is not None:
+            original = operation
+            metadata = dict(usage)
+            metadata.setdefault("mode", self.generation_mode.get())
+            metadata.setdefault("workflow", self._active_workflow() or "")
+            store = self.llm_usage
+            emit = self.messages.put
+            operation = lambda: store.run(original, **metadata, notify=lambda line: emit(("llm_usage", line)))
         self.tasks.launch(operation, done_event=done_event, long_video=long_video,
                           cancel_as_progress=cancel_as_progress)
 
@@ -1304,7 +1317,10 @@ class Application:
         )
 
         controller = self._controller(cfg)
-        self._launch_generation(lambda: controller.replay(entry, new_seed=new_seed))
+        self._launch_generation(lambda: controller.replay(entry, new_seed=new_seed),
+                                usage={"action": "replay", "workflow": entry.workflow_id,
+                                       "mode": workflow_generation_mode(cfg, entry.workflow_id),
+                                       "frames": entry.parameters.get("frames")})
 
     def _collect_config(self) -> dict:
         config = copy.deepcopy(self.config)
@@ -1516,11 +1532,14 @@ class Application:
 
         def task():
             try:
-                release_comfy_before_llm(comfy_settings,
-                                         progress=lambda line: self.messages.put(("progress", line)))
-                analysis = LMStudio(settings).analyze_character_references(
-                    paths, progress=lambda line: self.messages.put(("progress", line)),
-                )
+                def analyze():
+                    release_comfy_before_llm(comfy_settings,
+                                             progress=lambda line: self.messages.put(("progress", line)))
+                    return LMStudio(settings).analyze_character_references(
+                        paths, progress=lambda line: self.messages.put(("progress", line)),
+                    )
+                analysis = self.llm_usage.run(analyze, action="character_analysis", mode="character",
+                    notify=lambda line: self.messages.put(("llm_usage", line)))
                 self.messages.put(("character_analysis_done", (dialog, analysis)))
             except Exception as exc:
                 self.messages.put(("character_analysis_error", (dialog, str(exc))))
@@ -1551,12 +1570,14 @@ class Application:
 
         def task():
             try:
-                release_comfy_before_llm(comfy_settings,
-                                         progress=lambda line: self.messages.put(("progress", line)))
-                revised = LMStudio(settings).revise_character_description(
-                    current, instruction,
-                    progress=lambda line: self.messages.put(("progress", line)),
-                )
+                def revise():
+                    release_comfy_before_llm(comfy_settings,
+                                             progress=lambda line: self.messages.put(("progress", line)))
+                    return LMStudio(settings).revise_character_description(
+                        current, instruction, progress=lambda line: self.messages.put(("progress", line)),
+                    )
+                revised = self.llm_usage.run(revise, action="character_revision", mode="character",
+                    notify=lambda line: self.messages.put(("llm_usage", line)))
                 self.messages.put(("character_revision_done", (dialog, revised)))
             except Exception as exc:
                 self.messages.put(("character_revision_error", (dialog, str(exc))))
@@ -1712,6 +1733,7 @@ class Application:
         if self._operations_window is None or not self._operations_window.is_open():
             self._operations_window = OperationsWindow(
                 self.root, ROOT, on_refresh=self._refresh_operations, on_clear_cache=self._clear_operations_cache,
+                on_export_usage=self._export_llm_usage,
             )
         self._operations_window.window.lift()
         self._refresh_operations()
@@ -1736,10 +1758,32 @@ class Application:
                     cache = self.prompt_cache.stats()
                 except CACHE_ERRORS:
                     cache = None
-                self.messages.put(("operations_report", (report, cache, memory_stats())))
+                try:
+                    usage = self.llm_usage.report()
+                except (sqlite3.Error, OSError, ValueError):
+                    usage = None
+                self.messages.put(("operations_report", (report, cache, memory_stats(), usage)))
             except Exception as exc:
                 self.messages.put(("operations_error", str(exc)))
 
+        threading.Thread(target=task, daemon=True).start()
+
+    def _export_llm_usage(self):
+        window = self._operations_window
+        target = filedialog.asksaveasfilename(
+            parent=window.window, title="LLM使用量をCSV出力",
+            initialdir=str(self.history_store.data), initialfile="llm_usage.csv",
+            defaultextension=".csv", filetypes=[("CSV", "*.csv")],
+        )
+        if not target:
+            return
+
+        def task():
+            try:
+                path = self.llm_usage.export_csv(target)
+                self.messages.put(("llm_usage_exported", str(path)))
+            except Exception as exc:
+                self.messages.put(("llm_usage_export_error", str(exc)))
         threading.Thread(target=task, daemon=True).start()
 
     def _clear_prompt_cache(self) -> None:
@@ -1968,13 +2012,16 @@ class Application:
         if dry_run:
             controller = self._controller(cfg, prompt_cache)
             cache = self.project_workspace.translation_cache
+            self._single_usage_group = uuid.uuid4().hex
             self._set_busy("プロンプト作成中")
             self._launch_generation(lambda: SinglePromptDraft.prepare(
                 controller, prompt, selected, overrides, image=image, mask_image=mask,
                 pose_image=pose, composition_image=composition, prompt_profile=profile,
                 character_references=approved_images, character_traits=approved_traits,
                 character_analysis=approved_analysis, cache=cache,
-            ), done_event="single_prompt_ready", cancel_as_progress=True)
+            ), done_event="single_prompt_ready", cancel_as_progress=True,
+                usage={"action": "review", "workflow": selected, "frames": overrides.get("frames"),
+                       "group_id": self._single_usage_group})
             return
         self.review.begin(request_text=prompt, profile=profile, character_traits=approved_traits,
                           character_analysis=approved_analysis, character_references=approved_images)
@@ -1989,7 +2036,7 @@ class Application:
             prompt_profile=profile, character_references=approved_images,
             character_analysis=approved_analysis,
             **({"character_traits": approved_traits} if approved_traits else {}),
-        ))
+        ), usage={"action": "generate", "workflow": selected, "frames": overrides.get("frames")})
 
     def _sync_project_visibility(self, visible):
         if self._project_visible == visible:
@@ -2122,7 +2169,9 @@ class Application:
                 )
             return manifest
 
-        self._launch_generation(task, done_event="long_plan_ready", cancel_as_progress=True)
+        self._launch_generation(task, done_event="long_plan_ready", cancel_as_progress=True,
+                                usage={"action": "long_plan", "workflow": core.H3_I2V_ID,
+                                       "frames": round(seconds * 24), "cuts": len(frames)})
 
     def _finish_long_prompt_plan(self, manifest):
         self._preferred_long_project_id = manifest["run_id"]
@@ -2167,7 +2216,10 @@ class Application:
                 raise
             return snapshot["run_id"], cuts, result
 
-        self._launch_generation(task, done_event="project_prompt_edited")
+        self._launch_generation(task, done_event="project_prompt_edited",
+                                usage={"action": "long_" + operation, "workflow": core.H3_I2V_ID,
+                                       "mode": "continuous", "frames": sum(cuts), "cuts": len(cuts),
+                                       "group_id": manifest["run_id"]})
 
     def _project_action(self, manifest, action):
         if self.working or self.character_analysis_running:
@@ -2252,7 +2304,10 @@ class Application:
             )
 
         event = "long_project_done" if action.action in ("save", "generate") else "done"
-        self._launch_generation(task, done_event=event, long_video=True)
+        self._launch_generation(task, done_event=event, long_video=True,
+                                usage={"action": "long_" + action.action, "workflow": core.H3_I2V_ID,
+                                       "mode": "continuous", "frames": sum(action.cut_frames),
+                                       "cuts": len(action.cut_frames), "group_id": manifest["run_id"]})
 
     def _confirm_unknown_long_job(self, record):
         # Worker thread: dialog interaction stays on the Tk main thread.
@@ -2291,6 +2346,9 @@ class Application:
             "progress": self._on_event_progress,
             "timing": self._on_event_timing,
             "operations_report": self._on_event_operations_report,
+            "llm_usage": self._on_event_llm_usage,
+            "llm_usage_exported": self._on_event_llm_usage_exported,
+            "llm_usage_export_error": self._on_event_llm_usage_export_error,
             "operations_error": self._on_event_operations_error,
             "projects_loaded": self._on_event_projects_loaded,
             "long_plan_ready": self._finish_long_prompt_plan,
@@ -2353,6 +2411,7 @@ class Application:
             self.single_draft.close()
             self.single_draft = None
         self._single_submit = self._single_success = self._single_refresh = False
+        self._single_usage_group = None
 
     def _single_prompt_action(self, operation, **kwargs):
         if self.working or self.single_draft is None:
@@ -2367,7 +2426,11 @@ class Application:
             self._single_submit, self._single_success = True, False
             self._set_busy("確認済みプロンプトで生成中")
             self.single_window.set_busy(True)
-            self._launch_generation(draft.generate)
+            self._launch_generation(draft.generate,
+                                    usage={"action": "review_generate", "workflow": draft.workflow_id,
+                                           "mode": workflow_generation_mode(draft.controller.config, draft.workflow_id),
+                                           "frames": draft.parameters.get("frames"),
+                                           "group_id": self._single_usage_group})
         else:
             self._set_busy("プロンプト編集中")
             self.single_window.set_busy(True)
@@ -2377,7 +2440,11 @@ class Application:
                 else:
                     draft.revise(operation, cache, **kwargs)
                 return operation
-            self._launch_generation(task, done_event="single_prompt_changed", cancel_as_progress=True)
+            self._launch_generation(task, done_event="single_prompt_changed", cancel_as_progress=True,
+                                    usage={"action": "review_" + operation, "workflow": draft.workflow_id,
+                                           "mode": workflow_generation_mode(draft.controller.config, draft.workflow_id),
+                                           "frames": draft.parameters.get("frames"),
+                                           "group_id": self._single_usage_group})
 
     def _on_event_progress(self, data):
         if data.startswith("【構図認識結果】\n"):
@@ -2390,6 +2457,21 @@ class Application:
     def _on_event_timing(self, data):
         self.tasks.update_estimate(data)
         self._tick_timing()
+
+    def _on_event_llm_usage(self, data):
+        self._log(data)
+        if self._operations_window is not None and self._operations_window.is_open():
+            self._refresh_operations()
+
+    def _on_event_llm_usage_exported(self, path):
+        self._log("LLM使用量 CSV: " + path)
+        if self._operations_window is not None and self._operations_window.is_open():
+            self._operations_window.usage_status.set("CSV出力済み: " + path)
+
+    def _on_event_llm_usage_export_error(self, error):
+        self._log("LLM使用量 CSV出力失敗: " + error)
+        if self._operations_window is not None and self._operations_window.is_open():
+            messagebox.showerror("CSV出力", error, parent=self._operations_window.window)
 
     def _on_event_operations_report(self, data):
         self._operations_pending = False

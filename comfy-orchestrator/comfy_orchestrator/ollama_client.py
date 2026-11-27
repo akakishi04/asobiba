@@ -8,6 +8,7 @@ from typing import Any
 
 from . import http_api
 from .parameters import OrchestratorError
+from .llm_usage import measured_request
 from .workflow_registry import plan_schema
 
 
@@ -39,7 +40,8 @@ class Ollama:
         if image is not None:
             request["images"] = [base64.b64encode(image.read_bytes()).decode("ascii")]
         try:
-            result = http_api.http_json(self.base, "/api/generate", request, self.timeout)
+            result = measured_request("ollama", "/api/generate", request, self.model,
+                                      lambda: http_api.http_json(self.base, "/api/generate", request, self.timeout))
             raw = result.get("response")
             if not isinstance(raw, str):
                 raise OrchestratorError("Ollamaのresponseが文字列ではありません")
