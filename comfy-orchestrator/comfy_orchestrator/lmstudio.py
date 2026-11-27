@@ -34,7 +34,7 @@ def _request(settings: dict, route: str, payload: dict | None = None) -> dict:
     # Loading/unloading a model and waiting for a thinking LLM answer have
     # different latency profiles. Only the inference request receives the
     # longer wait; keep the ordinary API timeout for short management calls.
-    inference = route == "/v1/chat/completions"
+    inference = route in ("/v1/chat/completions", "/api/v1/chat")
     timeout = float(
         settings.get("inference_timeout_seconds", 600)
         if inference else settings.get("timeout_seconds", 240)
@@ -147,6 +147,9 @@ class LMStudio:
             )
         capabilities = matching.get("capabilities")
         self._vision_supported = capabilities.get("vision") if isinstance(capabilities, dict) else None
+        reasoning = capabilities.get("reasoning") if isinstance(capabilities, dict) else None
+        options = reasoning.get("allowed_options") if isinstance(reasoning, dict) else None
+        self._reasoning_options = tuple(v for v in options if isinstance(v, str)) if isinstance(options, list) else ()
         if self.settings.get("send_reference_to_llm", False) and getattr(self, "_has_visual_input", False):
             # Older LM Studio versions may not report capabilities; only reject
             # models explicitly identified as text-only.

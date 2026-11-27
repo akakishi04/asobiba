@@ -101,6 +101,74 @@ class PromptEditTests(unittest.TestCase):
         self.assertEqual(ProjectDraft(manifest).valid_prefix(), 3)
         self.assertIsNone(self.cache.get("cut", "She closes a different umbrella.", False))
 
+    def test_native_translation_disables_reasoning_and_bounds_short_output(self):
+        self.catalog[0]["capabilities"]["reasoning"] = {
+            "allowed_options": ["off", "on"], "default": "on"}
+        manifest = self.project(complete=True)
+        before = copy.deepcopy(manifest)
+        def response(settings, route, payload):
+            self.assertEqual(route, "/api/v1/chat")
+            self.assertEqual(payload["model"], "instance")
+            self.assertEqual(payload["reasoning"], "off")
+            self.assertFalse(payload["store"])
+            self.assertFalse(payload["stream"])
+            self.assertLess(payload["max_output_tokens"], 512)
+            self.assertEqual(payload["temperature"], 0)
+            self.assertNotIn("response_format", payload)
+            self.assertIn("Required JSON schema", payload["system_prompt"])
+            self.assertIn("Translate directly", payload["system_prompt"])
+            self.assertIn("text", json.loads(payload["input"]))
+            return {"output": [{"type": "message", "content": json.dumps({"text": "傘を維持する。"})}],
+                    "stats": {"reasoning_output_tokens": 0}}
+        result, _, req = self.run_edit(manifest, self.plan, "translate", response)
+        self.assertEqual(req.call_count, 2)
+        self.assertEqual(result["after"], self.plan)
+        self.assertEqual(manifest, before)
+
+    def test_empty_final_answer_is_not_retried_or_saved(self):
+        manifest = self.project()
+        def response(settings, route, payload):
+            self.assertEqual(route, "/v1/chat/completions")
+            self.assertLess(payload["max_tokens"], 512)
+            return {"choices": [{"message": {"content": "", "reasoning_content": "Thinking..."},
+                                 "finish_reason": "length"}]}
+        with patch.object(lmstudio, "list_models", return_value=self.catalog), \
+                patch.object(lmstudio, "_request", side_effect=response) as req:
+            with self.assertRaisesRegex(core.OrchestratorError, "最終回答が空"):
+                edit_prompts(self.config, manifest, self.plan, self.cuts, 1, "translate", self.cache)
+            req.assert_called_once()
+        self.assertIsNone(self.cache.get("common", self.plan["common"], False))
+        self.assertEqual(manifest["prompt_plan"], self.plan)
+
+    def test_native_reasoning_output_never_used_as_translation(self):
+        self.catalog[0]["capabilities"]["reasoning"] = {"allowed_options": ["off", "on"]}
+        manifest = self.project()
+        with patch.object(lmstudio, "list_models", return_value=self.catalog), \
+                patch.object(lmstudio, "_request", return_value={
+                    "output": [{"type": "reasoning", "content": '{"text":"推論内の訳"}'}],
+                    "stats": {"reasoning_output_tokens": 1927}}) as req:
+            with self.assertRaisesRegex(core.OrchestratorError, "最終回答が空"):
+                edit_prompts(self.config, manifest, self.plan, self.cuts, 1, "translate", self.cache)
+            req.assert_called_once()
+        self.assertIsNone(self.cache.get("common", self.plan["common"], False))
+
+    def test_native_translation_and_rewrite_keep_separate_inference_policies(self):
+        self.catalog[0]["capabilities"]["reasoning"] = {"allowed_options": ["off", "on"]}
+        manifest = self.project()
+        routes = []
+        def response(settings, route, payload):
+            routes.append(route)
+            if route == "/v1/chat/completions":
+                self.assertEqual(payload["response_format"]["json_schema"]["name"], "h3_cut_rewrite")
+                self.assertEqual(payload["max_tokens"], self.config["llm"]["max_tokens"])
+                self.assertNotIn("reasoning", payload)
+                return reply({"text": "She closes the same pink umbrella."})
+            self.assertEqual(payload["reasoning"], "off")
+            return {"output": [{"type": "message", "content": json.dumps({"text": "同じ傘を閉じる。"})}]}
+        result, _, _ = self.run_edit(manifest, self.plan, "regenerate", response)
+        self.assertEqual(routes, ["/v1/chat/completions", "/api/v1/chat", "/api/v1/chat"])
+        self.assertEqual(result["after"]["segments"][1], "She closes the same pink umbrella.")
+
     def test_rewrite_uses_valid_executed_previous_prompt_and_changes_only_current(self):
         manifest = self.project(complete=True)
         before = copy.deepcopy(manifest)

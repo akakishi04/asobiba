@@ -128,7 +128,8 @@ def _translate(client, instance, kind, source, official, progress, cancel_event)
 
     return hp._reply(client, instance, TRANSLATION_POLICY,
                      json.dumps(masked, ensure_ascii=False), hp.object_schema(fields, limits),
-                     "h3_japanese_review", validate, progress, cancel_event)
+                     "h3_japanese_review", validate, progress, cancel_event,
+                     translation_chars=sum(len(value) for value in masked.values()))
 
 
 def cut_context(manifest, plan, cuts, index):
@@ -206,7 +207,8 @@ def _english_common(client, instance, japanese, official, progress, cancel_event
                      "Preserve all constraints and user edits; add no events, labels or details. "
                      "Return only persistent common conditions, not individual cut actions.",
                      japanese, hp.object_schema(("text",), {"text": 1600}),
-                     "h3_common_from_japanese", validate, progress, cancel_event)
+                     "h3_common_from_japanese", validate, progress, cancel_event,
+                     translation_chars=len(japanese))
 
 
 def _english_cut(client, instance, context, common, official, operation, japanese, instruction,
@@ -250,7 +252,8 @@ def _english_cut(client, instance, context, common, official, operation, japanes
         schema = hp.object_schema(("text",), {"text": 1600})
     return hp._reply(client, instance, system, json.dumps(payload, ensure_ascii=False),
                      schema, "h3_cut_from_japanese" if operation == "apply" else "h3_cut_rewrite",
-                     lambda value: _compile_cut(value, official, context, common), progress, cancel_event)
+                     lambda value: _compile_cut(value, official, context, common), progress, cancel_event,
+                     translation_chars=len(japanese) if operation == "apply" else None)
 
 
 def edit_prompts(config, manifest, plan, cuts, index, operation, cache, *,

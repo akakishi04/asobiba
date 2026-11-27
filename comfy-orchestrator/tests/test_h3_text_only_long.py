@@ -45,7 +45,7 @@ class TextOnlyLongTests(unittest.TestCase):
         self.journal = JobJournal(self.root / "jobs")
         self.config = core.load_config(CONFIG)
         self.config["llm"].update(model="test", unload_after_inference=False)
-        self.config["comfyui"]["free_before_llm"] = False
+        self.config["comfyui"].update(base_url=BACKEND, free_before_llm=False)
 
     def project(self, params=None):
         return self.store.create(BACKEND, "雨の街を歩く", None, params or PARAMS,
