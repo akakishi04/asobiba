@@ -6,7 +6,16 @@ from __future__ import annotations
 
 import math
 
-from . import core, h3_prompt
+from . import h3_prompt
+from .parameters import OrchestratorError, check_param, PARAMS
+from .h3 import (
+    h3_ref2va_filename,
+    h3_hybrid_filename,
+    h3_hybrid_model_key,
+    H3_REF2VA_DEFAULT_PROMPT,
+    ensure_h3_reference_prompt,
+)
+from .workflow_registry import I2V_DEFAULT_PROMPT
 from .timeline import (validate_prompt_plan, prompt_for_segment, validate_cut_frames,
                        generation_frames_for_cuts, segment_windows, validate_overlap_frames,
                        CONTINUATION_OVERLAP_FRAMES, GUIDE_CONNECTION_FRAMES)
@@ -16,7 +25,7 @@ LONG_TARGETS = {"単発": 0, "30秒": 30, "1分": 60, "2分": 120, "3分": 180, 
 FPS = 24
 
 
-class LongVideoPaused(core.OrchestratorError):
+class LongVideoPaused(OrchestratorError):
     pass
 
 
@@ -27,9 +36,9 @@ def check_cancel(cancel_event):
 
 def segment_plan(seconds: int, maximum_frames: int) -> list[int]:
     if seconds not in LONG_TARGETS.values() or seconds == 0:
-        raise core.OrchestratorError("合計尺は30秒～5分のプリセットから選択してください")
+        raise OrchestratorError("合計尺は30秒～5分のプリセットから選択してください")
     if type(maximum_frames) is not int or not 107 <= maximum_frames <= 362 or (maximum_frames - 5) % 17:
-        raise core.OrchestratorError("H3の区間フレーム数が不正です")
+        raise OrchestratorError("H3の区間フレーム数が不正です")
     remaining = seconds * FPS
     plan = []
     while remaining > 0:
@@ -68,13 +77,13 @@ def manifest_schedule(manifest: dict) -> tuple[list[int], list[int] | None, int]
     if cuts is not None:
         cuts = validate_cut_frames(cuts)
         if manifest["seconds"] != sum(cuts) / FPS or "prompt_plan" not in manifest:
-            raise core.OrchestratorError("長尺カット記録が不正です")
+            raise OrchestratorError("長尺カット記録が不正です")
     if overlap and "prompt_plan" not in manifest:
-        raise core.OrchestratorError("助走付き長尺には区間プロンプト計画が必要です")
+        raise OrchestratorError("助走付き長尺には区間プロンプト計画が必要です")
     windows = manifest_windows(manifest)
     plan = [w["generation_frames"] for w in windows]
     if manifest["plan"] != plan:
-        raise core.OrchestratorError("長尺計画が不正です")
+        raise OrchestratorError("長尺計画が不正です")
     return plan, cuts, sum(w["output_frames"] for w in windows)
 
 
@@ -84,14 +93,14 @@ def continuation_anchor_count(previous, current):
 
 
 def continuation_model(model: str) -> str:
-    if core.h3_ref2va_filename(model) is None:
+    if h3_ref2va_filename(model) is None:
         return model
-    filename = core.h3_hybrid_filename(model)
+    filename = h3_hybrid_filename(model)
     if filename is None:
-        raise core.OrchestratorError("長尺連続生成には開始フレーム対応モデルが必要です。純粋Ref2VAではなくHybridまたはFL2VAを選択してください")
-    key = core.h3_hybrid_model_key(filename, reference_only=False)
+        raise OrchestratorError("長尺連続生成には開始フレーム対応モデルが必要です。純粋Ref2VAではなくHybridまたはFL2VAを選択してください")
+    key = h3_hybrid_model_key(filename, reference_only=False)
     if key is None:
-        raise core.OrchestratorError("Hybridの開始フレームモードを確認できません")
+        raise OrchestratorError("Hybridの開始フレームモードを確認できません")
     return key
 
 
@@ -111,16 +120,16 @@ def continuation_parameters(first: dict, index: int, frames: int) -> dict:
     if model is not None:
         p["h3_model"] = continuation_model(model)
     prompt = p["positive_prompt"]
-    if prompt == core.H3_REF2VA_DEFAULT_PROMPT:
-        prompt = core.I2V_DEFAULT_PROMPT
+    if prompt == H3_REF2VA_DEFAULT_PROMPT:
+        prompt = I2V_DEFAULT_PROMPT
     prefix = "Use <Picture 1> as a visual reference, not as the first frame. "
     if prompt.startswith(prefix):
         prompt = prompt[len(prefix):]
     p.update(frames=frames, seed=(int(first["seed"]) + index) % (2 ** 64),
              positive_prompt="Continue the same shot directly from this supplied opening frame. "
                              "Maintain the subject, setting, camera and motion continuity without a cut. " + prompt)
-    core.check_param("seed", p["seed"])
-    core.check_param("positive_prompt", p["positive_prompt"])
+    check_param("seed", p["seed"])
+    check_param("positive_prompt", p["positive_prompt"])
     return p
 
 
@@ -135,14 +144,14 @@ def planned_segment_parameters(base: dict, prompt_plan: dict, index: int, frames
     p["frames"] = frames
     # The ordinary parameter validator accepts signed 63-bit nonnegative seeds.
     # Wrap on its actual domain, not an unsigned 64-bit domain.
-    p["seed"] = (int(base["seed"]) + index) % (core.PARAMS["seed"][2] + 1)
+    p["seed"] = (int(base["seed"]) + index) % (PARAMS["seed"][2] + 1)
     if prompt_plan.get("format") == h3_prompt.FORMAT:
         p["positive_prompt"] = h3_prompt.compile_cut(
-            prompt_plan, index, index == 0 and core.h3_ref2va_filename(model) is not None,
+            prompt_plan, index, index == 0 and h3_ref2va_filename(model) is not None,
             kept_frames=kept_frames, trim_frames=lead_in_frames, guide_frames=guide_frames,
             text_only=text_only and index == 0,
         )
-        core.check_param("seed", p["seed"])
+        check_param("seed", p["seed"])
         return p
     p["positive_prompt"] = prompt_for_segment(prompt_plan, index, guide_frames=guide_frames)
     if index and guide_frames:
@@ -151,7 +160,7 @@ def planned_segment_parameters(base: dict, prompt_plan: dict, index: int, frames
             "Extend its existing movement immediately after the guide, without replaying or resetting it. "
             + p["positive_prompt"]
         )
-        core.check_param("positive_prompt", p["positive_prompt"])
+        check_param("positive_prompt", p["positive_prompt"])
     elif index and lead_in_frames > 1:
         p["positive_prompt"] = (
             f"Immediately continue the preceding ongoing motion without pausing. "
@@ -160,10 +169,10 @@ def planned_segment_parameters(base: dict, prompt_plan: dict, index: int, frames
             "Do not start with a stationary hold or repeat earlier dialogue. "
             + p["positive_prompt"]
         )
-        core.check_param("positive_prompt", p["positive_prompt"])
-    if index == 0 and core.h3_ref2va_filename(model) is not None:
-        p["positive_prompt"] = core.ensure_h3_reference_prompt(p["positive_prompt"])
-    core.check_param("seed", p["seed"])
+        check_param("positive_prompt", p["positive_prompt"])
+    if index == 0 and h3_ref2va_filename(model) is not None:
+        p["positive_prompt"] = ensure_h3_reference_prompt(p["positive_prompt"])
+    check_param("seed", p["seed"])
     return p
 
 
@@ -171,7 +180,7 @@ def validate_structured_timing(prompt_plan, windows, overrides, *, text_only=Fal
     """Fail before creating a revision or submitting any generation job."""
     if prompt_plan is None or prompt_plan.get("format") != h3_prompt.FORMAT:
         return
-    reference_only = core.h3_ref2va_filename(overrides.get("h3_model")) is not None
+    reference_only = h3_ref2va_filename(overrides.get("h3_model")) is not None
     for i, w in enumerate(windows):
         try:
             h3_prompt.compile_cut(prompt_plan, i, reference_only and i == 0,
@@ -179,8 +188,8 @@ def validate_structured_timing(prompt_plan, windows, overrides, *, text_only=Fal
                                   trim_frames=w["trim_start_frames"],
                                   guide_frames=w.get("guide_frames", 0),
                                   text_only=text_only and i == 0)
-        except core.OrchestratorError as exc:
-            raise core.OrchestratorError(f"カット{i+1}: {exc}") from exc
+        except OrchestratorError as exc:
+            raise OrchestratorError(f"カット{i+1}: {exc}") from exc
 
 
 def project_cut_lengths(manifest):
@@ -191,7 +200,7 @@ def project_cut_lengths(manifest):
 def first_changed_cut(manifest, prompt_plan, cut_frames):
     old = manifest.get("prompt_plan")
     if old is None:
-        raise core.OrchestratorError("旧形式の計画なしプロジェクトは編集できません")
+        raise OrchestratorError("旧形式の計画なしプロジェクトは編集できません")
     old_cuts = project_cut_lengths(manifest)
     if old["common"] != prompt_plan["common"] or old.get("format") != prompt_plan.get("format"):
         return 0

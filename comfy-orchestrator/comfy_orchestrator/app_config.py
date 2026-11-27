@@ -5,7 +5,7 @@ import copy
 import json
 import shutil
 
-from . import core
+from .configuration import load_config
 from .h3_prompt import FORMAT as H3_OFFICIAL_FORMAT
 from .prompt_profiles import DEFAULT_T2I_PROFILE, DEFAULT_I2I_PROFILE, DEFAULT_H3_PROFILE
 
@@ -53,5 +53,5 @@ def load_local_config(config_path, example_path) -> dict:
 def write_local_config(path, config):
     temporary = path.with_suffix(".json.tmp")
     temporary.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    core.load_config(temporary)
+    load_config(temporary)
     temporary.replace(path)

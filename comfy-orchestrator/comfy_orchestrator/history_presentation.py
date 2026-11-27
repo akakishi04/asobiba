@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import core
+from .workflow_registry import H3_I2V_ID, VIDEO_KINDS
+from .h3 import h3_model_label, H3_TURBO_LABELS
 from .generation_form import WORKFLOW_NAMES
 from .history import HistoryEntry
 from .long_video_plan import LONG_VIDEO_ID
@@ -69,7 +70,7 @@ def history_summary(entry: HistoryEntry) -> str:
         policy_label = I2I_PROFILE_LABELS.get(
             entry.prompt_profile, entry.prompt_profile or "記録なし"
         )
-    elif entry.workflow_id == core.H3_I2V_ID:
+    elif entry.workflow_id == H3_I2V_ID:
         policy_label = H3_PROFILE_LABELS.get(
             entry.prompt_profile, entry.prompt_profile or "記録なし"
         )
@@ -78,15 +79,15 @@ def history_summary(entry: HistoryEntry) -> str:
     details = [WORKFLOW_NAMES.get(entry.workflow_id, entry.workflow_id)]
     if "width" in p and "height" in p:
         details.append(f"{p['width']}×{p['height']}")
-    if entry.kind in core.VIDEO_KINDS and isinstance(p.get("fps"), (int, float)) and p["fps"] > 0 and isinstance(p.get("frames"), int):
+    if entry.kind in VIDEO_KINDS and isinstance(p.get("fps"), (int, float)) and p["fps"] > 0 and isinstance(p.get("frames"), int):
         details.append(f"{p['frames'] / p['fps']:.1f}秒")
     if "steps" in p:
         details.append(f"{p['steps']} steps")
     if "checkpoint_model" in p:
         details.append(Path(p["checkpoint_model"].replace("\\", "/")).stem)
-    if entry.workflow_id == core.H3_I2V_ID and "h3_model" in p:
-        details.append(core.h3_model_label(p["h3_model"]))
-        turbo = core.H3_TURBO_LABELS.get(p.get("h3_turbo", "off"), "")
+    if entry.workflow_id == H3_I2V_ID and "h3_model" in p:
+        details.append(h3_model_label(p["h3_model"]))
+        turbo = H3_TURBO_LABELS.get(p.get("h3_turbo", "off"), "")
         if turbo and turbo != "OFF":
             details.append("Turbo " + turbo)
     if policy_label:

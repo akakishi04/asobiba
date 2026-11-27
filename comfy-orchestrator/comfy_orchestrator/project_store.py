@@ -10,7 +10,10 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import core, h3_prompt
+from . import h3_prompt
+from .parameters import OrchestratorError, check_param, PARAMS
+from .workflow_registry import validate_h3_video_parameters
+from .h3 import h3_ref2va_filename, H3_OPTION_KEYS, split_h3_options
 from .asset_store import save_snapshot
 from .project_lock import lock_project
 from .timeline import validate_cut_frames, validate_prompt_plan, validate_overlap_frames
@@ -29,7 +32,7 @@ class LongVideoStore:
             if str(uuid.UUID(run_id)) != run_id:
                 raise ValueError()
         except (ValueError, TypeError, AttributeError) as exc:
-            raise core.OrchestratorError("長尺IDが不正です") from exc
+            raise OrchestratorError("長尺IDが不正です") from exc
         return self.root / run_id
 
     def save(self, manifest: dict):
@@ -51,16 +54,16 @@ class LongVideoStore:
         text_only = source is None
         if text_only and (not request.strip() or not isinstance(prompt_plan, dict)
                           or prompt_plan.get("format") != h3_prompt.FORMAT):
-            raise core.OrchestratorError("参照画像なしの長尺生成には自然文とH3公式形式の計画が必要です")
+            raise OrchestratorError("参照画像なしの長尺生成には自然文とH3公式形式の計画が必要です")
         p = long_generation_model(overrides, text_only=text_only)
-        core.validate_h3_video_parameters(p)
+        validate_h3_video_parameters(p)
         overlap_frames = validate_overlap_frames(overlap_frames)
         if cut_frames is not None:
             cut_frames = validate_cut_frames(cut_frames)
             if seconds != sum(cut_frames) / FPS or prompt_plan is None:
-                raise core.OrchestratorError("カット尺とプロンプト計画が一致しません")
+                raise OrchestratorError("カット尺とプロンプト計画が一致しません")
         if overlap_frames and prompt_plan is None:
-            raise core.OrchestratorError("助走付き長尺には区間プロンプト計画が必要です")
+            raise OrchestratorError("助走付き長尺には区間プロンプト計画が必要です")
         windows = schedule_windows(seconds, p["frames"], cut_frames, overlap_frames=overlap_frames)
         plan = [w["generation_frames"] for w in windows]
         if prompt_plan is not None:
@@ -70,9 +73,9 @@ class LongVideoStore:
         if source is not None:
             source = Path(source)
             if not source.is_file() or source.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
-                raise core.OrchestratorError("長尺生成の参照画像がありません")
+                raise OrchestratorError("長尺生成の参照画像がありません")
             if source.stat().st_size > 40 * 1024 * 1024:
-                raise core.OrchestratorError("参照画像は40MB以下にしてください")
+                raise OrchestratorError("参照画像は40MB以下にしてください")
         run_id = str(uuid.uuid4())
         folder = self.folder(run_id)
         folder.mkdir()
@@ -102,27 +105,27 @@ class LongVideoStore:
     def load(self, path: Path) -> dict:
         path = Path(path).resolve()
         if path.name != "manifest.json" or path.parent.parent != self.root:
-            raise core.OrchestratorError("このアプリの長尺manifest.jsonを選択してください")
+            raise OrchestratorError("このアプリの長尺manifest.jsonを選択してください")
         manifest = json.loads(path.read_text(encoding="utf-8"))
         if manifest.get("schema") != 1 or self.folder(manifest["run_id"]) != path.parent:
-            raise core.OrchestratorError("長尺記録が不正です")
+            raise OrchestratorError("長尺記録が不正です")
         manifest_schedule(manifest)
         if "prompt_plan" in manifest:
             manifest["prompt_plan"] = validate_prompt_plan(manifest["prompt_plan"], len(manifest["plan"]))
         if manifest["source"] is None:
             if (not manifest["request"].strip() or manifest.get("prompt_plan", {}).get("format") != h3_prompt.FORMAT
-                    or core.h3_ref2va_filename(manifest["overrides"].get("h3_model")) is not None):
-                raise core.OrchestratorError("参照なし長尺プロジェクトの記録が不正です")
+                    or h3_ref2va_filename(manifest["overrides"].get("h3_model")) is not None):
+                raise OrchestratorError("参照なし長尺プロジェクトの記録が不正です")
         elif not isinstance(manifest["source"], str) or not manifest["source"]:
-            raise core.OrchestratorError("長尺プロジェクトの参照画像記録が不正です")
+            raise OrchestratorError("長尺プロジェクトの参照画像記録が不正です")
         if not isinstance(manifest["segments"], list) or len(manifest["segments"]) > len(manifest["plan"]):
-            raise core.OrchestratorError("長尺区間記録が不正です")
+            raise OrchestratorError("長尺区間記録が不正です")
         seeds = manifest.get("cut_seeds")
         if seeds is not None:
             if not isinstance(seeds, list) or len(seeds) != len(manifest["plan"]):
-                raise core.OrchestratorError("長尺Seed記録が不正です")
+                raise OrchestratorError("長尺Seed記録が不正です")
             for seed in seeds:
-                core.check_param("seed", seed)
+                check_param("seed", seed)
         return manifest
 
     def projects(self):
@@ -131,7 +134,7 @@ class LongVideoStore:
         for path in self.root.glob("*/manifest.json"):
             try:
                 result.append((path.stat().st_mtime, self.load(path)))
-            except (OSError, ValueError, KeyError, TypeError, core.OrchestratorError):
+            except (OSError, ValueError, KeyError, TypeError, OrchestratorError):
                 continue
         return [m for _, m in sorted(result, key=lambda item: item[0], reverse=True)]
 
@@ -143,7 +146,7 @@ class LongVideoStore:
         folder = self.folder(manifest["run_id"])
         path = (folder / name).resolve()
         if not path.is_relative_to(folder):
-            raise core.OrchestratorError("長尺記録のパスが不正です")
+            raise OrchestratorError("長尺記録のパスが不正です")
         return path
 
 
@@ -159,26 +162,26 @@ def project_generation_inputs(store, manifest, *, overrides=None, source=None):
     if overrides is not None:
         # Remove old optional model-specific selections when the new model
         # does not use them. Preserve legacy non-UI parameters and timing.
-        for key in core.H3_OPTION_KEYS:
+        for key in H3_OPTION_KEYS:
             p.pop(key, None)
         p.update(overrides)
         p["frames"] = old["frames"]
         p["seed"] = overrides["seed"] if "seed" in overrides else secrets.randbits(32)
-        core.validate_h3_video_parameters(p)
-        core.check_param("seed", p["seed"])
-        _, options = core.split_h3_options(p, enabled=True)
+        validate_h3_video_parameters(p)
+        check_param("seed", p["seed"])
+        _, options = split_h3_options(p, enabled=True)
         if options:
             p = long_generation_model(p, text_only=saved_source is None)
     selected = saved_source
     source_changed = False
     if source is not None:
         if saved_source is None:
-            raise core.OrchestratorError("参照画像の有無を変える場合は新規計画を作成してください")
+            raise OrchestratorError("参照画像の有無を変える場合は新規計画を作成してください")
         selected = Path(source).expanduser().resolve()
         if not selected.is_file() or selected.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
-            raise core.OrchestratorError("左側で有効な参照画像を指定してください")
+            raise OrchestratorError("左側で有効な参照画像を指定してください")
         if selected.stat().st_size > 40 * 1024 * 1024:
-            raise core.OrchestratorError("参照画像は40MB以下にしてください")
+            raise OrchestratorError("参照画像は40MB以下にしてください")
         if selected != saved_source.resolve():
             source_changed = True
             if (saved_source.is_file() and selected.suffix.lower() == saved_source.suffix.lower()
@@ -222,7 +225,7 @@ def edit_project(store, manifest, journal, prompt_plan, cut_frames, *, regenerat
         changed = boundary if changed is None else min(changed, boundary)
     if regenerate_from is not None:
         if type(regenerate_from) is not int or not 0 <= regenerate_from < len(cuts):
-            raise core.OrchestratorError("再生成するカット番号が不正です")
+            raise OrchestratorError("再生成するカット番号が不正です")
         changed = regenerate_from if changed is None else min(changed, regenerate_from)
     if changed is None:
         return manifest
@@ -232,7 +235,7 @@ def edit_project(store, manifest, journal, prompt_plan, cut_frames, *, regenerat
         record = journal.read(path.parent.name)
         if (record.get("context", {}).get("long_run_id") == manifest["run_id"]
                 and record["state"] not in ("failed", "completed", "collected")):
-            raise core.OrchestratorError("未確定の生成ジョブがあります。元のプロジェクトを再開して状態を確定してください")
+            raise OrchestratorError("未確定の生成ジョブがあります。元のプロジェクトを再開して状態を確定してください")
     new = store.create(
         manifest["backend"], manifest["request"], selected_source,
         effective, new_seconds, manifest.get("profile"), prompt_plan=approved,
@@ -249,7 +252,7 @@ def edit_project(store, manifest, journal, prompt_plan, cut_frames, *, regenerat
             if (new["plan"][i] != manifest["plan"][i]
                     or old_windows[i]["trim_start_frames"] != new_windows[i]["trim_start_frames"]
                     or old_windows[i].get("guide_frames", 0) != new_windows[i].get("guide_frames", 0)):
-                raise core.OrchestratorError("引継ぎカットの生成・助走フレーム数が一致しません")
+                raise OrchestratorError("引継ぎカットの生成・助走フレーム数が一致しません")
             old_file = store.asset(manifest, segment["file"])
             dest = store.asset(new, segment["file"])
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -262,7 +265,7 @@ def edit_project(store, manifest, journal, prompt_plan, cut_frames, *, regenerat
             new["segments"].append(dict(segment))
         if prefix:
             new["first_parameters"] = dict(manifest["first_parameters"])
-        modulus = core.PARAMS["seed"][2] + 1
+        modulus = PARAMS["seed"][2] + 1
         old_seeds = manifest.get("cut_seeds") or [
             (int(manifest["overrides"]["seed"]) + i) % modulus
             for i in range(len(old_cuts))
@@ -291,23 +294,23 @@ def restore_project_plan(store, entry, fallback_backend):
     source = entry.reference_image
     text_only = params.get("long_text_only") is True
     if approved is None or (not text_only and (source is None or not source.is_file())):
-        raise core.OrchestratorError("履歴に計画または参照画像が保存されていません")
+        raise OrchestratorError("履歴に計画または参照画像が保存されていません")
     if text_only:
         if source is not None:
-            raise core.OrchestratorError("履歴の参照なし設定が不正です")
+            raise OrchestratorError("履歴の参照なし設定が不正です")
         source = None
     base = params.get("long_base_overrides")
     if base is None:
         base = {k: v for k, v in params.items() if not k.startswith("long_") and k != "positive_prompt"}
         base["frames"] = params.get("long_segment_frames", 124)
     if not isinstance(base, dict):
-        raise core.OrchestratorError("履歴の生成設定が不正です")
+        raise OrchestratorError("履歴の生成設定が不正です")
     seeds = params.get("long_cut_seeds")
     if seeds is not None:
         if not isinstance(seeds, list) or len(seeds) != len(approved.get("segments", [])):
-            raise core.OrchestratorError("履歴のSeed記録が不正です")
+            raise OrchestratorError("履歴のSeed記録が不正です")
         for seed in seeds:
-            core.check_param("seed", seed)
+            check_param("seed", seed)
     manifest = store.create(params.get("long_backend") or fallback_backend,
                             entry.request_text, source, base, params["long_seconds"],
                             entry.prompt_profile, prompt_plan=approved,

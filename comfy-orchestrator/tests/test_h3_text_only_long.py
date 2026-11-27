@@ -97,7 +97,7 @@ class TextOnlyLongTests(unittest.TestCase):
         expected = long_generation_model(p, text_only=True)
         self.assertEqual(manifest["overrides"], expected)
         self.assertTrue(expected["h3_model"].startswith("hybrid_i2v:"))
-        with patch.object(core, "ComfyUI") as factory:
+        with patch.object(generation_runtime, "ComfyUI") as factory:
             generation_runtime.preflight_long(self.config, CONFIG, expected,
                 manifest["plan"], text_only_h3=True, guide_frame_count=22)
         graphs = [c.args[0] for c in factory.return_value.ensure_video_dependencies.call_args_list]

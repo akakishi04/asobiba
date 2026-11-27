@@ -267,7 +267,8 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
                       cancel_event=None, prompt_cache=None, release_comfy=True,
                       overlap_frames=0, image=None, text_only=False, translation_cache=None) -> dict:
     """Plan text and optionally review it in Japanese in the same model session."""
-    from . import core
+    from .jobs import JobCancellationRequested
+    from .workflow_registry import H3_I2V_ID
     from .lmstudio import LMStudio, _request
     from .prompt_cache import CACHE_ERRORS, content_sha256, make_cache_key
     from .prompt_review import prepare_plan_review
@@ -279,7 +280,7 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
 
     def check_cancel():
         if cancel_event is not None and cancel_event.is_set():
-            raise core.JobCancellationRequested("長尺プロンプト計画を中止しました")
+            raise JobCancellationRequested("長尺プロンプト計画を中止しました")
 
     windows = segment_windows(frames, seconds, cut_frames=cut_frames, overlap_frames=overlap_frames)
     count = len(windows)
@@ -301,7 +302,7 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
     settings = {**config["llm"], "send_reference_to_llm": False}
     if not settings.get("model") or settings["model"] == "SELECT_IN_GUI":
         raise OrchestratorError("LM Studioのモデルを選択してください")
-    workflow = {core.H3_I2V_ID: config["workflows"][core.H3_I2V_ID]}
+    workflow = {H3_I2V_ID: config["workflows"][H3_I2V_ID]}
     profile = settings.get("h3_prompt_profile", DEFAULT_H3_PROFILE)
     key = None
     if prompt_cache is not None:

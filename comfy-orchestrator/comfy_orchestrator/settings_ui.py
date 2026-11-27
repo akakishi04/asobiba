@@ -6,7 +6,7 @@ from typing import Callable
 import tkinter as tk
 from tkinter import ttk
 
-from . import core
+from .h3 import H3_ENCODER_LABELS
 
 
 @dataclass(frozen=True)
@@ -66,7 +66,7 @@ class ConnectionPanel:
         encoder_row.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(2, 2))
         ttk.Label(encoder_row, text="H3エンコーダー").pack(side="left", padx=(0, 6))
         ttk.Combobox(encoder_row, textvariable=variables.h3_encoder_model,
-                     values=tuple(core.H3_ENCODER_LABELS.values()), state="readonly", width=18).pack(side="left")
+                     values=tuple(H3_ENCODER_LABELS.values()), state="readonly", width=18).pack(side="left")
         ttk.Checkbutton(encoder_row, text="CPU実行", variable=variables.h3_encoder_cpu).pack(side="left", padx=(10, 0))
         settings_actions = ttk.Frame(connection)
         settings_actions.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(4, 0))

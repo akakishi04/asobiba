@@ -96,7 +96,7 @@ class H3GuideTests(unittest.TestCase):
     def test_hybrid_preflight_checks_guide_nodes_before_generation(self):
         model = core.h3_hybrid_model_key("10Eros_Max_8stepTurbo_v1.0_hybrid.safetensors",
                                         reference_only=True)
-        with patch.object(core, "ComfyUI") as factory:
+        with patch.object(generation_runtime, "ComfyUI") as factory:
             generation_runtime.preflight_long(self.config, CONFIG,
                 {**PARAMS, "h3_model": model, "h3_turbo": "off"}, [107, 124], guide_frame_count=22)
         checks = [c.args[0] for c in factory.return_value.ensure_video_dependencies.call_args_list]

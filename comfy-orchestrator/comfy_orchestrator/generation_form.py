@@ -4,7 +4,22 @@ These functions depend on configuration and values, not the Tk event loop.
 """
 from __future__ import annotations
 
-from . import core
+from .parameters import OrchestratorError, check_param
+from .workflow_registry import (
+    compatible_workflows,
+    VIDEO_KINDS,
+    H3_I2V_ID,
+    WAN_I2V_ID,
+    HUNYUAN_I2V_ID,
+    QWEN_T2I_ID,
+    QWEN_LIGHTNING_ID,
+    QWEN_IDS,
+    SDXL_WORKFLOW_IDS,
+    validate_wan_video_parameters,
+    validate_hunyuan_video_parameters,
+    validate_h3_video_parameters,
+)
+from .h3 import H3_OPTION_KEYS, H3_TURBOS, h3_hybrid_filename, validate_h3_hybrid_steps
 from .long_video_plan import LONG_VIDEO_ID, LONG_TARGETS
 from .timeline import CONTINUATION_OVERLAP_FRAMES, GUIDE_CONNECTION_FRAMES
 
@@ -41,7 +56,7 @@ def connection_frames(label):
     for frames, name in {**H3_CONNECTION_LABELS, **LEGACY_CONNECTION_LABELS}.items():
         if name == label:
             return frames
-    raise core.OrchestratorError("接続方式の設定が不正です")
+    raise OrchestratorError("接続方式の設定が不正です")
 
 
 RESOLUTION_PRESETS = {
@@ -80,13 +95,13 @@ def resolve_generation_workflow(
         # Keep I2V selected while the user is still choosing the first frame.
         # _start validates required inputs before contacting the model.
         return chosen
-    candidates = core.compatible_workflows(
+    candidates = compatible_workflows(
         config.get("workflows", {}),
         image=True if has_image else None,
         mask=True if has_mask else None,
         pose=True if has_pose else None,
     )
-    candidates = {key: entry for key, entry in candidates.items() if entry.get("kind") not in core.VIDEO_KINDS}
+    candidates = {key: entry for key, entry in candidates.items() if entry.get("kind") not in VIDEO_KINDS}
     if not candidates:
         return None
     if has_pose:
@@ -111,12 +126,12 @@ WORKFLOW_NAMES = {
     "wai_inpaint_basic": "部分修正",
     "wai_pose_skeleton": "ポーズ参照 · 骨格",
     "wai_pose_detect": "ポーズ参照 · 画像",
-    core.H3_I2V_ID: "動画生成 · MiniMax H3",
+    H3_I2V_ID: "動画生成 · MiniMax H3",
     LONG_VIDEO_ID: "動画生成 · H3 長尺",
-    core.WAN_I2V_ID: "動画生成 · Wan 2.2",
-    core.HUNYUAN_I2V_ID: "動画生成 · Hunyuan 1.5 (480p)",
-    core.QWEN_T2I_ID: "画像生成 · Qwen-Image 2512",
-    core.QWEN_LIGHTNING_ID: "画像生成 · Qwen-Image 2512 (4 Steps)",
+    WAN_I2V_ID: "動画生成 · Wan 2.2",
+    HUNYUAN_I2V_ID: "動画生成 · Hunyuan 1.5 (480p)",
+    QWEN_T2I_ID: "画像生成 · Qwen-Image 2512",
+    QWEN_LIGHTNING_ID: "画像生成 · Qwen-Image 2512 (4 Steps)",
 }
 
 
@@ -141,24 +156,24 @@ def workflow_generation_mode(config: dict, workflow_id: str) -> str:
     if workflow_id == LONG_VIDEO_ID:
         return "continuous"
     entry = config.get("workflows", {}).get(workflow_id, {})
-    return "video" if entry.get("kind") in core.VIDEO_KINDS else "image"
+    return "video" if entry.get("kind") in VIDEO_KINDS else "image"
 
 
 def mode_workflow_ids(config: dict, mode: str) -> tuple[str, ...]:
     workflows = config.get("workflows", {})
     if mode == "continuous":
-        return (core.H3_I2V_ID,) if workflows.get(core.H3_I2V_ID, {}).get("kind") == "i2v" else ()
+        return (H3_I2V_ID,) if workflows.get(H3_I2V_ID, {}).get("kind") == "i2v" else ()
     if mode == "video":
-        return tuple(key for key, entry in workflows.items() if entry.get("kind") in core.VIDEO_KINDS)
-    return ("自動", *(key for key, entry in workflows.items() if entry.get("kind") not in core.VIDEO_KINDS))
+        return tuple(key for key, entry in workflows.items() if entry.get("kind") in VIDEO_KINDS)
+    return ("自動", *(key for key, entry in workflows.items() if entry.get("kind") not in VIDEO_KINDS))
 
 
 def choose_mode_workflow(config: dict, mode: str, preferred: str | None = None) -> str:
     choices = mode_workflow_ids(config, mode)
     if preferred in choices:
         return preferred
-    if core.H3_I2V_ID in choices:
-        return core.H3_I2V_ID
+    if H3_I2V_ID in choices:
+        return H3_I2V_ID
     return choices[0] if choices else ""
 
 
@@ -168,10 +183,10 @@ def parameter_visibility(config: dict, workflow_id: str | None, custom_size: boo
     entry = config.get("workflows", {}).get(workflow_id, {})
     bindings = entry.get("bindings", {})
     kind = entry.get("kind")
-    video = kind in core.VIDEO_KINDS
-    h3 = workflow_id == core.H3_I2V_ID
-    hunyuan = workflow_id == core.HUNYUAN_I2V_ID
-    qwen = workflow_id in core.QWEN_IDS
+    video = kind in VIDEO_KINDS
+    h3 = workflow_id == H3_I2V_ID
+    hunyuan = workflow_id == HUNYUAN_I2V_ID
+    qwen = workflow_id in QWEN_IDS
     still_size = not video and "image" not in bindings and {"width", "height"} <= bindings.keys()
     return {
         "resolution": still_size,
@@ -183,9 +198,9 @@ def parameter_visibility(config: dict, workflow_id: str | None, custom_size: boo
         "h3_turbo": h3,
         "h3_performance": False,
         "hunyuan": hunyuan,
-        "checkpoint": workflow_id in core.SDXL_WORKFLOW_IDS,
-        "qwen_steps": workflow_id == core.QWEN_T2I_ID,
-        "qwen_fixed": workflow_id == core.QWEN_LIGHTNING_ID,
+        "checkpoint": workflow_id in SDXL_WORKFLOW_IDS,
+        "qwen_steps": workflow_id == QWEN_T2I_ID,
+        "qwen_fixed": workflow_id == QWEN_LIGHTNING_ID,
         "steps": "steps" in bindings and not hunyuan and not qwen,
         "cfg": "cfg" in bindings and not qwen,
         "seed": "seed" in bindings,
@@ -216,22 +231,22 @@ def image_aware_overrides(
     """Strip settings unsupported by a selected workflow."""
     candidates = (
         [config["workflows"][workflow_id]] if workflow_id in config["workflows"]
-        else list(core.compatible_workflows(
+        else list(compatible_workflows(
             config.get("workflows", {}), image=True if has_image else None,
         ).values())
     )
     if not candidates:
-        raise core.OrchestratorError("入力画像に対応するワークフローがありません")
+        raise OrchestratorError("入力画像に対応するワークフローがありません")
     common = set(candidates[0]["bindings"])
     for entry in candidates[1:]:
         common.intersection_update(entry["bindings"])
     result = {key: value for key, value in overrides.items() if key in common}
-    if workflow_id == core.H3_I2V_ID:
-        result.update({key: overrides[key] for key in core.H3_OPTION_KEYS if key in overrides})
+    if workflow_id == H3_I2V_ID:
+        result.update({key: overrides[key] for key in H3_OPTION_KEYS if key in overrides})
     for field, raw in (("denoise", denoise), ("control_strength", control_strength)):
         if field in common:
             value = float(raw)
-            core.check_param(field, value)
+            check_param(field, value)
             result[field] = value
     return result
 
@@ -241,7 +256,7 @@ def common_overrides(config, workflow_id, *, width, height, steps, cfg, seed,
     """Validate active fields; hidden stale edits must not block other modes."""
     entry = config.get("workflows", {}).get(workflow_id, {})
     bindings = entry.get("bindings", {})
-    video = entry.get("kind") in core.VIDEO_KINDS
+    video = entry.get("kind") in VIDEO_KINDS
     previous = config.get("ui", {}) if entry else {}
     values = {}
     for name, raw, parse, default in (
@@ -252,25 +267,25 @@ def common_overrides(config, workflow_id, *, width, height, steps, cfg, seed,
     ):
         try:
             value = parse(raw)
-            core.check_param(name, value)
-        except (ValueError, core.OrchestratorError):
-            separate_qwen = entry.get("kind") == "t2i" and workflow_id in core.QWEN_IDS and name in ("steps", "cfg")
+            check_param(name, value)
+        except (ValueError, OrchestratorError):
+            separate_qwen = entry.get("kind") == "t2i" and workflow_id in QWEN_IDS and name in ("steps", "cfg")
             separate_video_steps = name == "steps" and (
-                (has_h3_steps and workflow_id == core.H3_I2V_ID)
-                or (has_hunyuan_steps and workflow_id == core.HUNYUAN_I2V_ID)
+                (has_h3_steps and workflow_id == H3_I2V_ID)
+                or (has_hunyuan_steps and workflow_id == HUNYUAN_I2V_ID)
             )
             if not entry or (name in bindings and not (video and name in ("width", "height"))
                              and not separate_video_steps and not separate_qwen):
                 raise
             value = previous.get(name, default)
             try:
-                core.check_param(name, value)
-            except core.OrchestratorError:
+                check_param(name, value)
+            except OrchestratorError:
                 value = default
         values[name] = value
     if seed.strip():
         values["seed"] = int(seed.strip())
-        core.check_param("seed", values["seed"])
+        check_param("seed", values["seed"])
     return values
 
 
@@ -281,21 +296,21 @@ def wan_overrides(*, size, frames, fps, steps, cfg, seed):
     if seed.strip():
         values["seed"] = int(seed.strip())
     for name, value in values.items():
-        core.check_param(name, value)
-    core.validate_wan_video_parameters(values)
+        check_param(name, value)
+    validate_wan_video_parameters(values)
     return values
 
 
 def qwen_overrides(workflow_id, *, width, height, steps, cfg, seed):
-    fast = workflow_id == core.QWEN_LIGHTNING_ID
+    fast = workflow_id == QWEN_LIGHTNING_ID
     values = {"width": int(width), "height": int(height),
               "steps": 4 if fast else int(steps), "cfg": 1 if fast else float(cfg)}
     if seed.strip():
         values["seed"] = int(seed.strip())
     for name, value in values.items():
-        core.check_param(name, value)
+        check_param(name, value)
     if values["width"] % 16 or values["height"] % 16:
-        raise core.OrchestratorError("Qwen-Imageの幅・高さは16の倍数にしてください")
+        raise OrchestratorError("Qwen-Imageの幅・高さは16の倍数にしてください")
     return values
 
 
@@ -305,8 +320,8 @@ def hunyuan_overrides(*, size, frames, steps, seed):
     if seed.strip():
         values["seed"] = int(seed.strip())
     for name, value in values.items():
-        core.check_param(name, value)
-    core.validate_hunyuan_video_parameters(values)
+        check_param(name, value)
+    validate_hunyuan_video_parameters(values)
     return values
 
 
@@ -315,8 +330,8 @@ def h3_overrides(*, size, duration, steps, seed, choices):
     frames = H3_DURATIONS.get(duration)
     if frames is None:
         frames = int(duration.rsplit("(", 1)[1].removesuffix("f)"))
-    fixed = core.H3_TURBOS[choices.get("h3_turbo", "off")][1]
-    hybrid = core.h3_hybrid_filename(choices.get("h3_model")) is not None
+    fixed = H3_TURBOS[choices.get("h3_turbo", "off")][1]
+    hybrid = h3_hybrid_filename(choices.get("h3_model")) is not None
     if hybrid and choices.get("h3_performance") in ("euler_dense", "kitchen_int8"):
         fixed = 8
     values = {"width": width, "height": height, "frames": frames, "fps": 24,
@@ -324,8 +339,8 @@ def h3_overrides(*, size, duration, steps, seed, choices):
     if seed.strip():
         values["seed"] = int(seed.strip())
     for name, value in values.items():
-        core.check_param(name, value)
-    core.validate_h3_video_parameters(values)
+        check_param(name, value)
+    validate_h3_video_parameters(values)
     if hybrid:
-        core.validate_h3_hybrid_steps(values["steps"], choices.get("h3_performance", "standard"))
+        validate_h3_hybrid_steps(values["steps"], choices.get("h3_performance", "standard"))
     return {**values, **choices}

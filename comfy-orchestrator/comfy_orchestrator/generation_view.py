@@ -10,7 +10,7 @@ from typing import Callable
 import tkinter as tk
 from tkinter import ttk, scrolledtext
 
-from . import core
+from .h3 import H3_MODEL_LABELS, H3_TURBO_LABELS, H3_PERFORMANCE_LABELS
 from .file_drop import register_file_drop
 from .generation_form import (
     RESOLUTION_PRESETS, CUSTOM_RESOLUTION, VIDEO_RESOLUTIONS, VIDEO_FRAME_COUNTS,
@@ -262,12 +262,12 @@ class GenerationView(ttk.Frame):
                                     choices=(variables.checkpoint_model.get(),), span=3, width=18)
         self.checkpoint_box.bind("<<ComboboxSelected>>", actions.sync_steps)
         self.h3_model_box = field(8, 0, "モデル", variables.h3_model, "h3",
-                                  choices=tuple(dict.fromkeys((*core.H3_MODEL_LABELS.values(), variables.h3_model.get()))),
+                                  choices=tuple(dict.fromkeys((*H3_MODEL_LABELS.values(), variables.h3_model.get()))),
                                   span=3, width=18)
         self.h3_turbo_box = field(9, 0, "追加Turbo", variables.h3_turbo, "h3_turbo",
-                                  choices=tuple(core.H3_TURBO_LABELS.values()), span=3, width=18)
+                                  choices=tuple(H3_TURBO_LABELS.values()), span=3, width=18)
         self.h3_performance_box = field(9, 0, "高速化", variables.h3_performance, "h3_performance",
-                                        choices=tuple(core.H3_PERFORMANCE_LABELS.values()), span=3, width=18)
+                                        choices=tuple(H3_PERFORMANCE_LABELS.values()), span=3, width=18)
         self.h3_performance_box.bind("<<ComboboxSelected>>", actions.performance_changed)
         self.h3_model_box.bind("<<ComboboxSelected>>", actions.model_changed)
         self.h3_turbo_box.bind("<<ComboboxSelected>>", actions.sync_steps)

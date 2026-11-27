@@ -16,7 +16,7 @@ from .prompt_review import (TranslationCache, protect, restore, TOKEN, prepare_p
 def cut_context(manifest, plan, cuts, index):
     """Use the executed preceding prompt only when that prefix is still valid."""
     from .long_video_plan import first_changed_cut, project_cut_lengths, schedule_windows
-    from . import core
+    from .h3 import h3_ref2va_filename
     from .timeline import validate_cut_frames
     if not 0 <= index < len(cuts) or len(plan["segments"]) != len(cuts):
         raise OrchestratorError("カット番号が不正です")
@@ -35,7 +35,7 @@ def cut_context(manifest, plan, cuts, index):
         actual = manifest["segments"][index-1].get("parameters", {}).get("positive_prompt")
         if isinstance(actual, str) and actual.strip():
             previous, origin = actual, "executed_prompt"
-    ref = index == 0 and core.h3_ref2va_filename(manifest["overrides"].get("h3_model")) is not None
+    ref = index == 0 and h3_ref2va_filename(manifest["overrides"].get("h3_model")) is not None
     w = windows[index]
     return {
         "original_request": manifest["request"], "common": plan["common"],

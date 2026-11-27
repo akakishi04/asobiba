@@ -9,6 +9,7 @@ from comfy_orchestrator import app_config, generation_form, history_presentation
 from comfy_orchestrator import output_views, settings_ui, prompt_viewer, generation_view, task_controller
 from comfy_orchestrator import prompt_inference, project_draft, project_ui, h3_prompt, lmstudio
 from comfy_orchestrator import core, workflow_registry, configuration, http_api, comfy_client, ollama_client
+from comfy_orchestrator import generation_runtime, model_runtime
 from comfy_orchestrator.parameters import OrchestratorError
 
 
@@ -101,7 +102,10 @@ class ModuleBoundariesTests(unittest.TestCase):
         self.assertIs(core.APIHTTPError, http_api.APIHTTPError)
 
     def test_backend_and_workflow_modules_do_not_depend_on_core(self):
-        for module in (workflow_registry, configuration, http_api, comfy_client, ollama_client):
+        for module in (workflow_registry, configuration, http_api, comfy_client, ollama_client,
+                       generation_runtime, model_runtime, long_video_plan, project_store, generation_form,
+                       app_config, history_presentation, settings_ui, generation_view, prompt_viewer,
+                       prompt_edit, h3_prompt):
             tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
             for node in ast.walk(tree):
                 if isinstance(node, ast.ImportFrom):

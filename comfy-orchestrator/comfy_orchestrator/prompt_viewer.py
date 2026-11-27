@@ -4,7 +4,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import messagebox, scrolledtext, ttk
 
-from . import core
+from .workflow_registry import H3_I2V_ID
 from .character_refs import format_evidence
 from .prompt_profiles import T2I_PROFILE_LABELS, I2I_PROFILE_LABELS, H3_PROFILE_LABELS
 
@@ -17,7 +17,7 @@ def show_prompt_details(parent, details: dict, *, from_history: bool, copy_text,
         version_text = T2I_PROFILE_LABELS.get(version, version or "記録なし")
     elif kind in ("i2i", "inpaint"):
         version_text = I2I_PROFILE_LABELS.get(version, version or "記録なし")
-    elif details.get("workflow_id") == core.H3_I2V_ID:
+    elif details.get("workflow_id") == H3_I2V_ID:
         version_text = H3_PROFILE_LABELS.get(version, version or "記録なし")
     else:
         version_text = version or "対象外"

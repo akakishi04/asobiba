@@ -24,7 +24,7 @@ def release_comfy_before_llm(settings, *, comfy=None, progress=None, enabled=Tru
     if not enabled or not settings.get("free_before_llm", True):
         return
     if comfy is None:
-        from .core import ComfyUI
+        from .comfy_client import ComfyUI
         comfy = ComfyUI(settings)
     if progress:
         progress("ComfyUI: キューを確認してLLM処理前に生成モデルを解放")

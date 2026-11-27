@@ -45,7 +45,7 @@ class SharedRuntimeTests(unittest.TestCase):
                                         reference_only=True)
         overrides = {"h3_model": model, "h3_turbo": "off",
                      "width": 864, "height": 480, "fps": 24, "frames": 124, "steps": 8}
-        with patch.object(core, "ComfyUI") as factory:
+        with patch.object(generation_runtime, "ComfyUI") as factory:
             generation_runtime.preflight_long(self.config, CONFIG, overrides, [124, 107])
         checked = factory.return_value.ensure_video_dependencies.call_args_list
         self.assertEqual(len(checked), 2)
@@ -53,7 +53,7 @@ class SharedRuntimeTests(unittest.TestCase):
         self.assertEqual(checked[1].args[0]["104"]["class_type"], "MiniMaxH3ImageToVideo")
 
     def test_invalid_long_frames_stop_before_backend_call(self):
-        with patch.object(core, "ComfyUI") as factory:
+        with patch.object(generation_runtime, "ComfyUI") as factory:
             with self.assertRaises(core.OrchestratorError):
                 generation_runtime.preflight_long(
                     self.config, CONFIG, {"width": 864, "height": 480, "fps": 24, "steps": 8},

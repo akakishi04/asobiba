@@ -434,7 +434,7 @@ def _validate_batch(value, batch, first_ref, common=None, *, text_only=False):
 def plan_long(config, request, windows, reference_only, *, image=None, progress=None,
               cancel_event=None, prompt_cache=None, release_comfy=True, text_only=False,
               translation_cache=None):
-    from . import core
+    from .workflow_registry import H3_I2V_ID
     from .lmstudio import LMStudio
     from .prompt_cache import CACHE_ERRORS, make_cache_key
     from .model_runtime import release_comfy_before_llm
@@ -458,7 +458,7 @@ def plan_long(config, request, windows, reference_only, *, image=None, progress=
     settings = dict(config["llm"], send_reference_to_llm=False)
     if not settings.get("model") or settings["model"] == "SELECT_IN_GUI":
         raise OrchestratorError("LM Studioのモデルを選択してください")
-    workflows = {core.H3_I2V_ID: config["workflows"][core.H3_I2V_ID]}
+    workflows = {H3_I2V_ID: config["workflows"][H3_I2V_ID]}
     key = None
     if prompt_cache is not None:
         try:
