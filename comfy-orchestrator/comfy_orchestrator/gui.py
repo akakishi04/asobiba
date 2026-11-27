@@ -12,7 +12,6 @@ import json
 import os
 import queue
 import secrets
-import shutil
 import sqlite3
 import threading
 import tempfile
@@ -35,10 +34,11 @@ from .comparison import ComparisonWindow
 from .history import HistoryStore, HistoryEntry, HistoryError
 from .jobs import JobJournal, JobCancellationRequested
 from .prompt_cache import PromptCache, CACHE_ERRORS
-from .long_video import (LONG_VIDEO_ID, LONG_TARGETS, LongVideoStore, LongVideoPaused,
-                         FFmpeg, continuation_model, segment_plan, edit_project, restore_project_plan,
-                         first_changed_cut, project_generation_inputs, project_cut_lengths,
-                         connection_changed_from, manifest_windows, long_generation_model)
+from .long_video_plan import (LONG_VIDEO_ID, LONG_TARGETS, LongVideoPaused, continuation_model,
+                              segment_plan, first_changed_cut, project_cut_lengths,
+                              connection_changed_from, manifest_windows, long_generation_model)
+from .project_store import LongVideoStore, edit_project, restore_project_plan, project_generation_inputs
+from .video_media import FFmpeg
 from .timeline import (plan_long_prompts, CUSTOM_CUTS, validate_cut_frames,
                        CONTINUATION_OVERLAP_FRAMES, GUIDE_CONNECTION_FRAMES,
                        default_cut_frames, generation_frames_for_cuts, format_cut_seconds)
@@ -58,7 +58,6 @@ from .character_refs import (
     normalize_approved as normalize_character_traits,
     validate_character_selection, character_status_label,
     save_character_sheet, load_character_sheet, clear_character_sheet,
-    format_evidence,
 )
 from .prompt_profiles import (
     DEFAULT_T2I_PROFILE, T2I_PROFILE_LABELS, T2I_LABEL_TO_PROFILE,
@@ -67,7 +66,22 @@ from .prompt_profiles import (
 )
 from .ime_font import install_native_ime_font, sync_native_ime_font
 from .ui_theme import apply_ttk_theme, style_text_widget
-from .video_preview import VideoPreview
+from .generation_form import (
+    CUSTOM_RESOLUTION, VIDEO_RESOLUTIONS, VIDEO_FRAME_COUNTS, HUNYUAN_RESOLUTIONS,
+    H3_RESOLUTIONS, H3_DURATIONS, H3_CONNECTION_LABELS, LEGACY_CONNECTION_LABELS,
+    preferred_connection_frames, connection_label, connection_frames,
+    RESOLUTION_PRESETS, resolution_preset_label, resolve_generation_workflow, WORKFLOW_NAMES,
+    workflow_display_names, GENERATION_MODE_LABELS, CONTINUOUS_TARGETS,
+    workflow_generation_mode, mode_workflow_ids, choose_mode_workflow, parameter_visibility,
+    reference_visibility, image_aware_overrides, common_overrides, wan_overrides,
+    qwen_overrides, hunyuan_overrides, h3_overrides,
+)
+from .app_config import load_local_config, write_local_config
+from .history_presentation import (history_request_text, history_prompt_details, history_row,
+                                   history_summary, history_can_replay, history_action_state)
+from .prompt_viewer import show_prompt_details, show_saved_character_features, show_composition_report
+from .output_views import ResultView, HistoryView, ResultActions, HistoryActions
+from .settings_ui import ConnectionPanel, ConnectionVariables, ConnectionActions
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,109 +89,13 @@ CONFIG = ROOT / "config.json"
 EXAMPLE = ROOT / "config.example.json"
 OUTPUTS = ROOT / "outputs"
 
-# Keep the pixel dimensions authoritative: presets are just a GUI shortcut.
-CUSTOM_RESOLUTION = "カスタム"
-VIDEO_RESOLUTIONS = ("832 × 480", "480 × 832", "640 × 640", "1280 × 704", "704 × 1280")
-VIDEO_FRAME_COUNTS = ("49", "81", "121")
-HUNYUAN_RESOLUTIONS = ("848 × 480", "480 × 848", "640 × 640")
-H3_RESOLUTIONS = ("864 × 480", "480 × 864", "640 × 640", "1056 × 608", "608 × 1056", "1344 × 768", "768 × 1344", "768 × 768")
-H3_DURATIONS = {"約5秒 (124f)": 124, "8秒 (192f)": 192, "約10秒 (243f)": 243, "約12秒 (294f)": 294, "約15秒 (362f)": 362}
-# Only the adopted guide policy and the conventional comparison are selectable.
-H3_CONNECTION_LABELS = {GUIDE_CONNECTION_FRAMES: "ガイド接続（22f）", 0: "従来接続"}
-# A loaded old manifest may display its retired policy without making it a
-# selectable option. This permits exact resume, including in-flight jobs.
-LEGACY_CONNECTION_LABELS = {
-    frames: f"旧助走接続（最大{frames}f）"
-    for frames in range(1, CONTINUATION_OVERLAP_FRAMES + 1)
-}
-
-
-def preferred_connection_frames(frames):
-    """Migrate old UI preferences; do not alter any saved project."""
-    return frames if type(frames) is int and frames in H3_CONNECTION_LABELS else GUIDE_CONNECTION_FRAMES
-
-
-def connection_label(frames):
-    if type(frames) is int and frames in LEGACY_CONNECTION_LABELS:
-        return LEGACY_CONNECTION_LABELS[frames]
-    return H3_CONNECTION_LABELS[preferred_connection_frames(frames)]
-
-
-def connection_frames(label):
-    for frames, name in {**H3_CONNECTION_LABELS, **LEGACY_CONNECTION_LABELS}.items():
-        if name == label:
-            return frames
-    raise core.OrchestratorError("接続方式の設定が不正です")
-
-
 VIDEO_EXTENSIONS = output_collection.VIDEO_EXTENSIONS
 IMAGE_EXTENSIONS = output_collection.IMAGE_EXTENSIONS
 is_video_output = output_collection.is_video_output
 
 
-RESOLUTION_PRESETS = {
-    "512 × 512（軽量プレビュー）": (512, 512),
-    "768 × 768（軽量・正方形）": (768, 768),
-    "1024 × 1024（標準・正方形）": (1024, 1024),
-    "832 × 1216（縦長イラスト）": (832, 1216),
-    "1216 × 832（横長イラスト）": (1216, 832),
-    "768 × 1024（縦長 3:4）": (768, 1024),
-    "1024 × 768（横長 4:3）": (1024, 768),
-    "720 × 1280（縦長 9:16）": (720, 1280),
-    "1280 × 720（横長 16:9）": (1280, 720),
-}
-
-
-def resolution_preset_label(width: str, height: str) -> str:
-    """Infer the preset from editable dimensions, including partial input."""
-    try:
-        dimensions = (int(width), int(height))
-    except (TypeError, ValueError):
-        return CUSTOM_RESOLUTION
-    return next(
-        (label for label, size in RESOLUTION_PRESETS.items() if size == dimensions),
-        CUSTOM_RESOLUTION,
-    )
-
-
 def bootstrap_config() -> dict:
-    """Create the local settings file only if missing, preserving custom settings."""
-    if not CONFIG.exists():
-        shutil.copyfile(EXAMPLE, CONFIG)
-    config = json.loads(CONFIG.read_text(encoding="utf-8"))
-    example = json.loads(EXAMPLE.read_text(encoding="utf-8"))
-    if "llm" not in config:
-        config["llm"] = copy.deepcopy(example["llm"])
-    config["llm"]["provider"] = "lmstudio"
-    # Backfill the new inference-only timeout without changing the user's
-    # chosen model, endpoint, token limit, or older API-management timeout.
-    config["llm"].setdefault(
-        "inference_timeout_seconds", example["llm"]["inference_timeout_seconds"]
-    )
-    config["llm"].setdefault("send_reference_to_llm", False)
-    config["llm"].setdefault("t2i_prompt_profile", DEFAULT_T2I_PROFILE)
-    config["llm"].setdefault("i2i_prompt_profile", DEFAULT_I2I_PROFILE)
-    config["llm"].setdefault("h3_prompt_profile", DEFAULT_H3_PROFILE)
-    config["llm"].setdefault("h3_prompt_format", H3_OFFICIAL_FORMAT)
-    config["llm"].setdefault("h3_reference_vision", True)
-    config.setdefault("workflows", {})
-    for workflow_id, entry in example.get("workflows", {}).items():
-        config["workflows"].setdefault(workflow_id, copy.deepcopy(entry))
-    config.setdefault("ui", copy.deepcopy(example.get("ui", {})))
-    # One-time migration from the original 4096/2048 token presets.
-    # Keep unrelated settings (including the user's chosen model and port).
-    # A marker prevents a deliberate future choice of smaller limits from
-    # being silently overwritten on the next startup.
-    ui = config["ui"]
-    if not ui.get("token_defaults_v2_applied", False):
-        llm = config["llm"]
-        defaults = example["llm"]
-        if llm.get("context_length") == 4096:
-            llm["context_length"] = defaults["context_length"]
-        if llm.get("max_tokens", 2048) == 2048:
-            llm["max_tokens"] = defaults["max_tokens"]
-        ui["token_defaults_v2_applied"] = True
-    return config
+    return load_local_config(CONFIG, EXAMPLE)
 
 
 # Preserve these public helpers for existing callers and local tests.
@@ -194,177 +112,11 @@ def collect_generation_outputs(base_url, result, kind, *, journal=None, cancel_e
     )
 
 
-def resolve_generation_workflow(
-    config: dict, chosen: str, has_image: bool,
-    has_mask: bool = False, has_pose: bool = False,
-    pose_mode: str = "skeleton",
-) -> str | None:
-    """Route still images automatically; video requires an explicit selection."""
-    registered = config.get("workflows", {})
-    if registered.get(chosen, {}).get("kind") == "i2v":
-        # Keep I2V selected while the user is still choosing the first frame.
-        # _start validates required inputs before contacting the model.
-        return chosen
-    candidates = core.compatible_workflows(
-        config.get("workflows", {}),
-        image=True if has_image else None,
-        mask=True if has_mask else None,
-        pose=True if has_pose else None,
-    )
-    candidates = {key: entry for key, entry in candidates.items() if entry.get("kind") not in core.VIDEO_KINDS}
-    if not candidates:
-        return None
-    if has_pose:
-        expected = "wai_pose_detect" if pose_mode == "photo" else "wai_pose_skeleton"
-        if expected in candidates:
-            return expected
-    if chosen in candidates:
-        return chosen
-    preferred = (
-        "wai_inpaint_basic" if has_mask else
-        "wai_i2i_basic" if has_image else
-        "wai_t2i_basic"
-    )
-    if preferred in candidates:
-        return preferred
-    return next(iter(candidates)) if len(candidates) == 1 else None
-
-
-WORKFLOW_NAMES = {
-    "wai_t2i_basic": "画像生成 · T2I",
-    "wai_i2i_basic": "画像編集 · I2I",
-    "wai_inpaint_basic": "部分修正",
-    "wai_pose_skeleton": "ポーズ参照 · 骨格",
-    "wai_pose_detect": "ポーズ参照 · 画像",
-    core.H3_I2V_ID: "動画生成 · MiniMax H3",
-    LONG_VIDEO_ID: "動画生成 · H3 長尺",
-    core.WAN_I2V_ID: "動画生成 · Wan 2.2",
-    core.HUNYUAN_I2V_ID: "動画生成 · Hunyuan 1.5 (480p)",
-    core.QWEN_T2I_ID: "画像生成 · Qwen-Image 2512",
-    core.QWEN_LIGHTNING_ID: "画像生成 · Qwen-Image 2512 (4 Steps)",
-}
-
-
-def workflow_display_names(config: dict) -> dict[str, str]:
-    """Stable IDs for execution; readable labels for the shared form."""
-    labels = {"自動": "自動"}
-    for key in config.get("workflows", {}):
-        label = WORKFLOW_NAMES.get(key, key)
-        if label in labels.values():
-            label = f"{label} ({key})"
-            while label in labels.values():
-                label += " "
-        labels[key] = label
-    return labels
-
-
-GENERATION_MODE_LABELS = {"image": "画像生成", "video": "動画生成", "continuous": "連続動画生成"}
-CONTINUOUS_TARGETS = tuple(label for label, seconds in LONG_TARGETS.items() if seconds > 0)
-
-
-def workflow_generation_mode(config: dict, workflow_id: str) -> str:
-    if workflow_id == LONG_VIDEO_ID:
-        return "continuous"
-    entry = config.get("workflows", {}).get(workflow_id, {})
-    return "video" if entry.get("kind") in core.VIDEO_KINDS else "image"
-
-
-def mode_workflow_ids(config: dict, mode: str) -> tuple[str, ...]:
-    workflows = config.get("workflows", {})
-    if mode == "continuous":
-        return (core.H3_I2V_ID,) if workflows.get(core.H3_I2V_ID, {}).get("kind") == "i2v" else ()
-    if mode == "video":
-        return tuple(key for key, entry in workflows.items() if entry.get("kind") in core.VIDEO_KINDS)
-    return ("自動", *(key for key, entry in workflows.items() if entry.get("kind") not in core.VIDEO_KINDS))
-
-
-def choose_mode_workflow(config: dict, mode: str, preferred: str | None = None) -> str:
-    choices = mode_workflow_ids(config, mode)
-    if preferred in choices:
-        return preferred
-    if core.H3_I2V_ID in choices:
-        return core.H3_I2V_ID
-    return choices[0] if choices else ""
-
-
-def parameter_visibility(config: dict, workflow_id: str | None, custom_size: bool = False,
-                         *, generation_mode: str | None = None) -> dict:
-    """All workflows share the same grid. Only the individual fields vary."""
-    entry = config.get("workflows", {}).get(workflow_id, {})
-    bindings = entry.get("bindings", {})
-    kind = entry.get("kind")
-    video = kind in core.VIDEO_KINDS
-    h3 = workflow_id == core.H3_I2V_ID
-    hunyuan = workflow_id == core.HUNYUAN_I2V_ID
-    qwen = workflow_id in core.QWEN_IDS
-    still_size = not video and "image" not in bindings and {"width", "height"} <= bindings.keys()
-    return {
-        "resolution": still_size,
-        "custom_size": still_size and custom_size,
-        "source_size": not video and "image" in bindings and not still_size,
-        "wan": video and not h3 and not hunyuan,
-        "h3": h3,
-        "h3_long": h3 and generation_mode == "continuous",
-        "h3_turbo": h3,
-        "h3_performance": False,
-        "hunyuan": hunyuan,
-        "checkpoint": workflow_id in core.SDXL_WORKFLOW_IDS,
-        "qwen_steps": workflow_id == core.QWEN_T2I_ID,
-        "qwen_fixed": workflow_id == core.QWEN_LIGHTNING_ID,
-        "steps": "steps" in bindings and not hunyuan and not qwen,
-        "cfg": "cfg" in bindings and not qwen,
-        "seed": "seed" in bindings,
-        "denoise": "denoise" in bindings,
-        "strength": "control_strength" in bindings,
-        "t2i_profile": kind == "t2i" and not qwen,
-        "i2i_profile": kind in ("i2i", "inpaint"),
-        "h3_profile": h3,
-    }
-
-
 def set_grid_visible(widget, visible: bool) -> None:
     """Avoid no-op geometry requests (including while parent is unmapped)."""
     if (widget.winfo_manager() == "grid") != visible:
         widget.grid() if visible else widget.grid_remove()
 
-
-def reference_visibility(*, video: bool, expanded: bool, reference: bool,
-                         mask: bool, pose: bool, composition: bool) -> dict:
-    """Never hide selected references, so incompatible inputs can be cleared."""
-    return {
-        "mask": mask or (reference and not video),
-        "pose": pose or (expanded and not video),
-        "composition": not video and (composition or expanded),
-        "vision": not video and (reference or pose or composition),
-    }
-
-
-def image_aware_overrides(
-    config: dict, workflow_id: str | None, has_image: bool,
-    overrides: dict, denoise: str,
-    control_strength: str = "0.85",
-) -> dict:
-    """Strip settings unsupported by a selected workflow."""
-    candidates = (
-        [config["workflows"][workflow_id]] if workflow_id in config["workflows"]
-        else list(core.compatible_workflows(
-            config.get("workflows", {}), image=True if has_image else None,
-        ).values())
-    )
-    if not candidates:
-        raise core.OrchestratorError("入力画像に対応するワークフローがありません")
-    common = set(candidates[0]["bindings"])
-    for entry in candidates[1:]:
-        common.intersection_update(entry["bindings"])
-    result = {key: value for key, value in overrides.items() if key in common}
-    if workflow_id == core.H3_I2V_ID:
-        result.update({key: overrides[key] for key in core.H3_OPTION_KEYS if key in overrides})
-    for field, raw in (("denoise", denoise), ("control_strength", control_strength)):
-        if field in common:
-            value = float(raw)
-            core.check_param(field, value)
-            result[field] = value
-    return result
 
 def initial_window_bounds(screen_width: int, screen_height: int) -> tuple[int, int, int, int, int, int]:
     """Screen-aware startup geometry with room for the Windows taskbar/title bar.
@@ -397,43 +149,6 @@ def preview_subsample(
         (image_width + safe_width - 1) // safe_width,
         (image_height + safe_height - 1) // safe_height,
     )
-
-
-def history_request_text(entry: HistoryEntry | None) -> str | None:
-    """Return the original editable request, never invented text or generated tags."""
-    if entry is None or entry.legacy:
-        return None
-    text = entry.request_text
-    return text if isinstance(text, str) and text.strip() else None
-
-
-def history_prompt_details(entry: HistoryEntry | None) -> dict | None:
-    """Expose only the literal prompts and metadata stored for this exact run.
-
-    Never call an LLM, infer a missing negative prompt or consult the latest run.
-    Pre-history imported images have no known generation parameters.
-    """
-    if entry is None or entry.legacy or not isinstance(entry.parameters, dict):
-        return None
-    positive = entry.parameters.get("positive_prompt")
-    if not isinstance(positive, str) or not positive.strip():
-        return None
-    negative = entry.parameters.get("negative_prompt")
-    return {
-        "workflow_id": entry.workflow_id,
-        "kind": entry.kind,
-        "profile": entry.prompt_profile,
-        "request_text": entry.request_text,
-        "positive_prompt": positive,
-        "negative_prompt": negative if isinstance(negative, str) else None,
-        "seed": entry.parameters.get("seed"),
-        "steps": entry.parameters.get("steps"),
-        "cfg": entry.parameters.get("cfg"),
-        "denoise": entry.parameters.get("denoise"),
-        "character_traits": entry.character_traits,
-        "character_analysis": entry.character_analysis,
-        "character_references": entry.character_references,
-    }
 
 
 class Application:
@@ -620,50 +335,31 @@ class Application:
 
         layout = ttk.Frame(self.root, padding=10)
         layout.pack(fill="both", expand=True)
-        self.topbar = ttk.Frame(layout)
-        self.topbar.pack(fill="x")
-        ttk.Label(self.topbar, text="LLM").pack(side="left", padx=(0, 6))
-        self.model_box = ttk.Combobox(self.topbar, textvariable=self.model, state="normal", width=18)
-        self.model_box.pack(side="left", fill="x", expand=True)
-        ttk.Button(self.topbar, text="モデル更新", command=self._refresh_models).pack(side="left", padx=(6, 0))
-        self.connection_toggle = ttk.Button(self.topbar, text="設定 ▸", command=self._toggle_connection_settings)
-        self.connection_toggle.pack(side="left", padx=(6, 0))
-
-        self.connection_visible = False
-        self.connection_panel = connection = ttk.Frame(layout, padding=(0, 6, 0, 0))
-        connection.columnconfigure(1, weight=1)
-        ttk.Label(connection, text="LM Studio").grid(row=0, column=0, sticky="w", padx=(0, 7), pady=3)
-        ttk.Entry(connection, textvariable=self.llm_url).grid(row=0, column=1, sticky="ew", pady=3)
-        ttk.Label(connection, text="ComfyUI").grid(row=1, column=0, sticky="w", padx=(0, 7), pady=3)
-        ttk.Entry(connection, textvariable=self.comfy_url).grid(row=1, column=1, sticky="ew", pady=3)
-        options_frame = ttk.Frame(connection)
-        options_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(4, 2))
-        ttk.Checkbutton(options_frame, text="解釈後にLLMを解放",
-                        variable=self.unload_llm).grid(row=0, column=0, sticky="w", padx=(0, 12))
-        ttk.Checkbutton(options_frame, text="解釈前にComfyUIを解放",
-                        variable=self.free_comfy).grid(row=0, column=1, sticky="w")
-        ttk.Checkbutton(options_frame, text="解釈キャッシュ", variable=self.use_prompt_cache).grid(
-            row=1, column=0, sticky="w", pady=(3, 0))
-        ttk.Button(options_frame, text="キャッシュ削除", command=self._clear_prompt_cache).grid(
-            row=1, column=1, sticky="w", pady=(3, 0))
-        encoder_row = ttk.Frame(connection)
-        encoder_row.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(2, 2))
-        ttk.Label(encoder_row, text="H3エンコーダー").pack(side="left", padx=(0, 6))
-        ttk.Combobox(encoder_row, textvariable=self.h3_encoder_model,
-                     values=tuple(core.H3_ENCODER_LABELS.values()), state="readonly", width=18).pack(side="left")
-        ttk.Checkbutton(encoder_row, text="CPU実行", variable=self.h3_encoder_cpu).pack(side="left", padx=(10, 0))
-        settings_actions = ttk.Frame(connection)
-        settings_actions.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(4, 0))
-        ttk.Checkbutton(settings_actions, text="ダーク表示", variable=self.dark_mode,
-                        command=self._switch_theme).pack(side="left")
-        ttk.Button(settings_actions, text="保存", command=self._save_settings).pack(side="right")
-        ttk.Button(settings_actions, text="接続確認", command=self._check_connections).pack(side="right", padx=(0, 6))
-        self.recover_jobs_button = ttk.Button(settings_actions, text="未回収結果を取得", command=self._recover_jobs)
-        self.recover_jobs_button.pack(side="left", padx=(0, 6))
-        self.free_memory_button = ttk.Button(settings_actions, text="生成モデル解放", command=self._release_comfy_memory)
-        self.free_memory_button.pack(side="right", padx=(0, 6))
-        ttk.Button(connection, text="運用情報・保存容量", command=self._show_operations).grid(
-            row=5, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        self.settings_panel = ConnectionPanel(
+            layout, ConnectionVariables(
+                model=self.model,
+                llm_url=self.llm_url,
+                comfy_url=self.comfy_url,
+                unload_llm=self.unload_llm,
+                free_comfy=self.free_comfy,
+                use_prompt_cache=self.use_prompt_cache,
+                h3_encoder_model=self.h3_encoder_model,
+                h3_encoder_cpu=self.h3_encoder_cpu,
+                dark_mode=self.dark_mode,
+            ), ConnectionActions(
+                refresh_models=self._refresh_models,
+                clear_cache=self._clear_prompt_cache,
+                switch_theme=self._switch_theme,
+                save=self._save_settings,
+                check=self._check_connections,
+                recover_jobs=self._recover_jobs,
+                release_memory=self._release_comfy_memory,
+                show_operations=self._show_operations,
+            ),
+        )
+        self.model_box = self.settings_panel.model_box
+        self.recover_jobs_button = self.settings_panel.recover_jobs_button
+        self.free_memory_button = self.settings_panel.free_memory_button
 
         # Keep the generation tabs and their own workflow selectors above the
         # shared editor/result area, outside the scrollable option form.
@@ -936,12 +632,54 @@ class Application:
 
         self.tabs = ttk.Notebook(right)
         self.tabs.pack(fill="both", expand=True)
-        preview_panel = ttk.Frame(self.tabs, padding=8)
-        self.tabs.add(preview_panel, text="結果")
-        self.result_panel = preview_panel
-        history_panel = ttk.Frame(self.tabs, padding=8)
-        self.tabs.add(history_panel, text="履歴")
-        self.history_panel = history_panel
+        self.result_panel = ResultView(
+            self.tabs, self.result_info, ResultActions(
+                select_image=self._show_selected_image,
+                open_image=self._open_image,
+                open_outputs=self._open_outputs,
+                show_prompt=self._show_prompt_preview,
+                use_i2i=self._current_output_to_i2i,
+                use_i2v=self._current_output_to_i2v,
+            ),
+        )
+        self.tabs.add(self.result_panel, text="結果")
+        self.history_panel = HistoryView(
+            self.tabs, HistoryActions(
+                select=self._history_selection_changed,
+                restore=self._restore_selected_history,
+                open_output=self._open_history_output,
+                restore_request=self._restore_selected_history_request,
+                compare=self._compare_selected_history,
+                replay=self._regenerate_selected_history,
+                show_prompt=self._show_selected_history_prompt,
+                refresh=self._refresh_history,
+                restore_character=self._restore_selected_character_traits,
+                use_i2i=self._history_output_to_i2i,
+                use_i2v=self._history_output_to_i2v,
+            ),
+        )
+        self.tabs.add(self.history_panel, text="履歴")
+        # Keep the existing widget handles for the application event router.
+        # The panels, not Application, construct and own these widgets.
+        self.image_label = self.result_panel.image_label
+        self.result_video = self.result_panel.result_video
+        self.images_list = self.result_panel.images_list
+        self.open_button = self.result_panel.open_button
+        self.result_prompt_button = self.result_panel.result_prompt_button
+        self.result_tools = self.result_panel.result_tools
+        self.history_table = self.history_panel.history_table
+        self.history_details = self.history_panel.history_details
+        self.history_image = self.history_panel.history_image
+        self.history_video = self.history_panel.history_video
+        self.history_open_button = self.history_panel.history_open_button
+        self.history_request_button = self.history_panel.history_request_button
+        self.history_restore_button = self.history_panel.history_restore_button
+        self.history_compare_button = self.history_panel.history_compare_button
+        self.same_seed_button = self.history_panel.same_seed_button
+        self.new_seed_button = self.history_panel.new_seed_button
+        self.history_prompt_button = self.history_panel.history_prompt_button
+        self.history_character_button = self.history_panel.history_character_button
+        self.history_tools = self.history_panel.history_tools
         self.project_workspace = ProjectWorkspace(
             self.tabs, self.long_video_store, on_refresh=self._refresh_projects,
             on_action=self._project_action, on_load=self._restore_project_inputs,
@@ -952,115 +690,6 @@ class Application:
         self.tabs.hide(self.project_workspace)
         self._project_visible = False
         self._project_refresh_serial = 0
-
-        # Output and history actions are packed before expanding previews/lists.
-        # They remain visible even when the window is shorter than requested.
-        preview_actions = ttk.Frame(preview_panel)
-        preview_actions.pack(side="bottom", fill="x", pady=(5, 0))
-        preview_meta = ttk.Frame(preview_panel)
-        preview_meta.pack(side="bottom", fill="x")
-        history_actions = ttk.Frame(history_panel)
-        history_actions.pack(side="bottom", fill="x", pady=(5, 0))
-        history_meta = ttk.Frame(history_panel)
-        history_meta.pack(side="bottom", fill="x", pady=(5, 0))
-        self.image_label = ttk.Label(preview_panel, text="生成結果なし", anchor="center")
-        self.image_label.pack(fill="both", expand=True)
-        self.result_video = VideoPreview(preview_panel, height=240)
-        ttk.Label(preview_meta, textvariable=self.result_info, wraplength=350).pack(anchor="w", pady=(3, 4))
-        self.images_list = tk.Listbox(
-            preview_meta, height=2, exportselection=False, font=("Meiryo UI", 9),
-        )
-        # Show a file chooser only when multiple outputs exist.
-        self.images_list.bind("<<ListboxSelect>>", self._show_selected_image)
-        row = ttk.Frame(preview_actions)
-        row.pack(fill="x")
-        for col in range(3):
-            row.columnconfigure(col, weight=1)
-        self.open_button = ttk.Button(row, text="開く", command=self._open_image, state="disabled")
-        self.open_button.grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        ttk.Button(row, text="保存先", command=self._open_outputs).grid(row=0, column=1, sticky="ew", padx=(0, 4))
-        self.result_prompt_button = ttk.Button(row, text="プロンプト", command=self._show_prompt_preview, state="disabled")
-        self.result_prompt_button.grid(row=0, column=2, sticky="ew")
-        self.result_tools = ttk.Frame(preview_actions)
-        self.result_tools.columnconfigure(0, weight=1)
-        self.result_tools.columnconfigure(1, weight=1)
-        ttk.Button(self.result_tools, text="I2Iに使用", command=self._current_output_to_i2i).grid(
-            row=0, column=0, sticky="ew", padx=(0, 4))
-        ttk.Button(self.result_tools, text="I2Vに使用", command=self._current_output_to_i2v).grid(
-            row=0, column=1, sticky="ew")
-
-        history_columns = ("date", "workflow", "seed")
-        table_holder = ttk.Frame(history_panel)
-        table_holder.pack(fill="both", expand=True)
-        self.history_table = ttk.Treeview(
-            table_holder, columns=history_columns, show="tree headings",
-            selectmode="extended", height=6,
-        )
-        self.history_table.heading("#0", text="プロンプト")
-        self.history_table.column("#0", width=160, minwidth=90, stretch=True)
-        self.history_table.heading("date", text="日時")
-        self.history_table.column("date", width=94, minwidth=80, stretch=False)
-        self.history_table.heading("workflow", text="種別")
-        self.history_table.column("workflow", width=62, minwidth=54, stretch=False)
-        self.history_table.heading("seed", text="Seed")
-        self.history_table.column("seed", width=82, minwidth=65, stretch=False)
-        history_y = ttk.Scrollbar(table_holder, orient="vertical", command=self.history_table.yview)
-        history_x = ttk.Scrollbar(table_holder, orient="horizontal", command=self.history_table.xview)
-        self.history_table.configure(yscrollcommand=history_y.set, xscrollcommand=history_x.set)
-        self.history_table.grid(row=0, column=0, sticky="nsew")
-        history_y.grid(row=0, column=1, sticky="ns")
-        history_x.grid(row=1, column=0, sticky="ew")
-        table_holder.columnconfigure(0, weight=1)
-        table_holder.rowconfigure(0, weight=1)
-        self.history_table.bind("<<TreeviewSelect>>", self._history_selection_changed)
-        self.history_table.bind("<Double-1>", lambda _e: self._restore_selected_history())
-
-        self.history_details = tk.StringVar(value="")
-        ttk.Label(
-            history_meta, textvariable=self.history_details,
-            wraplength=420, style="Muted.TLabel",
-        ).pack(anchor="w", fill="x", pady=(8, 5))
-        self.history_image = ttk.Label(
-            history_meta, text="履歴画像", anchor="center",
-        )
-        self.history_image.pack(fill="x", pady=(0, 4))
-        self.history_video = VideoPreview(history_meta, height=180)
-        first_row = ttk.Frame(history_actions)
-        first_row.pack(fill="x", pady=(2, 4))
-        for col in range(4):
-            first_row.columnconfigure(col, weight=1)
-        self.history_open_button = ttk.Button(first_row, text="開く", command=self._open_history_output, style="Compact.TButton")
-        self.history_open_button.grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        self.history_request_button = ttk.Button(first_row, text="プロンプト復元",
-            command=self._restore_selected_history_request, state="disabled", style="Compact.TButton")
-        self.history_request_button.grid(row=0, column=1, sticky="ew", padx=(0, 4))
-        self.history_restore_button = ttk.Button(first_row, text="設定復元", command=self._restore_selected_history, style="Compact.TButton")
-        self.history_restore_button.grid(row=0, column=2, sticky="ew", padx=(0, 4))
-        self.history_compare_button = ttk.Button(first_row, text="比較", command=self._compare_selected_history, style="Compact.TButton")
-        self.history_compare_button.grid(row=0, column=3, sticky="ew")
-        second_row = ttk.Frame(history_actions)
-        second_row.pack(fill="x")
-        for col in range(4):
-            second_row.columnconfigure(col, weight=1)
-        self.same_seed_button = ttk.Button(second_row, text="同Seed再生成",
-            command=lambda: self._regenerate_selected_history(new_seed=False), state="disabled", style="Compact.TButton")
-        self.same_seed_button.grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        self.new_seed_button = ttk.Button(second_row, text="別Seed再生成",
-            command=lambda: self._regenerate_selected_history(new_seed=True), state="disabled", style="Compact.TButton")
-        self.new_seed_button.grid(row=0, column=1, sticky="ew", padx=(0, 4))
-        self.history_prompt_button = ttk.Button(second_row, text="詳細", command=self._show_selected_history_prompt, style="Compact.TButton")
-        self.history_prompt_button.grid(row=0, column=2, sticky="ew", padx=(0, 4))
-        ttk.Button(second_row, text="更新", command=self._refresh_history, style="Compact.TButton").grid(row=0, column=3, sticky="ew")
-        self.history_character_button = ttk.Button(history_actions, text="キャラ特徴復元",
-            command=self._restore_selected_character_traits, state="disabled", style="Compact.TButton")
-        self.history_character_button.pack(fill="x", pady=(4, 0))
-        self.history_tools = ttk.Frame(history_actions)
-        self.history_tools.columnconfigure(0, weight=1)
-        self.history_tools.columnconfigure(1, weight=1)
-        ttk.Button(self.history_tools, text="I2Iに使用", command=self._history_output_to_i2i, style="Compact.TButton").grid(
-            row=0, column=0, sticky="ew", padx=(0, 4))
-        ttk.Button(self.history_tools, text="I2Vに使用", command=self._history_output_to_i2v, style="Compact.TButton").grid(
-            row=0, column=1, sticky="ew")
 
         self.tabs.bind("<<NotebookTabChanged>>", self._output_tab_changed)
         self._switch_theme()
@@ -1112,12 +741,7 @@ class Application:
         return "break"
 
     def _toggle_connection_settings(self) -> None:
-        if self.connection_visible:
-            self.connection_panel.pack_forget()
-        else:
-            self.connection_panel.pack(fill="x", after=self.topbar)
-        self.connection_visible = not self.connection_visible
-        self.connection_toggle.configure(text="設定 ▾" if self.connection_visible else "設定 ▸")
+        self.settings_panel.toggle()
 
     def _toggle_extra_references(self) -> None:
         self._extra_references = not self._extra_references
@@ -1514,17 +1138,7 @@ class Application:
         elif entries is not None:
             self._apply_history_entries(entries, select_id)
 
-    @staticmethod
-    def _history_row(entry: HistoryEntry) -> tuple:
-        short = entry.request_text.replace("\n", " ").strip()[:80]
-        timestamp = entry.created_at
-        try:
-            from datetime import datetime
-            timestamp = datetime.fromisoformat(timestamp).astimezone().strftime("%m/%d %H:%M")
-        except (ValueError, OverflowError):
-            timestamp = timestamp[:16]
-        return (short or "(プロンプトなし)",
-                (timestamp, entry.kind.upper(), str(entry.parameters.get("seed", "—"))))
+    _history_row = staticmethod(history_row)
 
     def _apply_history_entries(self, entries, select_id: str | None = None) -> None:
         """Apply only changed rows; preserve scroll/selection on normal refresh."""
@@ -1615,44 +1229,22 @@ class Application:
         if getattr(self, "_history_selection_key", None) == selection_key:
             return
         self._history_selection_key = selection_key
-        can_replay = (
-            len(selected) == 1
-            and not selected[0].legacy
-            and selected[0].workflow_id in self.config["workflows"]
-            and selected[0].first_image is not None
-            and (selected[0].reference_image is None or selected[0].reference_image.is_file())
-            and (selected[0].mask_image is None or selected[0].mask_image.is_file())
-            and (selected[0].pose_image is None or selected[0].pose_image.is_file())
-            and not self.working
-        )
-        state = "normal" if can_replay else "disabled"
+        state = "normal" if history_can_replay(selected, self.config["workflows"], working=self.working) else "disabled"
         self.same_seed_button.configure(state=state)
         self.new_seed_button.configure(state=state)
 
         if hasattr(self, "history_open_button"):
-            single = selected[0] if len(selected) == 1 else None
-            output = single.first_image if single else None
-            exists = bool(output and output.is_file())
-            still = exists and not is_video_output(output)
-            restorable = bool(single and not single.legacy and (single.workflow_id in self.config["workflows"]
-                              or single.workflow_id == LONG_VIDEO_ID) and not self.working)
-            comparable = ((len(selected) == 2 and all(e.first_image and e.first_image.is_file() and not is_video_output(e.first_image) for e in selected))
-                          or bool(still and single.reference_image and single.reference_image.is_file()))
-            for button, enabled in (
-                (self.history_open_button, exists), (self.history_restore_button, restorable),
-                (self.history_compare_button, comparable),
-                (self.history_prompt_button, bool(single and history_prompt_details(single))),
+            actions = history_action_state(selected, self.config["workflows"], working=self.working)
+            for button, key in (
+                (self.history_open_button, "open"), (self.history_restore_button, "restore"),
+                (self.history_compare_button, "compare"), (self.history_prompt_button, "prompt"),
             ):
-                button.configure(state="normal" if enabled else "disabled")
+                button.configure(state="normal" if actions[key] else "disabled")
             if hasattr(self, "history_request_button"):
-                self.history_request_button.configure(
-                    state="normal" if history_request_text(single) is not None and not self.working else "disabled"
-                )
+                self.history_request_button.configure(state="normal" if actions["request"] else "disabled")
             if hasattr(self, "history_character_button"):
-                self.history_character_button.configure(
-                    state="normal" if single and single.character_traits and not self.working else "disabled"
-                )
-            if still and not self.working:
+                self.history_character_button.configure(state="normal" if actions["character"] else "disabled")
+            if actions["use_as_source"]:
                 self.history_tools.pack(fill="x", pady=(4, 0))
             else:
                 self.history_tools.pack_forget()
@@ -1674,40 +1266,7 @@ class Application:
             return
 
         entry = selected[0]
-        p = entry.parameters
-        if entry.kind == "t2i":
-            policy_label = T2I_PROFILE_LABELS.get(
-                entry.prompt_profile, entry.prompt_profile or "記録なし"
-            )
-        elif entry.kind in ("i2i", "inpaint"):
-            policy_label = I2I_PROFILE_LABELS.get(
-                entry.prompt_profile, entry.prompt_profile or "記録なし"
-            )
-        elif entry.workflow_id == core.H3_I2V_ID:
-            policy_label = H3_PROFILE_LABELS.get(
-                entry.prompt_profile, entry.prompt_profile or "記録なし"
-            )
-        else:
-            policy_label = None
-        details = [WORKFLOW_NAMES.get(entry.workflow_id, entry.workflow_id)]
-        if "width" in p and "height" in p:
-            details.append(f"{p['width']}×{p['height']}")
-        if entry.kind in core.VIDEO_KINDS and isinstance(p.get("fps"), (int, float)) and p["fps"] > 0 and isinstance(p.get("frames"), int):
-            details.append(f"{p['frames'] / p['fps']:.1f}秒")
-        if "steps" in p:
-            details.append(f"{p['steps']} steps")
-        if "checkpoint_model" in p:
-            details.append(Path(p["checkpoint_model"].replace("\\", "/")).stem)
-        if entry.workflow_id == core.H3_I2V_ID and "h3_model" in p:
-            details.append(core.h3_model_label(p["h3_model"]))
-            turbo = core.H3_TURBO_LABELS.get(p.get("h3_turbo", "off"), "")
-            if turbo and turbo != "OFF":
-                details.append("Turbo " + turbo)
-        if policy_label:
-            details.append(policy_label)
-        if entry.legacy:
-            details = ["旧履歴"]
-        self.history_details.set("  ·  ".join(details))
+        self.history_details.set(history_summary(entry))
         image = entry.first_image
         exists = image is not None and image.is_file()
         preview_key = (entry.id, image, exists)
@@ -2107,116 +1666,41 @@ class Application:
         return config
 
     def _overrides(self) -> dict:
-        # Still-image dimensions and H3's unused CFG should not block a job
-        # merely because an earlier edit left a hidden entry unfinished.
-        entry = {}
-        if hasattr(self, "parameter_widgets"):
-            entry = self.config.get("workflows", {}).get(self._active_workflow(), {})
-        bindings = entry.get("bindings", {})
-        video = entry.get("kind") in core.VIDEO_KINDS
-        previous = self.config.get("ui", {}) if entry else {}
-        values = {}
-        for name, variable, parse, default in (
-            ("width", self.width, int, 768),
-            ("height", self.height, int, 768),
-            ("steps", self.steps, int, 20),
-            ("cfg", self.cfg, float, 5.0),
-        ):
-            try:
-                value = parse(variable.get())
-                core.check_param(name, value)
-            except (ValueError, core.OrchestratorError):
-                separate_qwen = entry.get("kind") == "t2i" and self._active_workflow() in core.QWEN_IDS and name in ("steps", "cfg")
-                separate_video_steps = name == "steps" and (
-                    (hasattr(self, "h3_steps") and self._active_workflow() == core.H3_I2V_ID)
-                    or (hasattr(self, "hunyuan_steps") and self._active_workflow() == core.HUNYUAN_I2V_ID)
-                )
-                if not entry or (name in bindings and not (video and name in ("width", "height")) and not separate_video_steps and not separate_qwen):
-                    raise
-                value = previous.get(name, default)
-                try:
-                    core.check_param(name, value)
-                except core.OrchestratorError:
-                    value = default
-            values[name] = value
-        if self.seed.get().strip():
-            values["seed"] = int(self.seed.get().strip())
-            core.check_param("seed", values["seed"])
-        return values
+        workflow_id = self._active_workflow() if hasattr(self, "parameter_widgets") else None
+        return common_overrides(
+            getattr(self, "config", {}), workflow_id, width=self.width.get(), height=self.height.get(),
+            steps=self.steps.get(), cfg=self.cfg.get(), seed=self.seed.get(),
+            has_h3_steps=hasattr(self, "h3_steps"), has_hunyuan_steps=hasattr(self, "hunyuan_steps"),
+        )
 
     def _video_overrides(self) -> dict:
-        width, height = (int(part.strip()) for part in self.video_size.get().split("×"))
-        values = {
-            "width": width, "height": height,
-            "frames": int(self.video_frames.get()), "fps": int(self.video_fps.get()),
-            "steps": int(self.steps.get()), "cfg": float(self.cfg.get()),
-        }
-        if self.seed.get().strip():
-            values["seed"] = int(self.seed.get().strip())
-        for name, value in values.items():
-            core.check_param(name, value)
-        core.validate_wan_video_parameters(values)
-        return values
+        return wan_overrides(size=self.video_size.get(), frames=self.video_frames.get(),
+                             fps=self.video_fps.get(), steps=self.steps.get(),
+                             cfg=self.cfg.get(), seed=self.seed.get())
 
     def _qwen_overrides(self, workflow_id: str) -> dict:
         fast = workflow_id == core.QWEN_LIGHTNING_ID
-        values = {"width": int(self.width.get()), "height": int(self.height.get()),
-                  "steps": 4 if fast else int(self.qwen_steps.get()),
-                  "cfg": 1 if fast else float(self.qwen_cfg.get())}
-        if self.seed.get().strip():
-            values["seed"] = int(self.seed.get().strip())
-        for name, value in values.items():
-            core.check_param(name, value)
-        if values["width"] % 16 or values["height"] % 16:
-            raise core.OrchestratorError("Qwen-Imageの幅・高さは16の倍数にしてください")
-        return values
+        return qwen_overrides(workflow_id, width=self.width.get(), height=self.height.get(),
+                              steps=4 if fast else self.qwen_steps.get(),
+                              cfg=1 if fast else self.qwen_cfg.get(), seed=self.seed.get())
 
     def _hunyuan_overrides(self) -> dict:
-        width, height = (int(part.strip()) for part in self.hunyuan_size.get().split("×"))
-        values = {"width": width, "height": height, "frames": int(self.hunyuan_frames.get()),
-                  "fps": 24, "steps": int(self.hunyuan_steps.get())}
-        if self.seed.get().strip():
-            values["seed"] = int(self.seed.get().strip())
-        for name, value in values.items():
-            core.check_param(name, value)
-        core.validate_hunyuan_video_parameters(values)
-        return values
+        return hunyuan_overrides(size=self.hunyuan_size.get(), frames=self.hunyuan_frames.get(),
+                                 steps=self.hunyuan_steps.get(), seed=self.seed.get())
 
     def _h3_overrides(self) -> dict:
-        width, height = (int(part.strip()) for part in self.h3_size.get().split("×"))
-        label = self.h3_duration.get()
-        frames = H3_DURATIONS.get(label)
-        if frames is None:
-            # Restore a valid duration from a history entry made outside the GUI.
-            frames = int(label.rsplit("(", 1)[1].removesuffix("f)"))
         choices = self._h3_choices() if hasattr(self, "h3_model") else {}
-        fixed = core.H3_TURBOS[choices.get("h3_turbo", "off")][1]
         hybrid = core.h3_hybrid_filename(choices.get("h3_model")) is not None
-        if hybrid and choices.get("h3_performance") in ("euler_dense", "kitchen_int8"):
-            fixed = 8
         normal = self.h3_hybrid_steps if hybrid else getattr(self, "h3_steps", self.steps)
-        values = {
-            "width": width, "height": height, "frames": frames,
-            "fps": 24, "steps": fixed if fixed is not None else int(normal.get()),
-        }
-        if self.seed.get().strip():
-            values["seed"] = int(self.seed.get().strip())
-        for name, value in values.items():
-            core.check_param(name, value)
-        core.validate_h3_video_parameters(values)
-        if hybrid:
-            core.validate_h3_hybrid_steps(values["steps"], choices.get("h3_performance", "standard"))
-        return {**values, **choices}
+        return h3_overrides(size=self.h3_size.get(), duration=self.h3_duration.get(),
+                            steps=normal.get(), seed=self.seed.get(), choices=choices)
 
     def _save_settings(self) -> bool:
         if self.working:
             return False
         try:
             config = self._collect_config()
-            backup_path = CONFIG.with_suffix(".json.tmp")
-            backup_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            core.load_config(backup_path)
-            backup_path.replace(CONFIG)
+            write_local_config(CONFIG, config)
             self.config = config
             self._log("設定保存: config.json")
             self.status.set("設定を保存しました")
@@ -2273,128 +1757,11 @@ class Application:
         }, from_history=False)
 
     def _open_prompt_details(self, details: dict, *, from_history: bool) -> None:
-        """Shared read-only viewer for current and historic literal prompts."""
-        kind = details.get("kind")
-        version = details.get("profile")
-        if kind == "t2i":
-            version_text = T2I_PROFILE_LABELS.get(version, version or "記録なし")
-        elif kind in ("i2i", "inpaint"):
-            version_text = I2I_PROFILE_LABELS.get(version, version or "記録なし")
-        elif details.get("workflow_id") == core.H3_I2V_ID:
-            version_text = H3_PROFILE_LABELS.get(version, version or "記録なし")
-        else:
-            version_text = version or "対象外"
-        positive = str(details.get("positive_prompt") or "")
-        negative = details.get("negative_prompt")
-        negative_saved = isinstance(negative, str)
-        negative_text = negative if negative_saved else "（履歴に記録なし）"
-        original_request = details.get("request_text")
-        popup = tk.Toplevel(self.root)
-        popup.title(("履歴" if from_history else "今回") + "の生成タグ")
-        popup.geometry("780x650")
-        popup.minsize(480, 390)
-        popup.transient(self.root)
-        ttk.Label(
-            popup,
-            text=f"ワークフロー: {details.get('workflow_id', '?')} / "
-                 f"方式: {version_text}",
-            style="Muted.TLabel", wraplength=740,
-        ).pack(anchor="w", padx=12, pady=(10, 3))
-        values = [
-            f"{label}: {details.get(key)}"
-            for key, label in (
-                ("seed", "Seed"), ("steps", "Steps"),
-                ("cfg", "CFG"), ("denoise", "Denoise"),
-            )
-            if details.get(key) is not None
-        ]
-        if values:
-            ttk.Label(
-                popup, text="  /  ".join(values),
-                style="Muted.TLabel", wraplength=740,
-            ).pack(anchor="w", padx=12, pady=(0, 5))
-
-        # Pack the action bar before expanding editors, so copy/close is
-        # reachable even if the window is resized smaller than its content.
-        buttons = ttk.Frame(popup, padding=(12, 0, 12, 12))
-        buttons.pack(side="bottom", fill="x")
-
-        def add_readonly(label: str, value: str, *, rows: int, grow: bool) -> None:
-            frame = ttk.LabelFrame(popup, text=label, padding=7)
-            frame.pack(fill="both" if grow else "x",
-                       expand=grow, padx=12, pady=(0, 7))
-            widget = scrolledtext.ScrolledText(
-                frame, height=rows, wrap="word",
-                font=("Meiryo UI", 10), padx=8, pady=6,
-            )
-            widget.insert("1.0", value)
-            widget.configure(state="disabled")
-            widget.pack(fill="both", expand=True)
-
-        if original_request is not None:
-            add_readonly("元の自然文", str(original_request), rows=3, grow=False)
-        add_readonly("Positive", positive, rows=7, grow=True)
-        add_readonly("Negative", negative_text, rows=4, grow=True)
-
-        ttk.Button(
-            buttons, text="Positiveをコピー",
-            command=lambda: self._copy_to_clipboard(positive),
-        ).pack(side="left", padx=(0, 6))
-        ttk.Button(
-            buttons, text="Negativeをコピー",
-            command=lambda: self._copy_to_clipboard(negative),
-            state="normal" if negative_saved else "disabled",
-        ).pack(side="left")
-        if details.get("character_traits"):
-            ttk.Button(
-                buttons, text="キャラ特徴",
-                command=lambda: self._show_saved_character_features(details),
-            ).pack(side="left", padx=(6, 0))
-        ttk.Button(
-            buttons, text="閉じる", command=popup.destroy,
-        ).pack(side="right")
+        show_prompt_details(self.root, details, from_history=from_history,
+                            copy_text=self._copy_to_clipboard, show_character=self._show_saved_character_features)
 
     def _show_saved_character_features(self, details: dict) -> None:
-        """Review the exact approved sheet and observed reference evidence."""
-        traits = details.get("character_traits")
-        if not traits:
-            return
-        popup = tk.Toplevel(self.root)
-        popup.title("キャラ参照・確定特徴")
-        popup.geometry("760x570")
-        popup.minsize(450, 300)
-        popup.transient(self.root)
-        bottom = ttk.Frame(popup, padding=(10, 3, 10, 10))
-        bottom.pack(side="bottom", fill="x")
-        ttk.Button(
-            bottom, text="確定特徴をコピー",
-            command=lambda: self._copy_to_clipboard(traits),
-        ).pack(side="left")
-        ttk.Button(bottom, text="閉じる", command=popup.destroy).pack(side="right")
-        num = len(details.get("character_references") or ())
-        ttk.Label(
-            popup, text=f"生成に採用した特徴 / 参照画像 {num}枚" if num else "生成に採用した特徴 / 文章のみ",
-            style="Muted.TLabel",
-        ).pack(anchor="w", padx=10, pady=(8, 4))
-        content = ttk.Panedwindow(popup, orient="vertical")
-        content.pack(fill="both", expand=True, padx=10, pady=(0, 8))
-        approved_frame = ttk.LabelFrame(content, text="ユーザー確定値")
-        content.add(approved_frame, weight=2)
-        report_frame = ttk.LabelFrame(content, text="抽出根拠（LLM推定）")
-        content.add(report_frame, weight=3)
-        for frame, value in (
-            (approved_frame, traits),
-            (report_frame, (
-                format_evidence(details["character_analysis"])
-                if details.get("character_analysis") else "記録なし"
-            )),
-        ):
-            view = scrolledtext.ScrolledText(
-                frame, wrap="word", height=7, font=("Meiryo UI", 10),
-            )
-            view.insert("1.0", value)
-            view.configure(state="disabled")
-            view.pack(fill="both", expand=True, padx=6, pady=6)
+        show_saved_character_features(self.root, details, copy_text=self._copy_to_clipboard)
 
     def _copy_to_clipboard(self, value: str) -> None:
         self.root.clipboard_clear()
@@ -2402,38 +1769,7 @@ class Application:
         self.root.update_idletasks()
 
     def _show_composition_report(self) -> None:
-        """Show exactly what the selected local VLM thought it saw."""
-        report = self.latest_composition_report
-        if not report:
-            messagebox.showinfo(
-                "画像の構図認識",
-                "まず参照画像を選び、「解釈のみテスト」を実行してください。"
-                "画像対応モデルと構図解析ONが必要です。",
-            )
-            return
-        window = tk.Toplevel(self.root)
-        window.title("画像の構図認識結果（VLM推定）")
-        window.geometry("700x480")
-        window.minsize(440, 300)
-        window.transient(self.root)
-        ttk.Label(
-            window,
-            text="以下は画像対応LLMの観察結果です。誤認識があれば、生成指示を具体化するか"
-                 "ポーズControlNetの併用を検討してください。",
-            style="Muted.TLabel", wraplength=650,
-        ).pack(anchor="w", fill="x", padx=12, pady=(12, 7))
-        view = scrolledtext.ScrolledText(
-            window, wrap="word", font=("Meiryo UI", 11), padx=10,
-            pady=8, height=14,
-        )
-        view.insert("1.0", report)
-        view.configure(state="disabled")
-        view.pack(fill="both", expand=True, padx=12, pady=(0, 8))
-        footer = ttk.Frame(window, padding=(12, 0, 12, 12))
-        footer.pack(fill="x")
-        ttk.Button(
-            footer, text="閉じる", command=window.destroy,
-        ).pack(side="right")
+        show_composition_report(self.root, self.latest_composition_report)
 
     def _drop_character_files(self, files: tuple[str, ...]) -> None:
         if not files:

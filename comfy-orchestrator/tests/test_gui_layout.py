@@ -11,6 +11,7 @@ import unittest
 from types import SimpleNamespace
 
 from comfy_orchestrator import gui
+from comfy_orchestrator.output_views import ResultView, HistoryView
 
 
 class InitialGeometryTests(unittest.TestCase):
@@ -62,19 +63,21 @@ class InitialGeometryTests(unittest.TestCase):
             source.index('action_row.pack(side="bottom", fill="x"'),
             source.index('form_holder = ttk.Frame(prompt_panel)'),
         )
+        history_source = inspect.getsource(HistoryView.__init__)
+        result_source = inspect.getsource(ResultView.__init__)
         self.assertLess(
-            source.index('history_actions.pack(side="bottom"'),
-            source.index('self.history_table = ttk.Treeview('),
+            history_source.index('history_actions.pack(side="bottom"'),
+            history_source.index('self.history_table = ttk.Treeview('),
         )
         self.assertLess(
-            source.index('preview_actions.pack(side="bottom"'),
-            source.index('self.image_label = ttk.Label('),
+            result_source.index('preview_actions.pack(side="bottom"'),
+            result_source.index('self.image_label = ttk.Label('),
         )
         self.assertIn('self.form_canvas.create_window(', source)
         self.assertIn('self.form_canvas.configure(yscrollcommand=', source)
         self.assertIn('for col in (1, 3):', source)
-        self.assertIn('preview_meta.pack(side="bottom", fill="x")', source)
-        self.assertIn('history_meta.pack(side="bottom", fill="x"', source)
+        self.assertIn('preview_meta.pack(side="bottom", fill="x")', result_source)
+        self.assertIn('history_meta.pack(side="bottom", fill="x"', history_source)
         self.assertNotIn('self.root.geometry("1240x910")', source)
         self.assertNotIn('self.root.minsize(960, 760)', source)
         self.assertNotIn('self.logs_panel.pack(fill="x")', source)
