@@ -77,6 +77,8 @@ def history_summary(entry: HistoryEntry) -> str:
     else:
         policy_label = None
     details = [WORKFLOW_NAMES.get(entry.workflow_id, entry.workflow_id)]
+    if entry.workflow_id == H3_I2V_ID and p.get("text_only_h3") is True:
+        details.append("T2VA")
     if "width" in p and "height" in p:
         details.append(f"{p['width']}×{p['height']}")
     if entry.kind in VIDEO_KINDS and isinstance(p.get("fps"), (int, float)) and p["fps"] > 0 and isinstance(p.get("frames"), int):
@@ -102,6 +104,9 @@ def history_can_replay(selected, workflows, *, working):
         len(selected) == 1
         and not selected[0].legacy
         and selected[0].workflow_id in workflows
+        and (selected[0].workflow_id != H3_I2V_ID
+             or ((selected[0].parameters.get("text_only_h3") is True)
+                 == (selected[0].reference_image is None)))
         and selected[0].first_image is not None
         and (selected[0].reference_image is None or selected[0].reference_image.is_file())
         and (selected[0].mask_image is None or selected[0].mask_image.is_file())

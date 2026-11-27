@@ -14,6 +14,7 @@ from .h3 import (
     h3_hybrid_model_key,
     H3_REF2VA_DEFAULT_PROMPT,
     ensure_h3_reference_prompt,
+    h3_text_model_options,
 )
 from .workflow_registry import I2V_DEFAULT_PROMPT
 from .timeline import (validate_prompt_plan, prompt_for_segment, validate_cut_frames,
@@ -106,11 +107,11 @@ def continuation_model(model: str) -> str:
 
 def long_generation_model(overrides, *, text_only=False):
     """A no-image opening uses the same Hybrid weight in its base mode."""
+    if text_only:
+        return h3_text_model_options(overrides)
     p = dict(overrides)
     if p.get("h3_model") is not None:
-        following = continuation_model(p["h3_model"])
-        if text_only:
-            p["h3_model"] = following
+        continuation_model(p["h3_model"])
     return p
 
 

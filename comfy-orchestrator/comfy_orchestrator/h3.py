@@ -285,10 +285,22 @@ def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None =
     return graph
 
 
+def h3_text_model_options(overrides):
+    """A Hybrid may use its base mode; pure Ref2VA needs an actual reference."""
+    values = dict(overrides or {})
+    model = values.get("h3_model")
+    if h3_ref2va_filename(model) is not None:
+        filename = h3_hybrid_filename(model)
+        if filename is None:
+            raise OrchestratorError("参照画像なしのH3生成にはベースモデルまたはHybridを選択してください")
+        values["h3_model"] = h3_hybrid_model_key(filename, reference_only=False)
+    return values
+
+
 def prepare_h3_text_workflow(template: dict, bindings: dict) -> dict:
     """Use the native base node without first/last-frame conditioning.
 
-    Called only for the explicitly text-only first cut of a long project.
+    Used for text-only single clips and opening cuts of long projects.
     Preserve all model, CLIP, sampler and audio wiring.
     """
     graph = copy.deepcopy(template)
@@ -302,7 +314,7 @@ def prepare_h3_text_workflow(template: dict, bindings: dict) -> dict:
             or image.get("input") != "image"
             or inputs.get("first_frame") != [loader, 0]
             or "last_frame" in inputs):
-        raise OrchestratorError("画像なしの長尺生成には標準H3の開始フレーム用ワークフローが必要です")
+        raise OrchestratorError("画像なしのH3生成には標準H3の開始フレーム用ワークフローが必要です")
     inputs.pop("first_frame")
     # A custom graph might also use the image as another condition; reject
     # that rather than accidentally leave an unprovided image dependency.

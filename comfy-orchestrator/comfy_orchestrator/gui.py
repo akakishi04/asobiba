@@ -1007,6 +1007,15 @@ class Application:
                 "履歴", "この画像には生成設定が保存されていないため復元できません"
             )
             return
+        # A missing old I2VA source must not silently turn into a new T2VA job.
+        if entry.workflow_id == core.H3_I2V_ID:
+            if entry.parameters.get("text_only_h3") is True:
+                if entry.reference_image is not None:
+                    messagebox.showerror("履歴復元", "保存されたH3参照なしモードが不正です")
+                    return
+            elif entry.reference_image is None or not entry.reference_image.is_file():
+                messagebox.showerror("履歴復元", "保存されたH3参照画像が見つかりません")
+                return
         self.prompt.delete("1.0", "end")
         self.prompt.insert("1.0", entry.request_text)
         self._source_change_lock = True
@@ -1793,8 +1802,9 @@ class Application:
         is_video = kind in core.VIDEO_KINDS
         mask, pose, composition = active_aux_inputs(kind, mask, pose, composition)
         continuous = self.generation_mode.get() == "continuous"
-        text_only_long = continuous and selected == core.H3_I2V_ID and image is None
-        if kind == "i2v" and not text_only_long and (image is None or image.suffix.lower() not in IMAGE_EXTENSIONS):
+        text_only_h3 = selected == core.H3_I2V_ID and image is None
+        text_only_long = continuous and text_only_h3
+        if kind == "i2v" and not text_only_h3 and (image is None or image.suffix.lower() not in IMAGE_EXTENSIONS):
             messagebox.showerror("I2V", "参照画像を1枚指定してください")
             return
         if not prompt and not core.supports_empty_i2v_request(
@@ -1817,6 +1827,8 @@ class Application:
                 self.config, selected, image is not None,
                 overrides, self.denoise.get(), self.control_strength.get(),
             )
+            if text_only_h3 and not continuous:
+                overrides = core.h3_text_model_options(overrides)
             if selected in core.SDXL_WORKFLOW_IDS and hasattr(self, "checkpoint_model"):
                 overrides["checkpoint_model"] = self.checkpoint_model.get()
                 core.split_checkpoint_option(overrides, {selected})

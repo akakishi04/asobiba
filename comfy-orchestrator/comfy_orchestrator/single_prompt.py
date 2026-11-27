@@ -37,12 +37,16 @@ class SinglePromptDraft:
         self.assets = dict(assets)
         self.context = copy.deepcopy(context)
         self._temporary = temporary
+        self.text_only = self.parameters.get("text_only_h3") is True
         self.official = (self.workflow_id == H3_I2V_ID
-                         and hp.enabled(controller.config.get("llm", {})))
+                         and (self.text_only or hp.enabled(controller.config.get("llm", {}))))
         self.reference_only = (self.workflow_id == H3_I2V_ID
                                and h3_ref2va_filename(self.parameters.get("h3_model")) is not None)
         self.fields = tuple(key for key in FIELDS
                             if key in controller.config["workflows"][self.workflow_id]["bindings"])
+        if self.text_only and (self.workflow_id != H3_I2V_ID or self.reference_only
+                               or self.assets.get("image") is not None):
+            raise OrchestratorError("H3参照なしモードの確認内容が不正です")
         self._closed = False
         self._unreleased = False
         self.review_references = ()
@@ -102,7 +106,7 @@ class SinglePromptDraft:
                 sections, ref = hp.parse_sections(text)
                 if ref != self.reference_only:
                     raise OrchestratorError("H3の参照方式とプロンプト形式が一致しません")
-                text = hp.compile_prompt(sections, ref, kept_frames=params["frames"])
+                text = hp.compile_prompt(sections, ref, kept_frames=params["frames"], text_only=self.text_only)
             elif key == "positive_prompt" and self.reference_only:
                 text = ensure_h3_reference_prompt(text)
             params[key] = text
@@ -187,6 +191,8 @@ class SinglePromptDraft:
             "Retain the exact H3 section names and order shown in current_english. "
             "Use the same reference mode, valid shot timing and dialogue notation. "
             "Never include the host-added opening-frame header."
+            + (" No source images exist; establish the scene from text and do not use reference labels."
+               if self.text_only else "")
             if self.official else
             "Use concise comma-separated English visual tags and preserve tag weights."
             if self.workflow_id in SDXL_WORKFLOW_IDS else

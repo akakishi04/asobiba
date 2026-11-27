@@ -45,6 +45,7 @@ from .h3 import (
     split_h3_options,
     prepare_h3_workflow,
     prepare_h3_text_workflow,
+    h3_text_model_options,
 )
 
 
@@ -111,6 +112,18 @@ def execute(
     # Still-image analysis settings do not apply to I2V. Preserve their
     # persistent configuration, but exclude them from this generation job.
     explicit_i2v = workflows.get(selected_workflow, {}).get("kind") == "i2v"
+    text_only_h3 = selected_workflow == H3_I2V_ID and explicit_i2v and image is None
+    registered_h3 = workflows[selected_workflow] if text_only_h3 else None
+    if text_only_h3:
+        # Only an explicit H3 selection enables this route. Never auto-select
+        # a costly video when ordinary text-to-image was requested.
+        if IMAGE_INPUTS.intersection(registered_h3["bindings"]) != {"image"}:
+            raise OrchestratorError("参照画像なしのH3生成には標準のH3ワークフローが必要です")
+        if not request.strip():
+            raise OrchestratorError("参照画像なしのH3生成には自然文が必要です")
+        if config.get("llm", {}).get("provider", "lmstudio") != "lmstudio" or "llm" not in config:
+            raise OrchestratorError("H3 T2VAはLM Studio接続を使用してください")
+        overrides = h3_text_model_options(overrides)
     if explicit_i2v:
         composition_image = None
         character_traits = None
@@ -151,6 +164,10 @@ def execute(
         if selected_workflow not in workflows:
             raise OrchestratorError(f"登録されていないワークフローです: {selected_workflow}")
         workflows = {selected_workflow: workflows[selected_workflow]}
+    if text_only_h3:
+        workflows = {H3_I2V_ID: {**registered_h3,
+                     "description": "MiniMax H3 native text-to-video and audio; no reference assets.",
+                     "bindings": {k: v for k, v in registered_h3["bindings"].items() if k != "image"}}}
     workflows = compatible_workflows(workflows, image, mask_image, pose_image)
     if selected_workflow is None:
         # Ordinary image generation must never switch into a costly video job.
@@ -198,10 +215,20 @@ def execute(
     check_cancelled()
     comfy = ComfyUI(config["comfyui"])
     if not dry_run:
-        early_preflight(comfy, config, config_path, workflows, overrides, h3_options,
-                        checkpoint_options, cancel_event)
+        if text_only_h3:
+            effective = {**registered_h3.get("defaults", {}), **overrides}
+            checked = build_template(config_path, registered_h3, H3_I2V_ID, effective,
+                                     h3_options, checkpoint_options, final=True)
+            checked = prepare_h3_text_workflow(checked, registered_h3["bindings"])
+            preflight(comfy, config, H3_I2V_ID, workflows[H3_I2V_ID], checked, checkpoint_options)
+        else:
+            early_preflight(comfy, config, config_path, workflows, overrides, h3_options,
+                            checkpoint_options, cancel_event)
     llm_key = "llm" if "llm" in config else "ollama"
     settings = config[llm_key]
+    if text_only_h3:
+        settings = {**settings, "h3_prompt_format": h3_prompt.FORMAT, "_h3_text_only": True,
+                    "send_reference_to_llm": False}
     official_h3 = (set(workflows) == {H3_I2V_ID} and h3_prompt.enabled(settings)
                    and settings.get("provider", "lmstudio" if llm_key == "llm" else "ollama") == "lmstudio")
     cache_key = None
@@ -211,6 +238,7 @@ def execute(
             # Seed, resolution and sampler choices are host-owned. H3 duration
             # and the I2I denoise hint do affect the interpreter.
             hints = {"i2v_only": i2v_only, "reference_only": reference_only,
+                     "text_only_h3": text_only_h3,
                      "frames": overrides.get("frames") if H3_I2V_ID in workflows else None,
                      "denoise": overrides.get("denoise")}
             if official_h3:
@@ -224,7 +252,11 @@ def execute(
             note(f"解釈キャッシュ読込失敗（通常処理を継続）: {exc}")
         if cached_plan is not None:
             try:
-                validate_plan(cached_plan, workflows, image is not None)
+                _, checked_params = validate_plan(cached_plan, workflows, image is not None)
+                if text_only_h3:
+                    effective_frames = overrides.get("frames", checked_params.get("frames"))
+                    check_param("frames", effective_frames)
+                    h3_prompt.validate_text_prompt(checked_params["positive_prompt"], effective_frames)
             except OrchestratorError:
                 cached_plan = None
     if use_prompt_llm and cached_plan is None:
@@ -331,8 +363,14 @@ def execute(
         params["seed"] = secrets.randbits(32)
     if reference_only:
         params["positive_prompt"] = ensure_h3_reference_prompt(params["positive_prompt"])
-    template = build_template(config_path, selection, workflow_id, params, h3_options,
-                              checkpoint_options, final=True)
+    if text_only_h3:
+        # Cache hits and LLM replies must satisfy the same no-reference contract.
+        params["positive_prompt"] = h3_prompt.validate_text_prompt(params["positive_prompt"], params["frames"])
+    template = build_template(config_path, registered_h3 if text_only_h3 else selection,
+                              workflow_id, params, h3_options, checkpoint_options, final=True)
+    if text_only_h3:
+        template = prepare_h3_text_workflow(template, registered_h3["bindings"])
+        note("H3 T2VA: 参照画像なし")
     if h3_options:
         note("H3: " + h3_model_label(h3_options["h3_model"])
              + " / Turbo " + H3_TURBO_LABELS[h3_options["h3_turbo"]]
@@ -342,6 +380,8 @@ def execute(
     if checkpoint_options:
         note("SDXL: " + checkpoint_options["checkpoint_model"])
     saved_params = {**params, **h3_options, **checkpoint_options}
+    if text_only_h3:
+        saved_params["text_only_h3"] = True
     if cache_key is not None and cached_plan is None:
         try:
             prompt_cache.put(cache_key, plan)
@@ -355,7 +395,8 @@ def execute(
         comfy, workflow_id, selection, template, params, saved_params,
         reference_image=image, mask_image=mask_image, pose_image=pose_image,
         progress=note, cancel_event=cancel_event, journal=job_journal,
-        context={**(job_context or {}), "request_text": request, "composition_image": composition_image},
+        context={**(job_context or {}), "request_text": request, "composition_image": composition_image,
+                 **({"text_only_h3": True} if text_only_h3 else {})},
     )
 
 
@@ -377,13 +418,21 @@ def execute_saved(
         raise OrchestratorError(f"保存されたワークフローが未登録です: {workflow_id}")
     if not isinstance(parameters, dict):
         raise OrchestratorError("保存された生成パラメータが不正です")
+    parameters = dict(parameters)
+    # A host-owned explicit marker is persisted for single-clip replay. Older
+    # long-project callers still use their separate text_only_h3 argument.
+    saved_text_mode = "text_only_h3" in parameters
+    if saved_text_mode:
+        if parameters.pop("text_only_h3") is not True:
+            raise OrchestratorError("保存されたH3参照なしモードが不正です")
+        text_only_h3 = True
     registered = config["workflows"][workflow_id]
     selected = registered
     if text_only_h3:
         if (workflow_id != H3_I2V_ID or reference_image is not None
                 or mask_image is not None or pose_image is not None or guide_images
                 or "image" not in registered["bindings"]):
-            raise OrchestratorError("画像なし生成はH3の参照なし開始カット専用です")
+            raise OrchestratorError("画像なし生成はH3の参照なしモード専用です")
         # Validate and render against a derived binding set, but load the
         # registered graph normally before removing its image condition.
         selected = {**registered, "bindings": {
@@ -421,6 +470,12 @@ def execute_saved(
     template = build_template(config_path, registered, workflow_id, params, h3_options,
                               checkpoint_options, final=True)
     if text_only_h3:
+        if saved_text_mode:
+            # Only newly saved standalone prompts require the official
+            # validator; preserve old long-project replay byte-for-byte.
+            canonical = h3_prompt.validate_text_prompt(params["positive_prompt"], params["frames"])
+            if canonical != params["positive_prompt"]:
+                raise OrchestratorError("保存されたH3 T2VAプロンプトの形式が不正です")
         template = prepare_h3_text_workflow(template, registered["bindings"])
     if cancel_event is not None and cancel_event.is_set():
         raise OrchestratorError("再生成開始前に中止しました")
@@ -433,11 +488,12 @@ def execute_saved(
     if progress:
         progress("保存済みのプロンプトと生成設定を復元（LLMは使用しません）")
         if text_only_h3:
-            progress("H3 T2VA: 参照画像を使用せず最初のカットを生成")
+            progress("H3 T2VA: 参照画像を使用せず生成")
     if text_only_h3:
         job_context = {**(job_context or {}), "text_only_h3": True}
     return submit_prepared(
-        comfy, workflow_id, selected, template, params, {**params, **h3_options, **checkpoint_options},
+        comfy, workflow_id, selected, template, params,
+        {**params, **h3_options, **checkpoint_options, **({"text_only_h3": True} if saved_text_mode else {})},
         reference_image=reference_image, mask_image=mask_image, pose_image=pose_image,
         progress=progress, cancel_event=cancel_event, journal=job_journal, context=job_context,
         guide_images=guide_images,

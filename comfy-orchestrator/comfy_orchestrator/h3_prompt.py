@@ -289,6 +289,14 @@ def compile_prompt(value, reference_only, *, common="", kept_frames=None, trim_f
     return prompt
 
 
+def validate_text_prompt(text, frames):
+    """Require a canonical native T2VA prompt, with no fabricated input labels."""
+    sections, ref = parse_sections(text)
+    if ref:
+        raise _bad("T2VAでは参照画像用セクションを使用できません")
+    return compile_prompt(sections, False, kept_frames=frames, text_only=True)
+
+
 def compile_cut(plan, index, reference_only, *, kept_frames=None, trim_frames=0, guide_frames=0,
                 text_only=False):
     fields, stored_ref = parse_sections(plan["segments"][index])
@@ -367,6 +375,9 @@ def _system(workflows, settings, reference_only, *, text_only=False):
 def interpret_single(client, text, workflows, image, progress=None):
     from .workflow_registry import H3_I2V_ID
     ref = bool(client.settings.get("_h3_reference_only", False))
+    text_only = client.settings.get("_h3_text_only", False) is True
+    if text_only and (ref or image is not None or not text.strip()):
+        raise OrchestratorError("参照画像なしのH3生成には自然文が必要です（T2VA）")
     seconds = client.settings.get("_h3_duration_seconds", 124 / 24)
     frames = round(seconds * 24)
     instance_id = None
@@ -375,14 +386,16 @@ def interpret_single(client, text, workflows, image, progress=None):
         # still-image composition flag must not reject a text-only H3 model.
         client._has_visual_input = False
         instance_id = client._ensure_loaded()
-        observed = observe_reference(client, instance_id, image, progress)
+        observed = None if text_only else observe_reference(client, instance_id, image, progress)
         payload = {"request": text, "reference_observations": observed,
-                   "reference_mode": "Ref2VA" if ref else "I2VA", "retained_seconds": seconds}
+                   "reference_mode": "T2VA" if text_only else "Ref2VA" if ref else "I2VA",
+                   "retained_seconds": seconds}
         if progress:
             progress("H3: 公式形式で映像・音声プロンプトを構成")
-        prompt = _reply(client, instance_id, _system(workflows, client.settings, ref),
+        prompt = _reply(client, instance_id, _system(workflows, client.settings, ref, text_only=text_only),
                         json.dumps(payload, ensure_ascii=False), schema(ref), "h3_official_prompt",
-                        lambda value: compile_prompt(value, ref, kept_frames=frames), progress)
+                        lambda value: compile_prompt(value, ref, kept_frames=frames, text_only=text_only),
+                        progress)
         return {"workflow_id": H3_I2V_ID, "parameters": {"positive_prompt": prompt}}
     finally:
         client.unload_selected(instance_id, progress)
