@@ -530,7 +530,7 @@ def plan_long(config, request, windows, reference_only, *, image=None, progress=
     from .lmstudio import LMStudio
     from .prompt_cache import CACHE_ERRORS, make_cache_key
     from .model_runtime import release_comfy_before_llm
-    from .prompt_edit import prepare_plan_review
+    from .prompt_review import prepare_plan_review
     from .timeline import validate_prompt_plan, prompt_plan_schema
 
     def note(message):

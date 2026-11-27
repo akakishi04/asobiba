@@ -72,7 +72,7 @@ class ProjectTests(unittest.TestCase):
     def test_common_change_invalidates_all_and_regeneration_changes_seed(self):
         self.add_saved(2)
         common_edit = {"common": "new character", "segments": self.plan["segments"]}
-        with patch("comfy_orchestrator.long_video.secrets.randbits", return_value=99):
+        with patch("comfy_orchestrator.project_store.secrets.randbits", return_value=99):
             revised = edit_project(self.store, self.manifest, self.journal,
                                    common_edit, self.cuts, regenerate_from=1)
         self.assertEqual(revised["segments"], [])

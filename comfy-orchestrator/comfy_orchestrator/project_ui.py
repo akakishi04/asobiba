@@ -6,10 +6,10 @@ import tkinter as tk
 from dataclasses import dataclass
 from tkinter import ttk, messagebox, scrolledtext, simpledialog
 
-from .long_video import project_cut_lengths, first_changed_cut
+from .long_video_plan import project_cut_lengths, first_changed_cut
 from .parameters import OrchestratorError
 from .h3_prompt import FORMAT as H3_OFFICIAL_FORMAT
-from .prompt_edit import TranslationCache
+from .prompt_review import TranslationCache
 from .timeline import FPS, format_cut_seconds, parse_cut_seconds, validate_cut_frames, validate_prompt_plan, GUIDE_CONNECTION_FRAMES
 from .ui_theme import style_text_widget
 from .video_preview import VideoPreview

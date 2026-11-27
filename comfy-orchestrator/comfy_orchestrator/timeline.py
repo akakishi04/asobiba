@@ -273,7 +273,7 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
     from . import core
     from .lmstudio import LMStudio, _request, read_json_reply
     from .prompt_cache import CACHE_ERRORS, content_sha256, make_cache_key
-    from .prompt_edit import prepare_plan_review
+    from .prompt_review import prepare_plan_review
     from .prompt_profiles import DEFAULT_H3_PROFILE, apply_h3_profile
 
     def note(text):

@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from comfy_orchestrator import core, h3_prompt as hp, lmstudio, prompt_edit
+from comfy_orchestrator import core, h3_prompt as hp, lmstudio, prompt_review
 from comfy_orchestrator.prompt_cache import PromptCache
 from comfy_orchestrator.prompt_edit import TranslationCache, TOKEN, protect
 from comfy_orchestrator.timeline import generation_frames_for_cuts, plan_long_prompts
@@ -95,7 +95,7 @@ class AutomaticPlanReviewTests(unittest.TestCase):
     def test_failed_review_preserves_plan_and_cached_retry_fills_only_missing(self):
         with patch.object(lmstudio, "list_models", return_value=self.catalog) as load, \
                 patch.object(lmstudio, "_request", side_effect=self.request):
-            with patch.object(prompt_edit, "_translate", side_effect=[
+            with patch.object(prompt_review, "_translate", side_effect=[
                     "共通", core.OrchestratorError("翻訳通信失敗")]):
                 plan = self.plan(prompt_cache=self.plan_cache)
             self.assertEqual(len(self.cache.missing(plan)), 2)

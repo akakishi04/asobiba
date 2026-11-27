@@ -11,7 +11,8 @@ from . import core, output_collection
 from .history import HistoryError
 from .jobs import JobCancellationRequested
 from .timing import observe
-from .long_video import LongVideoPaused, run_long_video
+from .long_video_plan import LongVideoPaused
+from .long_video import run_long_video
 
 
 def active_aux_inputs(kind, mask, pose, composition):
