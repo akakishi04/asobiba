@@ -101,6 +101,112 @@ class PromptEditTests(unittest.TestCase):
         self.assertEqual(ProjectDraft(manifest).valid_prefix(), 3)
         self.assertIsNone(self.cache.get("cut", "She closes a different umbrella.", False))
 
+    def test_translate_all_skips_cached_and_duplicate_text_in_one_model_session(self):
+        plan = {**self.plan, "segments": ["One.", "Two.", "One."]}
+        manifest = self.project(plan, complete=True)
+        before = copy.deepcopy(manifest)
+        self.cache.put("common", plan["common"], False, "共通条件")
+        self.config["llm"]["unload_after_inference"] = True
+        translated = []
+        def response(settings, route, payload):
+            if route == "/api/v1/models/unload":
+                self.assertEqual(payload["instance_id"], "instance")
+                return {"instance_id": "instance"}
+            self.assertEqual(route, "/v1/chat/completions")
+            self.assertEqual(payload["response_format"]["json_schema"]["name"], "h3_japanese_review")
+            text = json.loads(payload["messages"][1]["content"])["text"]
+            translated.append(text)
+            return reply({"text": "翻訳 " + text})
+        logs = []
+        result, load, req = self.run_edit(manifest, plan, "translate_all", response, progress=logs.append)
+        self.assertEqual(translated, ["One.", "Two."])
+        self.assertEqual(result["translated_count"], 2)
+        load.assert_called_once()
+        self.assertEqual([c.args[1] for c in req.call_args_list],
+                         ["/v1/chat/completions", "/v1/chat/completions", "/api/v1/models/unload"])
+        self.assertTrue(any("1/2: カット1" in line for line in logs))
+        self.assertTrue(any("2/2: カット2" in line for line in logs))
+        self.assertEqual(result["after"], plan)
+        self.assertEqual(manifest, before)
+        self.cache = TranslationCache(self.root / "japanese.sqlite3")
+        again, load, req = self.run_edit(manifest, plan, "translate_all", response)
+        self.assertEqual(again["translated_count"], 0)
+        load.assert_not_called()
+        req.assert_not_called()
+        self.assertEqual(self.cache.get("cut", "One.", False), "翻訳 One.")
+        self.assertEqual(ProjectDraft(manifest).valid_prefix(), 3)
+
+    def test_translate_all_failure_preserves_completed_cache_and_resumes_remaining(self):
+        manifest = self.project()
+        attempted = []
+        def response(settings, route, payload):
+            source = json.loads(payload["messages"][1]["content"])["text"]
+            attempted.append(source)
+            if len(attempted) == 2:
+                raise core.OrchestratorError("通信タイムアウト")
+            return reply({"text": "訳 " + source})
+        with patch.object(lmstudio, "list_models", return_value=self.catalog), \
+                patch.object(lmstudio, "_request", side_effect=response):
+            with self.assertRaisesRegex(core.OrchestratorError, "カット1.*1/4件完了"):
+                edit_prompts(self.config, manifest, self.plan, self.cuts, 1, "translate_all", self.cache)
+        self.assertEqual(self.cache.get("common", self.plan["common"], False), "訳 " + self.plan["common"])
+        self.assertEqual([v[0] for v in self.cache.missing(self.plan)], ["カット1", "カット2", "カット3"])
+        attempted.clear()
+        def retry(settings, route, payload):
+            source = json.loads(payload["messages"][1]["content"])["text"]
+            attempted.append(source)
+            return reply({"text": "訳 " + source})
+        result, _, _ = self.run_edit(manifest, self.plan, "translate_all", retry)
+        self.assertEqual(attempted, self.plan["segments"])
+        self.assertEqual(result["translated_count"], 3)
+        self.assertFalse(self.cache.missing(self.plan))
+        self.assertEqual(manifest["prompt_plan"], self.plan)
+
+    def test_translate_all_cancel_stops_between_items_and_leaves_previous_results(self):
+        import threading
+        stop = threading.Event()
+        manifest = self.project()
+        calls = []
+        def response(settings, route, payload):
+            calls.append(payload)
+            if len(calls) == 2:
+                stop.set()
+            return reply({"text": "翻訳"})
+        with patch.object(lmstudio, "list_models", return_value=self.catalog), \
+                patch.object(lmstudio, "_request", side_effect=response):
+            with self.assertRaises(JobCancellationRequested):
+                edit_prompts(self.config, manifest, self.plan, self.cuts, 1, "translate_all",
+                             self.cache, cancel_event=stop)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(self.cache.get("common", self.plan["common"], False), "翻訳")
+        self.assertEqual(len(self.cache.missing(self.plan)), 3)
+        self.assertEqual(manifest["prompt_plan"], self.plan)
+
+    def test_translation_cache_covers_maximum_project_and_batches_disk_reads(self):
+        plan = {"common": "Common.", "segments": [f"Cut {i}." for i in range(300)]}
+        for label, kind, source in self.cache.missing(plan):
+            self.cache.put(kind, source, False, "訳 " + source)
+        self.assertEqual(self.cache.disk.stats()["entries"], 301)
+        loaded = TranslationCache(self.root / "japanese.sqlite3")
+        with patch.object(loaded.disk, "get_many", wraps=loaded.disk.get_many) as lookup:
+            self.assertFalse(loaded.missing(plan))
+            self.assertFalse(loaded.missing(plan))
+            lookup.assert_called_once()
+        self.assertEqual(loaded.get("cut", plan["segments"][299], False), "訳 Cut 299.")
+
+    def test_workspace_dispatches_all_translation_without_rewriting_or_selecting_cut(self):
+        manifest = self.project()
+        draft = ProjectDraft(manifest)
+        draft.current = 1
+        fake = SimpleNamespace(enabled=True, draft=draft, on_prompt_action=Mock(),
+                               _read=Mock(return_value=True), translation_cache=self.cache)
+        ProjectWorkspace._prompt_action(fake, "translate_all")
+        fake._read.assert_called_once_with(allow_japanese_edits=False)
+        fake.on_prompt_action.assert_called_once_with(
+            manifest, self.plan, self.cuts, 1, "translate_all", {}, "", self.cache)
+        self.assertEqual(draft.current, 1)
+        self.assertEqual(draft.plan(), self.plan)
+
     def test_native_translation_disables_reasoning_and_bounds_short_output(self):
         self.catalog[0]["capabilities"]["reasoning"] = {
             "allowed_options": ["off", "on"], "default": "on"}

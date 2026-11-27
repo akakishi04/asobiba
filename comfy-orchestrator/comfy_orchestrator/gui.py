@@ -3166,15 +3166,26 @@ class Application:
         snapshot = copy.deepcopy(manifest)
         plan = copy.deepcopy(plan)
         cuts = list(cuts)
-        self._set_busy("カットのプロンプト編集・翻訳中")
+        self._set_busy("未翻訳プロンプトの一括翻訳中" if operation == "translate_all" else "カットのプロンプト編集・翻訳中")
 
         def task():
-            result = edit_prompts(
-                cfg, snapshot, plan, cuts, index, operation, cache,
-                japanese=dict(japanese), instruction=instruction,
-                progress=lambda line: self.messages.put(("progress", line)),
-                cancel_event=self.stop_event,
-            )
+            try:
+                result = edit_prompts(
+                    cfg, snapshot, plan, cuts, index, operation, cache,
+                    japanese=dict(japanese), instruction=instruction,
+                    progress=lambda line: self.messages.put(("progress", line)),
+                    cancel_event=self.stop_event,
+                )
+            except Exception:
+                if operation in ("translate", "translate_all"):
+                    # Individual successful translations are already cached.
+                    # Refresh the same draft after partial failure/cancellation,
+                    # without publishing an English edit or touching Tk here.
+                    self.messages.put(("project_translation_cache_updated", (
+                        snapshot["run_id"], cuts,
+                        {"before": plan, "after": plan, "index": index},
+                    )))
+                raise
             return snapshot["run_id"], cuts, result
 
         self._launch_generation(task, done_event="project_prompt_edited")
@@ -3339,13 +3350,19 @@ class Application:
                         self.project_workspace.set_projects(projects, preferred, open_preferred=open_preferred)
                 elif kind == "long_plan_ready":
                     self._finish_long_prompt_plan(data)
+                elif kind == "project_translation_cache_updated":
+                    self.project_workspace.accept_prompt_result(*data)
                 elif kind == "project_prompt_edited":
                     run_id, cuts, result = data
-                    if self.stop_event.is_set():
+                    batch_review = "translated_count" in result
+                    if self.stop_event.is_set() and not batch_review:
                         self.status.set("プロンプト編集を中止しました")
                     elif self.project_workspace.accept_prompt_result(run_id, cuts, result):
                         changed = result["before"] != result["after"]
-                        self.status.set("プロンプト編集完了（未保存・動画未生成）" if changed else "日本語訳を表示しました")
+                        if batch_review:
+                            self.status.set(f"一括翻訳: {result['translated_count']}件完了（英語原文変更なし）")
+                        else:
+                            self.status.set("プロンプト編集完了（未保存・動画未生成）" if changed else "日本語訳を表示しました")
                     else:
                         self.status.set("計画が変わったため編集結果を適用しませんでした")
                 elif kind == "long_project_saved":

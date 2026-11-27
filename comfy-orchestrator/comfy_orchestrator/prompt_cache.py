@@ -37,20 +37,23 @@ def make_cache_key(request, settings, workflows, hints, sources, character_trait
 
 
 class PromptCache:
-    def __init__(self, database: Path):
+    def __init__(self, database: Path, *, limit=CACHE_LIMIT):
         self.database = Path(database)
+        if type(limit) is not int or limit < 1:
+            raise ValueError("cache limit must be a positive integer")
+        self.limit = limit
         self._lock = Lock()
         self._counts = {"hits": 0, "misses": 0, "writes": 0, "clears": 0}
 
-    def _count(self, key):
+    def _count(self, key, amount=1):
         with self._lock:
-            self._counts[key] += 1
+            self._counts[key] += amount
 
     def stats(self):
         with self._connection() as con:
             count, size = con.execute("SELECT COUNT(*), COALESCE(SUM(LENGTH(CAST(plan AS BLOB))), 0) FROM plans").fetchone()
         with self._lock:
-            return {**self._counts, "entries": count, "payload_bytes": size, "limit": CACHE_LIMIT}
+            return {**self._counts, "entries": count, "payload_bytes": size, "limit": self.limit}
 
     @contextmanager
     def _connection(self):
@@ -64,24 +67,38 @@ class PromptCache:
             yield con
 
     def get(self, key: str) -> dict | None:
+        return self.get_many((key,)).get(key)
+
+    def get_many(self, keys) -> dict:
+        """Read a batch in one transaction, including recency and hit counters."""
+        keys = tuple(dict.fromkeys(keys))
+        if not keys:
+            return {}
+        found = {}
+        invalid = []
         with self._connection() as con:
-            row = con.execute("SELECT plan FROM plans WHERE key = ?", (key,)).fetchone()
-            if row is None:
-                self._count("misses")
-                return None
-            try:
-                plan = json.loads(row[0])
-            except ValueError:
-                con.execute("DELETE FROM plans WHERE key = ?", (key,))
-                self._count("misses")
-                return None
-            if not isinstance(plan, dict):
-                con.execute("DELETE FROM plans WHERE key = ?", (key,))
-                self._count("misses")
-                return None
-            con.execute("UPDATE plans SET accessed = ? WHERE key = ?", (time.time(), key))
-            self._count("hits")
-            return plan
+            # Bounded placeholders work with SQLite builds using low variable limits.
+            for start in range(0, len(keys), 400):
+                batch = keys[start:start+400]
+                placeholders = ",".join("?" for _ in batch)
+                for key, raw in con.execute(
+                    f"SELECT key, plan FROM plans WHERE key IN ({placeholders})", batch
+                ):
+                    try:
+                        plan = json.loads(raw)
+                    except (ValueError, TypeError):
+                        plan = None
+                    if isinstance(plan, dict):
+                        found[key] = plan
+                    else:
+                        invalid.append((key,))
+            con.executemany("DELETE FROM plans WHERE key = ?", invalid)
+            now = time.time()
+            con.executemany("UPDATE plans SET accessed = ? WHERE key = ?",
+                            ((now, key) for key in found))
+        self._count("hits", len(found))
+        self._count("misses", len(keys) - len(found))
+        return found
 
     def put(self, key: str, plan: dict) -> None:
         payload = json.dumps(plan, ensure_ascii=False)
@@ -93,7 +110,7 @@ class PromptCache:
                         (key, payload, now, now))
             con.execute("""DELETE FROM plans WHERE key IN (
                 SELECT key FROM plans ORDER BY accessed DESC, key LIMIT -1 OFFSET ?
-            )""", (CACHE_LIMIT,))
+            )""", (self.limit,))
         self._count("writes")
 
     def clear(self) -> int:

@@ -39,31 +39,61 @@ PROTECTED = re.compile(
 )
 TOKEN = re.compile(r"__H3KEEP_\d{4}__")
 VERSION = "h3_ja_review_v1"
+# A maximum-length project has 300 cuts plus its common prompt. Keep
+# several such projects in the separate Japanese cache.
+TRANSLATION_CACHE_LIMIT = 2048
 
 
 def _key(kind, source, official):
-    encoded = json.dumps([VERSION, kind, bool(official), source], ensure_ascii=False).encode("utf-8")
+    encoded = json.dumps([VERSION, kind, bool(official), source.strip()], ensure_ascii=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
 
 class TranslationCache:
     """Separate local cache; never part of a saved generation plan or its digest."""
     def __init__(self, database):
-        self.disk = PromptCache(database)
+        self.disk = PromptCache(database, limit=TRANSLATION_CACHE_LIMIT)
         self.memory = {}
+
+    def _load_keys(self, keys):
+        # Memoize both hits and misses for this UI session. A worker's put
+        # supersedes a miss; setdefault avoids racing with a successful put.
+        missing = tuple(dict.fromkeys(key for key in keys if key not in self.memory))
+        if not missing:
+            return
+        try:
+            rows = self.disk.get_many(missing)
+        except CACHE_ERRORS:
+            rows = {}
+        for key in missing:
+            row = rows.get(key)
+            value = row.get("japanese") if isinstance(row, dict) else None
+            self.memory.setdefault(key, value if isinstance(value, str) and value.strip() else None)
 
     def get(self, kind, source, official):
         if not source.strip():
             return ""
         key = _key(kind, source, official)
-        if key not in self.memory:
-            try:
-                row = self.disk.get(key)
-            except CACHE_ERRORS:
-                row = None
-            if isinstance(row, dict) and isinstance(row.get("japanese"), str) and row["japanese"].strip():
-                self.memory[key] = row["japanese"]
+        self._load_keys((key,))
         return self.memory.get(key)
+
+    def missing(self, plan, index=None):
+        """Untranslated distinct, nonempty texts in playback order.
+
+        index=None covers common plus every cut; an index restricts review
+        to the current cut. Identical cut text needs translation only once.
+        """
+        official = plan.get("format") == hp.FORMAT
+        indices = range(len(plan["segments"])) if index is None else (index,)
+        candidates = [("共通", "common", plan["common"])]
+        candidates.extend((f"カット{i+1}", "cut", plan["segments"][i]) for i in indices)
+        targets = {}
+        for label, kind, source in candidates:
+            source = source.strip()
+            if source:
+                targets.setdefault(_key(kind, source, official), (label, kind, source))
+        self._load_keys(targets)
+        return [item for key, item in targets.items() if self.memory.get(key) is None]
 
     def put(self, kind, source, official, japanese):
         if not source.strip():
@@ -262,7 +292,7 @@ def edit_prompts(config, manifest, plan, cuts, index, operation, cache, *,
     from .lmstudio import LMStudio
     from .model_runtime import release_comfy_before_llm
     from .prompt_profiles import H3_PROFILE_INSTRUCTIONS, DEFAULT_H3_PROFILE
-    if operation not in ("translate", "apply", "regenerate"):
+    if operation not in ("translate", "translate_all", "apply", "regenerate"):
         raise OrchestratorError("プロンプト操作が不正です")
     if type(index) is not int or not 0 <= index < len(cuts) or len(plan["segments"]) != len(cuts):
         raise OrchestratorError("カット番号が不正です")
@@ -287,13 +317,19 @@ def edit_prompts(config, manifest, plan, cuts, index, operation, cache, *,
     def source(kind):
         return after["common"] if kind == "common" else after["segments"][index]
 
+    def review_result(translated_count=0):
+        result = {"before": before, "after": after, "index": index,
+                  "japanese": {kind: cache.get(kind, source(kind), official) for kind in ("common", "cut")}}
+        if operation == "translate_all":
+            result["translated_count"] = translated_count
+        return result
+
     hp._check_cancel(cancel_event)
-    # Cache-only review never loads or unloads models or frees ComfyUI.
-    if operation == "translate":
-        cached = {kind: cache.get(kind, source(kind), official) for kind in ("common", "cut")}
-        if all(v is not None for v in cached.values()):
-            return {"before": before, "after": after, "index": index, "japanese": cached}
-    context = cut_context(manifest, plan, cuts, index) if operation != "translate" else None
+    review_only = operation in ("translate", "translate_all")
+    # Cache-only review never loads/unloads models or frees ComfyUI.
+    if review_only and not cache.missing(after, None if operation == "translate_all" else index):
+        return review_result()
+    context = None if review_only else cut_context(manifest, plan, cuts, index)
     settings = dict(config["llm"], send_reference_to_llm=False)
     if settings.get("model", "") in ("", "SELECT_IN_GUI"):
         raise OrchestratorError("LM Studioのモデルを選択してください")
@@ -320,17 +356,32 @@ def edit_prompts(config, manifest, plan, cuts, index, operation, cache, *,
                 hp.compile_cut(after, index, context["reference_only"],
                                kept_frames=context["retained_frames"], trim_frames=context["trim_frames"],
                                guide_frames=context["guide_frames"], text_only=context.get("text_only", False))
-        # Review the actual new English rather than echoing the user's Japanese.
-        result = {}
-        for kind in ("common", "cut"):
-            raw = source(kind)
-            value = cache.get(kind, raw, official)
-            if value is None:
-                note("日本語訳: " + ("共通" if kind == "common" else f"カット{index+1}"))
-                value = _translate(client, instance, kind, raw, official, note, cancel_event)
-                cache.put(kind, raw, official, value)
-            result[kind] = value
+        # Review actual English, not the user's edited Japanese. Each
+        # outstanding prompt is its own inference, in one loaded session.
+        from .jobs import JobCancellationRequested
+        pending = cache.missing(after, None if operation == "translate_all" else index)
+        total = len(pending)
+        completed = 0
+        for label, kind, raw in pending:
+            hp._check_cancel(cancel_event)
+            title = f"日本語訳 {completed+1}/{total}: {label}" if operation == "translate_all" else f"日本語訳: {label}"
+            note(title)
+            try:
+                value = _translate(client, instance, kind, raw, official,
+                                   lambda line: note(f"{title} / {line}") if operation == "translate_all" else note(line),
+                                   cancel_event)
+            except JobCancellationRequested:
+                raise
+            except OrchestratorError as exc:
+                if operation == "translate_all":
+                    raise OrchestratorError(f"{label}の日本語訳で停止しました（{completed}/{total}件完了）。"
+                                            f"完了分は保持しています。\n{exc}") from exc
+                raise
+            cache.put(kind, raw, official, value)
+            completed += 1
         hp._check_cancel(cancel_event)
-        return {"before": before, "after": after, "index": index, "japanese": result}
+        if operation == "translate_all":
+            note(f"一括翻訳完了: {completed}件")
+        return review_result(completed)
     finally:
         client.unload_selected(instance, note)

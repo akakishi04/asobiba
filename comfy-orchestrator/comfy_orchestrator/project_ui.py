@@ -126,12 +126,16 @@ class ProjectWorkspace(ttk.Frame):
         language_bar.pack(fill="x", pady=(0, 3))
         self.prompt_language = tk.StringVar(value=self._display_language)
         self.language_box = ttk.Combobox(language_bar, textvariable=self.prompt_language,
-                                         values=("日本語", "H3用英語"), state="readonly", width=10)
+                                         values=("日本語", "H3用英語"), state="readonly", width=8)
         self.language_box.pack(side="left")
         self.language_box.bind("<<ComboboxSelected>>", self._switch_language)
         self.translate_button = ttk.Button(language_bar, text="日本語訳", command=lambda: self._prompt_action("translate"),
                                            style="Compact.TButton")
         self.translate_button.pack(side="left", padx=2)
+        self.translate_all_button = ttk.Button(language_bar, text="一括翻訳",
+                                               command=lambda: self._prompt_action("translate_all"),
+                                               style="Compact.TButton")
+        self.translate_all_button.pack(side="left", padx=2)
         self.apply_ja_button = ttk.Button(language_bar, text="編集反映", command=lambda: self._prompt_action("apply"),
                                           style="Compact.TButton")
         self.apply_ja_button.pack(side="left", padx=2)
@@ -213,6 +217,12 @@ class ProjectWorkspace(ttk.Frame):
         service = editable and self.on_prompt_action is not None
         self.translate_button.configure(state="normal" if service and japanese and not pending
                                         and any(v is None for v in self._ja_baseline.values()) else "disabled")
+        untranslated = (len(self.translation_cache.missing(self.draft.plan()))
+                        if service and japanese and not pending else 0)
+        self.translate_all_button.configure(
+            text=f"一括翻訳({untranslated})" if untranslated else "一括翻訳",
+            state="normal" if untranslated else "disabled",
+        )
         self.apply_ja_button.configure(state="normal" if service and japanese and pending else "disabled")
         self.revert_ja_button.configure(state="normal" if editable and japanese and pending else "disabled")
         self.rewrite_button.configure(state="normal" if service and not pending else "disabled")
@@ -359,7 +369,7 @@ class ProjectWorkspace(ttk.Frame):
             elif self._display_language == "日本語":
                 translated = self.translation_cache.get(kind, value, official)
                 self._ja_baseline[kind] = translated
-                value = translated if translated is not None else "「日本語訳」で確認できます"
+                value = translated if translated is not None else "「日本語訳」または「一括翻訳」で確認できます"
             widget.configure(state="normal")
             widget.delete("1.0", "end")
             widget.insert("1.0", value)
