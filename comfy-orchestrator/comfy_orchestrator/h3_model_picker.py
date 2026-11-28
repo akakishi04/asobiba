@@ -10,6 +10,7 @@ from dataclasses import dataclass, replace
 
 from .h3 import (H3_MODEL_LABELS, h3_hybrid_filename, h3_hybrid_model_key,
                  h3_ref2va_filename)
+from .model_registry import parse_h3_key, h3_key, PROFILES
 
 
 OPENING = "開始フレーム"
@@ -63,6 +64,12 @@ def _basename(filename):
 
 
 def _choice(key):
+    manual = parse_h3_key(key)
+    if manual is not None:
+        profile, _, filename = manual
+        label = _basename(filename).rsplit(".", 1)[0] + " [登録]"
+        return ModelChoice(label, "registered:" + profile + ":" + filename,
+                           h3_key(profile, "opening", filename), h3_key(profile, "reference", filename))
     filename = h3_hybrid_filename(key)
     if filename is not None:
         label = _HYBRID_NAMES.get(_basename(filename).lower(), _basename(filename).rsplit(".", 1)[0])

@@ -7,7 +7,7 @@ COMMON = ("seed", "steps", "cfg")
 H3 = ("h3_size", "h3_duration", "h3_model", "h3_turbo", "h3_encoder_cpu",
       "h3_encoder_model", "h3_steps", "h3_hybrid_steps", "h3_performance", "h3_profile")
 MODE_FIELDS = {
-    "image": COMMON + ("width", "height", "denoise", "checkpoint_model", "qwen_steps", "qwen_cfg",
+    "image": COMMON + ("width", "height", "denoise", "checkpoint_model", "anima_model", "qwen_model", "qwen_steps", "qwen_cfg",
                        "pose_mode", "control_strength", "t2i_profile", "i2i_profile", "vision_composition"),
     "video": COMMON + H3 + ("video_size", "video_frames", "video_fps",
                             "hunyuan_size", "hunyuan_frames", "hunyuan_steps"),

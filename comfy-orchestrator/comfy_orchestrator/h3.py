@@ -4,6 +4,8 @@ from __future__ import annotations
 import copy
 
 from .parameters import OrchestratorError, check_param
+from .model_registry import (parse_h3_key, h3_key, registered_h3_turbo,
+                             registered_h3_label, h3_key_from_label)
 from .h3_performance import (H3_PERFORMANCE_LABELS, H3_SOL_VAE,
                              apply_h3_hybrid_performance, validate_h3_hybrid_steps)
 
@@ -72,6 +74,9 @@ def h3_hybrid_model_key(filename: str, *, reference_only: bool) -> str | None:
 
 
 def h3_hybrid_filename(model) -> str | None:
+    manual = parse_h3_key(model)
+    if manual is not None:
+        return manual[2] if registered_h3_turbo(model) else None
     if not isinstance(model, str):
         return None
     for prefix in H3_HYBRID_PREFIXES:
@@ -80,6 +85,15 @@ def h3_hybrid_filename(model) -> str | None:
             if h3_hybrid_model_key(filename, reference_only=prefix == "hybrid_ref2va:") == model:
                 return filename
     return None
+
+
+def h3_hybrid_mode_key(model, *, reference_only):
+    """Change conditioning without losing an explicitly registered profile."""
+    manual = parse_h3_key(model)
+    if manual is not None:
+        return h3_key(manual[0], "reference" if reference_only else "opening", manual[2])
+    filename = h3_hybrid_filename(model)
+    return h3_hybrid_model_key(filename, reference_only=reference_only) if filename is not None else None
 
 
 def h3_ref2va_model_key(filename: str) -> str | None:
@@ -100,6 +114,9 @@ def h3_ref2va_model_key(filename: str) -> str | None:
 
 
 def h3_ref2va_filename(model) -> str | None:
+    manual = parse_h3_key(model)
+    if manual is not None:
+        return manual[2] if manual[1] == "reference" else None
     if isinstance(model, str) and model.startswith("hybrid_ref2va:"):
         return h3_hybrid_filename(model)
     if isinstance(model, str) and model.startswith(H3_REF2VA_PREFIX):
@@ -110,6 +127,9 @@ def h3_ref2va_filename(model) -> str | None:
 
 
 def h3_model_label(model) -> str:
+    manual = registered_h3_label(model)
+    if manual is not None:
+        return manual
     hybrid = h3_hybrid_filename(model)
     if hybrid is not None:
         return H3_HYBRID_PREFIXES[model.split(":", 1)[0] + ":"] + hybrid
@@ -118,6 +138,9 @@ def h3_model_label(model) -> str:
 
 
 def h3_model_from_label(label: str) -> str | None:
+    manual = h3_key_from_label(label)
+    if manual is not None:
+        return manual
     for prefix, display in H3_HYBRID_PREFIXES.items():
         if label.startswith(display):
             return h3_hybrid_model_key(label[len(display):], reference_only=prefix == "hybrid_ref2va:")
@@ -150,18 +173,22 @@ def split_h3_options(parameters: dict, *, enabled: bool) -> tuple[dict, dict]:
     turbo = options.get("h3_turbo", "off")
     ref_model = h3_ref2va_filename(model)
     hybrid = h3_hybrid_filename(model)
-    if not isinstance(model, str) or (model not in H3_MODELS and ref_model is None and hybrid is None):
+    if not isinstance(model, str) or (model not in H3_MODELS and ref_model is None and hybrid is None and parse_h3_key(model) is None):
         raise OrchestratorError("未対応のH3モデルです")
     if not isinstance(turbo, str) or turbo not in H3_TURBOS:
         raise OrchestratorError("未対応のH3 Turbo設定です")
     if hybrid is not None and turbo != "off":
-        raise OrchestratorError("10Eros-Max v1.0はTurbo内蔵です。追加TurboはOFFにしてください")
+        raise OrchestratorError("Turbo内蔵モデルには追加Turboを使用できません")
     selected = {"h3_model": model, "h3_turbo": turbo}
     if "h3_performance" in options:
         performance = options["h3_performance"]
         if hybrid is None or not isinstance(performance, str) or performance not in H3_PERFORMANCE_LABELS:
             raise OrchestratorError("未対応のH3高速化設定です")
         selected["h3_performance"] = performance
+    if registered_h3_turbo(model):
+        if selected.get("h3_performance", "euler_dense") != "euler_dense":
+            raise OrchestratorError("登録されたEuler 8stepモデルの高速化方式は固定です")
+        selected["h3_performance"] = "euler_dense"
     # Do not inject a new device into old saved jobs or legacy CLI calls.
     if "h3_encoder_device" in options:
         device = options["h3_encoder_device"]
@@ -222,6 +249,8 @@ def prepare_h3_workflow(template: dict, options: dict, parameters: dict | None =
         graph["17"]["inputs"]["sampler_name"] = "res_multistep"
     elif hybrid is not None:
         graph["6"]["inputs"]["unet_name"] = hybrid
+    elif parse_h3_key(model) is not None:
+        graph["6"]["inputs"]["unet_name"] = parse_h3_key(model)[2]
     elif model == "gguf_u16g":
         # The current backend uses legacy VRAM management. U16G needs the
         # compatible molbal fork; do not pass GGUF to the native UNETLoader.
@@ -290,10 +319,10 @@ def h3_text_model_options(overrides):
     values = dict(overrides or {})
     model = values.get("h3_model")
     if h3_ref2va_filename(model) is not None:
-        filename = h3_hybrid_filename(model)
-        if filename is None:
+        opening = h3_hybrid_mode_key(model, reference_only=False) if h3_hybrid_filename(model) else None
+        if opening is None:
             raise OrchestratorError("参照画像なしのH3生成にはベースモデルまたはHybridを選択してください")
-        values["h3_model"] = h3_hybrid_model_key(filename, reference_only=False)
+        values["h3_model"] = opening
     return values
 
 

@@ -10,6 +10,7 @@ from typing import Any, Callable
 from .parameters import OrchestratorError, PARAMS, check_param
 from . import image_prompts
 from .model_profiles import ANIMA_ID
+from .model_registry import model_filename
 from .jobs import (JobJournal, JobCancellationRequested, JobExecutionFailed,
                    JobSubmissionRejected, run_job)
 from .input_snapshot import freeze_generation_inputs
@@ -382,7 +383,7 @@ def execute(
              + (f" / Text encoder={h3_options['h3_encoder_device']}" if "h3_encoder_device" in h3_options else "")
              + (f" / TE model={H3_ENCODER_LABELS[h3_options['h3_encoder_model']]}" if "h3_encoder_model" in h3_options else ""))
     if checkpoint_options:
-        note("SDXL: " + checkpoint_options["checkpoint_model"])
+        note("画像モデル: " + model_filename(checkpoint_options["checkpoint_model"]))
     saved_params = {**params, **h3_options, **checkpoint_options}
     if image_prompts.supports_plan(workflows) and provider == "lmstudio":
         if alternate is not None and all(params.get(key) == value for key, value in original_prompts.items()):

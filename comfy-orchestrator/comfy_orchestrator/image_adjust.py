@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 
 from .input_snapshot import copy_frozen_asset
 from . import image_prompts
-from .model_profiles import ANIMA_ID, ANIMA_BASE
+from .model_profiles import ANIMA_ID, ANIMA_BASE, QWEN_ID
 from .output_collection import IMAGE_EXTENSIONS
 from .parameters import PARAMS, OrchestratorError, check_param
 from .prompt_inference import check_cancel
@@ -119,7 +119,7 @@ class ImageAdjustDraft(SinglePromptDraft):
 
     @property
     def checkpoint_selectable(self):
-        return self.workflow_id in SDXL_WORKFLOW_IDS or self.workflow_id == ANIMA_ID
+        return self.workflow_id in SDXL_WORKFLOW_IDS or self.workflow_id in (ANIMA_ID, QWEN_ID)
 
     def fixed_sampler(self, checkpoint=None):
         if checkpoint is None:
@@ -155,6 +155,8 @@ class ImageAdjustDraft(SinglePromptDraft):
         params = {**workflows[target].get("defaults", {}), **bundle["prompts"][target_format]}
         if target == ANIMA_ID:
             params["checkpoint_model"] = checkpoint or ANIMA_BASE
+        elif target == QWEN_ID and checkpoint:
+            params["checkpoint_model"] = checkpoint
         for key in ("width", "height", "seed"):
             if key in clean and key in workflows[target]["bindings"]:
                 params[key] = clean[key]

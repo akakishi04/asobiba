@@ -11,7 +11,7 @@ from .parameters import OrchestratorError, check_param, PARAMS
 from .h3 import (
     h3_ref2va_filename,
     h3_hybrid_filename,
-    h3_hybrid_model_key,
+    h3_hybrid_mode_key,
     H3_REF2VA_DEFAULT_PROMPT,
     ensure_h3_reference_prompt,
     h3_text_model_options,
@@ -99,7 +99,7 @@ def continuation_model(model: str) -> str:
     filename = h3_hybrid_filename(model)
     if filename is None:
         raise OrchestratorError("長尺連続生成には開始フレーム対応モデルが必要です。純粋Ref2VAではなくHybridまたはFL2VAを選択してください")
-    key = h3_hybrid_model_key(filename, reference_only=False)
+    key = h3_hybrid_mode_key(model, reference_only=False)
     if key is None:
         raise OrchestratorError("Hybridの開始フレームモードを確認できません")
     return key

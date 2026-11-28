@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .parameters import OrchestratorError, PARAMS, check_param
 from .model_profiles import ANIMA_ID, anima_model_name, anima_models
+from .model_registry import parse_image_key, model_filename, installed_registrations
 from .h3 import H3_MODELS, h3_ref2va_model_key, h3_hybrid_model_key
 
 
@@ -52,6 +53,9 @@ def needs_prompt_llm(config: dict, request: str, character_traits=None,
 
 def sdxl_checkpoint_kind(name: str) -> str | None:
     """Recognize the supported checkpoint families without loading unknown weights."""
+    manual = parse_image_key(name)
+    if manual is not None:
+        return {"sdxl": "illustrious", "sdxl_turbo": "turbo"}.get(manual[0])
     if not isinstance(name, str) or not name or len(name) > 1024:
         return None
     parts = name.replace("\\", "/").split("/")
@@ -78,6 +82,9 @@ def split_checkpoint_option(parameters: dict, workflow_ids) -> tuple[dict, dict]
     ids = set(workflow_ids)
     if ids == {ANIMA_ID} and anima_model_name(name):
         return inputs, {"checkpoint_model": name}
+    manual = parse_image_key(name)
+    if ids == {QWEN_T2I_ID} and manual and manual[0] == "qwen":
+        return inputs, {"checkpoint_model": name}
     if not ids or not ids <= SDXL_WORKFLOW_IDS or kind is None:
         raise OrchestratorError("このワークフローに対応しないSDXLチェックポイントです")
     if kind == "turbo" and ids != {"wai_t2i_basic"}:
@@ -89,16 +96,24 @@ def prepare_checkpoint_workflow(template: dict, options: dict) -> dict:
     if not options:
         return template
     graph = copy.deepcopy(template)
+    manual = parse_image_key(options["checkpoint_model"])
+    if manual and manual[0] == "qwen":
+        loader = graph.get("226", {})
+        if (loader.get("class_type") != "UNETLoader"
+                or loader.get("inputs", {}).get("unet_name") != "qwen_image_2512_fp8_e4m3fn.safetensors"):
+            raise OrchestratorError("標準Qwen-Image用ローダーが見つかりません")
+        loader["inputs"]["unet_name"] = manual[1]
+        return graph
     loader = graph.get("2", {})
     if loader.get("class_type") == "UNETLoader" and anima_model_name(options["checkpoint_model"]):
         if "unet_name" not in loader.get("inputs", {}) or not anima_model_name(loader["inputs"]["unet_name"]):
             raise OrchestratorError("Anima用ローダーが見つかりません")
-        loader["inputs"]["unet_name"] = options["checkpoint_model"]
+        loader["inputs"]["unet_name"] = model_filename(options["checkpoint_model"])
         return graph
     if loader.get("class_type") != "CheckpointLoaderSimple" or "ckpt_name" not in loader.get("inputs", {}):
         raise OrchestratorError("標準SDXLチェックポイントノードが見つかりません")
     name = options["checkpoint_model"]
-    loader["inputs"]["ckpt_name"] = name
+    loader["inputs"]["ckpt_name"] = model_filename(name)
     if sdxl_checkpoint_kind(name) == "turbo":
         sampler = graph.get("11", {})
         if sampler.get("class_type") != "KSampler":
@@ -107,9 +122,12 @@ def prepare_checkpoint_workflow(template: dict, options: dict) -> dict:
     return graph
 
 
-def installed_model_choices(inventory: dict) -> dict:
+def installed_model_choices(inventory: dict, registrations=()) -> dict:
     """Only show registered architectures and installed filenames."""
-    native = inventory.get("UNETLoader", ())
+    local = installed_registrations(inventory, registrations)
+    claimed = {item.identity for item in local}
+    inventory = inventory or {}
+    native = tuple(name for name in inventory.get("UNETLoader", ()) if ("UNETLoader", name) not in claimed)
     gguf = inventory.get("UnetLoaderGGUF", ())
     return {
         "h3": (tuple(key for key, name in H3_MODELS.items()
@@ -117,10 +135,13 @@ def installed_model_choices(inventory: dict) -> dict:
                + tuple(dict.fromkeys(key for name in native
                                      if (key := h3_ref2va_model_key(name)) is not None))
                + tuple(dict.fromkeys(key for name in native for reference_only in (False, True)
-                                     if (key := h3_hybrid_model_key(name, reference_only=reference_only)) is not None))),
-        "anima": anima_models(inventory),
-        "sdxl": tuple(name for name in inventory.get("CheckpointLoaderSimple", ())
-                      if sdxl_checkpoint_kind(name) is not None),
+                                     if (key := h3_hybrid_model_key(name, reference_only=reference_only)) is not None))
+               + tuple(key for item in local if item.spec.h3_modes for key in item.keys)),
+        "anima": anima_models({"UNETLoader": native}) + tuple(item.keys[0] for item in local if item.spec.image_family == "anima"),
+        "qwen": tuple(item.keys[0] for item in local if item.spec.image_family == "qwen"),
+        "sdxl": (tuple(name for name in inventory.get("CheckpointLoaderSimple", ())
+                       if ("CheckpointLoaderSimple", name) not in claimed and sdxl_checkpoint_kind(name) is not None)
+                 + tuple(item.keys[0] for item in local if item.spec.image_family == "sdxl")),
     }
 
 
