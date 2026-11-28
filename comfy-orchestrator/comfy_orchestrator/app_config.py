@@ -39,6 +39,12 @@ def load_local_config(config_path, example_path) -> dict:
     # A marker prevents a deliberate future choice of smaller limits from
     # being silently overwritten on the next startup.
     ui = config["ui"]
+    # One-time upgrade of the previous stock 10-minute timeout. Preserve
+    # custom values and allow deliberate changes back to 600 after migration.
+    if not ui.get("inference_timeout_v2_applied", False):
+        if config["llm"].get("inference_timeout_seconds") == 600:
+            config["llm"]["inference_timeout_seconds"] = example["llm"]["inference_timeout_seconds"]
+        ui["inference_timeout_v2_applied"] = True
     if not ui.get("token_defaults_v2_applied", False):
         llm = config["llm"]
         defaults = example["llm"]

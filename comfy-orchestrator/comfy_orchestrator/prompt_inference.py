@@ -48,28 +48,33 @@ def check_cancel(cancel_event):
 
 
 def request_validated(client, instance_id, system, user_content, response_schema, name, validator, progress=None,
-           cancel_event=None, *, translation_chars=None):
+           cancel_event=None, *, translation_chars=None, direct_answer=False):
     from .lmstudio import _request
-    # Only translations opt into this bounded direct-answer path. Model
-    # planning/rewriting still uses its original schema and token budget.
+    # Translation and explicitly opted-in still-image planning can disable
+    # reasoning. Keep the existing video-planning contract unchanged.
     translating = translation_chars is not None
     max_tokens = client.settings.get("max_tokens", 4096)
-    native = translating and "off" in getattr(client, "_reasoning_options", ())
+    native = (translating or direct_answer) and "off" in getattr(client, "_reasoning_options", ())
+    label = name if direct_answer else "H3 " + name
     if translating:
         # Scale with source length, not the worst-case JSON field limit.
         # Allow sufficient room for Japanese, protected markers and JSON.
         max_tokens = min(max_tokens, max(256, 160 + translation_chars +
                                          48 * len(response_schema.get("properties", {}))))
         system += "\nTranslate directly. Return only the completed JSON object; no analysis, discussion or alternatives."
-        if native:
-            # The native API exposes per-request reasoning=off, but does not
-            # implement response_format. Preserve the contract in the prompt
-            # and validate the result with the exact same host validator.
-            system += ("\nRequired JSON schema (return an object matching it):\n" +
-                       json.dumps(response_schema, ensure_ascii=False))
         if progress:
             method = "思考OFF（LM Studio native API）" if native else "思考OFF指定を確認できないモデル（短い出力上限）"
             progress(f"H3 {name}: {method} / 最大{max_tokens} tokens")
+    if direct_answer:
+        system += "\nReturn the completed JSON directly. Do not output analysis, discussion or alternatives."
+        if progress:
+            method = "思考OFF（LM Studio native API）" if native else "思考OFF非対応・従来の構造化出力"
+            progress(f"画像プロンプト: {method} / 最大{max_tokens} tokens")
+    if native:
+        # The native API has no response_format; validate the actual final
+        # answer against the host contract instead of trusting model text.
+        system += ("\nRequired JSON schema (return an object matching it):\n" +
+                   json.dumps(response_schema, ensure_ascii=False))
     feedback = ""
     for attempt in range(2):
         check_cancel(cancel_event)
@@ -80,7 +85,7 @@ def request_validated(client, instance_id, system, user_content, response_schema
                     reply = _request(client.settings, "/api/v1/chat", {
                         "model": instance_id, "system_prompt": system + feedback,
                         "input": user_content, "stream": False, "store": False,
-                        "reasoning": "off", "temperature": 0.0,
+                        "reasoning": "off", "temperature": 0.0 if translating else 0.2,
                         "max_output_tokens": max_tokens,
                     })
                 output = reply.get("output")
@@ -109,27 +114,27 @@ def request_validated(client, instance_id, system, user_content, response_schema
                 ))
         except OrchestratorError as exc:
             raise OrchestratorError(
-                f"H3 {name}（試行{attempt+1} / 出力上限{max_tokens} tokens）: {exc}"
+                f"{label}（試行{attempt+1} / 出力上限{max_tokens} tokens）: {exc}"
             ) from exc
         check_cancel(cancel_event)
-        if translating:
+        if translating or direct_answer:
             choices = reply.get("choices")
             choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
             message = choice.get("message")
             if isinstance(message, dict) and not str(message.get("content") or "").strip():
                 raise OrchestratorError(
-                    f"H3 {name}: 翻訳の最終回答が空です。"
+                    f"{label}: " + ("翻訳の" if translating else "") + "最終回答が空です。"
                     "LM StudioのReasoningをOFFにするか、非思考モデルを選択してください。"
                     f"（出力上限{max_tokens} tokens、同じ推論は再試行しません）"
                 )
             if choice.get("finish_reason") == "length":
-                raise OrchestratorError(f"H3 {name}: 翻訳が出力上限{max_tokens} tokensに達しました。"
+                raise OrchestratorError(f"{label}: " + ("翻訳が" if translating else "回答が") + f"出力上限{max_tokens} tokensに達しました。"
                                         "LLMの思考設定または出力上限を確認してください")
         try:
-            return validator(read_json_reply(reply, "H3 " + name))
+            return validator(read_json_reply(reply, label))
         except OrchestratorError as exc:
             if attempt:
                 raise
             feedback = "\nCorrect the invalid structured output and return the complete JSON again. Validation error: " + str(exc)[:220]
             if progress:
-                progress("H3: プロンプト形式を1回修正します: " + str(exc)[:220])
+                progress(("画像: " if direct_answer else "H3: ") + "プロンプト形式を1回修正します: " + str(exc)[:220])

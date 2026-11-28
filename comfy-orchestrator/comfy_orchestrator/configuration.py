@@ -37,7 +37,7 @@ def load_config(path: Path) -> dict:
         length = config["llm"].get("context_length")
         if length is not None and (isinstance(length, bool) or not isinstance(length, int) or length < 512 or length > 131072):
             raise OrchestratorError("llm.context_length は512～131072の整数です")
-        inference_timeout = config["llm"].get("inference_timeout_seconds", 600)
+        inference_timeout = config["llm"].get("inference_timeout_seconds", 1200)
         if (
             isinstance(inference_timeout, bool)
             or not isinstance(inference_timeout, (int, float))

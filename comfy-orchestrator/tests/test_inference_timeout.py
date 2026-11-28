@@ -20,7 +20,7 @@ class InferenceTimeoutTests(unittest.TestCase):
         self.example = json.loads((ROOT / "config.example.json").read_text(encoding="utf-8"))
         self.assertEqual(self.example["llm"]["context_length"], 8192)
         self.assertEqual(self.example["llm"]["max_tokens"], 4096)
-        self.assertEqual(self.example["llm"]["inference_timeout_seconds"], 600)
+        self.assertEqual(self.example["llm"]["inference_timeout_seconds"], 1200)
 
     def test_chat_uses_extended_timeout_only_for_inference(self):
         settings = self.example["llm"]
@@ -35,13 +35,13 @@ class InferenceTimeoutTests(unittest.TestCase):
             lmstudio._request(settings, "/api/v1/models/load", {"model": "local"})
             lmstudio._request(settings, "/v1/chat/completions", {"model": "local"})
             lmstudio._request(settings, "/api/v1/models/unload", {"instance_id": "x"})
-        self.assertEqual([round(t) for _, t in observed], [240, 240, 600, 240])
+        self.assertEqual([round(t) for _, t in observed], [240, 240, 1200, 240])
 
     def test_timeout_error_identifies_stage_and_config(self):
         with patch.object(
             lmstudio, "_open_json", side_effect=core.OrchestratorError("API connection: timed out")
         ):
-            with self.assertRaisesRegex(core.OrchestratorError, "自然文解釈.*600秒"):
+            with self.assertRaisesRegex(core.OrchestratorError, "自然文解釈.*1200秒"):
                 lmstudio._request(self.example["llm"], "/v1/chat/completions", {"model": "local"})
             with self.assertRaisesRegex(core.OrchestratorError, "API操作.*240秒"):
                 lmstudio._request(self.example["llm"], "/api/v1/models")
@@ -64,12 +64,26 @@ class InferenceTimeoutTests(unittest.TestCase):
             config_path.write_text(json.dumps(old), encoding="utf-8")
             with patch.object(gui, "CONFIG", config_path):
                 upgraded = gui.bootstrap_config()
-            self.assertEqual(upgraded["llm"]["inference_timeout_seconds"], 600)
+            self.assertEqual(upgraded["llm"]["inference_timeout_seconds"], 1200)
             self.assertEqual(upgraded["llm"]["timeout_seconds"], 240)
             self.assertEqual(upgraded["llm"]["context_length"], 8192)
             self.assertEqual(upgraded["llm"]["max_tokens"], 4096)
             self.assertEqual(upgraded["llm"]["model"], "gemma-4-12b")
             self.assertEqual(upgraded["llm"]["base_url"], "http://127.0.0.1:57317")
+
+    def test_old_stock_timeout_is_upgraded_once(self):
+        with tempfile.TemporaryDirectory() as root:
+            config_path = Path(root) / "config.json"
+            old = copy.deepcopy(self.example)
+            old["llm"]["inference_timeout_seconds"] = 600
+            config_path.write_text(json.dumps(old), encoding="utf-8")
+            with patch.object(gui, "CONFIG", config_path):
+                upgraded = gui.bootstrap_config()
+                self.assertEqual(upgraded["llm"]["inference_timeout_seconds"], 1200)
+                self.assertTrue(upgraded["ui"]["inference_timeout_v2_applied"])
+                upgraded["llm"]["inference_timeout_seconds"] = 600
+                config_path.write_text(json.dumps(upgraded), encoding="utf-8")
+                self.assertEqual(gui.bootstrap_config()["llm"]["inference_timeout_seconds"], 600)
 
     def test_custom_inference_timeout_is_preserved(self):
         with tempfile.TemporaryDirectory() as root:
@@ -86,7 +100,7 @@ class InferenceTimeoutTests(unittest.TestCase):
         settings.pop("inference_timeout_seconds")
         with patch.object(lmstudio, "_open_json", return_value={}) as fake_open:
             lmstudio._request(settings, "/v1/chat/completions", {"model": "local"})
-        self.assertEqual(fake_open.call_args.kwargs["timeout"], 600)
+        self.assertEqual(fake_open.call_args.kwargs["timeout"], 1200)
 
 
 if __name__ == "__main__":

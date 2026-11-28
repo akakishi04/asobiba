@@ -522,7 +522,7 @@
     "unload_after_inference": true,
     "token_env": "LMSTUDIO_API_TOKEN",
     "max_tokens": 4096,
-    "inference_timeout_seconds": 600,
+    "inference_timeout_seconds": 1200,
     "send_reference_to_llm": false,
     "t2i_prompt_profile": "illustrious_v2",
     "i2i_prompt_profile": "preserve_edit_v1",

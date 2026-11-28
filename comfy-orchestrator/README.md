@@ -159,11 +159,11 @@ Denoiseの設定値は変更しませんが、LLMへ生成前の補助情報と�
 
 Thinkingを使用するローカルLLMは、4,096 tokensの生成上限を活用すると解釈に4分以上かかることがあります。以前の `llm.timeout_seconds=240` は全APIで共通だったため、実際の応答が完成する前に通信が切れる場合がありました。
 
-- `llm.inference_timeout_seconds=600`：LM Studioの **`/v1/chat/completions` だけ**に適用する通信待機上限（10分）
+- `llm.inference_timeout_seconds=1200`：LM Studioの **`/v1/chat/completions` と `/api/v1/chat`** に適用する推論通信待機上限（20分）
 - `llm.timeout_seconds=240`：モデル一覧、ロード、アンロードなど従来のAPI操作用（4分）
 - `comfyui.generation_timeout_seconds=1800`：画像生成の完了を待つ時間（従来どおり30分）
 
-GUI起動時、既存のローカル `config.json` に新項目がなければ600秒を補完します。GUIの「設定を保存」で反映されます。手動で増減する場合はローカル `config.json` の `llm.inference_timeout_seconds` を編集してください（30～3,600秒）。
+GUI起動時、既存のローカル `config.json` に新項目がなければ1200秒を補完し、従来の600秒設定は一度だけ1200秒へ移行します。それ以外の設定値は維持します。GUIの「設定を保存」で反映されます。手動で増減する場合はローカル `config.json` の `llm.inference_timeout_seconds` を編集してください（30～3,600秒）。
 
 タイムアウト時は、どのLM Studio API操作で発生したか表示します。**延長しても確実に成功する保証はありません。** メモリ不足、モデルの応答停止、極端に低いtoken/s等でも応答が遅くなるため、再発する場合はLM Studioのログと実測速度を確認してください。自動リトライは行わず、重複実行を避けます。
 
@@ -637,7 +637,7 @@ H3のLLMリクエスト失敗時には処理の種類（h3_japanese_review 等�
 
 #### 日本語訳の思考制御
 
-翻訳（日本語訳・日本語編集の英語化）に限り、選択モデルの capabilities.reasoning.allowed_options に off があれば LM Studio の native /api/v1/chat へ reasoning: off、store: false を指定します。JSONは指示とアプリ側検証で保証する設計で、native APIにresponse_formatは送りません。対応情報がないモデルは従来のOpenAI互換APIを使い、翻訳元の長さに合わせた出力上限と直接回答の指示を適用します。最終回答が空、または長さ上限による打ち切りの場合は同じ推論を再試行せずエラーを表示します。思考OFFが確認できない場合はLM StudioのReasoning設定をOFFにするか非思考モデルを選択してください。通常のカット計画・プロンプト再生成では既存の構造化出力と出力トークン上限を保持します。参考: https://lmstudio.ai/docs/developer/rest/chat および https://lmstudio.ai/docs/developer/rest/list 。
+翻訳（日本語訳・日本語編集の英語化）では、選択モデルの capabilities.reasoning.allowed_options に off があれば LM Studio の native /api/v1/chat へ reasoning: off、store: false を指定します。JSONは指示とアプリ側検証で保証する設計で、native APIにresponse_formatは送りません。対応情報がないモデルは従来のOpenAI互換APIを使い、翻訳元の長さに合わせた出力上限と直接回答の指示を適用します。最終回答が空、または長さ上限による打ち切りの場合は同じ推論を再試行せずエラーを表示します。思考OFFが確認できない場合はLM StudioのReasoning設定をOFFにするか非思考モデルを選択してください。通常の動画カット計画・プロンプト再生成では既存の構造化出力と出力トークン上限を保持します。新規静止画プロンプト生成（WAI・Qwen・Anima）も、モデルがoffを明示的にサポートするときはnative APIのreasoning: off、store: falseを使い、既存の出力トークン上限とホスト側検証を維持します。OFF非対応モデルは従来の構造化出力を使用します。タイムアウト後は同一リクエストを自動再試行しません。参考: https://lmstudio.ai/docs/developer/rest/chat および https://lmstudio.ai/docs/developer/rest/list 。
 
 #### 未翻訳の一括翻訳
 

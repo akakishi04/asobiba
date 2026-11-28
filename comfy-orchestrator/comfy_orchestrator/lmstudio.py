@@ -17,12 +17,12 @@ from typing import Any, Callable
 from .parameters import OrchestratorError
 from .http_api import _open_json
 from .llm_usage import measured_request
-from .workflow_registry import plan_schema, HOST_VIDEO_IDS, H3_I2V_ID, QWEN_IDS
-from .image_prompts import dual_policy, extend_schema
+from .workflow_registry import plan_schema, validate_plan, HOST_VIDEO_IDS, H3_I2V_ID, QWEN_IDS
+from .image_prompts import dual_policy, extend_schema, supports_plan, split_plan
 from .character_refs import observation_schema, intersection_schema, validate_images
 from .character_repair import repair_model_analysis
 from .model_runtime import record_model_event
-from .prompt_inference import structured_payload, read_json_reply
+from .prompt_inference import structured_payload, read_json_reply, request_validated
 from . import h3_prompt
 from .prompt_profiles import (
     DEFAULT_T2I_PROFILE, T2I_PROFILE_LEGACY,
@@ -41,7 +41,7 @@ def _request(settings: dict, route: str, payload: dict | None = None) -> dict:
     # longer wait; keep the ordinary API timeout for short management calls.
     inference = route in ("/v1/chat/completions", "/api/v1/chat")
     timeout = float(
-        settings.get("inference_timeout_seconds", 600)
+        settings.get("inference_timeout_seconds", 1200)
         if inference else settings.get("timeout_seconds", 240)
     )
     headers = {"Content-Type": "application/json"}
@@ -461,12 +461,28 @@ class LMStudio:
                 )
                 progress(
                     f"LM Studio: {task_label}"
-                    f"（応答待ち上限 {self.settings.get('inference_timeout_seconds', 600)} 秒）"
+                    f"（応答待ち上限 {self.settings.get('inference_timeout_seconds', 1200)} 秒）"
                 )
             system += dual_policy(workflows)
+            schema = extend_schema(plan_schema(workflows), workflows)
+            if supports_plan(workflows) and "off" in getattr(self, "_reasoning_options", ()):
+                # Visual observations are already text at this point. Native
+                # reasoning=off is advertised by the selected model, not guessed.
+                def validate(reply):
+                    clean, _ = split_plan(reply, workflows)
+                    selected = clean.get("workflow_id")
+                    entry = workflows.get(selected, {}) if isinstance(selected, str) else {}
+                    validate_plan(clean, workflows, "image" in entry.get("bindings", {}))
+                    # Keep the existing host fallback for absent or invalid alternate prompts.
+                    return reply
+                return request_validated(self, instance_id, system, message["content"],
+                                         schema, "comfy_plan", validate, progress,
+                                         direct_answer=True)
+            if supports_plan(workflows) and progress:
+                progress("画像プロンプト: 思考OFF指定を確認できないモデル（従来の構造化出力）")
             request = structured_payload(
                 instance_id, [{"role": "system", "content": system}, message],
-                "comfy_plan", extend_schema(plan_schema(workflows), workflows),
+                "comfy_plan", schema,
                 max_tokens=self.settings.get("max_tokens", 4096),
             )
             result = _request(self.settings, "/v1/chat/completions", request)
