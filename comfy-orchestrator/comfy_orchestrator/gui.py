@@ -21,7 +21,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
-from . import core, output_collection
+from . import core, output_collection, camera_spec
 from .generation_controller import GenerationController, record_history, active_aux_inputs
 from .generation_runtime import preflight_long
 from .model_runtime import release_comfy_before_llm, memory_stats
@@ -96,6 +96,7 @@ from .model_registry import (load_registrations, save_registrations, registered_
 from .model_manager_ui import ModelManagerWindow
 from .model_comparison import ComparisonStore, prepare_targets, run_comparison
 from .model_comparison_ui import ModelComparisonWindow
+from .camera_ui import choose_camera
 from .preview_geometry import preview_subsample
 
 
@@ -219,6 +220,10 @@ class Application:
         self.use_prompt_cache = tk.BooleanVar(value=options.get("use_prompt_cache", True))
         self.model = tk.StringVar(value="" if llm.get("model") == "SELECT_IN_GUI" else llm.get("model", ""))
         self.image_reasoning = tk.StringVar(value=IMAGE_REASONING_LABELS.get(llm.get("image_reasoning", "off"), "OFF"))
+        try:
+            self.camera_spec = camera_spec.normalize(options.get(camera_spec.KEY))
+        except core.OrchestratorError:
+            self.camera_spec = {}
         workflows = list(self.config.get("workflows", {}))
         preferred = options.get("workflow", workflows[0] if workflows else "自動")
         mode = options.get("generation_mode", workflow_generation_mode(self.config, preferred))
@@ -408,6 +413,9 @@ class Application:
                 self.image_reasoning_box.pack(side="left")
                 self.model_compare_button = ttk.Button(page, text="モデル比較…", command=self._open_model_comparison)
                 self.model_compare_button.pack(side="left", padx=(8, 0))
+                self.camera_button = ttk.Button(page, text="画角…", command=self._edit_camera)
+                self.camera_button.pack(side="left", padx=(6, 0))
+                self._sync_camera_button()
         self._sync_workflow_choice()
         self.generation_tabs.bind("<<NotebookTabChanged>>", self._on_generation_tab_changed)
 
@@ -1003,6 +1011,7 @@ class Application:
     def _update_generation_controls(self) -> None:
         """Refresh fields in place; never replace the prompt, references or result pane."""
         workflow_id = self._active_workflow()
+        self._sync_camera_button()
         if workflow_id and self.workflow.get() not in ("自動", workflow_id):
             self.workflow.set(workflow_id)
         entry = self.config["workflows"].get(workflow_id, {})
@@ -1235,6 +1244,13 @@ class Application:
             elif entry.reference_image is None or not entry.reference_image.is_file():
                 messagebox.showerror("履歴復元", "保存されたH3参照画像が見つかりません")
                 return
+        if entry.workflow_id in camera_spec.IDS and hasattr(self, "camera_spec"):
+            try:
+                self.camera_spec = camera_spec.normalize(entry.parameters.get(camera_spec.KEY))
+            except core.OrchestratorError as exc:
+                messagebox.showerror("履歴復元", str(exc))
+                return
+            self._sync_camera_button()
         self.prompt.delete("1.0", "end")
         self.prompt.insert("1.0", entry.request_text)
         self._source_change_lock = True
@@ -1389,6 +1405,20 @@ class Application:
         except (ValueError, OSError, tk.TclError) as exc:
             messagebox.showerror("画像比較", str(exc))
 
+    def _sync_camera_button(self):
+        if hasattr(self, "camera_button"):
+            self.camera_button.configure(text="画角設定済…" if getattr(self, "camera_spec", {}) else "画角…")
+            self.camera_button.configure(state="normal" if not self.working and self._active_workflow() in camera_spec.IDS else "disabled")
+
+    def _edit_camera(self):
+        if self.working or self._active_workflow() not in camera_spec.IDS:
+            return
+        result = choose_camera(self.root, self.camera_spec, self.width.get(), self.height.get())
+        if result is not None:
+            self.camera_spec = result
+            self._sync_camera_button()
+            self.status.set("カメラ設定: " + camera_spec.summary(result))
+
     def _open_model_comparison(self, group_id=None):
         if self.working or self.character_analysis_running or self.single_draft is not None:
             return
@@ -1398,7 +1428,7 @@ class Application:
             self.comparison_window = ModelComparisonWindow(
                 self.root, self.comparison_store, choices,
                 width=self.width.get(), height=self.height.get(), seed=self.seed.get(),
-                steps=self.steps.get(), cfg=self.cfg.get(),
+                steps=self.steps.get(), cfg=self.cfg.get(), camera=getattr(self, "camera_spec", {}),
                 on_start=self._start_model_comparison, on_cancel=self._request_cancel,
                 on_adjust=lambda h, p: self._open_adjust(h, selected=p),
                 on_open=self._open_path, on_close=self._close_model_comparison,
@@ -1508,6 +1538,7 @@ class Application:
 
     def _set_busy(self, label: str) -> None:
         self.tasks.begin()
+        self._sync_camera_button()
         comparison = getattr(self, "comparison_window", None)
         if comparison is not None and comparison.winfo_exists():
             comparison.set_busy(True, own_task=getattr(self, "_comparison_active", None) is not None)
@@ -1602,6 +1633,8 @@ class Application:
                     connection_frames(self.h3_connection.get()))
             if getattr(self, "_custom_cut_frames", None) is not None:
                 config["ui"]["h3_cut_frames"] = list(self._custom_cut_frames)
+        if hasattr(self, "camera_spec"):
+            config["ui"][camera_spec.KEY] = camera_spec.normalize(self.camera_spec)
         if hasattr(self, "use_prompt_cache"):
             config["ui"]["use_prompt_cache"] = self.use_prompt_cache.get()
         config["ui"]["seed"] = self.seed.get().strip()
@@ -1953,9 +1986,9 @@ class Application:
         if self.working or self.character_analysis_running or self.single_draft is not None:
             return
         draft = self.adjust_draft
-        if draft is None or operation not in ("generate", "translate", "apply", "regenerate"):
+        if draft is None or operation not in ("generate", "translate", "apply", "regenerate", "camera"):
             return
-        if operation == "regenerate" and hasattr(self, "image_reasoning"):
+        if operation in ("regenerate", "camera") and hasattr(self, "image_reasoning"):
             draft.controller.config["llm"]["image_reasoning"] = IMAGE_REASONING_BY_LABEL[self.image_reasoning.get()]
         self._adjust_operation = operation
         self._set_busy("画像調整: 生成中" if operation == "generate" else "画像調整: プロンプト編集中")
@@ -1969,6 +2002,8 @@ class Application:
             def edit():
                 if operation == "translate":
                     draft.translate(cache)
+                elif operation == "camera":
+                    draft.revise_camera(**kwargs)
                 else:
                     draft.revise(operation, cache, **kwargs)
                 return operation
@@ -2408,6 +2443,8 @@ class Application:
                 core.split_checkpoint_option(overrides, {selected})
                 if self._sdxl_turbo_active():
                     overrides.update(steps=4, cfg=1)
+            if selected in camera_spec.IDS and getattr(self, "camera_spec", {}):
+                overrides[camera_spec.KEY] = camera_spec.normalize(self.camera_spec)
         except (ValueError, core.OrchestratorError) as exc:
             messagebox.showerror("生成設定エラー", str(exc))
             return
@@ -3123,6 +3160,7 @@ class Application:
     def _on_event_idle(self, data):
         self._tick_timing(finished=True)
         self.tasks.finish()
+        self._sync_camera_button()
         self._comparison_active = None
         comparison = getattr(self, "comparison_window", None)
         if comparison is not None and comparison.winfo_exists():

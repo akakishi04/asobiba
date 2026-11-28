@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .image_prompts import KEY as IMAGE_PROMPT_BUNDLE
+from .camera_spec import KEY as CAMERA_KEY
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,7 @@ class ResultReviewState:
                 "negative_prompt": params.get("negative_prompt"),
                 **({IMAGE_PROMPT_BUNDLE: copy.deepcopy(params[IMAGE_PROMPT_BUNDLE])}
                    if IMAGE_PROMPT_BUNDLE in params else {}),
+                **({CAMERA_KEY: copy.deepcopy(params[CAMERA_KEY])} if CAMERA_KEY in params else {}),
                 "seed": params.get("seed"),
                 "steps": params.get("steps"),
                 "cfg": params.get("cfg"),

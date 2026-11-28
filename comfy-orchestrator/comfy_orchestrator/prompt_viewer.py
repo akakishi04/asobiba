@@ -5,7 +5,7 @@ import tkinter as tk
 from tkinter import messagebox, scrolledtext, ttk
 
 from .workflow_registry import H3_I2V_ID
-from . import image_prompts
+from . import image_prompts, camera_spec
 from .parameters import OrchestratorError
 from .character_refs import format_evidence
 from .prompt_profiles import T2I_PROFILE_LABELS, I2I_PROFILE_LABELS, H3_PROFILE_LABELS
@@ -26,6 +26,12 @@ def show_image_prompt_formats(parent, parameters, workflow_id):
     popup.geometry("860x600")
     popup.minsize(490, 350)
     popup.transient(parent)
+    if parameters.get(camera_spec.KEY):
+        try:
+            ttk.Label(popup, text="画角指定: " + camera_spec.summary(parameters[camera_spec.KEY]),
+                      wraplength=760).pack(anchor="w", padx=8, pady=(8,0))
+        except OrchestratorError:
+            pass
     tabs = ttk.Notebook(popup)
     tabs.pack(fill="both", expand=True, padx=8, pady=8)
 
@@ -95,6 +101,11 @@ def show_prompt_details(parent, details: dict, *, from_history: bool, copy_text,
         )
         if details.get(key) is not None
     ]
+    if details.get(camera_spec.KEY):
+        try:
+            values.append("画角: " + camera_spec.summary(details[camera_spec.KEY]))
+        except OrchestratorError:
+            values.append("画角情報が不正です")
     if values:
         ttk.Label(
             popup, text="  /  ".join(values),

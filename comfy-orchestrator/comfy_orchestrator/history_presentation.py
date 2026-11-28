@@ -5,6 +5,7 @@ from pathlib import Path
 import copy
 
 from .image_prompts import KEY as IMAGE_PROMPT_BUNDLE
+from .camera_spec import KEY as CAMERA_KEY
 
 from .workflow_registry import H3_I2V_ID, VIDEO_KINDS
 from .model_registry import model_filename
@@ -45,6 +46,7 @@ def history_prompt_details(entry: HistoryEntry | None) -> dict | None:
         "negative_prompt": negative if isinstance(negative, str) else None,
         **({IMAGE_PROMPT_BUNDLE: copy.deepcopy(entry.parameters[IMAGE_PROMPT_BUNDLE])}
            if IMAGE_PROMPT_BUNDLE in entry.parameters else {}),
+        **({CAMERA_KEY: copy.deepcopy(entry.parameters[CAMERA_KEY])} if CAMERA_KEY in entry.parameters else {}),
         "seed": entry.parameters.get("seed"),
         "steps": entry.parameters.get("steps"),
         "cfg": entry.parameters.get("cfg"),

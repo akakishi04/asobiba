@@ -10,7 +10,8 @@ from .generation_form import WORKFLOW_NAMES
 from .ime_font import install_native_ime_font
 from .parameters import OrchestratorError
 from .single_prompt import LABELS
-from . import image_prompts
+from . import image_prompts, camera_spec
+from .camera_ui import choose_camera
 from .prompt_viewer import show_image_prompt_formats
 from .prompt_inference import IMAGE_REASONING_LABELS
 from .model_profiles import ANIMA_ID, ANIMA_BASE, QWEN_ID, anima_model_name
@@ -128,6 +129,8 @@ class ImageAdjustWindow(tk.Toplevel):
             self.reasoning_box.pack(side="left", padx=4)
         self.rewrite_button = ttk.Button(rewrite_row, text="プロンプトに反映", command=lambda: self._act("regenerate"))
         self.rewrite_button.pack(side="right")
+        self.camera_button = ttk.Button(rewrite_row, text="画角…", command=self._edit_camera)
+        self.camera_button.pack(side="right", padx=(0,4))
         for key in draft.fields:
             label = ttk.Label(prompt, text=LABELS[key])
             label.pack(anchor="w")
@@ -285,6 +288,8 @@ class ImageAdjustWindow(tk.Toplevel):
         mixed = image_prompts.is_mixed(self.draft.parameters)
         self.workflow_label.set("次の生成: " + WORKFLOW_NAMES.get(self.draft.workflow_id, self.draft.workflow_id)
                                 + (" · 混合" if mixed else ""))
+        if hasattr(self, "camera_button"):
+            self.camera_button.configure(text="画角設定済…" if self.draft.parameters.get(camera_spec.KEY) else "画角…")
         for key, label in self.prompt_labels.items():
             label.configure(text=LABELS[key] + ("（タグ編集）" if mixed else ""))
 
@@ -299,6 +304,8 @@ class ImageAdjustWindow(tk.Toplevel):
         if self.reasoning_box is not None:
             self.reasoning_box.configure(state="disabled" if busy else "readonly")
         self.apply_button.configure(state="normal" if not busy and self._display_language == "日本語" else "disabled")
+        if hasattr(self, "camera_button"):
+            self.camera_button.configure(state="normal" if not busy and self.draft.workflow_id in camera_spec.IDS else "disabled")
         self.cancel_button.configure(state="normal" if busy and own_task else "disabled")
         fixed = self.draft.fixed_sampler(self._checkpoint() or "")
         for key, widget in self.numeric_widgets.items():
@@ -350,6 +357,19 @@ class ImageAdjustWindow(tk.Toplevel):
                 self.on_action(operation)
         except (OrchestratorError, OSError, ValueError) as exc:
             messagebox.showwarning("画像調整", str(exc), parent=self)
+
+    def _edit_camera(self):
+        if self.busy or self.draft.workflow_id not in camera_spec.IDS:
+            return
+        try:
+            self._read()
+            p = self.draft.parameters
+            previous = camera_spec.normalize(p.get(camera_spec.KEY))
+            result = choose_camera(self, previous, p["width"], p["height"], apply_label="プロンプトに反映")
+            if result is not None and result != previous:
+                self.on_action("camera", value=result)
+        except (OrchestratorError,OSError,ValueError) as exc:
+            messagebox.showwarning("カメラ設定", str(exc), parent=self)
 
     def _show_formats(self):
         try:
@@ -415,6 +435,8 @@ class ImageAdjustWindow(tk.Toplevel):
         if operation == "regenerate":
             self.instruction.configure(state="normal")
             self.instruction.delete("1.0", "end")
+            self._display_language = "英語"
+        if operation == "camera":
             self._display_language = "英語"
         if operation == "translate" and all(v is not None for v in self.draft.japanese(self.cache).values()):
             self._display_language = "日本語"

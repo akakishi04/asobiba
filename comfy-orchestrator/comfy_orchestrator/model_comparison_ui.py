@@ -8,6 +8,8 @@ from .comparison import ComparisonWindow, Image, ImageOps, ImageTk
 from .model_comparison import POLICIES, MAX_MODELS
 from .parameters import OrchestratorError
 from .prompt_viewer import show_image_prompt_formats
+from . import camera_spec
+from .camera_ui import choose_camera
 
 STATUS = {"pending": "未生成", "running": "生成中", "completed": "完了",
           "interrupted": "中断", "error": "停止・未確認", "preparing": "準備中",
@@ -16,12 +18,13 @@ STATUS = {"pending": "未生成", "running": "生成中", "completed": "完了",
 
 class ModelComparisonWindow(tk.Toplevel):
     def __init__(self, parent, store, choices, *, width, height, seed, steps, cfg,
-                 on_start, on_cancel, on_adjust, on_open, on_close):
+                 on_start, on_cancel, on_adjust, on_open, on_close, camera=None):
         super().__init__(parent)
         self.title("画像モデル比較 | Asobiba")
         self.geometry("1200x850")
         self.minsize(780, 580)
         self.store = store
+        self.camera = camera_spec.normalize(camera)
         self.on_start, self.on_cancel = on_start, on_cancel
         self.on_adjust, self.on_open, self.on_close = on_adjust, on_open, on_close
         self.choices = ()
@@ -90,6 +93,8 @@ class ModelComparisonWindow(tk.Toplevel):
                                        values=tuple(POLICIES.values()))
         self.policy_box.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(5, 0))
         self.policy_box.bind("<<ComboboxSelected>>", self._sync_state)
+        self.camera_button = ttk.Button(form, text="画角…", command=self._edit_camera)
+        self.camera_button.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(5,0))
         ttk.Label(controls, text="メイン画面の自然文・キャラ特徴・構図参考を使用。\nSeed空欄は共通乱数。", wraplength=250,
                   justify="left").pack(anchor="w", pady=7)
         self.start_button = ttk.Button(controls, text="比較生成", command=self._start)
@@ -129,6 +134,7 @@ class ModelComparisonWindow(tk.Toplevel):
         self.group_box.configure(state="disabled" if self.busy else "readonly")
         self.reload_button.configure(state=state)
         self.policy_box.configure(state="disabled" if self.busy else "readonly")
+        self.camera_button.configure(state=state, text="画角設定済…" if self.camera else "画角…")
         for key, widget in self.entries.items():
             enabled = not self.busy and (key not in ("steps", "cfg") or self.policy.get() == POLICIES["common"])
             widget.configure(state="normal" if enabled else "disabled")
@@ -138,6 +144,13 @@ class ModelComparisonWindow(tk.Toplevel):
     def set_busy(self, busy, *, own_task=False):
         self.busy, self.own_task = busy, own_task
         self._sync_state()
+
+    def _edit_camera(self):
+        if not self.busy:
+            result = choose_camera(self, self.camera, self.width_var.get(), self.height_var.get())
+            if result is not None:
+                self.camera = result
+                self._sync_state()
 
     def _start(self):
         if self.busy:
@@ -151,7 +164,7 @@ class ModelComparisonWindow(tk.Toplevel):
             self.on_start(chosen, width=int(self.width_var.get()), height=int(self.height_var.get()),
                           seed=int(self.seed_var.get()) if self.seed_var.get().strip() else None,
                           policy=policy, steps=int(self.steps_var.get()) if common else None,
-                          cfg=float(self.cfg_var.get()) if common else None)
+                          cfg=float(self.cfg_var.get()) if common else None, camera=dict(self.camera))
         except (ValueError, OSError, OrchestratorError) as exc:
             messagebox.showwarning("比較生成", str(exc), parent=self)
 
@@ -214,7 +227,9 @@ class ModelComparisonWindow(tk.Toplevel):
         params = targets[0]["overrides"]
         request = str(manifest.get("request", "")).replace("\n", " ")
         self.summary.set(f"{params.get('width')}×{params.get('height')} · Seed {params.get('seed')} · "
-                         f"{POLICIES.get(manifest.get('policy'), '')}\n{request[:160]}")
+                         f"{POLICIES.get(manifest.get('policy'), '')}\n"
+                         + ("画角: " + camera_spec.summary(params[camera_spec.KEY]) + "\n" if params.get(camera_spec.KEY) else "")
+                         + request[:160])
         paths = [self.store.images_for(t) for t in targets]
         key = (manifest["id"], tuple((t.get("status"), tuple(p), t.get("history_id"),
                bool(t.get("parameters")), t.get("elapsed_seconds")) for t, p in zip(targets, paths)))
