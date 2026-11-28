@@ -24,6 +24,7 @@ def load_local_config(config_path, example_path) -> dict:
     config["llm"].setdefault(
         "inference_timeout_seconds", example["llm"]["inference_timeout_seconds"]
     )
+    config["llm"].setdefault("load_timeout_seconds", example["llm"].get("load_timeout_seconds", 1200))
     config["llm"].setdefault("image_reasoning", "off")
     config["llm"].setdefault("send_reference_to_llm", False)
     config["llm"].setdefault("t2i_prompt_profile", DEFAULT_T2I_PROFILE)

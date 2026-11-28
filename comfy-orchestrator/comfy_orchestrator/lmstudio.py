@@ -39,14 +39,18 @@ from .prompt_profiles import (
 
 def _request(settings: dict, route: str, payload: dict | None = None) -> dict:
     base = settings["base_url"].rstrip("/")
-    # Loading/unloading a model and waiting for a thinking LLM answer have
-    # different latency profiles. Only the inference request receives the
-    # longer wait; keep the ordinary API timeout for short management calls.
+    # Model loading can allocate a large server-selected context and transfer
+    # weights. It needs its own budget, independent of ordinary API calls.
     inference = route in ("/v1/chat/completions", "/api/v1/chat")
-    timeout = float(
-        settings.get("inference_timeout_seconds", 1200)
-        if inference else settings.get("timeout_seconds", 240)
-    )
+    if inference:
+        label, timeout_key, default_timeout = "自然文解釈", "inference_timeout_seconds", 1200
+    elif route == "/api/v1/models/load":
+        label, timeout_key, default_timeout = "モデルロード", "load_timeout_seconds", 1200
+    else:
+        label = {"/api/v1/models": "モデル一覧取得",
+                 "/api/v1/models/unload": "モデルアンロード"}.get(route, "API操作")
+        timeout_key, default_timeout = "timeout_seconds", 240
+    timeout = float(settings.get(timeout_key, default_timeout))
     headers = {"Content-Type": "application/json"}
     token = os.environ.get(settings.get("token_env", "LMSTUDIO_API_TOKEN"), "")
     if token:
@@ -65,11 +69,17 @@ def _request(settings: dict, route: str, payload: dict | None = None) -> dict:
         return _open_json(request, timeout=timeout)
     except OrchestratorError as exc:
         if "timed out" in str(exc).lower() or "timeout" in str(exc).lower():
-            label = "自然文解釈" if inference else "API操作"
+            if route == "/api/v1/models/load":
+                guidance = ("LM Studio側でロードが継続している可能性があります。"
+                            "モデルのロード状態とコンテキスト長を確認してください。")
+            elif inference:
+                guidance = "LLMの推論負荷と起動状態を確認してください。"
+            else:
+                guidance = "LM StudioのLocal Serverとモデルの状態を確認してください。"
             raise OrchestratorError(
-                f"LM Studioの{label}で通信タイムアウトしました（{timeout:g}秒）。"
-                "LLMの推論負荷と起動状態を確認してください。"
-                "設定 llm.inference_timeout_seconds で推論待ちを変更できます。"
+                f"LM Studioの{label}で通信タイムアウトしました（{timeout:g}秒、{route}）。"
+                f"{guidance} 設定 llm.{timeout_key} で待機時間を変更できます。"
+                "同じリクエストは自動再試行しません。"
             ) from exc
         raise
 

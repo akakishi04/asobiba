@@ -45,6 +45,13 @@ def load_config(path: Path) -> dict:
             or not 30 <= inference_timeout <= 3600
         ):
             raise OrchestratorError("llm.inference_timeout_seconds は30～3600秒の数値です")
+        load_timeout = config["llm"].get("load_timeout_seconds", 1200)
+        if (
+            isinstance(load_timeout, bool)
+            or not isinstance(load_timeout, (int, float))
+            or not 30 <= load_timeout <= 3600
+        ):
+            raise OrchestratorError("llm.load_timeout_seconds は30～3600秒の数値です")
         image_reasoning = config["llm"].get("image_reasoning", "off")
         if image_reasoning not in ("off", "on", "auto"):
             raise OrchestratorError("llm.image_reasoning は off、on、auto のいずれかです")

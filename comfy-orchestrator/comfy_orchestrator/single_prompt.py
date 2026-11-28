@@ -150,7 +150,10 @@ class SinglePromptDraft:
         client = LMStudio(settings)
         instance = None
         try:
+            self.controller.note("LM Studio: モデル一覧を確認し、必要なモデルをロード")
             instance = client._ensure_loaded()
+            check_cancel(self.controller.cancel_event)
+            self.controller.note("LM Studio: モデル準備完了")
             return action(client, instance)
         finally:
             try:
