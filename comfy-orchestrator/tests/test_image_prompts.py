@@ -1,4 +1,6 @@
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from comfy_orchestrator import image_prompts as p
 from comfy_orchestrator.parameters import OrchestratorError
@@ -47,6 +49,36 @@ class ImagePromptBundleTests(unittest.TestCase):
             with self.assertRaises(OrchestratorError):
                 p.apply_patches(self.bundle["prompts"], [
                     {"format": "tags", "field": "positive_prompt", "old": old, "new": "x"}])
+
+    def test_revision_updates_both_and_keeps_original_immutable(self):
+        draft = SimpleNamespace(parameters=self.parameters, workflow_id=self.workflow,
+            request="窓辺の女性", controller=SimpleNamespace(note=None, cancel_event=None),
+            _session=lambda action: action(None, None))
+        edits = [
+            {"format": "tags", "field": "positive_prompt", "old": "long hair", "new": "short hair"},
+            {"format": "natural", "field": "positive_prompt", "old": "long black hair", "new": "short black hair"},
+        ]
+        def response(client, instance, system, payload, schema, name, validator, *args):
+            return validator({"edits": edits})
+        with patch.object(p, "request_validated", side_effect=response):
+            updated = p.revise_bundle(draft, "髪を短く")
+        _, bundle = p.split_saved(updated, self.workflow)
+        self.assertEqual(bundle["instructions"], ["髪を短く"])
+        self.assertEqual(bundle["prompts"]["tags"]["positive_prompt"], "black hair, short hair, window")
+        self.assertIn("short black hair", bundle["prompts"]["natural"]["positive_prompt"])
+        self.assertEqual(draft.parameters, self.parameters)
+
+    def test_legacy_revision_generates_missing_format_in_same_response(self):
+        draft = SimpleNamespace(parameters={**self.tags, "seed": 12}, workflow_id=self.workflow,
+            request="窓辺の女性", controller=SimpleNamespace(note=None, cancel_event=None),
+            _session=lambda action: action(None, None))
+        def response(client, instance, system, payload, schema, name, validator, *args):
+            self.assertIn(p.ALT, schema["required"])
+            return validator({"edits": [], p.ALT: self.natural})
+        with patch.object(p, "request_validated", side_effect=response):
+            updated = p.revise_bundle(draft, "元の内容を維持")
+        _, bundle = p.split_saved(updated, self.workflow)
+        self.assertEqual(bundle["prompts"]["natural"], self.natural)
 
     def test_schema_and_split_plan_are_image_only(self):
         schema = {"type": "object", "properties": {}, "required": []}

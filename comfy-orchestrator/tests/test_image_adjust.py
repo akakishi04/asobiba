@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 import threading
 
-from comfy_orchestrator import core
+from comfy_orchestrator import core, image_prompts
 from comfy_orchestrator.history import HistoryStore
 from comfy_orchestrator.image_adjust import ImageAdjustDraft, can_adjust, I2I
 
@@ -153,6 +153,34 @@ class ImageAdjustmentTests(unittest.TestCase):
             draft.apply_edits(draft.english(), self.values(draft, width="1032"))
         with self.assertRaises(core.OrchestratorError):
             draft.apply_edits(draft.english(), self.values(draft, steps="8"))
+
+    def test_t2i_switch_uses_other_prompt_and_target_defaults_without_llm(self):
+        tags = {"positive_prompt": "tree", "negative_prompt": "bad"}
+        natural = {"positive_prompt": "A tree.", "negative_prompt": "Avoid blur."}
+        bundle = image_prompts.make_bundle("wai_t2i_basic", tags, natural)
+        draft = self.draft(self.entry(params={**tags, image_prompts.KEY: bundle}))
+        draft.switch_t2i(core.QWEN_LIGHTNING_ID)
+        self.assertEqual(draft.english(), natural)
+        self.assertEqual((draft.parameters["steps"], draft.parameters["cfg"], draft.parameters["seed"]),
+                         (4, 1, 19))
+        self.assertEqual(draft.parameters[image_prompts.KEY]["active_format"], "natural")
+        draft.switch_t2i("wai_t2i_basic")
+        self.assertEqual(draft.english(), tags)
+        self.assertEqual(draft.parameters["steps"], 28)
+        self.controller.generate.assert_not_called()
+        self.controller.generate_prepared.assert_not_called()
+
+    def test_switch_without_other_format_or_from_i2i_refused(self):
+        draft = self.draft()
+        original = dict(draft.parameters)
+        with self.assertRaises(core.OrchestratorError):
+            draft.switch_t2i(core.QWEN_T2I_ID)
+        self.assertEqual(draft.parameters, original)
+        self.assertEqual(draft.workflow_id, "wai_t2i_basic")
+        draft.use_base_as_input()
+        self.assertEqual(draft.t2i_choices(), ())
+        with self.assertRaises(core.OrchestratorError):
+            draft.switch_t2i(core.QWEN_T2I_ID)
 
     def test_missing_saved_input_or_wrong_selected_output_refused(self):
         entry = self.entry()

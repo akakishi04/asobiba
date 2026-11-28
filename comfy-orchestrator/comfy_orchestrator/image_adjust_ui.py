@@ -141,6 +141,18 @@ class ImageAdjustWindow(tk.Toplevel):
         parent.columnconfigure(1, weight=1)
         row = 0
         self.model_box = None
+        self.workflow_box = None
+        choices = self.draft.t2i_choices()
+        if len(choices) > 1:
+            self.workflow_names = {WORKFLOW_NAMES.get(key, key): key for key in choices}
+            self.workflow_selection = tk.StringVar(master=self,
+                value=WORKFLOW_NAMES.get(self.draft.workflow_id, self.draft.workflow_id))
+            ttk.Label(parent, text="生成方式").grid(row=row, column=0, sticky="w", pady=4, padx=(0, 8))
+            self.workflow_box = ttk.Combobox(parent, textvariable=self.workflow_selection,
+                                              values=tuple(self.workflow_names), state="readonly")
+            self.workflow_box.grid(row=row, column=1, sticky="ew", pady=4)
+            self.workflow_box.bind("<<ComboboxSelected>>", self._switch_workflow)
+            row += 1
         if self.draft.checkpoint_selectable:
             current = self.draft.parameters.get("checkpoint_model", DEFAULT_MODEL)
             names = tuple(dict.fromkeys((DEFAULT_MODEL, current, *(
@@ -163,6 +175,27 @@ class ImageAdjustWindow(tk.Toplevel):
         if "width" not in self.numeric:
             ttk.Label(parent, text="解像度: 参照画像に準拠").grid(row=row, column=0, columnspan=2, sticky="w", pady=4)
         self._model_changed()
+
+    def _switch_workflow(self, _event=None):
+        try:
+            if self.busy:
+                return
+            target = self.workflow_names.get(self.workflow_selection.get())
+            self._read()
+            if target == self.draft.workflow_id:
+                return
+            if not messagebox.askyesno("生成方式の切り替え",
+                    "保存済みプロンプトを使用します。幅・高さ・Seedを保持し、Steps・CFG・モデルは切り替え先の既定値に戻します。続けますか？",
+                    parent=self):
+                return
+            self.draft.switch_t2i(target)
+            self._display_language = "英語"
+            self.reload(rebuild=True)
+        except (OrchestratorError, ValueError) as exc:
+            messagebox.showwarning("画像調整", str(exc), parent=self)
+        finally:
+            if self.workflow_box is not None:
+                self.workflow_selection.set(WORKFLOW_NAMES.get(self.draft.workflow_id, self.draft.workflow_id))
 
     def _model_changed(self, _event=None):
         fixed = self.draft.fixed_sampler(self._checkpoint() or "")
@@ -225,6 +258,8 @@ class ImageAdjustWindow(tk.Toplevel):
             widget.configure(state="disabled" if busy else "readonly" if fixed and key in ("steps", "cfg") else "normal")
         if self.model_box is not None:
             self.model_box.configure(state="disabled" if busy else "readonly")
+        if self.workflow_box is not None:
+            self.workflow_box.configure(state="disabled" if busy else "readonly")
         self.i2i_button.configure(state="normal" if not busy and self.draft.can_use_base_as_input() else "disabled")
         self._result_controls()
 

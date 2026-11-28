@@ -149,7 +149,8 @@ def apply_patches(prompts, edits):
             raise OrchestratorError("画像プロンプト差分の対象が不正です")
         source = result[fmt][field]
         if old:
-            if source.count(old) != 1:
+            first = source.find(old)
+            if first < 0 or source.find(old, first + 1) >= 0:
                 raise OrchestratorError("置換対象は現在のプロンプト中に一度だけ存在する必要があります")
             source = source.replace(old, new, 1)
         elif new:

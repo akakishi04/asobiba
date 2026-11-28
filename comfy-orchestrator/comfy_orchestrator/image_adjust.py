@@ -131,6 +131,40 @@ class ImageAdjustDraft(SinglePromptDraft):
                 and sdxl_checkpoint_kind(self.parameters.get("checkpoint_model")) != "turbo"
                 and supported_workflow(I2I, self.controller.config["workflows"]))
 
+    def t2i_choices(self):
+        workflows = self.controller.config["workflows"]
+        if workflows[self.workflow_id]["kind"] != "t2i":
+            return ()
+        return tuple(key for key in workflows if supported_workflow(key, workflows)
+                     and workflows[key]["kind"] == "t2i")
+
+    def switch_t2i(self, target):
+        """Explicitly reuse the saved prompt format; never reinterpret or reuse a sampler."""
+        if self._closed or target not in self.t2i_choices():
+            raise OrchestratorError("モデル方式の切り替えは対応するT2I同士に限ります")
+        if target == self.workflow_id:
+            return
+        workflows = self.controller.config["workflows"]
+        clean, bundle = image_prompts.split_saved(self.parameters, self.workflow_id)
+        source_format = image_prompts.prompt_format(self.workflow_id)
+        target_format = image_prompts.prompt_format(target)
+        bundle = bundle or image_prompts.make_bundle(self.workflow_id, clean, None)
+        if target_format not in bundle["prompts"]:
+            raise OrchestratorError("切り替え先のプロンプトが未取得です。修正指示の反映で両形式を生成してください")
+        params = {**workflows[target].get("defaults", {}), **bundle["prompts"][target_format]}
+        for key in ("width", "height", "seed"):
+            if key in clean and key in workflows[target]["bindings"]:
+                params[key] = clean[key]
+        params[image_prompts.KEY] = image_prompts.make_bundle(
+            target, params, bundle["prompts"].get(image_prompts.other_format(target_format)),
+            bundle["instructions"])
+        validated = _validated(workflows, target, params, self.assets)
+        self.workflow_id = target
+        self.parameters = validated
+        self.fields = tuple(key for key in ("positive_prompt", "negative_prompt")
+                            if key in workflows[target]["bindings"])
+        self.context = {**self.context, "prompt_profile": None}
+
     def apply_edits(self, prompts, numeric, checkpoint=None):
         """Validate the entire form before publishing anything."""
         if self._closed:
