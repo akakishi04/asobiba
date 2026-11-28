@@ -308,6 +308,9 @@ def revise_bundle(draft, instruction, *, camera_update=None):
         changed = apply_patches(prompts, reply["edits"])
         if missing:
             changed[other] = pair(reply[ALT])
+        if camera_update is not None:
+            changed = {key: camera_spec.remove_superseded(value, old_camera, new_camera, key)
+                       for key, value in changed.items()}
         if new_camera:
             changed = {key: camera_spec.apply_pair(value, new_camera, key)
                        for key, value in changed.items()}

@@ -1011,7 +1011,8 @@ class Application:
     def _update_generation_controls(self) -> None:
         """Refresh fields in place; never replace the prompt, references or result pane."""
         workflow_id = self._active_workflow()
-        self._sync_camera_button()
+        if hasattr(self, "camera_button"):
+            self._sync_camera_button()
         if workflow_id and self.workflow.get() not in ("自動", workflow_id):
             self.workflow.set(workflow_id)
         entry = self.config["workflows"].get(workflow_id, {})
@@ -1538,7 +1539,8 @@ class Application:
 
     def _set_busy(self, label: str) -> None:
         self.tasks.begin()
-        self._sync_camera_button()
+        if hasattr(self, "camera_button"):
+            self._sync_camera_button()
         comparison = getattr(self, "comparison_window", None)
         if comparison is not None and comparison.winfo_exists():
             comparison.set_busy(True, own_task=getattr(self, "_comparison_active", None) is not None)
@@ -3160,7 +3162,8 @@ class Application:
     def _on_event_idle(self, data):
         self._tick_timing(finished=True)
         self.tasks.finish()
-        self._sync_camera_button()
+        if hasattr(self, "camera_button"):
+            self._sync_camera_button()
         self._comparison_active = None
         comparison = getattr(self, "comparison_window", None)
         if comparison is not None and comparison.winfo_exists():

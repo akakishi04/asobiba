@@ -41,7 +41,7 @@ def profile_key(backend, workflow_id, parameters):
     # Frame count is kept separately for bounded interpolation. Prompt and seed
     # changes alone do not define a new performance class.
     fixed = {k: v for k, v in parameters.items()
-             if k not in ("seed", "positive_prompt", "negative_prompt", "frames")
+             if k not in ("seed", "positive_prompt", "negative_prompt", "frames", "camera_spec")
              and not k.startswith("long_")}
     frames = parameters.get("frames", 0)
     if type(frames) is not int or frames < 0:

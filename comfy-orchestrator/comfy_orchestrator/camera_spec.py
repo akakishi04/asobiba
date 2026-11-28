@@ -1,6 +1,8 @@
 """Host-owned still-image camera intent, independent of pose and subject orientation."""
 from __future__ import annotations
 
+import re
+
 from .parameters import OrchestratorError, check_param
 
 KEY = "camera_spec"
@@ -116,11 +118,38 @@ def apply_pair(values, spec, fmt):
     positive = result.get("positive_prompt")
     if not isinstance(positive, str) or not positive.strip():
         raise OrchestratorError("カメラ指定を適用するPositiveが空です")
-    missing = [term for term in terms if term.casefold() not in positive.casefold()]
+    existing = {part.strip().casefold() for part in positive.split(",")} if fmt == "tags" else None
+    missing = [term for term in terms if (term.casefold() not in existing if existing is not None
+                                          else term.casefold() not in positive.casefold())]
     if missing:
         separator = ", " if fmt == "tags" else " "
-        positive = positive.rstrip().rstrip(",") + separator + separator.join(missing)
+        positive = positive.rstrip().rstrip(",")
+        if fmt == "natural" and positive[-1:] not in (".", "!", "?"):
+            positive += "."
+        positive += separator + separator.join(missing)
     check_param("positive_prompt", positive)
+    result["positive_prompt"] = positive
+    return result
+
+
+def remove_superseded(values, old, new, fmt):
+    """Remove only exact host phrases of replaced fields; do not rewrite other content."""
+    old, new = normalize(old), normalize(new)
+    if fmt not in ("tags", "natural"):
+        raise OrchestratorError("カメラ指定のプロンプト形式が不正です")
+    result = dict(values)
+    positive = result["positive_prompt"]
+    index = 1 if fmt == "tags" else 2
+    for field, code in old.items():
+        if field not in new or new[field] == code:
+            continue
+        term = OPTIONS[field][code][index]
+        if fmt == "tags":
+            positive = re.sub(r"(^|,\s*)" + re.escape(term) + r"(?=\s*(?:,|$))",
+                              "", positive, flags=re.I).lstrip(" ,")
+        else:
+            positive = re.sub(r"(?:^|\s+)" + re.escape(term) + r"(?=\s|$)",
+                              "", positive, flags=re.I).strip()
     result["positive_prompt"] = positive
     return result
 

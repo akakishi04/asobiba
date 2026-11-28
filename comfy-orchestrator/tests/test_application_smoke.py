@@ -34,8 +34,13 @@ class ApplicationSmokeTests(unittest.TestCase):
                     app.image_reasoning.set("ON")
                     self.assertEqual(app._collect_config()["llm"]["image_reasoning"], "on")
                     app.image_reasoning.set("OFF")
+                    app.camera_spec = {"elevation":"low"}
+                    app._sync_camera_button()
+                    self.assertEqual(app._collect_config()["ui"]["camera_spec"], {"elevation":"low"})
+                    self.assertIn("設定済", app.camera_button.cget("text"))
                     app._open_model_comparison()
                     self.assertIsNotNone(app.comparison_window)
+                    self.assertEqual(app.comparison_window.camera, {"elevation":"low"})
                     self.assertGreaterEqual(len(app.comparison_window.choices), 2)
                     app._close_model_comparison()
                     self.assertIsNone(app.comparison_window)

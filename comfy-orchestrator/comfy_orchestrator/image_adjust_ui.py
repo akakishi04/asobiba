@@ -254,10 +254,14 @@ class ImageAdjustWindow(tk.Toplevel):
                 raise OrchestratorError("日本語の編集を反映してから操作してください")
             values = self.draft.english()
         mixed_before = image_prompts.is_mixed(self.draft.parameters)
+        camera_before = bool(self.draft.parameters.get(camera_spec.KEY))
         self.draft.apply_edits(values, {k: v.get() for k, v in self.numeric.items()}, self._checkpoint())
         if mixed_before and not image_prompts.is_mixed(self.draft.parameters):
             self._update_prompt_labels()
             messagebox.showinfo("画像調整", "タグの直接編集により自然文を失効させました。修正指示で両形式を再構成できます。", parent=self)
+        if camera_before and not self.draft.parameters.get(camera_spec.KEY):
+            self._update_prompt_labels()
+            self.status.set("直接編集により旧画角設定を解除しました")
 
     def reload(self, *, rebuild=False):
         if rebuild:
