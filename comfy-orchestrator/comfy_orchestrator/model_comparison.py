@@ -137,10 +137,16 @@ class ComparisonStore:
             value = json.loads(path.read_text(encoding="utf-8"))
             if (not isinstance(value, dict) or value.get("version") != 1
                     or value.get("id") != group_id or not isinstance(value.get("targets"), list)
+                    or not isinstance(value.get("created_at"), str)
+                    or not isinstance(value.get("request"), str)
+                    or value.get("policy") not in POLICIES
                     or not 2 <= len(value["targets"]) <= MAX_MODELS
                     or any(not isinstance(t, dict) or not isinstance(t.get("label"), str)
                            or t.get("workflow_id") not in COMPARISON_IDS
-                           or not isinstance(t.get("overrides"), dict) for t in value["targets"])):
+                           or not isinstance(t.get("overrides"), dict)
+                           or ("images" in t and not isinstance(t["images"], list))
+                           or ("parameters" in t and not isinstance(t["parameters"], dict))
+                           for t in value["targets"])):
                 raise ValueError("schema")
             return value
         except (OSError, ValueError, TypeError) as exc:
@@ -149,7 +155,13 @@ class ComparisonStore:
     def recent(self):
         if not self.root.exists():
             return ()
-        paths = sorted(self.root.glob("*.json"), key=lambda p: p.stat().st_mtime_ns, reverse=True)
+        paths = []
+        for path in self.root.glob("*.json"):
+            try:
+                paths.append((path.stat().st_mtime_ns, path))
+            except OSError:
+                continue
+        paths = [path for _, path in sorted(paths, reverse=True)]
         result = []
         for path in paths[:MAX_GROUPS]:
             try:

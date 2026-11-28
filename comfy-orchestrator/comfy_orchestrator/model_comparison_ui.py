@@ -108,7 +108,10 @@ class ModelComparisonWindow(tk.Toplevel):
     def set_choices(self, choices):
         selected = {(self.choices[i].workflow_id, self.choices[i].filename)
                     for i in self.models.curselection() if i < len(self.choices)}
-        self.choices = tuple(choices)
+        choices = tuple(choices)
+        if choices == self.choices:
+            return
+        self.choices = choices
         self.models.configure(state="normal")
         self.models.delete(0, "end")
         for i, choice in enumerate(self.choices):
@@ -221,12 +224,13 @@ class ModelComparisonWindow(tk.Toplevel):
         for widget in self.result_frame.winfo_children():
             widget.destroy()
         self._result_widgets = []
+        previous_photos = self.photos
         self.photos = {}
         max_size = (410, 490 if len(targets) == 2 else 235)
         for col in (0, 1):
             self.result_frame.columnconfigure(col, weight=1, uniform="models")
-        for row in range(2 if len(targets) > 2 else 1):
-            self.result_frame.rowconfigure(row, weight=1, uniform="models")
+        for row in range(2):
+            self.result_frame.rowconfigure(row, weight=int(row == 0 or len(targets) > 2), uniform="models")
         complete = [(i, p[0]) for i, p in enumerate(paths) if p]
         for i, (target, outputs) in enumerate(zip(targets, paths)):
             card = ttk.LabelFrame(self.result_frame, text=target["label"], padding=5)
@@ -241,8 +245,11 @@ class ModelComparisonWindow(tk.Toplevel):
             buttons = ttk.Frame(footer)
             buttons.pack(fill="x")
             path = outputs[0] if outputs else None
-            photo = self._thumbnail(path, max_size) if path else None
-            self.photos[i] = photo
+            photo_key = (path, max_size)
+            photo = previous_photos.get(photo_key) if path else None
+            if path and photo is None:
+                photo = self._thumbnail(path, max_size)
+            self.photos[photo_key] = photo
             ttk.Label(card, image=photo if photo else "", text="" if photo else
                       ("プレビュー非対応" if path else state), anchor="center").pack(fill="both", expand=True)
             prompt = ttk.Button(buttons, text="プロンプト", command=lambda t=target: show_image_prompt_formats(

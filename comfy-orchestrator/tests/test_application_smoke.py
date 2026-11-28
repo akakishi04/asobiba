@@ -34,6 +34,11 @@ class ApplicationSmokeTests(unittest.TestCase):
                     app.image_reasoning.set("ON")
                     self.assertEqual(app._collect_config()["llm"]["image_reasoning"], "on")
                     app.image_reasoning.set("OFF")
+                    app._open_model_comparison()
+                    self.assertIsNotNone(app.comparison_window)
+                    self.assertGreaterEqual(len(app.comparison_window.choices), 2)
+                    app._close_model_comparison()
+                    self.assertIsNone(app.comparison_window)
                     for mode in ("video", "continuous", "image"):
                         app.generation_mode.set(mode)
                         app._on_generation_mode_choice()
