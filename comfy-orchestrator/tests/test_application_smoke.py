@@ -29,6 +29,11 @@ class ApplicationSmokeTests(unittest.TestCase):
                         patch.object(gui.Application, "_refresh_projects"):
                     app = gui.Application(root)
                     root.update_idletasks()
+                    self.assertEqual(app.image_reasoning.get(), "OFF")
+                    self.assertEqual(tuple(app.image_reasoning_box.cget("values")), ("OFF", "ON", "自動"))
+                    app.image_reasoning.set("ON")
+                    self.assertEqual(app._collect_config()["llm"]["image_reasoning"], "on")
+                    app.image_reasoning.set("OFF")
                     for mode in ("video", "continuous", "image"):
                         app.generation_mode.set(mode)
                         app._on_generation_mode_choice()

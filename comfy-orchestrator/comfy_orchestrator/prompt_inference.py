@@ -130,17 +130,17 @@ def request_validated(client, instance_id, system, user_content, response_schema
                                     if isinstance(item, dict) and item.get("type") == "message"
                                     and isinstance(item.get("content"), str))
                 stats = reply.get("stats", {})
-                reasoning = stats.get("reasoning_output_tokens", 0) if isinstance(stats, dict) else 0
+                reasoning_tokens = stats.get("reasoning_output_tokens", 0) if isinstance(stats, dict) else 0
                 if any(isinstance(item, dict) and item.get("type") == "reasoning"
                        and item.get("content") for item in output):
-                    reasoning = reasoning or "あり"
+                    reasoning_tokens = reasoning_tokens or "あり"
                 # Do not use reasoning as the answer. Accept only a complete
                 # JSON object, optionally inside a single whole-output fence.
                 fenced = re.fullmatch(r"\s*\x60{3}(?:json)?\s*(.*?)\s*\x60{3}\s*", content, re.S | re.I)
                 if fenced:
                     content = fenced.group(1)
                 reply = {"choices": [{"message": {"content": content,
-                                                   "reasoning_content": bool(reasoning)}}]}
+                                                   "reasoning_content": bool(reasoning_tokens)}}]}
             else:
                 reply = _request(client.settings, "/v1/chat/completions", structured_payload(
                     instance_id, [{"role": "system", "content": system + feedback},

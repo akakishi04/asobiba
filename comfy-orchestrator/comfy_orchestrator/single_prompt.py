@@ -233,7 +233,8 @@ class SinglePromptDraft:
                           "unspecified content, negative conditions and identity. Do not add settings. ")
             system += format_hint
             if operation == "regenerate" and image_prompts.prompt_format(self.workflow_id) is not None:
-                system += image_prompts.CLOTHING_FIDELITY_POLICY
+                system += image_prompts.CLOTHING_FIDELITY_POLICY.replace(
+                    "BOTH standalone positive prompts", "the positive prompt")
             def validate(reply):
                 if set(reply) != set(keys):
                     raise OrchestratorError("プロンプトの項目が一致しません")

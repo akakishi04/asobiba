@@ -1840,7 +1840,7 @@ class Application:
                 on_action=self._adjust_action, on_close=self._close_adjust,
                 on_cancel=self._request_cancel, status=self.status,
                 registrations=getattr(self, "_registered_models", ()),
-                reasoning_variable=self.image_reasoning,
+                reasoning_variable=getattr(self, "image_reasoning", None),
             )
             self.adjust_window.set_busy(True, own_task=True)
             self.status.set("画像調整")
@@ -3046,7 +3046,7 @@ class Application:
                     self.root, self.single_draft, self.project_workspace.translation_cache,
                     on_action=self._single_prompt_action, on_close=self._close_single_prompt,
                     on_cancel=self._request_cancel, status=self.status,
-                    reasoning_variable=self.image_reasoning,
+                    reasoning_variable=getattr(self, "image_reasoning", None),
                 )
             else:
                 self.single_window.set_busy(False)
