@@ -125,6 +125,10 @@ class AnimaMixedPromptTests(unittest.TestCase):
             legacy = core.execute_saved(self.config, CONFIG, ANIMA_ID, self.params)
             self.assertEqual(comfy.submit.call_args.args[0]["6"]["inputs"]["text"], TAGS["positive_prompt"])
             self.assertNotIn(p.KEY, legacy["parameters"])
+            version_one = {**self.params, p.KEY: p.make_bundle(ANIMA_ID, self.params, NATURAL)}
+            replay_one = core.execute_saved(self.config, CONFIG, ANIMA_ID, version_one)
+            self.assertEqual(comfy.submit.call_args.args[0]["6"]["inputs"]["text"], TAGS["positive_prompt"])
+            self.assertEqual(replay_one["parameters"], version_one)
         store = HistoryStore(self.root)
         output = store.outputs / "out.png"
         output.write_bytes(b"image")
@@ -133,6 +137,21 @@ class AnimaMixedPromptTests(unittest.TestCase):
         details = history_prompt_details(entry)
         self.assertEqual(details["positive_prompt"], MIXED)
         self.assertEqual(details[p.KEY], result["parameters"][p.KEY])
+
+    def test_cached_plan_is_composed_once_per_generation_without_new_inference(self):
+        cache = PromptCache(self.root / "plans.sqlite3")
+        plan = {"workflow_id": ANIMA_ID, "parameters": TAGS, p.ALT: NATURAL}
+        with patch.object(lmstudio.LMStudio, "interpret", return_value=plan) as infer, \
+                patch.object(core, "ComfyUI"):
+            first = core.execute(self.config, CONFIG, "窓際の女性", selected_workflow=ANIMA_ID,
+                                 dry_run=True, prompt_cache=cache, overrides={"seed": 12})
+            second = core.execute(self.config, CONFIG, "窓際の女性", selected_workflow=ANIMA_ID,
+                                  dry_run=True, prompt_cache=cache, overrides={"seed": 34})
+        infer.assert_called_once()
+        self.assertEqual(first["parameters"]["positive_prompt"], MIXED)
+        self.assertEqual(second["parameters"]["positive_prompt"], MIXED)
+        self.assertEqual(second["parameters"]["seed"], 34)
+        self.assertEqual(first["parameters"][p.KEY], second["parameters"][p.KEY])
 
     def test_oversized_combination_keeps_both_sources_but_runs_tags(self):
         tags = {**TAGS, "positive_prompt": "a" * 4000}
