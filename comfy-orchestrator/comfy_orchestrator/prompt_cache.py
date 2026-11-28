@@ -25,7 +25,7 @@ def make_cache_key(request, settings, workflows, hints, sources, character_trait
     version = {name: content_sha256(policy / name) for name in (
         "core.py", "lmstudio.py", "prompt_profiles.py", "parameters.py", "prompt_cache.py",
         "h3_prompt.py", "prompt_inference.py", "workflow_registry.py", "ollama_client.py",
-        "image_prompts.py",
+        "image_prompts.py", "camera_spec.py",
     )}
     identity = {
         "version": version, "request": request, "settings": settings,

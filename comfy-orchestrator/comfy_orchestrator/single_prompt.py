@@ -14,7 +14,7 @@ from tempfile import TemporaryDirectory
 from . import h3_prompt as hp
 from .h3 import h3_ref2va_filename, ensure_h3_reference_prompt
 from .input_snapshot import copy_frozen_asset
-from . import image_prompts
+from . import image_prompts, camera_spec
 from .model_profiles import ANIMA_ID
 from .jobs import JobCancellationRequested
 from .lmstudio import LMStudio
@@ -185,7 +185,7 @@ class SinglePromptDraft:
             raise OrchestratorError("プロンプト操作が不正です")
         if not isinstance(instruction, str) or len(instruction) > 2000:
             raise OrchestratorError("修正指示は2000文字以内です")
-        if self.workflow_id == ANIMA_ID and operation == "regenerate":
+        if (self.workflow_id == ANIMA_ID or camera_spec.KEY in self.parameters) and operation == "regenerate":
             self.parameters = image_prompts.revise_bundle(
                 self, instruction.strip() or "生成内容を維持し、タグと自然文の表現を最適化する。")
             return

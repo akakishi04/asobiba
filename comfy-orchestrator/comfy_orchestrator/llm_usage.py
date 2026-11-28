@@ -32,7 +32,7 @@ ACTIONS = {
     "cli_run": "CLI生成", "cli_review": "CLI解釈",
     "adjust_generate": "画像調整・再生成", "adjust_translate": "画像調整・翻訳",
     "adjust_apply": "画像調整・編集反映", "adjust_regenerate": "画像調整・修正指示",
-    "image_compare": "画像・モデル比較",
+    "image_compare": "画像・モデル比較", "adjust_camera": "画像調整・画角変更",
 }
 MODES = {"image": "画像", "video": "動画", "continuous": "連続動画", "character": "キャラ参照"}
 

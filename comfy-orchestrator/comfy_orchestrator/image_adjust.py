@@ -8,7 +8,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from .input_snapshot import copy_frozen_asset
-from . import image_prompts
+from . import image_prompts, camera_spec
 from .model_profiles import ANIMA_ID, ANIMA_BASE, QWEN_ID
 from .output_collection import IMAGE_EXTENSIONS
 from .parameters import PARAMS, OrchestratorError, check_param
@@ -50,6 +50,7 @@ def _validated(workflows, workflow_id, parameters, assets):
     if IMAGE_INPUTS.intersection(binds) != supplied_inputs(
             assets.get("image"), assets.get("mask_image"), assets.get("pose_image")):
         raise OrchestratorError("元の参照画像・マスク・ポーズ画像が揃っていません")
+    parameters, camera = camera_spec.split(parameters, {workflow_id})
     parameters, bundle = image_prompts.split_saved(parameters, workflow_id)
     params, model = split_checkpoint_option(parameters, {workflow_id})
     if "seed" in binds and "seed" not in params:
@@ -65,7 +66,8 @@ def _validated(workflows, workflow_id, parameters, assets):
     for key in binds:
         if key not in IMAGE_INPUTS and key not in params:
             raise OrchestratorError(f"保存された生成設定がありません: {key}")
-    return {**params, **model, **({image_prompts.KEY: bundle} if bundle is not None else {})}
+    return {**params, **model, **({image_prompts.KEY: bundle} if bundle is not None else {}),
+            **({camera_spec.KEY: camera} if camera else {})}
 
 
 class ImageAdjustDraft(SinglePromptDraft):
@@ -159,6 +161,8 @@ class ImageAdjustDraft(SinglePromptDraft):
         for key in ("width", "height", "seed"):
             if key in clean and key in workflows[target]["bindings"]:
                 params[key] = clean[key]
+        if camera_spec.KEY in clean:
+            params[camera_spec.KEY] = camera_spec.normalize(clean[camera_spec.KEY])
         params = image_prompts.bind_bundle(
             target, params, bundle["prompts"].get(image_prompts.other_format(target_format)),
             bundle["instructions"])
@@ -197,6 +201,22 @@ class ImageAdjustDraft(SinglePromptDraft):
         if operation != "regenerate":
             return super().revise(operation, cache, japanese=japanese, instruction=instruction)
         result = image_prompts.revise_bundle(self, instruction)
+        self.parameters = _validated(self.controller.config["workflows"], self.workflow_id,
+                                     result, self.assets)
+
+    def revise_camera(self, value):
+        if self._closed or self.workflow_id not in camera_spec.IDS:
+            raise OrchestratorError("カメラ変更は対応するT2I専用です")
+        spec = camera_spec.normalize(value)
+        old = camera_spec.normalize(self.parameters.get(camera_spec.KEY))
+        if spec == old:
+            return
+        if not spec:
+            # Unset constraints without changing the already reviewed image text.
+            self.parameters = {k: v for k, v in self.parameters.items() if k != camera_spec.KEY}
+            return
+        result = image_prompts.revise_bundle(self, "指定したカメラ設定だけを反映し、他の内容は維持する。",
+                                            camera_update=spec)
         self.parameters = _validated(self.controller.config["workflows"], self.workflow_id,
                                      result, self.assets)
 

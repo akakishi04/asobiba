@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 
 from .parameters import OrchestratorError, PARAMS, check_param
-from . import image_prompts
+from . import image_prompts, camera_spec
 from .model_profiles import ANIMA_ID
 from .model_registry import model_filename
 from .jobs import (JobJournal, JobCancellationRequested, JobExecutionFailed,
@@ -199,8 +199,13 @@ def execute(
         if cancel_event is not None and cancel_event.is_set():
             raise OrchestratorError("生成開始前に処理を中止しました")
 
+    overrides, camera = camera_spec.split(overrides or {}, workflows)
+    if camera and any(k in overrides for k in image_prompts.FIELDS):
+        raise OrchestratorError("カメラ設定と直接プロンプト上書きは併用できません")
+    if camera and config.get("llm", {}).get("provider", "lmstudio") != "lmstudio":
+        raise OrchestratorError("カメラ設定はLM Studio接続を使用してください")
     overrides, h3_options = split_h3_options(
-        overrides or {}, enabled=set(workflows) == {H3_I2V_ID},
+        overrides, enabled=set(workflows) == {H3_I2V_ID},
     )
     reference_only = h3_ref2va_filename(h3_options.get("h3_model")) is not None
     if h3_hybrid_filename(h3_options.get("h3_model")) is not None:
@@ -229,6 +234,11 @@ def execute(
                             checkpoint_options, cancel_event)
     llm_key = "llm" if "llm" in config else "ollama"
     settings = config[llm_key]
+    if camera:
+        if llm_key != "llm":
+            raise OrchestratorError("カメラ設定はLM Studio接続を使用してください")
+        settings = {**settings, "_camera_spec": camera}
+        note("カメラ設定: " + camera_spec.summary(camera))
     if text_only_h3:
         settings = {**settings, "h3_prompt_format": h3_prompt.FORMAT, "_h3_text_only": True,
                     "send_reference_to_llm": False}
@@ -354,6 +364,16 @@ def execute(
         }}
     clean_plan, alternate = image_prompts.split_plan(plan, workflows)
     workflow_id, params = validate_plan(clean_plan, workflows, image is not None)
+    if camera:
+        fmt = image_prompts.prompt_format(workflow_id)
+        params = camera_spec.apply_pair(params, camera, fmt)
+        if alternate is not None:
+            try:
+                alternate = camera_spec.apply_pair(image_prompts.pair(alternate), camera,
+                                                   image_prompts.other_format(fmt))
+            except OrchestratorError as exc:
+                note("別形式へのカメラ指定を適用できません: " + str(exc))
+                alternate = None
     original_prompts = {key: params.get(key) for key in image_prompts.FIELDS}
     selection = workflows[workflow_id]
     if overrides:
@@ -385,6 +405,8 @@ def execute(
     if checkpoint_options:
         note("画像モデル: " + model_filename(checkpoint_options["checkpoint_model"]))
     saved_params = {**params, **h3_options, **checkpoint_options}
+    if camera:
+        saved_params[camera_spec.KEY] = camera
     if image_prompts.supports_plan(workflows) and provider == "lmstudio":
         if alternate is not None and all(params.get(key) == value for key, value in original_prompts.items()):
             try:
@@ -443,6 +465,7 @@ def execute_saved(
         raise OrchestratorError(f"保存されたワークフローが未登録です: {workflow_id}")
     if not isinstance(parameters, dict):
         raise OrchestratorError("保存された生成パラメータが不正です")
+    parameters, camera = camera_spec.split(parameters, {workflow_id})
     parameters, image_bundle = image_prompts.split_saved(parameters, workflow_id)
     # A host-owned explicit marker is persisted for single-clip replay. Older
     # long-project callers still use their separate text_only_h3 argument.
@@ -519,7 +542,8 @@ def execute_saved(
     return submit_prepared(
         comfy, workflow_id, selected, template, params,
         {**params, **h3_options, **checkpoint_options, **({"text_only_h3": True} if saved_text_mode else {}),
-         **({image_prompts.KEY: image_bundle} if image_bundle is not None else {})},
+         **({image_prompts.KEY: image_bundle} if image_bundle is not None else {}),
+         **({camera_spec.KEY: camera} if camera else {})},
         reference_image=reference_image, mask_image=mask_image, pose_image=pose_image,
         progress=progress, cancel_event=cancel_event, journal=job_journal, context=job_context,
         guide_images=guide_images,

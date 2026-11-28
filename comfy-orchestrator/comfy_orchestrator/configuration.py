@@ -5,7 +5,7 @@ import json
 import urllib.parse
 from pathlib import Path
 
-from . import h3_prompt
+from . import h3_prompt, camera_spec
 from .parameters import OrchestratorError, PARAMS, check_param
 from .workflow_registry import ALLOWED_KINDS, IMAGE_INPUTS, load_workflow
 
@@ -79,6 +79,8 @@ def load_config(path: Path) -> dict:
             raise OrchestratorError("llm.h3_reference_vision は真偽値です")
         if not isinstance(config["llm"].get("send_reference_to_llm", False), bool):
             raise OrchestratorError("llm.send_reference_to_llm は真偽値です")
+    if isinstance(config.get("ui"), dict):
+        camera_spec.normalize(config["ui"].get(camera_spec.KEY))
     for key, item in config["workflows"].items():
         if not isinstance(key, str) or not key or not isinstance(item, dict):
             raise OrchestratorError("workflows の各項目に識別子とオブジェクトが必要です")

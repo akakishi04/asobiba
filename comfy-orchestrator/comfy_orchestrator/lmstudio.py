@@ -19,6 +19,7 @@ from .http_api import _open_json
 from .llm_usage import measured_request
 from .workflow_registry import plan_schema, validate_plan, HOST_VIDEO_IDS, H3_I2V_ID, QWEN_IDS
 from .image_prompts import dual_policy, extend_schema, supports_plan, split_plan
+from .camera_spec import policy as camera_policy
 from .character_refs import observation_schema, intersection_schema, validate_images
 from .character_repair import repair_model_analysis
 from .model_runtime import record_model_event
@@ -466,6 +467,8 @@ class LMStudio:
                     f"（応答待ち上限 {self.settings.get('inference_timeout_seconds', 1200)} 秒）"
                 )
             system += dual_policy(workflows)
+            if supports_plan(workflows):
+                system += camera_policy(self.settings.get("_camera_spec"))
             schema = extend_schema(plan_schema(workflows), workflows)
             if supports_plan(workflows) and image_reasoning_option(self) is not None:
                 # Visual observations are already text. Use only the advertised

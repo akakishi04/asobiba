@@ -9,6 +9,7 @@ import copy
 import json
 
 from .parameters import OrchestratorError, check_param
+from . import camera_spec
 from .workflow_registry import SDXL_WORKFLOW_IDS, QWEN_IDS
 from .model_profiles import ANIMA_ID
 from .prompt_inference import request_validated, check_cancel
@@ -204,6 +205,12 @@ def split_saved(parameters, workflow_id):
 
 def synchronize(parameters, workflow_id, previous):
     """Direct edits invalidate the other format instead of preserving stale text."""
+    if camera_spec.KEY in previous and any(
+            str(parameters.get(field, "")).strip() != str(editor_pair(previous, workflow_id).get(field, "")).strip()
+            for field in FIELDS):
+        # Direct text edits may replace the camera clauses; do not claim the
+        # old structured intent still governs those manually edited prompts.
+        parameters = {k: v for k, v in parameters.items() if k != camera_spec.KEY}
     if KEY not in previous:
         return parameters
     _, bundle = split_saved(previous, workflow_id)
@@ -246,11 +253,15 @@ def apply_patches(prompts, edits):
     return {fmt: pair(values) for fmt, values in result.items()}
 
 
-def revise_bundle(draft, instruction):
+def revise_bundle(draft, instruction, *, camera_update=None):
     if not isinstance(instruction, str) or not instruction.strip() or len(instruction) > 2000:
         raise OrchestratorError("修正指示を1～2000文字で入力してください")
     instruction = instruction.strip()
     clean, saved = split_saved(draft.parameters, draft.workflow_id)
+    clean, old_camera = camera_spec.split(clean, {draft.workflow_id})
+    new_camera = old_camera if camera_update is None else camera_spec.normalize(camera_update)
+    if new_camera and draft.workflow_id not in camera_spec.IDS:
+        raise OrchestratorError("カメラ設定は対応するT2I専用です")
     bundle = saved or make_bundle(draft.workflow_id, clean, None)
     fmt = bundle["active_format"]
     other = other_format(fmt)
@@ -284,6 +295,10 @@ def revise_bundle(draft, instruction):
     system += CLOTHING_FIDELITY_POLICY
     if draft.workflow_id == ANIMA_ID:
         system += anima_policy()
+    if camera_update is not None:
+        system += camera_spec.update_policy(old_camera, new_camera)
+    elif old_camera:
+        system += camera_spec.policy(old_camera)
     payload = json.dumps({"original_request": draft.request, "current_prompts": prompts,
                           "active_format": fmt, "instruction": instruction}, ensure_ascii=False)
 
@@ -293,9 +308,14 @@ def revise_bundle(draft, instruction):
         changed = apply_patches(prompts, reply["edits"])
         if missing:
             changed[other] = pair(reply[ALT])
-        if changed == prompts:
+        if new_camera:
+            changed = {key: camera_spec.apply_pair(value, new_camera, key)
+                       for key, value in changed.items()}
+        if changed == prompts and (camera_update is None or new_camera == old_camera):
             raise OrchestratorError("修正指示に対する変更がありません")
         updated = {**clean, **changed[fmt]}
+        if new_camera:
+            updated[camera_spec.KEY] = new_camera
         return bind_bundle(draft.workflow_id, updated, changed[other],
                            [*bundle["instructions"], instruction])
 

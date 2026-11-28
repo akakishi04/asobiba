@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 
-from . import image_prompts
+from . import image_prompts, camera_spec
 from .generation_runtime import build_template, preflight, check_cancel
 from .input_snapshot import copy_frozen_asset
 from .model_profiles import ANIMA_ID, WAI_ID, QWEN_ID, QWEN_FAST_ID, defaults_for
@@ -29,7 +29,7 @@ def valid_group_id(value):
 
 
 def prepare_targets(workflows, choices, registrations, *, width, height, seed,
-                    policy="recommended", steps=None, cfg=None):
+                    policy="recommended", steps=None, cfg=None, camera=None):
     """Keep geometry/seed shared, reject incompatible fixed sampler settings."""
     choices = tuple(choices)
     if not 2 <= len(choices) <= MAX_MODELS:
@@ -42,6 +42,7 @@ def prepare_targets(workflows, choices, registrations, *, width, height, seed,
         seed = secrets.randbits(32)
     for key, value in (("width", width), ("height", height), ("seed", seed)):
         check_param(key, value)
+    camera = camera_spec.normalize(camera)
     targets = []
     for choice in choices:
         workflow = choice.workflow_id
@@ -63,6 +64,8 @@ def prepare_targets(workflows, choices, registrations, *, width, height, seed,
         if choice.filename:
             values["checkpoint_model"] = choice.filename
             split_checkpoint_option(values, {workflow})
+        if camera:
+            values[camera_spec.KEY] = dict(camera)
         targets.append({"label": choice.label, "workflow_id": workflow,
                         "overrides": values, "status": "pending"})
     return targets
@@ -78,6 +81,7 @@ def project_prompt_pair(result, targets, workflows):
     """Compile every target from exactly the same standalone representations."""
     source = result["workflow_id"]
     clean, bundle = image_prompts.split_saved(result["parameters"], source)
+    _, camera = camera_spec.split(clean, {source})
     source_format = image_prompts.prompt_format(source)
     if source_format is None:
         raise OrchestratorError("比較用プロンプト形式が不正です")
@@ -89,7 +93,12 @@ def project_prompt_pair(result, targets, workflows):
         fmt = image_prompts.prompt_format(workflow)
         if fmt not in prompts or (workflow == ANIMA_ID and set(prompts) != set(image_prompts.FORMATS)):
             raise OrchestratorError("比較に必要なプロンプト形式が揃いません。解釈キャッシュをOFFにして再試行してください")
-        params = {**workflows[workflow].get("defaults", {}), **target["overrides"], **prompts[fmt]}
+        overrides, expected_camera = camera_spec.split(target["overrides"], {workflow})
+        if expected_camera != camera:
+            raise OrchestratorError("共通カメラ設定が一致しません")
+        params = {**workflows[workflow].get("defaults", {}), **overrides, **prompts[fmt]}
+        if camera:
+            params[camera_spec.KEY] = dict(camera)
         params = image_prompts.bind_bundle(workflow, params, prompts.get(image_prompts.other_format(fmt)), instructions)
         prepared.append(params)
     return prepared
@@ -235,7 +244,8 @@ def run_comparison(controller, store, manifest, *, composition_image=None,
                 check_cancel(controller.cancel_event)
                 workflow = target["workflow_id"]
                 entry = workflows[workflow]
-                inputs, options = split_checkpoint_option(target["overrides"], {workflow})
+                clean, _ = camera_spec.split(target["overrides"], {workflow})
+                inputs, options = split_checkpoint_option(clean, {workflow})
                 params = {**entry.get("defaults", {}), **inputs}
                 template = build_template(controller.config_path, entry, workflow, params, {}, options, final=True)
                 preflight(comfy, controller.config, workflow, entry, template, options)
