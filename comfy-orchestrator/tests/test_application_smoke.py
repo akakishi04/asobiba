@@ -144,6 +144,61 @@ class ApplicationSmokeTests(unittest.TestCase):
                     root.update_idletasks()
                     self.assertFalse(callback_errors, callback_errors)
 
+                    # Open a real refinement window and run its prepared plan.
+                    from comfy_orchestrator.generation_controller import GenerationController
+                    from comfy_orchestrator.image_adjust import I2I
+                    image_entry = app.history_store.record(
+                        prompt_id="adjust-source", workflow_id="wai_t2i_basic", kind="t2i",
+                        request_text="tree", parameters={"positive_prompt": "tree", "seed": 19},
+                        images=[output])
+                    app._open_adjust(image_entry.id)
+                    while True:
+                        kind, data = app.messages.get(timeout=5)
+                        app.event_router.dispatch(kind, data)
+                        if kind == "idle":
+                            break
+                    window = app.adjust_window
+                    self.assertIsNotNone(window)
+                    self.assertEqual(str(window.generate_button.cget("state")), "normal")
+                    window.editors["positive_prompt"].delete("1.0", "end")
+                    window.editors["positive_prompt"].insert("1.0", "green tree")
+                    window.numeric["steps"].set("12")
+                    derived = app.history_store.outputs / "adjusted.png"
+                    image.write(str(derived), format="png")
+                    def prepared(controller, request, workflow, params, **kwargs):
+                        self.assertEqual(workflow, "wai_t2i_basic")
+                        self.assertEqual(params["positive_prompt"], "green tree")
+                        self.assertEqual(params["steps"], 12)
+                        self.assertEqual(params["seed"], 19)
+                        self.assertIsNone(kwargs["image"])
+                        return {"status": "completed", "workflow_id": workflow,
+                                "parameters": params}, [derived], "adjusted-history"
+                    with patch.object(GenerationController, "generate_prepared", prepared):
+                        window._act("generate")
+                        self.assertTrue(app.working)
+                        while True:
+                            kind, data = app.messages.get(timeout=5)
+                            app.event_router.dispatch(kind, data)
+                            if kind == "idle":
+                                break
+                    self.assertIs(app.adjust_window, window)
+                    self.assertEqual(window.selected_result(), derived)
+                    self.assertEqual(str(window.generate_button.cget("state")), "normal")
+                    window._act("adopt")
+                    self.assertEqual(app.adjust_draft.base_image.read_bytes(), derived.read_bytes())
+                    self.assertIsNone(app.adjust_draft.assets["image"])
+                    with patch.object(gui.messagebox, "askyesno", return_value=True):
+                        window._act("i2i")
+                    self.assertEqual(app.adjust_draft.workflow_id, I2I)
+                    self.assertEqual(app.adjust_draft.assets["image"], app.adjust_draft.base_image)
+                    self.assertNotIn("width", window.numeric)
+                    self.assertIn("denoise", window.numeric)
+                    adjust_folder = Path(app.adjust_draft._temporary.name)
+                    app._close_adjust()
+                    self.assertFalse(adjust_folder.exists())
+                    self.assertTrue(derived.is_file())
+                    self.assertFalse(callback_errors, callback_errors)
+
                     # Usage is captured at the real transport boundary in a worker,
                     # and the operations panel renders persisted totals without an API.
                     from comfy_orchestrator import lmstudio
@@ -169,7 +224,7 @@ class ApplicationSmokeTests(unittest.TestCase):
                     try:
                         panel.update_usage(usage)
                         self.assertIn("IN 123 / OUT 45", panel.usage_summary.get())
-                        self.assertEqual(len(panel.usage_operations.get_children()), 1)
+                        self.assertEqual(len(panel.usage_operations.get_children()), 2)
                         self.assertEqual(len(panel.usage_purposes.get_children()), 1)
                     finally:
                         panel.window.destroy()

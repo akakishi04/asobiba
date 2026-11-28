@@ -86,6 +86,8 @@ from .material_transfer import DESTINATIONS, available_materials, extract_materi
 from .material_ui import MaterialDialog, FramePicker
 from .single_prompt import SinglePromptDraft
 from .single_prompt_ui import SinglePromptWindow
+from .image_adjust import ImageAdjustDraft, can_adjust, supported_workflow, image_file
+from .image_adjust_ui import ImageAdjustWindow
 from .preview_geometry import preview_subsample
 
 
@@ -163,6 +165,9 @@ class Application:
         self.review = ResultReviewState()
         self._result_material_context = {}
         self._pending_material_transfer = None
+        self.adjust_draft = None
+        self.adjust_window = None
+        self._adjust_operation = None
         self.single_draft = None
         self.single_window = None
         self._single_refresh = False
@@ -532,6 +537,7 @@ class Application:
                 open_outputs=self._open_outputs,
                 show_prompt=self._show_prompt_preview,
                 use_material=self._current_output_material,
+                adjust=self._open_adjust_current,
             ),
         )
         self.tabs.add(self.result_panel, text="結果")
@@ -547,6 +553,7 @@ class Application:
                 refresh=self._refresh_history,
                 restore_character=self._restore_selected_character_traits,
                 use_material=self._history_output_material,
+                adjust=self._open_adjust_history,
                 change_flags=self._change_history_flags,
             ),
         )
@@ -1305,6 +1312,8 @@ class Application:
             self.project_workspace.set_enabled(False)
         self.result_panel.set_busy(True)
         self.history_panel.set_busy(True)
+        if getattr(self, "adjust_window", None) is not None:
+            self.adjust_window.set_busy(True, own_task=self._adjust_operation is not None)
         self.run_button.configure(state="disabled")
         self.preview_button.configure(state="disabled")
         self.cancel_button.configure(state="normal")
@@ -1663,6 +1672,118 @@ class Application:
             self.mask_image.set(str(result))
             self._log(f"部分修正マスクを保存: {result.name}")
             self.status.set("修正範囲を指定しました。自然文を入力して生成してください")
+
+    def _open_adjust_current(self):
+        history_id = self._result_material_context.get("history_id")
+        path = self.result_panel.selected_path()
+        if not history_id or not image_file(path):
+            messagebox.showinfo("画像調整", "生成設定の保存された画像を選択してください")
+            return
+        self._open_adjust(history_id, selected=path)
+
+    def _open_adjust_history(self):
+        entry = self._one_history()
+        if can_adjust(entry, self.config["workflows"]):
+            self._open_adjust(entry.id)
+
+    def _open_adjust(self, history_id, *, selected=None):
+        if self.adjust_window is not None:
+            self.adjust_window.lift()
+            self.adjust_window.focus_set()
+            self.status.set("開いている画像調整を閉じてから別の画像を選択してください")
+            return
+        if self.working or self.character_analysis_running or self.single_draft is not None:
+            return
+        # Capture connection settings only. The current main-form generation
+        # settings must not override the history's exact parameters.
+        cfg = copy.deepcopy(self.config)
+        cfg["llm"].update(base_url=self.llm_url.get().strip(), model=self.model.get().strip() or "SELECT_IN_GUI",
+                          unload_after_inference=self.unload_llm.get(), send_reference_to_llm=False)
+        cfg["comfyui"].update(base_url=self.comfy_url.get().strip(), free_before_llm=self.free_comfy.get())
+        for name in ("llm", "comfyui"):
+            try:
+                parsed = urllib.parse.urlsplit(cfg[name]["base_url"])
+                if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                    raise ValueError()
+            except ValueError:
+                messagebox.showerror("画像調整", f"{name}の接続先URLが不正です")
+                return
+        controller = self._controller(cfg)
+        store = self.history_store
+        def prepare():
+            entry = store.get(history_id)
+            return ImageAdjustDraft.from_history(controller, entry, selected)
+        self._adjust_operation = "open"
+        self._set_busy("画像調整を準備中")
+        self._launch_generation(prepare, done_event="image_adjust_ready", cancel_as_progress=True)
+
+    def _on_adjust_ready(self, draft):
+        if self.stop_event.is_set():
+            draft.close()
+            return
+        models = (core.installed_model_choices(self.generation_inventory)["sdxl"]
+                  if self.generation_inventory is not None else (self.checkpoint_model.get(),))
+        self.adjust_draft = draft
+        try:
+            self.adjust_window = ImageAdjustWindow(
+                self.root, draft, self.project_workspace.translation_cache, models,
+                on_action=self._adjust_action, on_close=self._close_adjust,
+                on_cancel=self._request_cancel, status=self.status,
+            )
+            self.adjust_window.set_busy(True, own_task=True)
+            self.status.set("画像調整")
+        except Exception:
+            draft.close()
+            self.adjust_draft = None
+            raise
+
+    def _adjust_action(self, operation, **kwargs):
+        if self.working or self.character_analysis_running or self.single_draft is not None:
+            return
+        draft = self.adjust_draft
+        if draft is None or operation not in ("generate", "translate", "apply", "regenerate"):
+            return
+        self._adjust_operation = operation
+        self._set_busy("画像調整: 生成中" if operation == "generate" else "画像調整: プロンプト編集中")
+        usage = {"action": "adjust_" + operation, "mode": "image",
+                 "workflow": draft.workflow_id, "group_id": draft.group_id}
+        if operation == "generate":
+            self._launch_generation(lambda: draft.generate_variant(**kwargs),
+                                    done_event="image_adjust_generated", usage=usage)
+        else:
+            cache = self.project_workspace.translation_cache
+            def edit():
+                if operation == "translate":
+                    draft.translate(cache)
+                else:
+                    draft.revise(operation, cache, **kwargs)
+                return operation
+            self._launch_generation(edit, done_event="image_adjust_changed",
+                                    cancel_as_progress=True, usage=usage)
+
+    def _on_adjust_generated(self, completed):
+        if self.adjust_draft is None or self.adjust_window is None:
+            return
+        path, history_id = self.adjust_draft.accept_completed(completed)
+        self.adjust_window.show_completed()
+        self.status.set("画像調整完了" if history_id else "画像保存済み / 履歴未登録")
+        self._log("画像調整完了: " + path.name)
+        self._refresh_history(select_id=history_id, scan_legacy=False)
+
+    def _on_adjust_changed(self, operation):
+        if self.adjust_window is not None:
+            self.adjust_window.show_prompt_change(operation)
+            self.status.set("プロンプトを更新しました")
+
+    def _close_adjust(self):
+        if self.working and self._adjust_operation is not None:
+            return
+        window, self.adjust_window = self.adjust_window, None
+        draft, self.adjust_draft = self.adjust_draft, None
+        if window is not None:
+            window.destroy()
+        if draft is not None:
+            draft.close()
 
     def _current_output_material(self):
         context = self._result_material_context
@@ -2443,6 +2564,9 @@ class Application:
             "projects_loaded": self._on_event_projects_loaded,
             "long_plan_ready": self._finish_long_prompt_plan,
             "material_frame_ready": self._on_material_frame_ready,
+            "image_adjust_ready": self._on_adjust_ready,
+            "image_adjust_generated": self._on_adjust_generated,
+            "image_adjust_changed": self._on_adjust_changed,
             "single_prompt_ready": self._on_single_prompt_ready,
             "single_prompt_changed": self._on_single_prompt_changed,
             "project_translation_cache_updated": self._on_event_project_translation_cache_updated,
@@ -2710,6 +2834,10 @@ class Application:
                 "workflow": result.get("workflow_id", ""), "parameters": copy.deepcopy(result.get("parameters", {})),
                 "profile": review.get("profile"), "request": review.get("request_text"), "history_id": history_id,
             }
+            self.result_panel.set_adjustment_available(
+                bool(history_id and supported_workflow(result.get("workflow_id"), self.config["workflows"])
+                     and isinstance(result.get("parameters", {}).get("positive_prompt"), str)
+                     and type(result.get("parameters", {}).get("seed")) is int))
             self._log("生成完了: " + json.dumps(result.get("parameters", {}), ensure_ascii=False))
             if history_id is None:
                 self.status.set("出力保存済み / 履歴未登録（未回収結果または長尺再開で回収）")
@@ -2721,12 +2849,17 @@ class Application:
     def _on_event_error(self, data):
         self._log("ERROR: " + data)
         self.status.set("エラー: " + data[:110])
-        messagebox.showerror("処理エラー", data, parent=self.single_window or self.root)
+        parent = (self.adjust_window if getattr(self, "_adjust_operation", None) is not None
+                  and getattr(self, "adjust_window", None) else self.single_window or self.root)
+        messagebox.showerror("処理エラー", data, parent=parent)
 
     def _on_event_idle(self, data):
         self._tick_timing(finished=True)
         self.tasks.finish()
         self.review.finish()
+        self._adjust_operation = None
+        if getattr(self, "adjust_window", None) is not None:
+            self.adjust_window.set_busy(False)
         if hasattr(self, "project_workspace"):
             self.project_workspace.set_enabled(True)
             if self._project_visible:
@@ -2788,6 +2921,7 @@ class Application:
             return
         if not self.working:
             self._close_single_prompt()
+            self._close_adjust()
         self.result_panel.result_video.stop()
         self.history_panel.history_video.stop()
         if hasattr(self, "project_workspace"):

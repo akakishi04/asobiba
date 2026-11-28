@@ -30,6 +30,8 @@ ACTIONS = {
     "long_join": "連続・結合", "replay": "履歴・再生成",
     "character_analysis": "キャラ特徴抽出", "character_revision": "キャラ説明修正",
     "cli_run": "CLI生成", "cli_review": "CLI解釈",
+    "adjust_generate": "画像調整・再生成", "adjust_translate": "画像調整・翻訳",
+    "adjust_apply": "画像調整・編集反映", "adjust_regenerate": "画像調整・修正指示",
 }
 MODES = {"image": "画像", "video": "動画", "continuous": "連続動画", "character": "キャラ参照"}
 

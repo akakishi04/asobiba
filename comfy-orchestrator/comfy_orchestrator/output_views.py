@@ -13,6 +13,7 @@ from .preview_geometry import preview_subsample
 from .output_collection import IMAGE_EXTENSIONS, is_video_output
 from .history import HistoryEntry, HistoryQuery, HistoryPage
 from .history_thumbnails import ThumbnailLoader
+from .image_adjust import can_adjust, image_file
 from .history_presentation import history_row, history_summary, history_can_replay, history_action_state
 
 
@@ -22,12 +23,15 @@ class ResultActions:
     open_outputs: Callable
     show_prompt: Callable
     use_material: Callable
+    adjust: Callable
 
 
 class ResultView(ttk.Frame):
     def __init__(self, master, actions: ResultActions):
         super().__init__(master, padding=8)
         self.image_paths: list[Path] = []
+        self.adjustment_available = False
+        self._busy = False
         self.preview_photo = None
         self.result_info = tk.StringVar(master=self, value="")
         preview_actions = ttk.Frame(self)
@@ -54,7 +58,20 @@ class ResultView(ttk.Frame):
         self.result_prompt_button.grid(row=0, column=2, sticky="ew")
         self.result_tools = ttk.Frame(preview_actions)
         self.material_button = ttk.Button(self.result_tools, text="素材として使用…", command=actions.use_material)
-        self.material_button.pack(fill="x")
+        self.material_button.pack(side="left", fill="x", expand=True)
+        self.adjust_button = ttk.Button(self.result_tools, text="調整する", command=actions.adjust)
+
+    def set_adjustment_available(self, enabled):
+        self.adjustment_available = bool(enabled)
+        self._sync_adjust_button()
+
+    def _sync_adjust_button(self):
+        if self.adjustment_available and image_file(self.selected_path()):
+            if not self.adjust_button.winfo_manager():
+                self.adjust_button.pack(side="left", fill="x", expand=True, padx=(4, 0))
+            self.adjust_button.configure(state="disabled" if self._busy else "normal")
+        else:
+            self.adjust_button.pack_forget()
 
     def set_video(self, path: Path | None) -> None:
         self.result_video.set_source(path)
@@ -72,6 +89,7 @@ class ResultView(ttk.Frame):
             self.display_image(self.image_paths[selected[0]])
 
     def display_image(self, path: Path) -> None:
+        self._sync_adjust_button()
         self.set_video(path if is_video_output(path) else None)
         if path.is_file() and (path.suffix.lower() in IMAGE_EXTENSIONS or is_video_output(path)):
             self.result_tools.pack(fill="x", pady=(5, 0))
@@ -104,6 +122,8 @@ class ResultView(ttk.Frame):
         self.result_prompt_button.configure(state="normal")
 
     def show_outputs(self, images):
+        self.adjustment_available = False
+        self.adjust_button.pack_forget()
         self.image_paths = list(images)
         self.images_list.delete(0, "end")
         for file in self.image_paths:
@@ -125,8 +145,10 @@ class ResultView(ttk.Frame):
             self.open_button.configure(state="disabled")
 
     def set_busy(self, busy):
+        self._busy = busy
         self.result_video.set_enabled(not busy)
         self.material_button.configure(state="disabled" if busy else "normal")
+        self._sync_adjust_button()
 
 
 @dataclass(frozen=True)
@@ -142,6 +164,7 @@ class HistoryActions:
     restore_character: Callable
     use_material: Callable
     change_flags: Callable
+    adjust: Callable
 
 
 class HistoryView(ttk.Frame):
@@ -270,7 +293,9 @@ class HistoryView(ttk.Frame):
         self.history_character_button.pack(fill="x", pady=(4, 0))
         self.history_tools = ttk.Frame(history_actions)
         ttk.Button(self.history_tools, text="素材として使用…", command=actions.use_material,
-                   style="Compact.TButton").pack(fill="x")
+                   style="Compact.TButton").pack(side="left", fill="x", expand=True)
+        self.adjust_button = ttk.Button(self.history_tools, text="調整する", command=actions.adjust,
+                                        style="Compact.TButton")
 
     def _toggle_thumbnails(self):
         enabled = self.thumbnail_mode.get()
@@ -478,6 +503,12 @@ class HistoryView(ttk.Frame):
                 self.history_request_button.configure(state="normal" if actions["request"] else "disabled")
             if hasattr(self, "history_character_button"):
                 self.history_character_button.configure(state="normal" if actions["character"] else "disabled")
+            if hasattr(self, "adjust_button"):
+                if len(selected) == 1 and not working and can_adjust(selected[0], workflows):
+                    if not self.adjust_button.winfo_manager():
+                        self.adjust_button.pack(side="left", fill="x", expand=True, padx=(4, 0))
+                else:
+                    self.adjust_button.pack_forget()
             if actions["use_as_source"]:
                 self.history_tools.pack(fill="x", pady=(4, 0))
             else:
