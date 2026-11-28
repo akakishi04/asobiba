@@ -38,11 +38,19 @@ class WorkflowTests(unittest.TestCase):
         w = core.load_workflow(ROOT / entry["file"], entry["bindings"])
         self.assertEqual(w["19"]["class_type"], "LoadImageMask")
         self.assertEqual(w["19"]["inputs"]["channel"], "red")
-        self.assertEqual(w["18"]["class_type"], "VAEEncodeForInpaint")
-        self.assertEqual(w["18"]["inputs"]["mask"], ["19", 0])
+        # Ordinary SDXL must encode the intact source, not a gray-filled image.
+        self.assertEqual(w["17"]["class_type"], "VAEEncode")
+        self.assertEqual(w["17"]["inputs"], {"pixels": ["16", 0], "vae": ["2", 2]})
+        self.assertEqual(w["18"]["class_type"], "SetLatentNoiseMask")
+        self.assertEqual(w["18"]["inputs"], {"samples": ["17", 0], "mask": ["21", 0]})
+        self.assertEqual(w["21"]["class_type"], "GrowMask")
+        self.assertEqual(w["21"]["inputs"], {"mask": ["19", 0], "expand": 4, "tapered_corners": False})
+        self.assertNotIn("VAEEncodeForInpaint", {node["class_type"] for node in w.values()})
         self.assertEqual(w["11"]["inputs"]["latent_image"], ["18", 0])
         self.assertEqual(w["20"]["class_type"], "ImageCompositeMasked")
         self.assertEqual(w["20"]["inputs"]["destination"], ["16", 0])
+        self.assertEqual(w["20"]["inputs"]["source"], ["12", 0])
+        self.assertEqual(w["12"]["inputs"]["samples"], ["11", 0])
         self.assertEqual(w["20"]["inputs"]["mask"], ["19", 0])
         self.assertEqual(w["13"]["inputs"]["images"], ["20", 0])
         rendered = core.render_workflow(
@@ -53,6 +61,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(rendered["16"]["inputs"]["image"], "source_uploaded.png")
         self.assertEqual(rendered["19"]["inputs"]["image"], "mask_uploaded.png")
         self.assertEqual(rendered["11"]["inputs"]["seed"], 99)
+        self.assertEqual(rendered["11"]["inputs"]["denoise"], 0.7)
+        self.assertEqual(rendered["20"]["inputs"]["mask"], ["19", 0])
         self.assertEqual(w["19"]["inputs"]["image"], "mask.png")  # immutable template
 
     def test_pose_workflows_use_only_openpose_control_conditioning(self):
@@ -243,7 +253,7 @@ class WorkflowTests(unittest.TestCase):
             source.write_bytes(b"s")
             mask.write_bytes(b"m")
             entry = self.entries["wai_inpaint_basic"]
-            params = dict(entry["defaults"], positive_prompt="hand", seed=55)
+            params = dict(entry["defaults"], positive_prompt="hand", seed=55, denoise=0.53)
             with patch.object(core, "ComfyUI") as mocked:
                 runner = mocked.return_value
                 runner.upload_image.side_effect = ["source_cloud.png", "mask_cloud.png"]
@@ -258,6 +268,10 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(graph["16"]["inputs"]["image"], "source_cloud.png")
             self.assertEqual(graph["19"]["inputs"]["image"], "mask_cloud.png")
             self.assertEqual(graph["11"]["inputs"]["seed"], 55)
+            self.assertEqual(graph["11"]["inputs"]["denoise"], 0.53)
+            self.assertEqual(graph["18"]["class_type"], "SetLatentNoiseMask")
+            self.assertEqual(graph["18"]["inputs"]["samples"], ["17", 0])
+            self.assertEqual(graph["20"]["inputs"]["mask"], ["19", 0])
 
 
 class HistoryInputTests(unittest.TestCase):

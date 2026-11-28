@@ -119,24 +119,19 @@
     }
   },
   "18": {
-    "class_type": "VAEEncodeForInpaint",
+    "class_type": "SetLatentNoiseMask",
     "inputs": {
-      "pixels": [
-        "16",
+      "samples": [
+        "17",
         0
-      ],
-      "vae": [
-        "2",
-        2
       ],
       "mask": [
-        "19",
+        "21",
         0
-      ],
-      "grow_mask_by": 8
+      ]
     },
     "_meta": {
-      "title": "VAEエンコード（部分修正）"
+      "title": "元画像の潜在表現に修正マスクを設定"
     }
   },
   "19": {
@@ -170,6 +165,20 @@
     },
     "_meta": {
       "title": "マスク外を元画像から保護"
+    }
+  },
+  "21": {
+    "class_type": "GrowMask",
+    "inputs": {
+      "mask": [
+        "19",
+        0
+      ],
+      "expand": 4,
+      "tapered_corners": false
+    },
+    "_meta": {
+      "title": "生成用マスクを4px拡張（合成範囲は維持）"
     }
   }
 }
