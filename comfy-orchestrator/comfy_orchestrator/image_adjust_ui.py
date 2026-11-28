@@ -11,7 +11,8 @@ from .ime_font import install_native_ime_font
 from .parameters import OrchestratorError
 from .single_prompt import LABELS
 from . import image_prompts
-from .model_profiles import ANIMA_ID, ANIMA_BASE, anima_model_name
+from .model_profiles import ANIMA_ID, ANIMA_BASE, QWEN_ID, anima_model_name
+from .model_registry import parse_image_key, model_display, recommended
 from .workflow_registry import sdxl_checkpoint_kind
 
 DEFAULT_MODEL = "ワークフロー既定"
@@ -20,13 +21,14 @@ FIELD_LABELS = {"width": "幅", "height": "高さ", "steps": "Steps", "cfg": "CF
 
 
 class ImageAdjustWindow(tk.Toplevel):
-    def __init__(self, parent, draft, cache, models, *, on_action, on_close, on_cancel, status):
+    def __init__(self, parent, draft, cache, models, *, on_action, on_close, on_cancel, status, registrations=()):
         super().__init__(parent)
         self.title("画像調整 | Asobiba")
         self.geometry("1260x760")
         self.minsize(880, 560)
         self.draft, self.cache = draft, cache
         self.models = tuple(models)
+        self.registrations = tuple(registrations)
         self.on_action, self.on_close = on_action, on_close
         self.busy = False
         self.own_task = False
@@ -159,13 +161,17 @@ class ImageAdjustWindow(tk.Toplevel):
             if self.draft.workflow_id == ANIMA_ID:
                 names = tuple(dict.fromkeys((DEFAULT_MODEL, current, *(
                     p for p in self.models if anima_model_name(p)))))
+            elif self.draft.workflow_id == QWEN_ID:
+                names = tuple(dict.fromkeys((DEFAULT_MODEL, current, *(
+                    p for p in self.models if (parse_image_key(p) or (None,))[0] == "qwen"))))
             else:
                 names = tuple(dict.fromkeys((DEFAULT_MODEL, current, *(
                     p for p in self.models if sdxl_checkpoint_kind(p) is not None
                     and (self.draft.workflow_id == "wai_t2i_basic" or sdxl_checkpoint_kind(p) != "turbo")))))
-            self.checkpoint.set(current)
+            self.model_keys = {model_display(name): name for name in names}
+            self.checkpoint.set(model_display(current))
             ttk.Label(parent, text="モデル").grid(row=row, column=0, sticky="w", pady=4, padx=(0, 8))
-            self.model_box = ttk.Combobox(parent, textvariable=self.checkpoint, values=names, state="readonly")
+            self.model_box = ttk.Combobox(parent, textvariable=self.checkpoint, values=tuple(self.model_keys), state="readonly")
             self.model_box.grid(row=row, column=1, sticky="ew", pady=4)
             self.model_box.bind("<<ComboboxSelected>>", self._model_changed)
             row += 1
@@ -204,6 +210,11 @@ class ImageAdjustWindow(tk.Toplevel):
                 self.workflow_selection.set(WORKFLOW_NAMES.get(self.draft.workflow_id, self.draft.workflow_id))
 
     def _model_changed(self, _event=None):
+        if _event is not None:
+            defaults = recommended(self.registrations, self._checkpoint(), {})
+            for key in ("steps", "cfg"):
+                if key in defaults and key in self.numeric:
+                    self.numeric[key].set(str(defaults[key]))
         fixed = self.draft.fixed_sampler(self._checkpoint() or "")
         for key, value in (("steps", "4"), ("cfg", "1")):
             if fixed and key in self.numeric:
@@ -211,7 +222,10 @@ class ImageAdjustWindow(tk.Toplevel):
         self.set_busy(self.busy, own_task=self.own_task)
 
     def _checkpoint(self):
-        return self.checkpoint.get() if self.model_box is not None and self.checkpoint.get() != DEFAULT_MODEL else None
+        if self.model_box is None:
+            return None
+        key = self.model_keys.get(self.checkpoint.get())
+        return key if key != DEFAULT_MODEL else None
 
     def _values(self):
         return {key: widget.get("1.0", "end-1c") for key, widget in self.editors.items()}
@@ -240,7 +254,7 @@ class ImageAdjustWindow(tk.Toplevel):
         for key, variable in self.numeric.items():
             variable.set(str(self.draft.parameters[key]))
         if self.model_box is not None:
-            self.checkpoint.set(self.draft.parameters.get("checkpoint_model", DEFAULT_MODEL))
+            self.checkpoint.set(model_display(self.draft.parameters.get("checkpoint_model", DEFAULT_MODEL)))
         self.baseline = self._values()
         self.workflow_label.set("次の生成: " + WORKFLOW_NAMES.get(self.draft.workflow_id, self.draft.workflow_id))
         roles = (("実際の参照画像", "image"), ("マスク", "mask_image"), ("ポーズ", "pose_image"),

@@ -90,6 +90,9 @@ from .image_adjust import ImageAdjustDraft, can_adjust, supported_workflow, imag
 from .image_adjust_ui import ImageAdjustWindow
 from .model_profiles import (ANIMA_ID, ANIMA_BASE, T2I_ONLY, WAI_FAMILY, image_model_choices,
                              selected_label, defaults_for)
+from .model_registry import (load_registrations, save_registrations, registered_h3_turbo,
+                             parse_h3_key, recommended, registration_for_key)
+from .model_manager_ui import ModelManagerWindow
 from .preview_geometry import preview_subsample
 
 
@@ -156,6 +159,14 @@ class Application:
         self.stop_event = self.tasks.stop_event
         self.config = bootstrap_config()
         self.history_store = HistoryStore(ROOT)
+        self._registry_path = self.history_store.data / "model_registry.json"
+        self._registry_error = None
+        try:
+            self._registered_models = load_registrations(self._registry_path)
+        except (OSError, core.OrchestratorError) as exc:
+            self._registered_models = ()
+            self._registry_error = str(exc)
+        self.model_manager = None
         self.llm_usage = UsageStore(self.history_store.data / "llm_usage.sqlite3")
         self._single_usage_group = None
         self.job_journal = JobJournal(self.history_store.data / "jobs")
@@ -262,6 +273,7 @@ class Application:
         self.generation_inventory = None
         self.checkpoint_model = tk.StringVar(value=options.get("checkpoint_model", core.DEFAULT_SDXL_CHECKPOINT))
         self.anima_model = tk.StringVar(value=options.get("anima_model", ANIMA_BASE))
+        self.qwen_model = tk.StringVar(value=options.get("qwen_model", ""))
         self.qwen_steps = tk.StringVar(value=str(options.get("qwen_steps", 50)))
         self.qwen_cfg = tk.StringVar(value=str(options.get("qwen_cfg", 4)))
         self.qwen_fixed_steps = tk.StringVar(value="4")
@@ -353,6 +365,8 @@ class Application:
             ),
         )
         self.model_box = self.settings_panel.model_box
+        ttk.Button(self.settings_panel.topbar, text="生成モデル管理…",
+                   command=self._open_model_manager).pack(side="left", padx=(6, 0))
         self.recover_jobs_button = self.settings_panel.recover_jobs_button
         self.free_memory_button = self.settings_panel.free_memory_button
 
@@ -631,15 +645,17 @@ class Application:
         if not hasattr(self, "_mode_boxes") or "image" not in self._mode_boxes:
             return
         inventory = self.generation_inventory
-        installed = core.installed_model_choices(inventory or {})["sdxl"]
+        registrations = getattr(self, "_registered_models", ())
+        installed = core.installed_model_choices(inventory, registrations)["sdxl"]
         choices = image_model_choices(self.config["workflows"], inventory, installed,
-                                      self.checkpoint_model.get(), self.anima_model.get())
+                                      self.checkpoint_model.get(), self.anima_model.get(),
+                                      registrations, self.qwen_model.get())
         self._image_choices = {item.label: item for item in choices}
         box = self._mode_boxes["image"]
         box.configure(values=tuple(self._image_choices), state="readonly" if choices else "disabled")
         if self.generation_mode.get() == "image":
             label = selected_label(choices, self.workflow.get(),
-                                   self.checkpoint_model.get(), self.anima_model.get())
+                                   self.checkpoint_model.get(), self.anima_model.get(), self.qwen_model.get())
             self._mode_vars["image"].set(label or self.workflow_names.get(self.workflow.get(), self.workflow.get()))
 
     def _select_image_model(self):
@@ -657,12 +673,15 @@ class Application:
             self.checkpoint_model.set(choice.filename)
         elif choice.workflow_id == ANIMA_ID:
             self.anima_model.set(choice.filename)
+        elif choice.workflow_id == core.QWEN_T2I_ID:
+            self.qwen_model.set(choice.filename or "")
         selected = resolve_generation_workflow(self.config, choice.workflow_id,
                     bool(self.reference_image.get().strip()), bool(self.mask_image.get().strip()),
                     bool(self.pose_image.get().strip()), self.pose_mode.get()) or choice.workflow_id
         # Start from the target graph defaults, not the previous family's sampler.
         defaults = defaults_for(self.config["workflows"],
-                               type(choice)(choice.label, selected, choice.filename), turbo=turbo)
+                               type(choice)(choice.label, selected, choice.filename), turbo=turbo,
+                               registrations=getattr(self, "_registered_models", ()))
         if selected == core.QWEN_T2I_ID:
             self.qwen_steps.set(str(defaults["steps"]))
             self.qwen_cfg.set(str(defaults["cfg"]))
@@ -825,7 +844,9 @@ class Application:
         if model is None or turbo is None:
             raise core.OrchestratorError("H3モデルまたはTurbo設定が不正です")
         options = {"h3_model": model, "h3_turbo": turbo}
-        if core.h3_hybrid_filename(model) is not None and hasattr(self, "h3_performance"):
+        if registered_h3_turbo(model):
+            options["h3_performance"] = "euler_dense"
+        elif core.h3_hybrid_filename(model) is not None and hasattr(self, "h3_performance"):
             performance = next((key for key, label in core.H3_PERFORMANCE_LABELS.items()
                                 if label == self.h3_performance.get()), None)
             if performance is None:
@@ -847,8 +868,8 @@ class Application:
         if not hasattr(self, "h3_input_mode_box"):
             return
         current = core.h3_model_from_label(self.h3_model.get())
-        installed = (tuple(core.H3_MODEL_LABELS) if self.generation_inventory is None
-                     else core.installed_model_choices(self.generation_inventory)["h3"])
+        local = core.installed_model_choices(self.generation_inventory, getattr(self, "_registered_models", ()))["h3"]
+        installed = (*core.H3_MODEL_LABELS, *local) if self.generation_inventory is None else local
         models = h3_picker_choices(installed, current)
         choice = next((item for item in models if item.contains(current)), None)
         if choice is None:
@@ -889,6 +910,12 @@ class Application:
         # Start their comparison without an additional LoRA; user may opt in.
         if key not in ("int8", "w4a8"):
             self.h3_turbo.set("OFF")
+        if parse_h3_key(key) is not None:
+            item = registration_for_key(getattr(self, "_registered_models", ()), key)
+            if registered_h3_turbo(key):
+                self.h3_hybrid_steps.set("8")
+            elif item is not None:
+                self.h3_steps.set(str(item.steps if item.steps is not None else item.spec.default_steps))
         self._sync_h3_steps()
 
     def _on_h3_input_mode_choice(self, _event=None) -> None:
@@ -927,11 +954,12 @@ class Application:
         turbo_checkpoint = (self._sdxl_turbo_active() if hasattr(self, "checkpoint_model") else False)
         h3_choices = self._h3_choices() if is_h3 else {}
         hybrid = core.h3_hybrid_filename(h3_choices.get("h3_model")) is not None
+        fixed_manual = registered_h3_turbo(h3_choices.get("h3_model"))
         if hasattr(self, "parameter_widgets"):
             for widget in self.parameter_widgets.get("h3_turbo", ()):
                 set_grid_visible(widget, is_h3 and not hybrid)
             for widget in self.parameter_widgets.get("h3_performance", ()):
-                set_grid_visible(widget, hybrid)
+                set_grid_visible(widget, hybrid and not fixed_manual)
         if is_h3 and hasattr(self, "h3_turbo_box"):
             if hybrid:
                 self.h3_turbo.set("OFF")
@@ -1228,6 +1256,8 @@ class Application:
             self.anima_model.set(entry.parameters.get("checkpoint_model", ANIMA_BASE))
         if entry.workflow_id in core.QWEN_IDS and hasattr(self, "qwen_steps"):
             if entry.workflow_id == core.QWEN_T2I_ID:
+                if hasattr(self, "qwen_model"):
+                    self.qwen_model.set(entry.parameters.get("checkpoint_model", ""))
                 self.qwen_steps.set(str(entry.parameters.get("steps", 50)))
                 self.qwen_cfg.set(str(entry.parameters.get("cfg", 4)))
         if entry.workflow_id == core.H3_I2V_ID and hasattr(self, "h3_size"):
@@ -1479,7 +1509,7 @@ class Application:
                     key for key, label in core.H3_PERFORMANCE_LABELS.items() if label == self.h3_performance.get())
         for name in ("video_size", "video_frames", "video_fps", "h3_size", "h3_duration",
                      "hunyuan_size", "hunyuan_frames", "hunyuan_steps",
-                     "checkpoint_model", "anima_model", "qwen_steps", "qwen_cfg"):
+                     "checkpoint_model", "anima_model", "qwen_model", "qwen_steps", "qwen_cfg"):
             if hasattr(self, name):
                 config["ui"][name] = getattr(self, name).get()
             elif name in self.config.get("ui", {}):
@@ -1789,14 +1819,16 @@ class Application:
         if self.stop_event.is_set():
             draft.close()
             return
-        installed = core.installed_model_choices(self.generation_inventory or {})
-        models = (*installed["sdxl"], *installed["anima"]) if self.generation_inventory is not None else (self.checkpoint_model.get(), self.anima_model.get())
+        installed = core.installed_model_choices(self.generation_inventory, getattr(self, "_registered_models", ()))
+        models = tuple(dict.fromkeys((*installed["sdxl"], *installed["anima"], *installed["qwen"],
+                                      self.checkpoint_model.get(), self.anima_model.get(), self.qwen_model.get())))
         self.adjust_draft = draft
         try:
             self.adjust_window = ImageAdjustWindow(
                 self.root, draft, self.project_workspace.translation_cache, models,
                 on_action=self._adjust_action, on_close=self._close_adjust,
                 on_cancel=self._request_cancel, status=self.status,
+                registrations=getattr(self, "_registered_models", ()),
             )
             self.adjust_window.set_busy(True, own_task=True)
             self.status.set("画像調整")
@@ -1963,13 +1995,42 @@ class Application:
         else:
             messagebox.showinfo("履歴", "保存済みファイルを1件選択してください")
 
+    def _open_model_manager(self):
+        if self.working or self.character_analysis_running:
+            messagebox.showwarning("生成モデル管理", "現在の処理が終了してからモデルを登録してください")
+            return
+        if self._registry_error:
+            messagebox.showerror("生成モデル管理", "登録ファイルを読み込めません。上書きしません。\n" + self._registry_error)
+            return
+        if self.model_manager is not None and self.model_manager.winfo_exists():
+            self.model_manager.lift()
+            return
+        self.model_manager = ModelManagerWindow(self.root, self._registered_models, self.generation_inventory,
+                                                on_save=self._save_model_registry,
+                                                on_refresh=self._refresh_generation_models)
+        if self.generation_inventory is None:
+            self._refresh_generation_models()
+
+    def _save_model_registry(self, values):
+        if self.working or self.character_analysis_running or self._registry_error:
+            messagebox.showwarning("生成モデル管理", "現在は登録内容を変更できません")
+            return False
+        try:
+            self._registered_models = save_registrations(self._registry_path, values)
+        except (OSError, core.OrchestratorError) as exc:
+            messagebox.showerror("生成モデル管理", str(exc))
+            return False
+        self._apply_generation_model_choices()
+        self._log(f"生成モデル登録: {len(self._registered_models)}件")
+        return True
+
     def _apply_generation_model_choices(self) -> None:
         self._sync_h3_model_picker()
         if hasattr(self, "_mode_boxes") and hasattr(self, "anima_model"):
             self._refresh_image_picker()
         if self.generation_inventory is None:
             return
-        choices = core.installed_model_choices(self.generation_inventory)
+        choices = core.installed_model_choices(self.generation_inventory, getattr(self, "_registered_models", ()))
         # Preserve selected values even when a model was removed.
         checkpoint = [name for name in choices["sdxl"]
                       if self._active_workflow() == "wai_t2i_basic" or core.sdxl_checkpoint_kind(name) != "turbo"]
@@ -2222,6 +2283,9 @@ class Application:
             )
             if text_only_h3 and not continuous:
                 overrides = core.h3_text_model_options(overrides)
+            if selected == core.QWEN_T2I_ID and hasattr(self, "qwen_model") and self.qwen_model.get():
+                overrides["checkpoint_model"] = self.qwen_model.get()
+                core.split_checkpoint_option(overrides, {selected})
             if selected == ANIMA_ID:
                 overrides["checkpoint_model"] = self.anima_model.get()
                 core.split_checkpoint_option(overrides, {selected})
@@ -2862,11 +2926,17 @@ class Application:
         if url == self.comfy_url.get().strip():
             self.generation_inventory = inventory
             self._apply_generation_model_choices()
-            choices = core.installed_model_choices(inventory)
-            self._log(f"ComfyUIモデル: SDXL {len(choices['sdxl'])}件 / H3 {len(choices['h3'])}件")
+            choices = core.installed_model_choices(inventory, getattr(self, "_registered_models", ()))
+            manager = getattr(self, "model_manager", None)
+            if manager is not None and manager.winfo_exists():
+                manager.update_inventory(inventory)
+            self._log(f"ComfyUIモデル: SDXL {len(choices['sdxl'])}件 / Anima {len(choices['anima'])}件 / H3 {len(choices['h3'])}件")
 
     def _on_event_generation_models_error(self, data):
         self._log("ComfyUIモデル一覧を更新できません: " + data)
+        manager = getattr(self, "model_manager", None)
+        if manager is not None and manager.winfo_exists():
+            manager.status.set("再検出失敗: " + data[:140])
 
     def _on_event_models(self, data):
         names = [item["key"] for item in data]

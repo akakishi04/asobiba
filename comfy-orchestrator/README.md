@@ -713,6 +713,14 @@ AnimaはComfyUI標準のUNETLoader、CLIPLoader（stable_diffusion）、VAELoade
 
 公式: https://docs.comfy.org/tutorials/image/anima/anima 。生成時の事前検証で必要なローダーやファイルが不足していればエラーにします。プロンプト確認のみではモデルをロード・検証しません。Animaは当面タグ形式を実行用に選択し、自然文形式も既存の両形式バンドルに保持します。画像調整・同条件再生成も保存されたモデル名を利用します。Anima I2I・ControlNet、未知系列の手動登録、H3 VAEの独立選択は別工程です。
 
+### 生成モデル管理（手動登録）
+
+上部の「生成モデル管理…」を開くと、ComfyUIで検出済みのsafetensorsを対応系列へ明示登録できます。Illustrious互換SDXL、SDXL Turbo、Anima、Qwen-Image 2512互換（標準）、H3 FL2VA/T2VA、H3 Ref2VA、H3 Turbo内蔵Euler 8stepのFL2VA/Ref2VA/Hybridに対応します。モデルの配布元が指定する互換系列と入力方式を選択してください。登録で新しいアーキテクチャの対応が自動生成されるわけではありません。
+
+Steps・CFGの既定値は任意指定（未指定は系列既定、Turboの固定条件を除く）。登録したモデルは画像またはH3のモデル選択欄へ追加され、対応する固定グラフを使用します。H3の登録Euler 8stepはsimple scheduler、Video Shift 12 / Audio Shift 3、追加Turboなし。Hybridは開始フレームと参考画像を切り替え、FL2VA専用/Ref2VA専用はその入力方式のみ。既存10Erosの高速化設定やVAEは変更しません。登録はファイルのアーキテクチャ自体を検証するものではありません。ComfyUIの事前検証では実ファイルの存在・必要ノードを確認します。
+
+登録内容はローカルの data/model_registry.json に保存（Git管理外）。登録解除はファイルを削除しません。既存履歴、選択中のモデルや保存済みジョブには登録時の系列と実ファイル名が残るため、登録解除や既定値変更で過去の再生成条件は変化しません。登録ファイルが壊れている場合は上書きせずエラーを表示します。ComfyUIにファイルを追加した後は管理画面でモデル再検出してください。
+
 ### 画像プロンプトの2形式保持
 
 LM Studioによる対応画像の新規解釈では、同じ自然文・参照情報からタグ形式（SDXL系）と自然文形式（Qwen系）のPositive/Negativeを1回の計画応答で生成します。実行には選択ワークフローの形式だけを使い、両形式は履歴・ジョブのparameters_json内のimage_prompt_bundleに保存します。LLMが別形式を返さない場合や不正な場合は実行用だけを保持し、ログに記録します。動画・旧Ollamaは従来どおりです。
