@@ -72,6 +72,31 @@ class ImageReasoningTests(unittest.TestCase):
         self.assertEqual(calls[1][0], "/v1/chat/completions")
         self.assertIn("response_format", calls[1][1])
 
+    def test_on_uses_advertised_reasoning(self):
+        self.settings["image_reasoning"] = "on"
+        for options, expected in ((["off", "on"], "on"), (["low", "medium", "high"], "medium")):
+            with self.subTest(options=options):
+                calls, notes = self.run_plan(ANIMA_ID, options)
+                self.assertEqual(calls[1][0], "/api/v1/chat")
+                self.assertEqual(calls[1][1]["reasoning"], expected)
+                self.assertTrue(any("思考ON" in line for line in notes))
+
+    def test_auto_or_unsupported_on_keeps_structured_output(self):
+        for preference, options in (("auto", ["off", "on"]), ("on", ["off"])):
+            self.settings["image_reasoning"] = preference
+            calls, notes = self.run_plan(ANIMA_ID, options)
+            self.assertEqual(calls[1][0], "/v1/chat/completions")
+            self.assertIn("response_format", calls[1][1])
+            self.assertTrue(any("モデル既定" in line for line in notes))
+
+    def test_outfit_fidelity_is_included_in_paired_prompt_policy(self):
+        calls, _ = self.run_plan(ANIMA_ID, ["off", "on"])
+        system = calls[1][1]["system_prompt"]
+        for value in ("APPEARANCE AND COSTUME FIDELITY", "layers and their order",
+                      "accessory location", "BOTH standalone positive prompts",
+                      "pose/composition-only references"):
+            self.assertIn(value, system)
+
     def test_video_keeps_existing_inference_route(self):
         calls, _ = self.run_plan(core.WAN_I2V_ID, ["off", "on"])
         self.assertEqual(calls[1][0], "/v1/chat/completions")

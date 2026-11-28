@@ -22,7 +22,8 @@ from .image_prompts import dual_policy, extend_schema, supports_plan, split_plan
 from .character_refs import observation_schema, intersection_schema, validate_images
 from .character_repair import repair_model_analysis
 from .model_runtime import record_model_event
-from .prompt_inference import structured_payload, read_json_reply, request_validated
+from .prompt_inference import (structured_payload, read_json_reply, request_validated,
+                               image_reasoning_option, image_reasoning_description)
 from . import h3_prompt
 from .prompt_profiles import (
     DEFAULT_T2I_PROFILE, T2I_PROFILE_LEGACY,
@@ -140,6 +141,7 @@ class LMStudio:
         reasoning = capabilities.get("reasoning") if isinstance(capabilities, dict) else None
         options = reasoning.get("allowed_options") if isinstance(reasoning, dict) else None
         self._reasoning_options = tuple(v for v in options if isinstance(v, str)) if isinstance(options, list) else ()
+        self._reasoning_default = reasoning.get("default") if isinstance(reasoning, dict) else None
         if self.settings.get("send_reference_to_llm", False) and getattr(self, "_has_visual_input", False):
             # Older LM Studio versions may not report capabilities; only reject
             # models explicitly identified as text-only.
@@ -465,9 +467,9 @@ class LMStudio:
                 )
             system += dual_policy(workflows)
             schema = extend_schema(plan_schema(workflows), workflows)
-            if supports_plan(workflows) and "off" in getattr(self, "_reasoning_options", ()):
-                # Visual observations are already text at this point. Native
-                # reasoning=off is advertised by the selected model, not guessed.
+            if supports_plan(workflows) and image_reasoning_option(self) is not None:
+                # Visual observations are already text. Use only the advertised
+                # reasoning capability selected by the user.
                 def validate(reply):
                     clean, _ = split_plan(reply, workflows)
                     selected = clean.get("workflow_id")
@@ -479,7 +481,7 @@ class LMStudio:
                                          schema, "comfy_plan", validate, progress,
                                          direct_answer=True)
             if supports_plan(workflows) and progress:
-                progress("画像プロンプト: 思考OFF指定を確認できないモデル（従来の構造化出力）")
+                progress("画像プロンプト: " + image_reasoning_description(self))
             request = structured_payload(
                 instance_id, [{"role": "system", "content": system}, message],
                 "comfy_plan", schema,

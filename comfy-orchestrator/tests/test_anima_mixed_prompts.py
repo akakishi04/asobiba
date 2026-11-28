@@ -90,7 +90,7 @@ class AnimaMixedPromptTests(unittest.TestCase):
             {"format": "tags", "field": "positive_prompt", "old": "long hair", "new": "short hair"},
             {"format": "natural", "field": "positive_prompt", "old": "long black hair", "new": "short black hair"},
         ]
-        def reply(client, instance, system, payload, schema, name, validator, *args):
+        def reply(client, instance, system, payload, schema, name, validator, *args, **kwargs):
             self.assertIn("ANIMA MIXED CONDITIONING", system)
             return validator({"edits": edits})
         with patch.object(draft, "_session", side_effect=lambda action: action(None, None)), \

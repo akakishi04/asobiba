@@ -58,7 +58,7 @@ class ImagePromptBundleTests(unittest.TestCase):
             {"format": "tags", "field": "positive_prompt", "old": "long hair", "new": "short hair"},
             {"format": "natural", "field": "positive_prompt", "old": "long black hair", "new": "short black hair"},
         ]
-        def response(client, instance, system, payload, schema, name, validator, *args):
+        def response(client, instance, system, payload, schema, name, validator, *args, **kwargs):
             return validator({"edits": edits})
         with patch.object(p, "request_validated", side_effect=response):
             updated = p.revise_bundle(draft, "髪を短く")
@@ -72,7 +72,7 @@ class ImagePromptBundleTests(unittest.TestCase):
         draft = SimpleNamespace(parameters={**self.tags, "seed": 12}, workflow_id=self.workflow,
             request="窓辺の女性", controller=SimpleNamespace(note=None, cancel_event=None),
             _session=lambda action: action(None, None))
-        def response(client, instance, system, payload, schema, name, validator, *args):
+        def response(client, instance, system, payload, schema, name, validator, *args, **kwargs):
             self.assertIn(p.ALT, schema["required"])
             return validator({"edits": [], p.ALT: self.natural})
         with patch.object(p, "request_validated", side_effect=response):

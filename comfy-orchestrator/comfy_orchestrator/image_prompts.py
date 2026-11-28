@@ -20,6 +20,21 @@ FORMATS = ("tags", "natural")
 LABELS = {"tags": "タグ形式", "natural": "自然文形式"}
 MIXED_VERSION = 2
 
+CLOTHING_FIDELITY_POLICY = (
+    "\nAPPEARANCE AND COSTUME FIDELITY: Treat explicitly requested or user-approved "
+    "character appearance and outfit details as high-priority visual constraints, not style suggestions. "
+    "Keep each specified garment and accessory distinct: garment type, exact color, cut, collar, "
+    "sleeve length, hem, layers and their order, trim, patterns, fasteners, footwear, material, "
+    "left/right asymmetry and accessory location when specified. Do not collapse them into generic "
+    "words such as uniform, dress or casual clothes. Preserve which garment belongs to which subject. "
+    "Use concrete visible descriptions in BOTH standalone positive prompts; include a named character "
+    "or outfit identifier if requested, but never rely on the name alone when details are provided. "
+    "Do not add or replace clothing to match a default style. Do not introduce contradictory colors, "
+    "layers or negatives. Give explicit costume attributes priority over decorative quality tags. "
+    "A newer explicit user instruction overrides only the affected approved trait; preserve the rest. "
+    "Never guess unspecified or unseen details, or copy clothes from pose/composition-only references."
+)
+
 
 def prompt_format(workflow_id):
     return "tags" if workflow_id in SDXL_WORKFLOW_IDS or workflow_id == ANIMA_ID else "natural" if workflow_id in QWEN_IDS else None
@@ -79,6 +94,7 @@ def dual_policy(workflows):
         "requested edits semantically aligned. Preserve unknowns; do not invent reference details. "
         "Do not put the alternative into parameters. Do not output Japanese or model settings."
     )
+    policy += CLOTHING_FIDELITY_POLICY
     if ANIMA_ID in workflows:
         policy += anima_policy()
     return policy
@@ -265,6 +281,7 @@ def revise_bundle(draft, instruction):
         "If alternate_prompt is required, produce the missing format from the resulting intent "
         "and edited active prompt. Never invent unseen visual details or output settings."
     )
+    system += CLOTHING_FIDELITY_POLICY
     if draft.workflow_id == ANIMA_ID:
         system += anima_policy()
     payload = json.dumps({"original_request": draft.request, "current_prompts": prompts,
@@ -284,6 +301,6 @@ def revise_bundle(draft, instruction):
 
     result = draft._session(lambda client, instance: request_validated(
         client, instance, system, payload, schema, "image_prompt_patch", validate,
-        draft.controller.note, draft.controller.cancel_event))
+        draft.controller.note, draft.controller.cancel_event, direct_answer=True))
     check_cancel(draft.controller.cancel_event)
     return result

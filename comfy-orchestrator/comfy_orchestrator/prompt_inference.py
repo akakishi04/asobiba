@@ -11,6 +11,38 @@ import re
 from .parameters import OrchestratorError
 
 
+IMAGE_REASONING_LABELS = {"off": "OFF", "on": "ON", "auto": "自動"}
+IMAGE_REASONING_BY_LABEL = {label: key for key, label in IMAGE_REASONING_LABELS.items()}
+
+
+def image_reasoning_option(client):
+    """Return only an actual capability advertised by the loaded model."""
+    preference = client.settings.get("image_reasoning", "off")
+    options = getattr(client, "_reasoning_options", ())
+    if preference == "off":
+        return "off" if "off" in options else None
+    if preference == "on":
+        default = getattr(client, "_reasoning_default", None)
+        if "on" in options:
+            return "on"
+        if default in ("low", "medium", "high") and default in options:
+            return default
+        return next((effort for effort in ("medium", "low", "high") if effort in options), None)
+    return None
+
+
+def image_reasoning_description(client):
+    option = image_reasoning_option(client)
+    preference = client.settings.get("image_reasoning", "off")
+    if option == "off":
+        return "思考OFF（LM Studio native API）"
+    if option is not None:
+        return f"思考ON ({option} / LM Studio native API)"
+    if preference == "auto":
+        return "思考自動（モデル既定）"
+    return f"思考{preference.upper()}指定非対応（モデル既定・従来の構造化出力）"
+
+
 def structured_payload(instance_id, messages, name, schema, *, max_tokens=4096, temperature=0.2):
     """Construct the same OpenAI-compatible JSON contract for all planners."""
     return {
@@ -50,11 +82,13 @@ def check_cancel(cancel_event):
 def request_validated(client, instance_id, system, user_content, response_schema, name, validator, progress=None,
            cancel_event=None, *, translation_chars=None, direct_answer=False):
     from .lmstudio import _request
-    # Translation and explicitly opted-in still-image planning can disable
-    # reasoning. Keep the existing video-planning contract unchanged.
+    # Translation always opts out of reasoning when supported. Still-image
+    # planning and rewriting use the user preference; video stays unchanged.
     translating = translation_chars is not None
     max_tokens = client.settings.get("max_tokens", 4096)
-    native = (translating or direct_answer) and "off" in getattr(client, "_reasoning_options", ())
+    reasoning = ("off" if "off" in getattr(client, "_reasoning_options", ()) else None) if translating else (
+        image_reasoning_option(client) if direct_answer else None)
+    native = reasoning is not None
     label = name if direct_answer else "H3 " + name
     if translating:
         # Scale with source length, not the worst-case JSON field limit.
@@ -65,11 +99,12 @@ def request_validated(client, instance_id, system, user_content, response_schema
         if progress:
             method = "思考OFF（LM Studio native API）" if native else "思考OFF指定を確認できないモデル（短い出力上限）"
             progress(f"H3 {name}: {method} / 最大{max_tokens} tokens")
-    if direct_answer:
-        system += "\nReturn the completed JSON directly. Do not output analysis, discussion or alternatives."
+    if direct_answer and not translating:
+        system += ("\nReturn only the completed JSON as the final answer; no commentary outside JSON."
+                   if reasoning != "off" else
+                   "\nAnswer directly. Return only the completed JSON; no analysis or alternatives.")
         if progress:
-            method = "思考OFF（LM Studio native API）" if native else "思考OFF非対応・従来の構造化出力"
-            progress(f"画像プロンプト: {method} / 最大{max_tokens} tokens")
+            progress(f"画像プロンプト: {image_reasoning_description(client)} / 最大{max_tokens} tokens")
     if native:
         # The native API has no response_format; validate the actual final
         # answer against the host contract instead of trusting model text.
@@ -85,7 +120,7 @@ def request_validated(client, instance_id, system, user_content, response_schema
                     reply = _request(client.settings, "/api/v1/chat", {
                         "model": instance_id, "system_prompt": system + feedback,
                         "input": user_content, "stream": False, "store": False,
-                        "reasoning": "off", "temperature": 0.0 if translating else 0.2,
+                        "reasoning": reasoning, "temperature": 0.0 if translating else 0.2,
                         "max_output_tokens": max_tokens,
                     })
                 output = reply.get("output")

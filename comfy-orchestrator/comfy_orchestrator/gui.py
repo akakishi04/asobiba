@@ -43,6 +43,7 @@ from .timeline import (plan_long_prompts, CUSTOM_CUTS, validate_cut_frames,
 from .timeline_ui import edit_cut_durations
 from .project_ui import ProjectWorkspace
 from .prompt_edit import edit_prompts
+from .prompt_inference import IMAGE_REASONING_LABELS, IMAGE_REASONING_BY_LABEL
 from .mode_settings import ModeSettings
 from .input_snapshot import copy_frozen_asset
 from .mask_editor import edit_mask
@@ -212,6 +213,7 @@ class Application:
         self.comfy_url = tk.StringVar(value=comfy.get("base_url", "http://127.0.0.1:8188"))
         self.use_prompt_cache = tk.BooleanVar(value=options.get("use_prompt_cache", True))
         self.model = tk.StringVar(value="" if llm.get("model") == "SELECT_IN_GUI" else llm.get("model", ""))
+        self.image_reasoning = tk.StringVar(value=IMAGE_REASONING_LABELS.get(llm.get("image_reasoning", "off"), "OFF"))
         workflows = list(self.config.get("workflows", {}))
         preferred = options.get("workflow", workflows[0] if workflows else "自動")
         mode = options.get("generation_mode", workflow_generation_mode(self.config, preferred))
@@ -394,6 +396,11 @@ class Application:
             box.pack(side="left", fill="x", expand=True)
             box.bind("<<ComboboxSelected>>", self._on_workflow_choice)
             self._mode_boxes[mode] = box
+            if mode == "image":
+                ttk.Label(page, text="LLM思考").pack(side="left", padx=(10, 4))
+                self.image_reasoning_box = ttk.Combobox(page, textvariable=self.image_reasoning,
+                    values=tuple(IMAGE_REASONING_LABELS.values()), state="readonly", width=5)
+                self.image_reasoning_box.pack(side="left")
         self._sync_workflow_choice()
         self.generation_tabs.bind("<<NotebookTabChanged>>", self._on_generation_tab_changed)
 
@@ -1464,6 +1471,8 @@ class Application:
         config["llm"]["base_url"] = self.llm_url.get().strip()
         config["llm"]["model"] = self.model.get().strip() or "SELECT_IN_GUI"
         config["llm"]["unload_after_inference"] = self.unload_llm.get()
+        if hasattr(self, "image_reasoning"):
+            config["llm"]["image_reasoning"] = IMAGE_REASONING_BY_LABEL[self.image_reasoning.get()]
         config["llm"]["send_reference_to_llm"] = self.vision_composition.get()
         config["llm"]["t2i_prompt_profile"] = T2I_LABEL_TO_PROFILE[
             self.t2i_profile.get()
@@ -1797,6 +1806,8 @@ class Application:
         cfg = copy.deepcopy(self.config)
         cfg["llm"].update(base_url=self.llm_url.get().strip(), model=self.model.get().strip() or "SELECT_IN_GUI",
                           unload_after_inference=self.unload_llm.get(), send_reference_to_llm=False)
+        if hasattr(self, "image_reasoning"):
+            cfg["llm"]["image_reasoning"] = IMAGE_REASONING_BY_LABEL[self.image_reasoning.get()]
         cfg["comfyui"].update(base_url=self.comfy_url.get().strip(), free_before_llm=self.free_comfy.get())
         for name in ("llm", "comfyui"):
             try:
@@ -1829,6 +1840,7 @@ class Application:
                 on_action=self._adjust_action, on_close=self._close_adjust,
                 on_cancel=self._request_cancel, status=self.status,
                 registrations=getattr(self, "_registered_models", ()),
+                reasoning_variable=self.image_reasoning,
             )
             self.adjust_window.set_busy(True, own_task=True)
             self.status.set("画像調整")
@@ -1843,6 +1855,8 @@ class Application:
         draft = self.adjust_draft
         if draft is None or operation not in ("generate", "translate", "apply", "regenerate"):
             return
+        if operation == "regenerate" and hasattr(self, "image_reasoning"):
+            draft.controller.config["llm"]["image_reasoning"] = IMAGE_REASONING_BY_LABEL[self.image_reasoning.get()]
         self._adjust_operation = operation
         self._set_busy("画像調整: 生成中" if operation == "generate" else "画像調整: プロンプト編集中")
         usage = {"action": "adjust_" + operation, "mode": "image",
@@ -2774,6 +2788,8 @@ class Application:
             return
         draft = self.single_draft
         cache = self.project_workspace.translation_cache
+        if operation == "regenerate" and hasattr(self, "image_reasoning"):
+            draft.controller.config["llm"]["image_reasoning"] = IMAGE_REASONING_BY_LABEL[self.image_reasoning.get()]
         if operation == "generate":
             context = draft.context
             self.review.begin(request_text=draft.request, profile=context["prompt_profile"],
@@ -3030,6 +3046,7 @@ class Application:
                     self.root, self.single_draft, self.project_workspace.translation_cache,
                     on_action=self._single_prompt_action, on_close=self._close_single_prompt,
                     on_cancel=self._request_cancel, status=self.status,
+                    reasoning_variable=self.image_reasoning,
                 )
             else:
                 self.single_window.set_busy(False)

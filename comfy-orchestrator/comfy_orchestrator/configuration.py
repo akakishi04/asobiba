@@ -44,6 +44,9 @@ def load_config(path: Path) -> dict:
             or not 30 <= inference_timeout <= 3600
         ):
             raise OrchestratorError("llm.inference_timeout_seconds は30～3600秒の数値です")
+        image_reasoning = config["llm"].get("image_reasoning", "off")
+        if image_reasoning not in ("off", "on", "auto"):
+            raise OrchestratorError("llm.image_reasoning は off、on、auto のいずれかです")
         output_tokens = config["llm"].get("max_tokens", 4096)
         if isinstance(output_tokens, bool) or not isinstance(output_tokens, int) or not 1 <= output_tokens <= 32768:
             raise OrchestratorError("llm.max_tokens は1～32768の整数です")

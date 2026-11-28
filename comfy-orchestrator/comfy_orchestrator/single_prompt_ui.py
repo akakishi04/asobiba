@@ -10,10 +10,11 @@ from .single_prompt import LABELS
 from . import image_prompts
 from .model_profiles import ANIMA_ID
 from .prompt_viewer import show_image_prompt_formats
+from .prompt_inference import IMAGE_REASONING_LABELS
 
 
 class SinglePromptWindow(tk.Toplevel):
-    def __init__(self, parent, draft, cache, *, on_action, on_close, on_cancel, status):
+    def __init__(self, parent, draft, cache, *, on_action, on_close, on_cancel, status, reasoning_variable=None):
         super().__init__(parent)
         self.title("プロンプト確認")
         self.transient(parent)
@@ -51,6 +52,12 @@ class SinglePromptWindow(tk.Toplevel):
             self.formats_button.pack(side="right", padx=(6, 0))
         footer = ttk.Frame(panel)
         footer.pack(side="bottom", fill="x", pady=(6, 0))
+        self.reasoning_box = None
+        if reasoning_variable is not None and image_prompts.prompt_format(draft.workflow_id) is not None:
+            ttk.Label(footer, text="LLM思考").pack(side="left")
+            self.reasoning_box = ttk.Combobox(footer, textvariable=reasoning_variable,
+                values=tuple(IMAGE_REASONING_LABELS.values()), state="readonly", width=5)
+            self.reasoning_box.pack(side="left", padx=(4, 6))
         self.generate_button = ttk.Button(footer, text="生成", command=lambda: self._act("generate"))
         self.generate_button.pack(side="right")
         self.close_button = ttk.Button(footer, text="閉じる", command=self._close)
@@ -127,6 +134,8 @@ class SinglePromptWindow(tk.Toplevel):
         self.revert_button.configure(state="disabled" if busy else "normal")
         self.cancel_button.configure(state="normal" if busy else "disabled")
         self.language_box.configure(state="disabled" if busy else "readonly")
+        if self.reasoning_box is not None:
+            self.reasoning_box.configure(state="disabled" if busy else "readonly")
 
     def _switch(self, _event=None):
         desired = self.language.get()

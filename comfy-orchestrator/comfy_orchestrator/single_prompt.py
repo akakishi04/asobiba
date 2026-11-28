@@ -232,6 +232,8 @@ class SinglePromptDraft:
                           "existing English and the user's optional repair instruction. Preserve "
                           "unspecified content, negative conditions and identity. Do not add settings. ")
             system += format_hint
+            if operation == "regenerate" and image_prompts.prompt_format(self.workflow_id) is not None:
+                system += image_prompts.CLOTHING_FIDELITY_POLICY
             def validate(reply):
                 if set(reply) != set(keys):
                     raise OrchestratorError("プロンプトの項目が一致しません")
@@ -249,6 +251,7 @@ class SinglePromptDraft:
                 "single_prompt_edit" if operation == "apply" else "single_prompt_rewrite",
                 validate, self.controller.note, self.controller.cancel_event,
                 translation_chars=sum(map(len, japanese.values())) if operation == "apply" else None,
+                direct_answer=operation == "regenerate" and image_prompts.prompt_format(self.workflow_id) is not None,
             )
             check_cancel(self.controller.cancel_event)
             # A cancelled or failed back-translation cannot publish half an edit.

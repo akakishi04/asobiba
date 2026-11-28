@@ -12,6 +12,7 @@ from .parameters import OrchestratorError
 from .single_prompt import LABELS
 from . import image_prompts
 from .prompt_viewer import show_image_prompt_formats
+from .prompt_inference import IMAGE_REASONING_LABELS
 from .model_profiles import ANIMA_ID, ANIMA_BASE, QWEN_ID, anima_model_name
 from .model_registry import parse_image_key, model_display, recommended
 from .workflow_registry import sdxl_checkpoint_kind
@@ -22,7 +23,8 @@ FIELD_LABELS = {"width": "幅", "height": "高さ", "steps": "Steps", "cfg": "CF
 
 
 class ImageAdjustWindow(tk.Toplevel):
-    def __init__(self, parent, draft, cache, models, *, on_action, on_close, on_cancel, status, registrations=()):
+    def __init__(self, parent, draft, cache, models, *, on_action, on_close, on_cancel, status,
+                 registrations=(), reasoning_variable=None):
         super().__init__(parent)
         self.title("画像調整 | Asobiba")
         self.geometry("1260x760")
@@ -116,8 +118,16 @@ class ImageAdjustWindow(tk.Toplevel):
                                                      undo=True, font=("Meiryo UI", 11))
         self.instruction.pack(fill="x", pady=(0, 4))
         install_native_ime_font(self.instruction)
-        self.rewrite_button = ttk.Button(prompt, text="プロンプトに反映", command=lambda: self._act("regenerate"))
-        self.rewrite_button.pack(anchor="e", pady=(0, 6))
+        rewrite_row = ttk.Frame(prompt)
+        rewrite_row.pack(fill="x", pady=(0, 6))
+        self.reasoning_box = None
+        if reasoning_variable is not None:
+            ttk.Label(rewrite_row, text="LLM思考").pack(side="left")
+            self.reasoning_box = ttk.Combobox(rewrite_row, textvariable=reasoning_variable,
+                values=tuple(IMAGE_REASONING_LABELS.values()), state="readonly", width=5)
+            self.reasoning_box.pack(side="left", padx=4)
+        self.rewrite_button = ttk.Button(rewrite_row, text="プロンプトに反映", command=lambda: self._act("regenerate"))
+        self.rewrite_button.pack(side="right")
         for key in draft.fields:
             label = ttk.Label(prompt, text=LABELS[key])
             label.pack(anchor="w")
@@ -286,6 +296,8 @@ class ImageAdjustWindow(tk.Toplevel):
                        self.formats_button):
             widget.configure(state=state)
         self.language_box.configure(state="disabled" if busy else "readonly")
+        if self.reasoning_box is not None:
+            self.reasoning_box.configure(state="disabled" if busy else "readonly")
         self.apply_button.configure(state="normal" if not busy and self._display_language == "日本語" else "disabled")
         self.cancel_button.configure(state="normal" if busy and own_task else "disabled")
         fixed = self.draft.fixed_sampler(self._checkpoint() or "")
