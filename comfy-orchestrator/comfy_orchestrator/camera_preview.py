@@ -90,10 +90,11 @@ def segments(spec, width, height):
     tube([ring(1.51,.07,.065),ring(1.58,.067,.065),
           ring(1.62,.09,.09),ring(1.71,.12,.11),
           ring(1.80,.105,.095),ring(1.85,.045,.045)])
-    # Nose and face-direction mark distinguish front/rear/profile.
-    line((-.058,-.106,1.735),(.058,-.106,1.735),"front")
-    line((0,-.106,1.735),(0,-.145,1.69),"front")
-    line((0,-.145,1.69),(0,-.102,1.67),"front")
+    # Face-direction mark is visible only from the front hemisphere.
+    if math.cos(az)*math.cos(el) > 0.05:
+        line((-.058,-.106,1.735),(.058,-.106,1.735),"front")
+        line((0,-.106,1.735),(0,-.145,1.69),"front")
+        line((0,-.145,1.69),(0,-.102,1.67),"front")
 
     def limb(points, radii):
         rings = []

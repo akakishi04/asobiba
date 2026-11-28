@@ -83,7 +83,7 @@ def split(parameters, workflow_ids):
 
 def summary(spec):
     spec = normalize(spec)
-    return " / ".join(OPTIONS[k][v][0] for k, v in spec.items()) if spec else "未指定"
+    return " / ".join(LABELS[k] + ": " + OPTIONS[k][v][0] for k, v in spec.items()) if spec else "未指定"
 
 
 def clauses(spec, fmt):

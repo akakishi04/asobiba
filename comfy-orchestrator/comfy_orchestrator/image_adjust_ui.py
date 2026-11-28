@@ -31,6 +31,7 @@ class ImageAdjustWindow(tk.Toplevel):
         self.geometry("1260x760")
         self.minsize(880, 560)
         self.draft, self.cache = draft, cache
+        self.status = status
         self.models = tuple(models)
         self.registrations = tuple(registrations)
         self.on_action, self.on_close = on_action, on_close
