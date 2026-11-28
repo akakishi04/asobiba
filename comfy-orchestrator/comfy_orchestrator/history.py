@@ -45,6 +45,8 @@ class HistoryEntry:
     character_analysis: dict | None = None
     favorite: bool = False
     archived: bool = False
+    comparison_group_id: str | None = None
+    comparison_index: int | None = None
 
     @property
     def first_image(self) -> Path | None:
@@ -110,10 +112,14 @@ class HistoryStore:
             columns = {row[1] for row in con.execute("PRAGMA table_info(generations)")}
             for column in (
                 "mask_file", "pose_file", "composition_file", "prompt_profile",
-                "character_files_json", "character_data_json",
+                "character_files_json", "character_data_json", "comparison_group_id",
             ):
                 if column not in columns:
                     con.execute(f"ALTER TABLE generations ADD COLUMN {column} TEXT")
+            if "comparison_index" not in columns:
+                con.execute("ALTER TABLE generations ADD COLUMN comparison_index INTEGER")
+            con.execute("CREATE INDEX IF NOT EXISTS history_comparison_idx "
+                        "ON generations(comparison_group_id, comparison_index)")
             for name in ("favorite", "archived"):
                 if name not in columns:
                     con.execute(f"ALTER TABLE generations ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0")
@@ -159,7 +165,14 @@ class HistoryStore:
         character_references: tuple[Path, ...] | list[Path] = (),
         character_traits: str | None = None,
         character_analysis: dict | None = None,
+        comparison_group_id: str | None = None,
+        comparison_index: int | None = None,
     ) -> HistoryEntry:
+        if comparison_group_id is not None or comparison_index is not None:
+            import re
+            if (not isinstance(comparison_group_id, str) or re.fullmatch(r"[0-9a-f]{32}", comparison_group_id) is None
+                    or type(comparison_index) is not int or not 0 <= comparison_index < 4 or kind != "t2i"):
+                raise HistoryError("画像比較グループ情報が不正です")
         if not isinstance(parameters, dict):
             raise HistoryError("履歴の生成設定はJSONオブジェクトである必要があります")
         if not images:
@@ -232,8 +245,8 @@ class HistoryStore:
                 con.execute(
                     """INSERT INTO generations
                     (id,created_at,prompt_id,workflow_id,kind,request_text,
-                     parameters_json,images_json,reference_file,legacy,mask_file,pose_file,composition_file,prompt_profile,character_files_json,character_data_json)
-                    VALUES (?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?)""",
+                     parameters_json,images_json,reference_file,legacy,mask_file,pose_file,composition_file,prompt_profile,character_files_json,character_data_json,comparison_group_id,comparison_index)
+                    VALUES (?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?)""",
                     (
                         row_id, now, prompt_id, workflow_id, kind, request_text,
                         json.dumps(parameters, ensure_ascii=False),
@@ -241,7 +254,7 @@ class HistoryStore:
                         reference_file, mask_file, pose_file, composition_file,
                         prompt_profile,
                         json.dumps(character_files) if refs else None,
-                        character_data_json,
+                        character_data_json, comparison_group_id, comparison_index,
                     ),
                 )
         except Exception:
@@ -338,6 +351,7 @@ class HistoryStore:
                 character_data["analysis"] if character_data else None
             ),
             favorite=bool(row["favorite"]), archived=bool(row["archived"]),
+            comparison_group_id=row["comparison_group_id"], comparison_index=row["comparison_index"],
         )
 
     def list_entries(self, limit: int = 200) -> list[HistoryEntry]:
@@ -448,6 +462,12 @@ class HistoryStore:
         with self._connection() as con:
             row = con.execute("SELECT * FROM generations WHERE id = ?", (entry_id,)).fetchone()
         return self._read_row(row) if row is not None else None
+
+    def comparison_entries(self, group_id: str) -> tuple[HistoryEntry, ...]:
+        with self._connection() as con:
+            rows = con.execute("SELECT * FROM generations WHERE comparison_group_id = ? "
+                               "ORDER BY comparison_index, created_at, id", (group_id,)).fetchall()
+        return tuple(self._read_row(row) for row in rows)
 
     def find_by_prompt_id(self, prompt_id: str) -> HistoryEntry | None:
         with self._connection() as con:

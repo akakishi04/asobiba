@@ -23,7 +23,8 @@ def active_aux_inputs(kind, mask, pose, composition):
 def record_history(config, history_store, journal, result, images, request_text,
                    source_image=None, mask_image=None, pose_image=None, composition_image=None,
                    prompt_profile=None, character_references=(), character_traits=None,
-                   character_analysis=None, *, progress=None):
+                   character_analysis=None, *, progress=None,
+                   comparison_group_id=None, comparison_index=None):
     def note(message):
         if progress:
             progress(message)
@@ -44,6 +45,8 @@ def record_history(config, history_store, journal, result, images, request_text,
             character_references = ctx["character_references"]
             character_traits = ctx.get("character_traits")
             character_analysis = ctx.get("character_analysis")
+            comparison_group_id = ctx.get("comparison_group_id")
+            comparison_index = ctx.get("comparison_index")
         entry = history_store.record(
             prompt_id=result["prompt_id"],
             workflow_id=workflow_id,
@@ -59,6 +62,7 @@ def record_history(config, history_store, journal, result, images, request_text,
             character_references=character_references,
             character_traits=character_traits,
             character_analysis=character_analysis,
+            comparison_group_id=comparison_group_id, comparison_index=comparison_index,
         )
         if result.get("job_id") and journal is not None:
             try:
@@ -134,13 +138,15 @@ class GenerationController:
 
     def generate_prepared(self, request, workflow_id, parameters, *, image=None, mask_image=None,
                           pose_image=None, composition_image=None, prompt_profile=None,
-                          character_references=(), character_traits=None, character_analysis=None):
+                          character_references=(), character_traits=None, character_analysis=None,
+                          comparison_group_id=None, comparison_index=None):
         """Execute an explicitly reviewed plan, bypassing prompt interpretation."""
         kind = self.config["workflows"][workflow_id]["kind"]
         context = {"request_text": request, "prompt_profile": prompt_profile,
                    "composition_image": composition_image,
                    "character_references": character_references,
-                   "character_traits": character_traits, "character_analysis": character_analysis}
+                   "character_traits": character_traits, "character_analysis": character_analysis,
+                   "comparison_group_id": comparison_group_id, "comparison_index": comparison_index}
         result = core.execute_saved(
             self.config, self.config_path, workflow_id, parameters,
             reference_image=image, mask_image=mask_image, pose_image=pose_image,
