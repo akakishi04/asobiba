@@ -18,6 +18,7 @@ from .parameters import OrchestratorError
 from .http_api import _open_json
 from .llm_usage import measured_request
 from .workflow_registry import plan_schema, HOST_VIDEO_IDS, H3_I2V_ID, QWEN_IDS
+from .image_prompts import dual_policy, extend_schema
 from .character_refs import observation_schema, intersection_schema, validate_images
 from .character_repair import repair_model_analysis
 from .model_runtime import record_model_event
@@ -462,9 +463,10 @@ class LMStudio:
                     f"LM Studio: {task_label}"
                     f"（応答待ち上限 {self.settings.get('inference_timeout_seconds', 600)} 秒）"
                 )
+            system += dual_policy(workflows)
             request = structured_payload(
                 instance_id, [{"role": "system", "content": system}, message],
-                "comfy_plan", plan_schema(workflows),
+                "comfy_plan", extend_schema(plan_schema(workflows), workflows),
                 max_tokens=self.settings.get("max_tokens", 4096),
             )
             result = _request(self.settings, "/v1/chat/completions", request)

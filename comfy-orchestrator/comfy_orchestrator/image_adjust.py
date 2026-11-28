@@ -8,6 +8,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from .input_snapshot import copy_frozen_asset
+from . import image_prompts
 from .output_collection import IMAGE_EXTENSIONS
 from .parameters import PARAMS, OrchestratorError, check_param
 from .prompt_inference import check_cancel
@@ -48,6 +49,7 @@ def _validated(workflows, workflow_id, parameters, assets):
     if IMAGE_INPUTS.intersection(binds) != supplied_inputs(
             assets.get("image"), assets.get("mask_image"), assets.get("pose_image")):
         raise OrchestratorError("元の参照画像・マスク・ポーズ画像が揃っていません")
+    parameters, bundle = image_prompts.split_saved(parameters, workflow_id)
     params, model = split_checkpoint_option(parameters, {workflow_id})
     if "seed" in binds and "seed" not in params:
         raise OrchestratorError("保存されたSeedがありません")
@@ -62,7 +64,7 @@ def _validated(workflows, workflow_id, parameters, assets):
     for key in binds:
         if key not in IMAGE_INPUTS and key not in params:
             raise OrchestratorError(f"保存された生成設定がありません: {key}")
-    return {**params, **model}
+    return {**params, **model, **({image_prompts.KEY: bundle} if bundle is not None else {})}
 
 
 class ImageAdjustDraft(SinglePromptDraft):
@@ -153,6 +155,13 @@ class ImageAdjustDraft(SinglePromptDraft):
         params = _validated(self.controller.config["workflows"], self.workflow_id, params, self.assets)
         self.parameters = params
 
+    def revise(self, operation, cache, *, japanese=None, instruction=""):
+        if operation != "regenerate":
+            return super().revise(operation, cache, japanese=japanese, instruction=instruction)
+        result = image_prompts.revise_bundle(self, instruction)
+        self.parameters = _validated(self.controller.config["workflows"], self.workflow_id,
+                                     result, self.assets)
+
     def generate_variant(self, *, fixed_seed=True):
         """A random seed is chosen once, and becomes visible only on success."""
         old = self.parameters
@@ -199,7 +208,7 @@ class ImageAdjustDraft(SinglePromptDraft):
         workflows = self.controller.config["workflows"]
         binds = workflows[I2I]["bindings"]
         params = {key: value for key, value in self.parameters.items()
-                  if (key in binds and key not in IMAGE_INPUTS) or key == "checkpoint_model"}
+                  if (key in binds and key not in IMAGE_INPUTS) or key in ("checkpoint_model", image_prompts.KEY)}
         assets = {"image": self.base_image, "mask_image": None,
                   "pose_image": None, "composition_image": None}
         validated = _validated(workflows, I2I, params, assets)

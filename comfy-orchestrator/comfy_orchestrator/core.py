@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 
 from .parameters import OrchestratorError, PARAMS, check_param
+from . import image_prompts
 from .jobs import (JobJournal, JobCancellationRequested, JobExecutionFailed,
                    JobSubmissionRejected, run_job)
 from .input_snapshot import freeze_generation_inputs
@@ -252,7 +253,7 @@ def execute(
             note(f"解釈キャッシュ読込失敗（通常処理を継続）: {exc}")
         if cached_plan is not None:
             try:
-                _, checked_params = validate_plan(cached_plan, workflows, image is not None)
+                _, checked_params = validate_plan(image_prompts.split_plan(cached_plan, workflows)[0], workflows, image is not None)
                 if text_only_h3:
                     effective_frames = overrides.get("frames", checked_params.get("frames"))
                     check_param("frames", effective_frames)
@@ -349,7 +350,9 @@ def execute(
             if k in ("positive_prompt", "negative_prompt")
             and any(k in e["bindings"] for e in workflows.values())
         }}
-    workflow_id, params = validate_plan(plan, workflows, image is not None)
+    clean_plan, alternate = image_prompts.split_plan(plan, workflows)
+    workflow_id, params = validate_plan(clean_plan, workflows, image is not None)
+    original_prompts = {key: params.get(key) for key in image_prompts.FIELDS}
     selection = workflows[workflow_id]
     if overrides:
         for name, value in overrides.items():
@@ -380,6 +383,14 @@ def execute(
     if checkpoint_options:
         note("SDXL: " + checkpoint_options["checkpoint_model"])
     saved_params = {**params, **h3_options, **checkpoint_options}
+    if image_prompts.supports_plan(workflows) and provider == "lmstudio":
+        if alternate is not None and all(params.get(key) == value for key, value in original_prompts.items()):
+            try:
+                saved_params[image_prompts.KEY] = image_prompts.make_bundle(workflow_id, params, alternate)
+            except OrchestratorError as exc:
+                note("別形式プロンプトを保存できません（実行用は保持）: " + str(exc))
+        else:
+            note("別形式プロンプトは未取得または直接上書きされたため未保存")
     if text_only_h3:
         saved_params["text_only_h3"] = True
     if cache_key is not None and cached_plan is None:
@@ -418,7 +429,7 @@ def execute_saved(
         raise OrchestratorError(f"保存されたワークフローが未登録です: {workflow_id}")
     if not isinstance(parameters, dict):
         raise OrchestratorError("保存された生成パラメータが不正です")
-    parameters = dict(parameters)
+    parameters, image_bundle = image_prompts.split_saved(parameters, workflow_id)
     # A host-owned explicit marker is persisted for single-clip replay. Older
     # long-project callers still use their separate text_only_h3 argument.
     saved_text_mode = "text_only_h3" in parameters
@@ -493,7 +504,8 @@ def execute_saved(
         job_context = {**(job_context or {}), "text_only_h3": True}
     return submit_prepared(
         comfy, workflow_id, selected, template, params,
-        {**params, **h3_options, **checkpoint_options, **({"text_only_h3": True} if saved_text_mode else {})},
+        {**params, **h3_options, **checkpoint_options, **({"text_only_h3": True} if saved_text_mode else {}),
+         **({image_prompts.KEY: image_bundle} if image_bundle is not None else {})},
         reference_image=reference_image, mask_image=mask_image, pose_image=pose_image,
         progress=progress, cancel_event=cancel_event, journal=job_journal, context=job_context,
         guide_images=guide_images,

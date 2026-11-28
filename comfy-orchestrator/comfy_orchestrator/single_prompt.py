@@ -14,6 +14,7 @@ from tempfile import TemporaryDirectory
 from . import h3_prompt as hp
 from .h3 import h3_ref2va_filename, ensure_h3_reference_prompt
 from .input_snapshot import copy_frozen_asset
+from . import image_prompts
 from .jobs import JobCancellationRequested
 from .lmstudio import LMStudio
 from .model_runtime import release_comfy_before_llm
@@ -110,7 +111,7 @@ class SinglePromptDraft:
             elif key == "positive_prompt" and self.reference_only:
                 text = ensure_h3_reference_prompt(text)
             params[key] = text
-        return params
+        return image_prompts.synchronize(params, self.workflow_id, self.parameters)
 
     def set_english(self, values):
         self.parameters = self.canonical_parameters(values)

@@ -10,6 +10,7 @@ from .generation_form import WORKFLOW_NAMES
 from .ime_font import install_native_ime_font
 from .parameters import OrchestratorError
 from .single_prompt import LABELS
+from . import image_prompts
 from .workflow_registry import sdxl_checkpoint_kind
 
 DEFAULT_MODEL = "ワークフロー既定"
@@ -103,8 +104,15 @@ class ImageAdjustWindow(tk.Toplevel):
         self.translate_button.pack(side="left", padx=4)
         self.apply_button = ttk.Button(toolbar, text="編集反映", command=lambda: self._act("apply"))
         self.apply_button.pack(side="left")
-        self.rewrite_button = ttk.Button(toolbar, text="修正指示", command=lambda: self._act("regenerate"))
-        self.rewrite_button.pack(side="right")
+        self.formats_button = ttk.Button(toolbar, text="両形式を確認", command=self._show_formats)
+        self.formats_button.pack(side="right")
+        ttk.Label(prompt, text="修正指示（日本語）").pack(anchor="w")
+        self.instruction = scrolledtext.ScrolledText(prompt, height=3, wrap="word",
+                                                     undo=True, font=("Meiryo UI", 11))
+        self.instruction.pack(fill="x", pady=(0, 4))
+        install_native_ime_font(self.instruction)
+        self.rewrite_button = ttk.Button(prompt, text="プロンプトに反映", command=lambda: self._act("regenerate"))
+        self.rewrite_button.pack(anchor="e", pady=(0, 6))
         for key in draft.fields:
             ttk.Label(prompt, text=LABELS[key]).pack(anchor="w")
             editor = scrolledtext.ScrolledText(prompt, height=6 if key == "negative_prompt" else 12,
@@ -206,7 +214,8 @@ class ImageAdjustWindow(tk.Toplevel):
         self.busy, self.own_task = busy, own_task
         state = "disabled" if busy else "normal"
         for widget in (*self.editors.values(), self.generate_button, self.close_button, self.seed_box,
-                       self.translate_button, self.rewrite_button, self.revert_button):
+                       self.translate_button, self.rewrite_button, self.revert_button, self.instruction,
+                       self.formats_button):
             widget.configure(state=state)
         self.language_box.configure(state="disabled" if busy else "readonly")
         self.apply_button.configure(state="normal" if not busy and self._display_language == "日本語" else "disabled")
@@ -241,9 +250,10 @@ class ImageAdjustWindow(tk.Toplevel):
             if operation == "apply":
                 self.on_action(operation, japanese=self._values())
             elif operation == "regenerate":
-                text = simpledialog.askstring("修正指示", "変更したい内容", parent=self)
-                if text is not None:
-                    self.on_action(operation, instruction=text)
+                text = self.instruction.get("1.0", "end-1c").strip()
+                if not text:
+                    raise OrchestratorError("修正指示を入力してください")
+                self.on_action(operation, instruction=text)
             elif operation == "adopt":
                 self.draft.adopt_result(self.selected_result())
                 self._show_images()
@@ -258,6 +268,31 @@ class ImageAdjustWindow(tk.Toplevel):
                 self.on_action(operation)
         except (OrchestratorError, OSError, ValueError) as exc:
             messagebox.showwarning("画像調整", str(exc), parent=self)
+
+    def _show_formats(self):
+        try:
+            self._read()
+            clean, bundle = image_prompts.split_saved(self.draft.parameters, self.draft.workflow_id)
+            bundle = bundle or image_prompts.make_bundle(self.draft.workflow_id, clean, None)
+        except OrchestratorError as exc:
+            messagebox.showwarning("画像調整", str(exc), parent=self)
+            return
+        popup = tk.Toplevel(self)
+        popup.title("画像プロンプト・両形式")
+        popup.geometry("860x600")
+        tabs = ttk.Notebook(popup)
+        tabs.pack(fill="both", expand=True, padx=8, pady=8)
+        for fmt in image_prompts.FORMATS:
+            pane = ttk.Frame(tabs, padding=8)
+            tabs.add(pane, text=image_prompts.LABELS[fmt] + ("（使用中）" if fmt == bundle["active_format"] else ""))
+            editor = scrolledtext.ScrolledText(pane, wrap="word", font=("Meiryo UI", 11))
+            editor.pack(fill="both", expand=True)
+            values = bundle["prompts"].get(fmt)
+            editor.insert("1.0", ("Positive\n" + values["positive_prompt"] + "\n\nNegative\n"
+                                   + values["negative_prompt"]) if values else
+                          "未取得です。修正指示の反映時に生成します。")
+            editor.configure(state="disabled")
+        ttk.Button(popup, text="閉じる", command=popup.destroy).pack(anchor="e", padx=8, pady=(0, 8))
 
     def selected_result(self):
         return self.draft.results[self.result_position] if 0 <= self.result_position < len(self.draft.results) else None
@@ -312,6 +347,10 @@ class ImageAdjustWindow(tk.Toplevel):
         self._result_controls()
 
     def show_prompt_change(self, operation):
+        if operation == "regenerate":
+            self.instruction.configure(state="normal")
+            self.instruction.delete("1.0", "end")
+            self._display_language = "英語"
         if operation == "translate" and all(v is not None for v in self.draft.japanese(self.cache).values()):
             self._display_language = "日本語"
         self.reload()
