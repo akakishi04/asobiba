@@ -147,7 +147,6 @@ class ImageAdjustDraft(SinglePromptDraft):
             return
         workflows = self.controller.config["workflows"]
         clean, bundle = image_prompts.split_saved(self.parameters, self.workflow_id)
-        source_format = image_prompts.prompt_format(self.workflow_id)
         target_format = image_prompts.prompt_format(target)
         bundle = bundle or image_prompts.make_bundle(self.workflow_id, clean, None)
         if target_format not in bundle["prompts"]:
@@ -160,7 +159,7 @@ class ImageAdjustDraft(SinglePromptDraft):
         for key in ("width", "height", "seed"):
             if key in clean and key in workflows[target]["bindings"]:
                 params[key] = clean[key]
-        params[image_prompts.KEY] = image_prompts.make_bundle(
+        params = image_prompts.bind_bundle(
             target, params, bundle["prompts"].get(image_prompts.other_format(target_format)),
             bundle["instructions"])
         validated = _validated(workflows, target, params, self.assets)

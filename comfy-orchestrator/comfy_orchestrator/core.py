@@ -388,9 +388,21 @@ def execute(
     if image_prompts.supports_plan(workflows) and provider == "lmstudio":
         if alternate is not None and all(params.get(key) == value for key, value in original_prompts.items()):
             try:
-                saved_params[image_prompts.KEY] = image_prompts.make_bundle(workflow_id, params, alternate)
+                bundle_params = image_prompts.bind_bundle(workflow_id, params, alternate)
             except OrchestratorError as exc:
-                note("別形式プロンプトを保存できません（実行用は保持）: " + str(exc))
+                # A valid standalone alternative can still be retained if the
+                # combined conditioning exceeds the execution text limit.
+                try:
+                    saved_params[image_prompts.KEY] = image_prompts.make_bundle(workflow_id, params, alternate)
+                except OrchestratorError:
+                    note("別形式プロンプトを保存できません（実行用は保持）: " + str(exc))
+                else:
+                    note("Anima混合プロンプトを構成できません（タグ形式で生成）: " + str(exc))
+            else:
+                params = {key: value for key, value in bundle_params.items() if key != image_prompts.KEY}
+                saved_params.update(bundle_params)
+                if image_prompts.is_mixed(bundle_params):
+                    note("Anima: タグ＋自然文の混合プロンプトを使用")
         else:
             note("別形式プロンプトは未取得または直接上書きされたため未保存")
     if text_only_h3:

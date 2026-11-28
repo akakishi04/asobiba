@@ -90,7 +90,9 @@ class SinglePromptDraft:
             self._temporary.cleanup()
 
     def english(self):
-        values = {key: self.parameters.get(key, "") for key in self.fields}
+        values = (image_prompts.editor_pair(self.parameters, self.workflow_id)
+                  if image_prompts.is_mixed(self.parameters) else
+                  {key: self.parameters.get(key, "") for key in self.fields})
         if self.official and values["positive_prompt"].startswith(hp.I2VA_HEADER + "\n\n"):
             values["positive_prompt"] = values["positive_prompt"][len(hp.I2VA_HEADER) + 2:]
         return values
@@ -183,6 +185,10 @@ class SinglePromptDraft:
             raise OrchestratorError("プロンプト操作が不正です")
         if not isinstance(instruction, str) or len(instruction) > 2000:
             raise OrchestratorError("修正指示は2000文字以内です")
+        if self.workflow_id == ANIMA_ID and operation == "regenerate":
+            self.parameters = image_prompts.revise_bundle(
+                self, instruction.strip() or "生成内容を維持し、タグと自然文の表現を最適化する。")
+            return
         before = self.english()
         if operation == "apply":
             if not isinstance(japanese, dict) or set(japanese) != set(self.fields):

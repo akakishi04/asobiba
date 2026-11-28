@@ -464,9 +464,6 @@ class LMStudio:
                     f"LM Studio: {task_label}"
                     f"（応答待ち上限 {self.settings.get('inference_timeout_seconds', 600)} 秒）"
                 )
-            if set(workflows) == {ANIMA_ID}:
-                system += ("\nAnima illustration generation: use concise, concrete English visual tags "
-                           "and explicit spatial and lighting details. Do not impose SDXL-only quality tokens.")
             system += dual_policy(workflows)
             request = structured_payload(
                 instance_id, [{"role": "system", "content": system}, message],

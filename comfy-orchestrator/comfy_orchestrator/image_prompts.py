@@ -1,4 +1,4 @@
-"""Paired still-image prompts. Only the active pair is sent to ComfyUI.
+"""Paired still-image prompts, including Anima mixed conditioning.
 
 A bundle is history metadata, not a workflow binding or an LLM-owned setting.
 Missing/stale alternatives are never silently used for another model.
@@ -18,6 +18,7 @@ ALT = "alternate_prompt"
 FIELDS = ("positive_prompt", "negative_prompt")
 FORMATS = ("tags", "natural")
 LABELS = {"tags": "タグ形式", "natural": "自然文形式"}
+MIXED_VERSION = 2
 
 
 def prompt_format(workflow_id):
@@ -68,7 +69,7 @@ def dual_policy(workflows):
     if not supports_plan(workflows):
         return ""
     formats = json.dumps({key: prompt_format(key) for key in workflows})
-    return (
+    policy = (
         "\nPAIRED STILL-IMAGE PROMPTS (overrides conflicting format instructions): "
         "From the same user intent and observed evidence, write BOTH English formats. "
         "The selected workflow's parameters.positive_prompt and negative_prompt use its format "
@@ -77,6 +78,28 @@ def dual_policy(workflows):
         "descriptive English sentences. Keep identity, composition, lighting, exclusions and "
         "requested edits semantically aligned. Preserve unknowns; do not invent reference details. "
         "Do not put the alternative into parameters. Do not output Japanese or model settings."
+    )
+    if ANIMA_ID in workflows:
+        policy += anima_policy()
+    return policy
+
+
+def anima_policy():
+    """Keep both standalone representations useful when composed."""
+    return (
+        "\nANIMA MIXED CONDITIONING: the host combines the tag Positive and natural "
+        "Positive as one prompt, while using the tag Negative only. Each format must "
+        "also work independently on a different still-image model. Use short lowercase "
+        "visual tags with spaces (score_* tags are an exception), and group quality/meta, "
+        "subject count, identity and other visual attributes in that order. "
+        "Only add artist/style or quality/score tags when appropriate to the request "
+        "and checkpoint; do not blindly import SDXL presets or add artist names. "
+        "In the natural Positive use complete descriptive sentences emphasizing spatial "
+        "relationships, camera/viewpoint, pose, materials, fabric folds, light and shadow "
+        "when relevant. Avoid merely repeating the comma-separated list in prose. "
+        "Both formats must describe the same scene and exclusions; no invented details. "
+        "Express unwanted features in the tag Negative as actual undesirable concepts, "
+        "not as negated commands. Keep the combined Positive concise, below 4000 characters."
     )
 
 
@@ -99,6 +122,43 @@ def make_bundle(workflow_id, parameters, alternate, instructions=()):
             "instructions": list(instructions)}
 
 
+def execution_pair(bundle):
+    """Version 1 uses the stored active pair; version 2 has fixed Anima composition.
+
+    Never alter either source representation. In particular, a natural negative
+    such as "Avoid blur" is not a safe literal negative-conditioning phrase.
+    """
+    active = pair(bundle["prompts"][bundle["active_format"]])
+    if bundle["version"] != MIXED_VERSION:
+        return active
+    natural = pair(bundle["prompts"]["natural"])
+    return pair({
+        "positive_prompt": active["positive_prompt"].rstrip() + "\n\n" + natural["positive_prompt"].lstrip(),
+        "negative_prompt": active["negative_prompt"],
+    })
+
+
+def bind_bundle(workflow_id, parameters, alternate, instructions=()):
+    """Publish both source formats and the exact execution text atomically."""
+    bundle = make_bundle(workflow_id, parameters, alternate, instructions)
+    if workflow_id == ANIMA_ID and alternate is not None:
+        bundle["version"] = MIXED_VERSION
+    return {**parameters, **execution_pair(bundle), KEY: bundle}
+
+
+def is_mixed(parameters):
+    bundle = parameters.get(KEY)
+    return isinstance(bundle, dict) and bundle.get("version") == MIXED_VERSION
+
+
+def editor_pair(parameters, workflow_id):
+    """Direct editing targets the standalone active representation."""
+    if not is_mixed(parameters):
+        return active_pair(parameters)
+    _, bundle = split_saved(parameters, workflow_id)
+    return dict(bundle["prompts"][bundle["active_format"]])
+
+
 def split_saved(parameters, workflow_id):
     clean = dict(parameters)
     if KEY not in clean:
@@ -107,7 +167,8 @@ def split_saved(parameters, workflow_id):
     fmt = prompt_format(workflow_id)
     if (fmt is None or not isinstance(bundle, dict) or set(bundle) !=
             {"version", "active_format", "prompts", "instructions"}
-            or type(bundle["version"]) is not int or bundle["version"] != 1
+            or type(bundle["version"]) is not int or bundle["version"] not in (1, MIXED_VERSION)
+            or (bundle["version"] == MIXED_VERSION and workflow_id != ANIMA_ID)
             or bundle["active_format"] != fmt):
         raise OrchestratorError("保存された画像プロンプト形式が不正です")
     prompts, instructions = bundle["prompts"], bundle["instructions"]
@@ -116,10 +177,13 @@ def split_saved(parameters, workflow_id):
             or any(not isinstance(s, str) or not s.strip() or len(s) > 2000 for s in instructions)):
         raise OrchestratorError("保存された画像プロンプトの構造が不正です")
     checked = {key: pair(value) for key, value in prompts.items()}
-    if checked[fmt] != active_pair(clean):
+    if bundle["version"] == MIXED_VERSION and set(checked) != set(FORMATS):
+        raise OrchestratorError("Anima混合プロンプトには両形式が必要です")
+    checked_bundle = {"version": bundle["version"], "active_format": fmt, "prompts": checked,
+                      "instructions": list(instructions)}
+    if execution_pair(checked_bundle) != active_pair(clean):
         raise OrchestratorError("保存された画像プロンプトと実行用プロンプトが一致しません")
-    return clean, {"version": 1, "active_format": fmt, "prompts": checked,
-                   "instructions": list(instructions)}
+    return clean, checked_bundle
 
 
 def synchronize(parameters, workflow_id, previous):
@@ -128,8 +192,12 @@ def synchronize(parameters, workflow_id, previous):
         return parameters
     _, bundle = split_saved(previous, workflow_id)
     fmt = bundle["active_format"]
-    if active_pair(parameters) == bundle["prompts"][fmt]:
-        return parameters
+    edited = active_pair(parameters)
+    original = bundle["prompts"][fmt]
+    if edited == original or (is_mixed(previous) and all(
+            edited[field].strip() == original[field].strip() for field in FIELDS)):
+        # The editor may be displaying just the tag component of a mixed prompt.
+        return {**parameters, **execution_pair(bundle), KEY: bundle}
     result = dict(parameters)
     result[KEY] = make_bundle(workflow_id, result, None, bundle["instructions"])
     return result
@@ -197,6 +265,8 @@ def revise_bundle(draft, instruction):
         "If alternate_prompt is required, produce the missing format from the resulting intent "
         "and edited active prompt. Never invent unseen visual details or output settings."
     )
+    if draft.workflow_id == ANIMA_ID:
+        system += anima_policy()
     payload = json.dumps({"original_request": draft.request, "current_prompts": prompts,
                           "active_format": fmt, "instruction": instruction}, ensure_ascii=False)
 
@@ -209,9 +279,8 @@ def revise_bundle(draft, instruction):
         if changed == prompts:
             raise OrchestratorError("修正指示に対する変更がありません")
         updated = {**clean, **changed[fmt]}
-        updated[KEY] = make_bundle(draft.workflow_id, updated, changed[other],
-                                   [*bundle["instructions"], instruction])
-        return updated
+        return bind_bundle(draft.workflow_id, updated, changed[other],
+                           [*bundle["instructions"], instruction])
 
     result = draft._session(lambda client, instance: request_validated(
         client, instance, system, payload, schema, "image_prompt_patch", validate,
