@@ -5,8 +5,58 @@ import tkinter as tk
 from tkinter import messagebox, scrolledtext, ttk
 
 from .workflow_registry import H3_I2V_ID
+from . import image_prompts
+from .parameters import OrchestratorError
 from .character_refs import format_evidence
 from .prompt_profiles import T2I_PROFILE_LABELS, I2I_PROFILE_LABELS, H3_PROFILE_LABELS
+
+
+def show_image_prompt_formats(parent, parameters, workflow_id):
+    """Read-only components and exact text sent to the generation backend."""
+    try:
+        clean, bundle = image_prompts.split_saved(parameters, workflow_id)
+        bundle = bundle or image_prompts.make_bundle(workflow_id, clean, None)
+        actual = image_prompts.active_pair(clean)
+    except OrchestratorError as exc:
+        messagebox.showwarning("画像プロンプト", str(exc), parent=parent)
+        return
+    mixed = image_prompts.is_mixed(parameters)
+    popup = tk.Toplevel(parent)
+    popup.title("画像プロンプト")
+    popup.geometry("860x600")
+    popup.minsize(490, 350)
+    popup.transient(parent)
+    tabs = ttk.Notebook(popup)
+    tabs.pack(fill="both", expand=True, padx=8, pady=8)
+
+    def add_tab(label, values):
+        pane = ttk.Frame(tabs, padding=8)
+        tabs.add(pane, text=label)
+        editor = scrolledtext.ScrolledText(pane, wrap="word", font=("Meiryo UI", 11))
+        editor.pack(fill="both", expand=True)
+        editor.insert("1.0", ("Positive\n" + values["positive_prompt"] + "\n\nNegative\n"
+                               + values["negative_prompt"]) if values is not None else
+                      "未取得です。修正指示の反映時に生成します。")
+        editor.configure(state="disabled")
+
+    add_tab("実行用（混合）" if mixed else "実行用", actual)
+    for fmt in image_prompts.FORMATS:
+        add_tab(image_prompts.LABELS[fmt] + ("（単独）" if mixed else ""),
+                bundle["prompts"].get(fmt))
+
+    old_grab = parent.grab_current()
+    modal = old_grab is parent
+
+    def close():
+        popup.destroy()
+        if modal and parent.winfo_exists():
+            parent.grab_set()
+
+    ttk.Button(popup, text="閉じる", command=close).pack(anchor="e", padx=8, pady=(0, 8))
+    popup.protocol("WM_DELETE_WINDOW", close)
+    if modal:
+        popup.wait_visibility()
+        popup.grab_set()
 
 
 def show_prompt_details(parent, details: dict, *, from_history: bool, copy_text, show_character) -> None:
@@ -82,6 +132,9 @@ def show_prompt_details(parent, details: dict, *, from_history: bool, copy_text,
         command=lambda: copy_text(negative),
         state="normal" if negative_saved else "disabled",
     ).pack(side="left")
+    if image_prompts.KEY in details:
+        ttk.Button(buttons, text="両形式・実行用",
+                   command=lambda: show_image_prompt_formats(popup, details, details["workflow_id"])).pack(side="left", padx=(6, 0))
     if details.get("character_traits"):
         ttk.Button(
             buttons, text="キャラ特徴",

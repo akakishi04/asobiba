@@ -5,6 +5,8 @@ import copy
 from dataclasses import dataclass
 from pathlib import Path
 
+from .image_prompts import KEY as IMAGE_PROMPT_BUNDLE
+
 
 @dataclass(frozen=True)
 class ReviewMetadata:
@@ -42,6 +44,8 @@ class ResultReviewState:
                 "request_text": meta.request_text,
                 "positive_prompt": params.get("positive_prompt", ""),
                 "negative_prompt": params.get("negative_prompt"),
+                **({IMAGE_PROMPT_BUNDLE: copy.deepcopy(params[IMAGE_PROMPT_BUNDLE])}
+                   if IMAGE_PROMPT_BUNDLE in params else {}),
                 "seed": params.get("seed"),
                 "steps": params.get("steps"),
                 "cfg": params.get("cfg"),

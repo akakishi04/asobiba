@@ -7,6 +7,9 @@ from tkinter import ttk, messagebox, scrolledtext, simpledialog
 from .ime_font import install_native_ime_font
 from .parameters import OrchestratorError
 from .single_prompt import LABELS
+from . import image_prompts
+from .model_profiles import ANIMA_ID
+from .prompt_viewer import show_image_prompt_formats
 
 
 class SinglePromptWindow(tk.Toplevel):
@@ -25,6 +28,7 @@ class SinglePromptWindow(tk.Toplevel):
         self._display_language = self.language.get()
         self.baseline = {}
         self.editors = {}
+        self.prompt_labels = {}
         panel = ttk.Frame(self, padding=10)
         panel.pack(fill="both", expand=True)
         toolbar = ttk.Frame(panel)
@@ -41,6 +45,10 @@ class SinglePromptWindow(tk.Toplevel):
         self.revert_button.pack(side="left", padx=(6, 0))
         self.rewrite_button = ttk.Button(toolbar, text="プロンプト再生成", command=lambda: self._act("regenerate"))
         self.rewrite_button.pack(side="right")
+        self.formats_button = None
+        if draft.workflow_id == ANIMA_ID:
+            self.formats_button = ttk.Button(toolbar, text="両形式・実行用", command=self._show_formats)
+            self.formats_button.pack(side="right", padx=(6, 0))
         footer = ttk.Frame(panel)
         footer.pack(side="bottom", fill="x", pady=(6, 0))
         self.generate_button = ttk.Button(footer, text="生成", command=lambda: self._act("generate"))
@@ -51,7 +59,9 @@ class SinglePromptWindow(tk.Toplevel):
         self.cancel_button.pack(side="right", padx=(0, 6))
         ttk.Label(footer, textvariable=status, wraplength=330).pack(side="left", fill="x", expand=True)
         for key in draft.fields:
-            ttk.Label(panel, text=LABELS[key]).pack(anchor="w")
+            label = ttk.Label(panel, text=LABELS[key])
+            label.pack(anchor="w")
+            self.prompt_labels[key] = label
             editor = scrolledtext.ScrolledText(panel, height=4 if key == "negative_prompt" else 12,
                                                 wrap="word", undo=True, font=("Meiryo UI", 11))
             editor.pack(fill="both", expand=key == "positive_prompt", pady=(0, 5))
@@ -70,7 +80,11 @@ class SinglePromptWindow(tk.Toplevel):
     def _read(self):
         values = self._values()
         if self._display_language == "英語":
+            mixed_before = image_prompts.is_mixed(self.draft.parameters)
             self.draft.set_english(values)
+            if mixed_before and not image_prompts.is_mixed(self.draft.parameters):
+                self._update_prompt_labels()
+                messagebox.showinfo("プロンプト確認", "タグの直接編集により自然文を失効させました。プロンプト再生成で両形式を再構成できます。", parent=self)
         elif values != self.baseline:
             raise OrchestratorError("日本語の編集を反映してから操作してください")
 
@@ -85,7 +99,21 @@ class SinglePromptWindow(tk.Toplevel):
             widget.insert("1.0", values[key] or "")
             widget.edit_reset()
         self.baseline = self._values()
+        self._update_prompt_labels()
         self.set_busy(self.busy)
+
+    def _update_prompt_labels(self):
+        mixed = image_prompts.is_mixed(self.draft.parameters)
+        for key, label in self.prompt_labels.items():
+            label.configure(text=LABELS[key] + ("（タグ編集・混合生成）" if mixed else ""))
+
+    def _show_formats(self):
+        try:
+            self._read()
+        except OrchestratorError as exc:
+            messagebox.showwarning("プロンプト確認", str(exc), parent=self)
+            return
+        show_image_prompt_formats(self, self.draft.parameters, self.draft.workflow_id)
 
     def set_busy(self, busy):
         self.busy = busy
@@ -93,6 +121,8 @@ class SinglePromptWindow(tk.Toplevel):
             widget.configure(state="disabled" if busy else "normal")
         for button in (self.translate_button, self.rewrite_button, self.generate_button, self.close_button):
             button.configure(state="disabled" if busy else "normal")
+        if self.formats_button is not None:
+            self.formats_button.configure(state="disabled" if busy else "normal")
         self.apply_button.configure(state="normal" if not busy and self._display_language == "日本語" else "disabled")
         self.revert_button.configure(state="disabled" if busy else "normal")
         self.cancel_button.configure(state="normal" if busy else "disabled")

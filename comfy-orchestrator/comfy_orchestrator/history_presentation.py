@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+import copy
+
+from .image_prompts import KEY as IMAGE_PROMPT_BUNDLE
 
 from .workflow_registry import H3_I2V_ID, VIDEO_KINDS
 from .model_registry import model_filename
@@ -40,6 +43,8 @@ def history_prompt_details(entry: HistoryEntry | None) -> dict | None:
         "request_text": entry.request_text,
         "positive_prompt": positive,
         "negative_prompt": negative if isinstance(negative, str) else None,
+        **({IMAGE_PROMPT_BUNDLE: copy.deepcopy(entry.parameters[IMAGE_PROMPT_BUNDLE])}
+           if IMAGE_PROMPT_BUNDLE in entry.parameters else {}),
         "seed": entry.parameters.get("seed"),
         "steps": entry.parameters.get("steps"),
         "cfg": entry.parameters.get("cfg"),

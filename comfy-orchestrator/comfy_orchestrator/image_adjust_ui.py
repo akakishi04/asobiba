@@ -11,6 +11,7 @@ from .ime_font import install_native_ime_font
 from .parameters import OrchestratorError
 from .single_prompt import LABELS
 from . import image_prompts
+from .prompt_viewer import show_image_prompt_formats
 from .model_profiles import ANIMA_ID, ANIMA_BASE, QWEN_ID, anima_model_name
 from .model_registry import parse_image_key, model_display, recommended
 from .workflow_registry import sdxl_checkpoint_kind
@@ -34,6 +35,7 @@ class ImageAdjustWindow(tk.Toplevel):
         self.own_task = False
         self.editors, self.numeric, self.numeric_widgets = {}, {}, {}
         self.photos = {}
+        self.prompt_labels = {}
         self.language = tk.StringVar(master=self, value="英語")
         self._display_language = "英語"
         self.baseline = {}
@@ -107,7 +109,7 @@ class ImageAdjustWindow(tk.Toplevel):
         self.translate_button.pack(side="left", padx=4)
         self.apply_button = ttk.Button(toolbar, text="編集反映", command=lambda: self._act("apply"))
         self.apply_button.pack(side="left")
-        self.formats_button = ttk.Button(toolbar, text="両形式を確認", command=self._show_formats)
+        self.formats_button = ttk.Button(toolbar, text="両形式・実行用", command=self._show_formats)
         self.formats_button.pack(side="right")
         ttk.Label(prompt, text="修正指示（日本語）").pack(anchor="w")
         self.instruction = scrolledtext.ScrolledText(prompt, height=3, wrap="word",
@@ -117,7 +119,9 @@ class ImageAdjustWindow(tk.Toplevel):
         self.rewrite_button = ttk.Button(prompt, text="プロンプトに反映", command=lambda: self._act("regenerate"))
         self.rewrite_button.pack(anchor="e", pady=(0, 6))
         for key in draft.fields:
-            ttk.Label(prompt, text=LABELS[key]).pack(anchor="w")
+            label = ttk.Label(prompt, text=LABELS[key])
+            label.pack(anchor="w")
+            self.prompt_labels[key] = label
             editor = scrolledtext.ScrolledText(prompt, height=6 if key == "negative_prompt" else 12,
                                                wrap="word", undo=True, font=("Meiryo UI", 11))
             editor.pack(fill="both", expand=True, pady=(0, 6))
@@ -236,7 +240,11 @@ class ImageAdjustWindow(tk.Toplevel):
             if not applying and values != self.baseline:
                 raise OrchestratorError("日本語の編集を反映してから操作してください")
             values = self.draft.english()
+        mixed_before = image_prompts.is_mixed(self.draft.parameters)
         self.draft.apply_edits(values, {k: v.get() for k, v in self.numeric.items()}, self._checkpoint())
+        if mixed_before and not image_prompts.is_mixed(self.draft.parameters):
+            self._update_prompt_labels()
+            messagebox.showinfo("画像調整", "タグの直接編集により自然文を失効させました。修正指示で両形式を再構成できます。", parent=self)
 
     def reload(self, *, rebuild=False):
         if rebuild:
@@ -256,12 +264,19 @@ class ImageAdjustWindow(tk.Toplevel):
         if self.model_box is not None:
             self.checkpoint.set(model_display(self.draft.parameters.get("checkpoint_model", DEFAULT_MODEL)))
         self.baseline = self._values()
-        self.workflow_label.set("次の生成: " + WORKFLOW_NAMES.get(self.draft.workflow_id, self.draft.workflow_id))
+        self._update_prompt_labels()
         roles = (("実際の参照画像", "image"), ("マスク", "mask_image"), ("ポーズ", "pose_image"),
                  ("構図参考（プロンプト由来）", "composition_image"))
         self.input_label.set("\n".join(f"{label}: {'あり' if self.draft.assets.get(key) else 'なし'}"
                                        for label, key in roles))
         self.set_busy(self.busy, own_task=self.own_task)
+
+    def _update_prompt_labels(self):
+        mixed = image_prompts.is_mixed(self.draft.parameters)
+        self.workflow_label.set("次の生成: " + WORKFLOW_NAMES.get(self.draft.workflow_id, self.draft.workflow_id)
+                                + (" · 混合" if mixed else ""))
+        for key, label in self.prompt_labels.items():
+            label.configure(text=LABELS[key] + ("（タグ編集）" if mixed else ""))
 
     def set_busy(self, busy, *, own_task=False):
         self.busy, self.own_task = busy, own_task
@@ -327,27 +342,10 @@ class ImageAdjustWindow(tk.Toplevel):
     def _show_formats(self):
         try:
             self._read()
-            clean, bundle = image_prompts.split_saved(self.draft.parameters, self.draft.workflow_id)
-            bundle = bundle or image_prompts.make_bundle(self.draft.workflow_id, clean, None)
         except OrchestratorError as exc:
             messagebox.showwarning("画像調整", str(exc), parent=self)
             return
-        popup = tk.Toplevel(self)
-        popup.title("画像プロンプト・両形式")
-        popup.geometry("860x600")
-        tabs = ttk.Notebook(popup)
-        tabs.pack(fill="both", expand=True, padx=8, pady=8)
-        for fmt in image_prompts.FORMATS:
-            pane = ttk.Frame(tabs, padding=8)
-            tabs.add(pane, text=image_prompts.LABELS[fmt] + ("（使用中）" if fmt == bundle["active_format"] else ""))
-            editor = scrolledtext.ScrolledText(pane, wrap="word", font=("Meiryo UI", 11))
-            editor.pack(fill="both", expand=True)
-            values = bundle["prompts"].get(fmt)
-            editor.insert("1.0", ("Positive\n" + values["positive_prompt"] + "\n\nNegative\n"
-                                   + values["negative_prompt"]) if values else
-                          "未取得です。修正指示の反映時に生成します。")
-            editor.configure(state="disabled")
-        ttk.Button(popup, text="閉じる", command=popup.destroy).pack(anchor="e", padx=8, pady=(0, 8))
+        show_image_prompt_formats(self, self.draft.parameters, self.draft.workflow_id)
 
     def selected_result(self):
         return self.draft.results[self.result_position] if 0 <= self.result_position < len(self.draft.results) else None
