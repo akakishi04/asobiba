@@ -95,7 +95,13 @@ class ImageAdjustWindow(tk.Toplevel):
         self.result_position = -1
         ttk.Label(comparison, textvariable=self.result_settings, wraplength=680).pack(fill="x", pady=(4, 0))
 
-        ttk.Label(controls, textvariable=self.workflow_label, style="FieldHeading.TLabel").pack(anchor="w", pady=(0, 6))
+        self.workflow_header = ttk.Frame(controls)
+        self.workflow_header.pack(fill="x", pady=(0, 6))
+        self.workflow_title = ttk.Label(self.workflow_header, textvariable=self.workflow_label,
+                                        style="FieldHeading.TLabel")
+        self.workflow_title.pack(side="left", fill="x", expand=True)
+        self.camera_button = ttk.Button(self.workflow_header, text="画角…", command=self._edit_camera,
+                                        style="Compact.TButton")
         tabs = ttk.Notebook(controls)
         tabs.pack(fill="both", expand=True)
         prompt, settings, sources = (ttk.Frame(tabs, padding=8) for _ in range(3))
@@ -130,8 +136,6 @@ class ImageAdjustWindow(tk.Toplevel):
             self.reasoning_box.pack(side="left", padx=4)
         self.rewrite_button = ttk.Button(rewrite_row, text="プロンプトに反映", command=lambda: self._act("regenerate"))
         self.rewrite_button.pack(side="right")
-        self.camera_button = ttk.Button(rewrite_row, text="画角…", command=self._edit_camera)
-        self.camera_button.pack(side="right", padx=(0,4))
         for key in draft.fields:
             label = ttk.Label(prompt, text=LABELS[key])
             label.pack(anchor="w")
@@ -293,10 +297,21 @@ class ImageAdjustWindow(tk.Toplevel):
         mixed = image_prompts.is_mixed(self.draft.parameters)
         self.workflow_label.set("次の生成: " + WORKFLOW_NAMES.get(self.draft.workflow_id, self.draft.workflow_id)
                                 + (" · 混合" if mixed else ""))
-        if hasattr(self, "camera_button"):
-            self.camera_button.configure(text="画角設定済…" if self.draft.parameters.get(camera_spec.KEY) else "画角…")
+        self._sync_camera_button()
         for key, label in self.prompt_labels.items():
             label.configure(text=LABELS[key] + ("（タグ編集）" if mixed else ""))
+
+    def _sync_camera_button(self):
+        supported = self.draft.workflow_id in camera_spec.IDS
+        if not supported:
+            if self.camera_button.winfo_manager():
+                self.camera_button.pack_forget()
+            return
+        if not self.camera_button.winfo_manager():
+            # Reserve space for the control before the potentially long model title.
+            self.camera_button.pack(side="right", padx=(6, 0), before=self.workflow_title)
+        self.camera_button.configure(text="画角設定済…" if self.draft.parameters.get(camera_spec.KEY) else "画角…",
+                                     state="disabled" if self.busy else "normal")
 
     def set_busy(self, busy, *, own_task=False):
         self.busy, self.own_task = busy, own_task
@@ -309,8 +324,7 @@ class ImageAdjustWindow(tk.Toplevel):
         if self.reasoning_box is not None:
             self.reasoning_box.configure(state="disabled" if busy else "readonly")
         self.apply_button.configure(state="normal" if not busy and self._display_language == "日本語" else "disabled")
-        if hasattr(self, "camera_button"):
-            self.camera_button.configure(state="normal" if not busy and self.draft.workflow_id in camera_spec.IDS else "disabled")
+        self._sync_camera_button()
         self.cancel_button.configure(state="normal" if busy and own_task else "disabled")
         fixed = self.draft.fixed_sampler(self._checkpoint() or "")
         for key, widget in self.numeric_widgets.items():

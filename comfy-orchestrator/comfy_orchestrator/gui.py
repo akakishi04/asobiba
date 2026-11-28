@@ -413,9 +413,6 @@ class Application:
                 self.image_reasoning_box.pack(side="left")
                 self.model_compare_button = ttk.Button(page, text="モデル比較…", command=self._open_model_comparison)
                 self.model_compare_button.pack(side="left", padx=(8, 0))
-                self.camera_button = ttk.Button(page, text="画角…", command=self._edit_camera)
-                self.camera_button.pack(side="left", padx=(6, 0))
-                self._sync_camera_button()
         self._sync_workflow_choice()
         self.generation_tabs.bind("<<NotebookTabChanged>>", self._on_generation_tab_changed)
 
@@ -514,6 +511,7 @@ class Application:
                 preview=self._run_secondary,
                 cancel=self._request_cancel,
                 long_action=lambda key: self.project_workspace._accept(key),
+                edit_camera=self._edit_camera,
             ),
         )
         self.generation_view.pack(fill="both", expand=True, padx=(0, 6))
@@ -524,6 +522,7 @@ class Application:
         self.options_form = self.generation_view.options_form
         self.form_window = self.generation_view.form_window
         self.prompt_title = self.generation_view.prompt_title
+        self.camera_button = self.generation_view.camera_button
         self.prompt = self.generation_view.prompt
         self.reference_row = self.generation_view.reference_row
         self.mask_row = self.generation_view.mask_row
@@ -1407,9 +1406,20 @@ class Application:
             messagebox.showerror("画像比較", str(exc))
 
     def _sync_camera_button(self):
-        if hasattr(self, "camera_button"):
-            self.camera_button.configure(text="画角設定済…" if getattr(self, "camera_spec", {}) else "画角…")
-            self.camera_button.configure(state="normal" if not self.working and self._active_workflow() in camera_spec.IDS else "disabled")
+        button = getattr(self, "camera_button", None)
+        if button is None:
+            return
+        supported = self._active_workflow() in camera_spec.IDS
+        if not supported:
+            if button.winfo_manager():
+                button.pack_forget()
+            return
+        if not button.winfo_manager():
+            button.pack(side="left", padx=(8, 0))
+        text = "画角設定済…" if getattr(self, "camera_spec", {}) else "画角…"
+        state = "disabled" if self.working else "normal"
+        if str(button.cget("text")) != text or str(button.cget("state")) != state:
+            button.configure(text=text, state=state)
 
     def _edit_camera(self):
         if self.working or self._active_workflow() not in camera_spec.IDS:

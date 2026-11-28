@@ -38,6 +38,8 @@ class ApplicationSmokeTests(unittest.TestCase):
                     app._sync_camera_button()
                     self.assertEqual(app._collect_config()["ui"]["camera_spec"], {"elevation":"low"})
                     self.assertIn("設定済", app.camera_button.cget("text"))
+                    self.assertIs(app.camera_button, app.generation_view.camera_button)
+                    self.assertEqual(app.camera_button.winfo_parent(), app.prompt_title.winfo_parent())
                     app._open_model_comparison()
                     self.assertIsNotNone(app.comparison_window)
                     self.assertEqual(app.comparison_window.camera, {"elevation":"low"})
@@ -79,6 +81,8 @@ class ApplicationSmokeTests(unittest.TestCase):
                     app.workflow_choice.set("SDXL · " + core.DEFAULT_SDXL_CHECKPOINT)
                     app._on_workflow_choice()
                     self.assertEqual(app._active_workflow(), "wai_t2i_basic")
+                    self.assertEqual(app.camera_button.winfo_manager(), "pack")
+                    self.assertEqual(str(app.camera_button.cget("state")), "normal")
 
                     from comfy_orchestrator.h3_model_picker import OPENING, REFERENCE, TEXT_ONLY
                     filename = "10Eros_Max_8stepTurbo_v1.0_hybrid_activation_learned_HQ.safetensors"
@@ -88,6 +92,7 @@ class ApplicationSmokeTests(unittest.TestCase):
                     app.generation_mode.set("video")
                     app.workflow.set(core.H3_I2V_ID)
                     app._on_generation_mode_choice()
+                    self.assertEqual(app.camera_button.winfo_manager(), "")
                     app.h3_model.set(core.h3_model_label(ref))
                     app._apply_generation_model_choices()
                     self.assertEqual(app.h3_model_display.get(), "10Eros Max · Learned HQ")
@@ -230,6 +235,32 @@ class ApplicationSmokeTests(unittest.TestCase):
                     self.assertIs(app.adjust_window, window)
                     self.assertEqual(window.selected_result(), derived)
                     self.assertEqual(str(window.generate_button.cget("state")), "normal")
+                    self.assertIs(window.camera_button.master, window.workflow_header)
+                    self.assertEqual(str(window.camera_button.cget("state")), "normal")
+
+                    # Exercise the camera dialog's actual dispatch into the
+                    # image-adjust worker without a live LLM or ComfyUI.
+                    def camera_reply(client, instance, system, payload, schema, name, validate, *args, **kwargs):
+                        self.assertIn("CAMERA-ONLY CHANGE", system)
+                        return validate({"edits": [], "alternate_prompt": {
+                            "positive_prompt": "A green tree.", "negative_prompt": "Avoid blur."}})
+                    with patch("comfy_orchestrator.image_adjust_ui.choose_camera",
+                               return_value={"elevation": "low"}), \
+                            patch.object(app.adjust_draft, "_session", side_effect=lambda action: action(None, None)), \
+                            patch("comfy_orchestrator.image_prompts.request_validated", side_effect=camera_reply):
+                        window.camera_button.invoke()
+                        self.assertTrue(app.working)
+                        self.assertEqual(str(window.camera_button.cget("state")), "disabled")
+                        while True:
+                            kind, data = app.messages.get(timeout=5)
+                            app.event_router.dispatch(kind, data)
+                            if kind == "idle":
+                                break
+                    self.assertEqual(app.adjust_draft.parameters["camera_spec"], {"elevation": "low"})
+                    self.assertIn("from below", app.adjust_draft.parameters["positive_prompt"])
+                    self.assertIn("green tree", app.adjust_draft.parameters["positive_prompt"])
+                    self.assertIn("設定済", window.camera_button.cget("text"))
+                    self.assertEqual(str(window.camera_button.cget("state")), "normal")
                     window._act("adopt")
                     self.assertEqual(app.adjust_draft.base_image.read_bytes(), derived.read_bytes())
                     self.assertIsNone(app.adjust_draft.assets["image"])
@@ -239,6 +270,8 @@ class ApplicationSmokeTests(unittest.TestCase):
                     self.assertEqual(app.adjust_draft.assets["image"], app.adjust_draft.base_image)
                     self.assertNotIn("width", window.numeric)
                     self.assertIn("denoise", window.numeric)
+                    self.assertEqual(window.camera_button.winfo_manager(), "")
+                    self.assertNotIn("camera_spec", app.adjust_draft.parameters)
                     adjust_folder = Path(app.adjust_draft._temporary.name)
                     app._close_adjust()
                     self.assertFalse(adjust_folder.exists())

@@ -85,6 +85,7 @@ class GenerationActions:
     preview: Callable
     cancel: Callable
     long_action: Callable
+    edit_camera: Callable | None = None
 
 
 class GenerationView(ttk.Frame):
@@ -131,6 +132,9 @@ class GenerationView(ttk.Frame):
         editor_toolbar.pack(fill="x", pady=(0, 4))
         self.prompt_title = ttk.Label(editor_toolbar, text="プロンプト", style="FieldHeading.TLabel")
         self.prompt_title.pack(side="left")
+        self.camera_button = ttk.Button(editor_toolbar, text="画角…",
+                                        command=actions.edit_camera, style="Compact.TButton")
+        # The application shows this only for compatible T2I workflows.
         ttk.Button(editor_toolbar, text="A+", width=3, command=lambda: actions.change_font(1),
                    style="Compact.TButton").pack(side="right", padx=(4, 0))
         ttk.Button(editor_toolbar, text="A−", width=3, command=lambda: actions.change_font(-1),
