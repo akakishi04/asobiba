@@ -81,9 +81,9 @@ class ModuleBoundariesTests(unittest.TestCase):
                     {"role": "user", "content": [{"type": "text", "text": "request"}]}]
         schema = {"type": "object", "properties": {}}
         payload = prompt_inference.structured_payload("instance", messages, "test", schema,
-                                                      max_tokens=128, temperature=0)
+                                                      temperature=0)
         self.assertEqual(payload, {"model": "instance", "messages": messages, "stream": False,
-                                  "temperature": 0, "max_tokens": 128,
+                                  "temperature": 0,
                                   "response_format": {"type": "json_schema",
                                                       "json_schema": {"name": "test", "schema": schema}}})
         self.assertEqual(prompt_inference.read_json_reply(

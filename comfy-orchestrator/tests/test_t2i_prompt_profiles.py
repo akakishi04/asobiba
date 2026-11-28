@@ -160,7 +160,8 @@ class PromptProfileTests(unittest.TestCase):
             enhanced["response_format"], baseline["response_format"]
         )
         self.assertEqual(enhanced["temperature"], baseline["temperature"])
-        self.assertEqual(enhanced["max_tokens"], baseline["max_tokens"])
+        self.assertNotIn("max_tokens", enhanced)
+        self.assertNotIn("max_tokens", baseline)
         self.assertEqual(
             enhanced["messages"][1]["content"].split("User request: ")[-1],
             baseline["messages"][1]["content"].split("User request: ")[-1],

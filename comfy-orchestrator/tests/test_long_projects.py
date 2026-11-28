@@ -179,6 +179,7 @@ class BatchPlanningTests(unittest.TestCase):
             calls.append(route)
             if route == "/api/v1/models/unload":
                 return {"instance_id": "instance"}
+            self.assertNotIn("max_tokens", body)
             data = json.loads(body["messages"][1]["content"])
             name = body["response_format"]["json_schema"]["name"]
             if name == "continuous_outline":

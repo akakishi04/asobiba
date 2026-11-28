@@ -108,7 +108,8 @@ class H3ProfileTests(unittest.TestCase):
                 self.assertIn("Host video duration:", actual["messages"][1]["content"])
                 self.assertEqual(actual["response_format"], baseline["response_format"])
                 self.assertEqual(actual["temperature"], baseline["temperature"])
-                self.assertEqual(actual["max_tokens"], baseline["max_tokens"])
+                self.assertNotIn("max_tokens", actual)
+                self.assertNotIn("max_tokens", baseline)
 
     def test_history_restores_profile_and_old_history_remains_unlabeled(self):
         with tempfile.TemporaryDirectory() as folder:

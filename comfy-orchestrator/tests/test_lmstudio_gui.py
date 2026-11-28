@@ -44,11 +44,13 @@ class LMStudioTests(unittest.TestCase):
                 return {"models": [{"type": "llm", "key": MODEL, "loaded_instances": []}]}
             if route == "/api/v1/models/load":
                 self.assertEqual(payload["model"], MODEL)
-                self.assertEqual(payload["context_length"], 8192)
-                return {"status": "loaded", "instance_id": INSTANCE}
+                self.assertNotIn("context_length", payload)
+                self.assertEqual(payload["echo_load_config"], True)
+                return {"status": "loaded", "instance_id": INSTANCE,
+                        "load_config": {"context_length": 32768}}
             if route == "/v1/chat/completions":
                 self.assertEqual(payload["model"], INSTANCE)
-                self.assertEqual(payload["max_tokens"], 4096)
+                self.assertNotIn("max_tokens", payload)
                 self.assertEqual(payload["response_format"]["type"], "json_schema")
                 return {"choices": [{"message": {"content": json.dumps(self.plan)}}]}
             if route == "/api/v1/models/unload":
@@ -57,7 +59,9 @@ class LMStudioTests(unittest.TestCase):
             self.fail(route)
 
         with patch.object(lmstudio, "_request", side_effect=fake_request):
-            actual = lmstudio.LMStudio(self.settings).interpret("アニメ絵", self.workflows, None)
+            client = lmstudio.LMStudio(self.settings)
+            actual = client.interpret("アニメ絵", self.workflows, None)
+        self.assertEqual(client.loaded_context_length, 32768)
         self.assertEqual(actual, self.plan)
         self.assertEqual([r for r, _ in calls], [
             "/api/v1/models", "/api/v1/models/load", "/v1/chat/completions",
@@ -82,15 +86,19 @@ class LMStudioTests(unittest.TestCase):
             calls.append(route)
             if route == "/api/v1/models":
                 return {"models": [{"type": "llm", "key": MODEL,
-                                    "loaded_instances": [{"id": INSTANCE}]}]}
+                                    "max_context_length": 131072,
+                                    "loaded_instances": [{"id": INSTANCE, "config": {"context_length": 16384}}]}]}
             if route == "/v1/chat/completions":
+                self.assertNotIn("max_tokens", payload)
                 return {"choices": [{"message": {"content": json.dumps(self.plan)}}]}
             if route == "/api/v1/models/unload":
                 return {"instance_id": INSTANCE}
             self.fail(route)
 
         with patch.object(lmstudio, "_request", side_effect=fake_request):
-            lmstudio.LMStudio(self.settings).interpret("アニメ絵", self.workflows, None)
+            client = lmstudio.LMStudio(self.settings)
+            client.interpret("アニメ絵", self.workflows, None)
+        self.assertEqual(client.loaded_context_length, 16384)
         self.assertNotIn("/api/v1/models/load", calls)
         self.assertEqual(calls[-1], "/api/v1/models/unload")
 
@@ -137,8 +145,8 @@ class GUIAndConfigTests(unittest.TestCase):
     def test_packaged_config_and_workflow_are_valid(self):
         c = core.load_config(ROOT / "config.example.json")
         self.assertEqual(c["llm"]["provider"], "lmstudio")
-        self.assertEqual(c["llm"]["context_length"], 8192)
-        self.assertEqual(c["llm"]["max_tokens"], 4096)
+        self.assertNotIn("context_length", c["llm"])
+        self.assertNotIn("max_tokens", c["llm"])
         self.assertIn("wai_t2i_basic", c["workflows"])
         self.assertTrue(c["llm"]["unload_after_inference"])
 
@@ -169,7 +177,7 @@ class GUIAndConfigTests(unittest.TestCase):
             self.assertEqual(result["llm"]["provider"], "lmstudio")
             self.assertIn("ollama", result)
 
-    def test_gui_migrates_original_token_defaults_and_preserves_model(self):
+    def test_gui_removes_original_token_defaults_and_preserves_model(self):
         with tempfile.TemporaryDirectory() as name:
             config = Path(name) / "config.json"
             config.write_text(json.dumps({
@@ -185,13 +193,13 @@ class GUIAndConfigTests(unittest.TestCase):
             }), encoding="utf-8")
             with patch.object(gui, "CONFIG", config):
                 migrated = gui.bootstrap_config()
-            self.assertEqual(migrated["llm"]["context_length"], 8192)
-            self.assertEqual(migrated["llm"]["max_tokens"], 4096)
+            self.assertNotIn("context_length", migrated["llm"])
+            self.assertNotIn("max_tokens", migrated["llm"])
             self.assertEqual(migrated["llm"]["model"], "gemma-4-12b")
             self.assertEqual(migrated["llm"]["base_url"], "http://127.0.0.1:57317")
-            self.assertTrue(migrated["ui"]["token_defaults_v2_applied"])
+            self.assertNotIn("token_defaults_v2_applied", migrated["ui"])
 
-    def test_gui_token_migration_is_one_time_and_preserves_custom_limits(self):
+    def test_gui_removes_old_custom_limits_too_and_does_not_reintroduce_them(self):
         with tempfile.TemporaryDirectory() as name:
             config = Path(name) / "config.json"
             config.write_text(json.dumps({
@@ -208,8 +216,13 @@ class GUIAndConfigTests(unittest.TestCase):
             }), encoding="utf-8")
             with patch.object(gui, "CONFIG", config):
                 migrated = gui.bootstrap_config()
-            self.assertEqual(migrated["llm"]["context_length"], 4096)
-            self.assertEqual(migrated["llm"]["max_tokens"], 1024)
+            self.assertNotIn("context_length", migrated["llm"])
+            self.assertNotIn("max_tokens", migrated["llm"])
+            config.write_text(json.dumps(migrated), encoding="utf-8")
+            with patch.object(gui, "CONFIG", config):
+                restarted = gui.bootstrap_config()
+            self.assertNotIn("context_length", restarted["llm"])
+            self.assertNotIn("max_tokens", restarted["llm"])
 
     def test_cancellation_before_any_network(self):
         cfg = core.load_config(ROOT / "config.example.json")

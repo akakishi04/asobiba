@@ -18,8 +18,8 @@ ROOT = Path(__file__).resolve().parents[1]
 class InferenceTimeoutTests(unittest.TestCase):
     def setUp(self):
         self.example = json.loads((ROOT / "config.example.json").read_text(encoding="utf-8"))
-        self.assertEqual(self.example["llm"]["context_length"], 8192)
-        self.assertEqual(self.example["llm"]["max_tokens"], 4096)
+        self.assertNotIn("context_length", self.example["llm"])
+        self.assertNotIn("max_tokens", self.example["llm"])
         self.assertEqual(self.example["llm"]["inference_timeout_seconds"], 1200)
 
     def test_chat_uses_extended_timeout_only_for_inference(self):
@@ -66,8 +66,8 @@ class InferenceTimeoutTests(unittest.TestCase):
                 upgraded = gui.bootstrap_config()
             self.assertEqual(upgraded["llm"]["inference_timeout_seconds"], 1200)
             self.assertEqual(upgraded["llm"]["timeout_seconds"], 240)
-            self.assertEqual(upgraded["llm"]["context_length"], 8192)
-            self.assertEqual(upgraded["llm"]["max_tokens"], 4096)
+            self.assertNotIn("context_length", upgraded["llm"])
+            self.assertNotIn("max_tokens", upgraded["llm"])
             self.assertEqual(upgraded["llm"]["model"], "gemma-4-12b")
             self.assertEqual(upgraded["llm"]["base_url"], "http://127.0.0.1:57317")
 

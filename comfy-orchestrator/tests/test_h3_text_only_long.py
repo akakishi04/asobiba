@@ -213,7 +213,7 @@ class TextOnlyLongTests(unittest.TestCase):
     def test_request_error_reports_stage_without_retry(self):
         client = SimpleNamespace(settings={"max_tokens": 4096})
         with patch.object(lmstudio, "_request", side_effect=core.OrchestratorError("timeout")) as req:
-            with self.assertRaisesRegex(core.OrchestratorError, "h3_japanese_review.*4096.*timeout"):
+            with self.assertRaisesRegex(core.OrchestratorError, "h3_japanese_review.*LM Studio管理.*timeout"):
                 hp._reply(client, "instance", "system", "text", {}, "h3_japanese_review", lambda v: v)
             req.assert_called_once()
 

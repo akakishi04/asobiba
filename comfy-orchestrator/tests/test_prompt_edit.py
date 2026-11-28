@@ -207,7 +207,7 @@ class PromptEditTests(unittest.TestCase):
         self.assertEqual(draft.current, 1)
         self.assertEqual(draft.plan(), self.plan)
 
-    def test_native_translation_disables_reasoning_and_bounds_short_output(self):
+    def test_native_translation_disables_reasoning_without_host_output_limit(self):
         self.catalog[0]["capabilities"]["reasoning"] = {
             "allowed_options": ["off", "on"], "default": "on"}
         manifest = self.project(complete=True)
@@ -218,7 +218,7 @@ class PromptEditTests(unittest.TestCase):
             self.assertEqual(payload["reasoning"], "off")
             self.assertFalse(payload["store"])
             self.assertFalse(payload["stream"])
-            self.assertLess(payload["max_output_tokens"], 512)
+            self.assertNotIn("max_output_tokens", payload)
             self.assertEqual(payload["temperature"], 0)
             self.assertNotIn("response_format", payload)
             self.assertIn("Required JSON schema", payload["system_prompt"])
@@ -235,7 +235,7 @@ class PromptEditTests(unittest.TestCase):
         manifest = self.project()
         def response(settings, route, payload):
             self.assertEqual(route, "/v1/chat/completions")
-            self.assertLess(payload["max_tokens"], 512)
+            self.assertNotIn("max_tokens", payload)
             return {"choices": [{"message": {"content": "", "reasoning_content": "Thinking..."},
                                  "finish_reason": "length"}]}
         with patch.object(lmstudio, "list_models", return_value=self.catalog), \
@@ -266,7 +266,7 @@ class PromptEditTests(unittest.TestCase):
             routes.append(route)
             if route == "/v1/chat/completions":
                 self.assertEqual(payload["response_format"]["json_schema"]["name"], "h3_cut_rewrite")
-                self.assertEqual(payload["max_tokens"], self.config["llm"]["max_tokens"])
+                self.assertNotIn("max_tokens", payload)
                 self.assertNotIn("reasoning", payload)
                 return reply({"text": "She closes the same pink umbrella."})
             self.assertEqual(payload["reasoning"], "off")

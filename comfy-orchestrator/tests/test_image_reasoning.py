@@ -66,7 +66,7 @@ class ImageReasoningTests(unittest.TestCase):
         payload = calls[1][1]
         self.assertEqual(payload["reasoning"], "off")
         self.assertFalse(payload["store"])
-        self.assertEqual(payload["max_output_tokens"], self.settings["max_tokens"])
+        self.assertNotIn("max_output_tokens", payload)
         self.assertNotIn("response_format", payload)
         self.assertIn("Required JSON schema", payload["system_prompt"])
         self.assertIn("alternate_prompt", payload["system_prompt"])
@@ -76,6 +76,7 @@ class ImageReasoningTests(unittest.TestCase):
         calls, notes = self.run_plan(ANIMA_ID, ["on"])
         self.assertEqual(calls[1][0], "/v1/chat/completions")
         self.assertIn("response_format", calls[1][1])
+        self.assertNotIn("max_tokens", calls[1][1])
 
     def test_on_uses_advertised_reasoning(self):
         self.settings["image_reasoning"] = "on"
@@ -125,6 +126,7 @@ class ImageReasoningTests(unittest.TestCase):
                               {"type": "object"}, "translation", lambda value: value,
                               translation_chars=5)
         self.assertEqual(send.call_args.args[2]["reasoning"], "off")
+        self.assertNotIn("max_output_tokens", send.call_args.args[2])
 
     def test_model_default_effort_is_used_when_on_is_not_an_option(self):
         client = SimpleNamespace(settings={**self.settings, "image_reasoning": "on"},
