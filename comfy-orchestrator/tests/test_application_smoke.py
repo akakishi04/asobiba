@@ -34,6 +34,37 @@ class ApplicationSmokeTests(unittest.TestCase):
                         app._on_generation_mode_choice()
                         root.update_idletasks()
                         self.assertEqual(app.generation_mode.get(), mode)
+                    # Real Tk manager: registration is explicit, persistent and routes
+                    # an otherwise unknown filename to the selected image adapter.
+                    from comfy_orchestrator.model_registry import load_registrations, image_key, PROFILES
+                    from comfy_orchestrator.model_profiles import ANIMA_ID
+                    custom_file = "custom-weight.safetensors"
+                    app.generation_inventory = {"UNETLoader": [custom_file],
+                                                "CheckpointLoaderSimple": [core.DEFAULT_SDXL_CHECKPOINT]}
+                    app._apply_generation_model_choices()
+                    app._open_model_manager()
+                    manager = app.model_manager
+                    manager.profile.set(PROFILES["anima"].label)
+                    manager._change_profile()
+                    self.assertEqual(str(manager.save_button.cget("state")), "disabled")
+                    manager.filename.set(custom_file)
+                    manager.steps.set("25")
+                    manager.cfg.set("3.25")
+                    manager._sync_file_choice()
+                    manager._register()
+                    self.assertEqual(load_registrations(app._registry_path)[0].filename, custom_file)
+                    key = image_key("anima", custom_file)
+                    label = next(label for label, choice in app._image_choices.items() if choice.filename == key)
+                    app.workflow_choice.set(label)
+                    app._on_workflow_choice()
+                    self.assertEqual(app._active_workflow(), ANIMA_ID)
+                    self.assertEqual(app.anima_model.get(), key)
+                    self.assertEqual((app.steps.get(), app.cfg.get()), ("25", "3.25"))
+                    manager.destroy()
+                    app.workflow_choice.set("SDXL · " + core.DEFAULT_SDXL_CHECKPOINT)
+                    app._on_workflow_choice()
+                    self.assertEqual(app._active_workflow(), "wai_t2i_basic")
+
                     from comfy_orchestrator.h3_model_picker import OPENING, REFERENCE, TEXT_ONLY
                     filename = "10Eros_Max_8stepTurbo_v1.0_hybrid_activation_learned_HQ.safetensors"
                     base = core.h3_hybrid_model_key(filename, reference_only=False)

@@ -30,7 +30,8 @@ class ManualModelRegistryTests(unittest.TestCase):
                      registration("h3_euler_hybrid", "TriPRISM.safetensors", 8))
             self.assertEqual(save_registrations(path, items), items)
             self.assertEqual(load_registrations(path), items)
-            for args in (("anima", "../bad.safetensors"), ("h3_fl2va", "C:/bad.safetensors"),
+            for args in (("anima", "../bad.safetensors"), ("anima", ".. /bad.safetensors"),
+                         ("h3_fl2va", "C:/bad.safetensors"),
                          ("h3_euler_hybrid", "a.safetensors", 7),
                          ("h3_ref2va", "a.safetensors", 20, 4)):
                 with self.assertRaises(core.OrchestratorError):

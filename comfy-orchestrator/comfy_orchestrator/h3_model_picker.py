@@ -10,7 +10,7 @@ from dataclasses import dataclass, replace
 
 from .h3 import (H3_MODEL_LABELS, h3_hybrid_filename, h3_hybrid_model_key,
                  h3_ref2va_filename)
-from .model_registry import parse_h3_key, h3_key, PROFILES
+from .model_registry import parse_h3_key, h3_key
 
 
 OPENING = "開始フレーム"

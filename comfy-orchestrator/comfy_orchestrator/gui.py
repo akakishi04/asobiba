@@ -91,7 +91,7 @@ from .image_adjust_ui import ImageAdjustWindow
 from .model_profiles import (ANIMA_ID, ANIMA_BASE, T2I_ONLY, WAI_FAMILY, image_model_choices,
                              selected_label, defaults_for)
 from .model_registry import (load_registrations, save_registrations, registered_h3_turbo,
-                             parse_h3_key, recommended, registration_for_key)
+                             parse_h3_key, registration_for_key)
 from .model_manager_ui import ModelManagerWindow
 from .preview_geometry import preview_subsample
 

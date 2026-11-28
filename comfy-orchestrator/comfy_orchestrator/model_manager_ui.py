@@ -43,6 +43,7 @@ class ModelManagerWindow(tk.Toplevel):
         ttk.Label(form, text="モデルファイル").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=3)
         self.files = ttk.Combobox(form, textvariable=self.filename, state="readonly")
         self.files.grid(row=1, column=1, columnspan=3, sticky="ew", pady=3)
+        self.files.bind("<<ComboboxSelected>>", self._sync_file_choice)
         ttk.Label(form, text="既定Steps").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=3)
         self.steps_entry = ttk.Entry(form, textvariable=self.steps, width=9)
         self.steps_entry.grid(row=2, column=1, sticky="w", pady=3)
@@ -81,7 +82,7 @@ class ModelManagerWindow(tk.Toplevel):
         current = self.filename.get()
         self.files.configure(values=options, state="readonly" if options else "disabled")
         if current not in options:
-            self.filename.set(options[0] if options else "")
+            self.filename.set("")
         self.steps_entry.configure(state="normal")
         self.cfg_entry.configure(state="normal")
         if _event is not None:
@@ -96,7 +97,13 @@ class ModelManagerWindow(tk.Toplevel):
         elif not spec.image_family:
             self.cfg.set("")
             self.cfg_entry.configure(state="disabled")
-        self.save_button.configure(state="normal" if options else "disabled")
+        self._sync_file_choice()
+
+    def _sync_file_choice(self, _event=None):
+        spec = PROFILES[self._profile_key()]
+        available = (self.inventory or {}).get(spec.loader, ())
+        self.save_button.configure(state="normal" if self.filename.get() in available
+                                   and safe_filename(self.filename.get()) else "disabled")
 
     def update_inventory(self, inventory):
         self.inventory = inventory
@@ -136,10 +143,10 @@ class ModelManagerWindow(tk.Toplevel):
         # A missing registration can be removed, never accidentally replaced
         # with a different installed file by the profile's default selection.
         self.filename.set(item.filename)
-        if item.filename not in (self.inventory or {}).get(item.spec.loader, ()):
-            self.save_button.configure(state="disabled")
+        self._sync_file_choice()
 
     def _refresh(self):
+        self.update_inventory(None)
         self.status.set("モデル一覧を取得中")
         self.on_refresh()
 

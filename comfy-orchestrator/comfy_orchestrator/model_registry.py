@@ -49,8 +49,8 @@ def safe_filename(value):
         return False
     parts = value.replace("\\", "/").split("/")
     return (value.lower().endswith(".safetensors")
-            and all(p and p not in (".", "..") and ":" not in p
-                    and not any(ord(c) < 32 or ord(c) == 127 for c in p)
+            and all(p and p not in (".", "..") and p == p.rstrip(" .")
+                    and not any(c in ':<>|?*"' or ord(c) < 32 or ord(c) == 127 for c in p)
                     for p in parts))
 
 

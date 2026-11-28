@@ -711,7 +711,7 @@ AnimaはComfyUI標準のUNETLoader、CLIPLoader（stable_diffusion）、VAELoade
 - text_encoders: qwen_3_06b_base.safetensors
 - vae: qwen_image_vae.safetensors（Qwen-Image用を流用）
 
-公式: https://docs.comfy.org/tutorials/image/anima/anima 。生成時の事前検証で必要なローダーやファイルが不足していればエラーにします。プロンプト確認のみではモデルをロード・検証しません。Animaは当面タグ形式を実行用に選択し、自然文形式も既存の両形式バンドルに保持します。画像調整・同条件再生成も保存されたモデル名を利用します。Anima I2I・ControlNet、未知系列の手動登録、H3 VAEの独立選択は別工程です。
+公式: https://docs.comfy.org/tutorials/image/anima/anima 。生成時の事前検証で必要なローダーやファイルが不足していればエラーにします。プロンプト確認のみではモデルをロード・検証しません。Animaは当面タグ形式を実行用に選択し、自然文形式も既存の両形式バンドルに保持します。画像調整・同条件再生成も保存されたモデル名を利用します。Anima I2I・ControlNetと未対応アーキテクチャの新規グラフ追加は別工程です。H3 VAEの独立選択は当面見送ります。
 
 ### 生成モデル管理（手動登録）
 
