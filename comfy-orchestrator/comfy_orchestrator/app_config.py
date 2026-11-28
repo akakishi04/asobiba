@@ -20,7 +20,7 @@ def load_local_config(config_path, example_path) -> dict:
         config["llm"] = copy.deepcopy(example["llm"])
     config["llm"]["provider"] = "lmstudio"
     # Backfill the new inference-only timeout without changing the user's
-    # chosen model, endpoint, token limit, or older API-management timeout.
+    # chosen model, endpoint, or older API-management timeout.
     config["llm"].setdefault(
         "inference_timeout_seconds", example["llm"]["inference_timeout_seconds"]
     )
@@ -35,10 +35,6 @@ def load_local_config(config_path, example_path) -> dict:
     for workflow_id, entry in example.get("workflows", {}).items():
         config["workflows"].setdefault(workflow_id, copy.deepcopy(entry))
     config.setdefault("ui", copy.deepcopy(example.get("ui", {})))
-    # One-time migration from the original 4096/2048 token presets.
-    # Keep unrelated settings (including the user's chosen model and port).
-    # A marker prevents a deliberate future choice of smaller limits from
-    # being silently overwritten on the next startup.
     ui = config["ui"]
     # One-time upgrade of the previous stock 10-minute timeout. Preserve
     # custom values and allow deliberate changes back to 600 after migration.
@@ -46,14 +42,11 @@ def load_local_config(config_path, example_path) -> dict:
         if config["llm"].get("inference_timeout_seconds") == 600:
             config["llm"]["inference_timeout_seconds"] = example["llm"]["inference_timeout_seconds"]
         ui["inference_timeout_v2_applied"] = True
-    if not ui.get("token_defaults_v2_applied", False):
-        llm = config["llm"]
-        defaults = example["llm"]
-        if llm.get("context_length") == 4096:
-            llm["context_length"] = defaults["context_length"]
-        if llm.get("max_tokens", 2048) == 2048:
-            llm["max_tokens"] = defaults["max_tokens"]
-        ui["token_defaults_v2_applied"] = True
+    # Retire both old defaults and explicit overrides. All token policy now
+    # belongs to LM Studio. Persist removal on the next normal settings save.
+    config["llm"].pop("context_length", None)
+    config["llm"].pop("max_tokens", None)
+    ui.pop("token_defaults_v2_applied", None)
     return config
 
 

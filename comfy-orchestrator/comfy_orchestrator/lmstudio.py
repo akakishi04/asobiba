@@ -24,7 +24,8 @@ from .character_refs import observation_schema, intersection_schema, validate_im
 from .character_repair import repair_model_analysis
 from .model_runtime import record_model_event
 from .prompt_inference import (structured_payload, read_json_reply, request_validated,
-                               image_reasoning_option, image_reasoning_description)
+                               image_reasoning_option, image_reasoning_description,
+                               token_policy_description)
 from . import h3_prompt
 from .prompt_profiles import (
     DEFAULT_T2I_PROFILE, T2I_PROFILE_LEGACY,
@@ -129,8 +130,14 @@ class LMStudio:
         self.settings = settings
         self.model = settings["model"]
         self.unload_after = settings.get("unload_after_inference", True)
+        self.loaded_context_length = None
+
+    def _record_load_config(self, config):
+        length = config.get("context_length") if isinstance(config, dict) else None
+        self.loaded_context_length = length if type(length) is int and length > 0 else None
 
     def _ensure_loaded(self) -> str:
+        self.loaded_context_length = None
         catalog = list_models(self.settings)
         matching = next((item for item in catalog if item["key"] == self.model), None)
         if matching is None:
@@ -156,16 +163,19 @@ class LMStudio:
             instance_id = running[0].get("id") if isinstance(running[0], dict) else None
             if not instance_id:
                 raise OrchestratorError("LM StudioのモデルインスタンスIDを取得できません")
+            self._record_load_config(running[0].get("config"))
             record_model_event("llm_reuses")
             return instance_id
 
-        settings = {"model": self.model}
-        if self.settings.get("context_length") is not None:
-            settings["context_length"] = self.settings["context_length"]
-        result = _request(self.settings, "/api/v1/models/load", settings)
+        # Use per-model defaults in LM Studio, never the model capacity or an
+        # old asobiba context setting as a load override. Ask for the applied
+        # load configuration only, for diagnostics and long-video batching.
+        result = _request(self.settings, "/api/v1/models/load",
+                          {"model": self.model, "echo_load_config": True})
         loaded_id = result.get("instance_id", result.get("model_instance_id"))
         if result.get("status") != "loaded" or not isinstance(loaded_id, str) or not loaded_id:
             raise OrchestratorError(f"LM Studioのロード完了を確認できません: {result}")
+        self._record_load_config(result.get("load_config"))
         record_model_event("llm_loads")
         return loaded_id
 
@@ -427,7 +437,7 @@ class LMStudio:
                         },
                     ],
                     "comfy_visual_observation", composition_schema(),
-                    max_tokens=self.settings.get("max_tokens", 4096), temperature=0.0,
+                    temperature=0.0,
                 )
                 observed = read_json_reply(
                     _request(self.settings, "/v1/chat/completions", observation_request),
@@ -484,11 +494,10 @@ class LMStudio:
                                          schema, "comfy_plan", validate, progress,
                                          direct_answer=True)
             if supports_plan(workflows) and progress:
-                progress("画像プロンプト: " + image_reasoning_description(self))
+                progress("画像プロンプト: " + image_reasoning_description(self) + " / " + token_policy_description(self))
             request = structured_payload(
                 instance_id, [{"role": "system", "content": system}, message],
                 "comfy_plan", schema,
-                max_tokens=self.settings.get("max_tokens", 4096),
             )
             result = _request(self.settings, "/v1/chat/completions", request)
             return read_json_reply(result, "生成プロンプト")
@@ -521,7 +530,7 @@ class LMStudio:
         def structured(messages: list[dict], schema_name: str, schema: dict) -> dict:
             payload = structured_payload(
                 instance_id, messages, schema_name, schema,
-                max_tokens=self.settings.get("max_tokens", 4096), temperature=0,
+                temperature=0,
             )
             return read_json_reply(
                 _request(self.settings, "/v1/chat/completions", payload),
@@ -730,7 +739,7 @@ class LMStudio:
                     "required": ["description_ja"],
                     "additionalProperties": False,
                 },
-                max_tokens=self.settings.get("max_tokens", 4096), temperature=0,
+                temperature=0,
             )
             answer = read_json_reply(
                 _request(self.settings, "/v1/chat/completions", payload),

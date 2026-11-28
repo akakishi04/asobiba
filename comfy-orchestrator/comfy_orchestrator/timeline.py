@@ -204,18 +204,13 @@ def _request_plan(settings, request_fn, instance_id, system, payload, schema, na
     reply = request_fn(settings, "/v1/chat/completions", structured_payload(
         instance_id, [{"role": "system", "content": system},
                       {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
-        name, schema, max_tokens=settings.get("max_tokens", 4096),
+        name, schema,
     ))
     return read_json_reply(reply, "長尺プロンプト計画")
 
 
-def _batched_plan(settings, request_fn, instance_id, system, payload, note, check_cancel):
+def _batched_plan(settings, request_fn, instance_id, system, payload, note, check_cancel, *, batch_size):
     windows = payload["timeline"]
-    max_tokens = settings.get("max_tokens", 4096)
-    context = settings.get("context_length") or 8192
-    if max_tokens < 1024 or context < 4096:
-        raise OrchestratorError("多数カットの計画にはmax_tokens 1024以上、context_length 4096以上を推奨します")
-    batch_size = max(4, min(12, max_tokens // 180, context // 500))
     batches = [windows[i:i + batch_size] for i in range(0, len(windows), batch_size)]
     # Group outline into at most 12 major stages so a 300-cut timeline never
     # requires a 300-item input or output in the initial inference.
@@ -363,14 +358,18 @@ def plan_long_prompts(config: dict, request: str, frames: list[int], seconds: in
     try:
         instance_id = client._ensure_loaded()
         check_cancel()
-        if count <= 12:
+        from .prompt_inference import planning_batch_size, token_policy_description
+        batch_size = planning_batch_size(client, maximum=12, context_per_cut=500)
+        note(f"LM Studio: {token_policy_description(client)} / 1回最大{batch_size}区間")
+        if count <= batch_size:
             note(f"LM Studio: {count}区間のプロンプトを一括作成")
             result = validate_prompt_plan(_request_plan(
                 settings, _request, instance_id, system, payload,
                 prompt_plan_schema(count), "continuous_video_prompt_plan",
             ), count)
         else:
-            result = _batched_plan(settings, _request, instance_id, system, payload, note, check_cancel)
+            result = _batched_plan(settings, _request, instance_id, system, payload, note, check_cancel,
+                                   batch_size=batch_size)
         check_cancel()
         if key is not None:
             try:

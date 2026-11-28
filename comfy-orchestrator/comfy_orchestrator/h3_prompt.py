@@ -14,7 +14,8 @@ from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 from .parameters import OrchestratorError, check_param
-from .prompt_inference import check_cancel as _check_cancel, request_validated as _reply
+from .prompt_inference import (check_cancel as _check_cancel, request_validated as _reply,
+                               planning_batch_size, token_policy_description)
 
 FORMAT = "h3_official_v1"
 LEGACY = "legacy"
@@ -591,9 +592,8 @@ def plan_long(config, request, windows, reference_only, *, image=None, progress=
                 "total_seconds": round(windows[-1]["end_frame"] / 24, 3)}
         # Structured audiovisual descriptions cost more tokens than the former
         # free sentences. Bound detail batches and reuse one loaded LLM.
-        tokens = settings.get("max_tokens", 4096)
-        context = settings.get("context_length") or 8192
-        size = max(1, min(6, tokens // 600, context // 1100))
+        size = planning_batch_size(client, maximum=6, context_per_cut=1100)
+        note(f"H3長尺: {token_policy_description(client)} / 1回最大{size}カット")
         batches = [windows[i:i+size] for i in range(0, len(windows), size)]
         common = None
         segments = []

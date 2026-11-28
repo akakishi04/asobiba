@@ -1,7 +1,7 @@
 """Shared structured local-LLM request construction, parsing and validated inference.
 
 Model-specific prompt policies and semantic validators live in their callers.
-The H3 diagnostics and bounded translation path retain their previous contract.
+Token limits are delegated to LM Studio; context metadata is advisory for batching.
 """
 from __future__ import annotations
 
@@ -43,20 +43,55 @@ def image_reasoning_description(client):
     return f"思考{preference.upper()}指定非対応（モデル既定・従来の構造化出力）"
 
 
-def structured_payload(instance_id, messages, name, schema, *, max_tokens=4096, temperature=0.2):
-    """Construct the same OpenAI-compatible JSON contract for all planners."""
+def token_policy_description(client):
+    context = getattr(client, "loaded_context_length", None)
+    actual = f"{context:,} tokens" if type(context) is int and context > 0 else "取得不可"
+    return f"出力上限: LM Studio管理 / コンテキスト長: {actual}"
+
+
+def planning_batch_size(client, *, maximum, context_per_cut):
+    """A conservative cut-count heuristic, never an inference token limit.
+
+    Without reported context metadata, retain the existing maximum batch size.
+    The server determines the actual input/output budget in either case.
+    """
+    context = getattr(client, "loaded_context_length", None)
+    if type(context) is not int or context <= 0:
+        return maximum
+    return max(1, min(maximum, context // context_per_cut))
+
+
+def structured_payload(instance_id, messages, name, schema, *, temperature=0.2):
+    """Construct JSON requests without overriding the server output budget."""
     return {
         "model": instance_id,
         "messages": messages,
         "stream": False,
         "temperature": temperature,
-        "max_tokens": max_tokens,
         "response_format": {"type": "json_schema", "json_schema": {"name": name, "schema": schema}},
     }
 
 
+def check_final_reply(result, label, budget="出力上限: LM Studio管理"):
+    """Fail once for missing or truncated final answers, not a schema retry."""
+    choices = result.get("choices")
+    choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
+    message = choice.get("message")
+    if isinstance(message, dict) and not str(message.get("content") or "").strip():
+        raise OrchestratorError(
+            f"{label}: 最終回答が空です。LM StudioのReasoning、コンテキスト長、"
+            f"出力上限を確認してください。（{budget}、同じ推論は再試行しません）"
+        )
+    if choice.get("finish_reason") == "length":
+        raise OrchestratorError(
+            f"{label}: LM Studioが長さ制限で回答を打ち切りました。"
+            f"コンテキスト長と出力上限を確認してください。（{budget}、同じ推論は再試行しません）"
+        )
+
+
 def read_json_reply(result: dict, label: str) -> dict:
     """Validate an LM Studio structured response without trusting its content."""
+    check_final_reply(result, label)
     choices = result.get("choices")
     if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
         raise OrchestratorError(f"LM Studioの{label}応答形式が不正です")
@@ -85,26 +120,24 @@ def request_validated(client, instance_id, system, user_content, response_schema
     # Translation always opts out of reasoning when supported. Still-image
     # planning and rewriting use the user preference; video stays unchanged.
     translating = translation_chars is not None
-    max_tokens = client.settings.get("max_tokens", 4096)
+    budget = token_policy_description(client)
     reasoning = ("off" if "off" in getattr(client, "_reasoning_options", ()) else None) if translating else (
         image_reasoning_option(client) if direct_answer else None)
     native = reasoning is not None
     label = name if direct_answer else "H3 " + name
     if translating:
-        # Scale with source length, not the worst-case JSON field limit.
-        # Allow sufficient room for Japanese, protected markers and JSON.
-        max_tokens = min(max_tokens, max(256, 160 + translation_chars +
-                                         48 * len(response_schema.get("properties", {}))))
+        # Keep direct translation and reasoning-off policy, but do not impose
+        # an output limit derived from source character count.
         system += "\nTranslate directly. Return only the completed JSON object; no analysis, discussion or alternatives."
         if progress:
-            method = "思考OFF（LM Studio native API）" if native else "思考OFF指定を確認できないモデル（短い出力上限）"
-            progress(f"H3 {name}: {method} / 最大{max_tokens} tokens")
+            method = "思考OFF（LM Studio native API）" if native else "思考OFF指定を確認できないモデル（モデル既定）"
+            progress(f"H3 {name}: {method} / {budget}")
     if direct_answer and not translating:
         system += ("\nReturn only the completed JSON as the final answer; no commentary outside JSON."
                    if reasoning != "off" else
                    "\nAnswer directly. Return only the completed JSON; no analysis or alternatives.")
         if progress:
-            progress(f"画像プロンプト: {image_reasoning_description(client)} / 最大{max_tokens} tokens")
+            progress(f"画像プロンプト: {image_reasoning_description(client)} / {budget}")
     if native:
         # The native API has no response_format; validate the actual final
         # answer against the host contract instead of trusting model text.
@@ -121,7 +154,6 @@ def request_validated(client, instance_id, system, user_content, response_schema
                         "model": instance_id, "system_prompt": system + feedback,
                         "input": user_content, "stream": False, "store": False,
                         "reasoning": reasoning, "temperature": 0.0 if translating else 0.2,
-                        "max_output_tokens": max_tokens,
                     })
                 output = reply.get("output")
                 if not isinstance(output, list):
@@ -145,26 +177,14 @@ def request_validated(client, instance_id, system, user_content, response_schema
                 reply = _request(client.settings, "/v1/chat/completions", structured_payload(
                     instance_id, [{"role": "system", "content": system + feedback},
                                   {"role": "user", "content": user_content}], name, response_schema,
-                    max_tokens=max_tokens, temperature=0.0 if translating else 0.2,
+                    temperature=0.0 if translating else 0.2,
                 ))
         except OrchestratorError as exc:
             raise OrchestratorError(
-                f"{label}（試行{attempt+1} / 出力上限{max_tokens} tokens）: {exc}"
+                f"{label}（試行{attempt+1} / {budget}）: {exc}"
             ) from exc
         check_cancel(cancel_event)
-        if translating or direct_answer:
-            choices = reply.get("choices")
-            choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
-            message = choice.get("message")
-            if isinstance(message, dict) and not str(message.get("content") or "").strip():
-                raise OrchestratorError(
-                    f"{label}: " + ("翻訳の" if translating else "") + "最終回答が空です。"
-                    "LM StudioのReasoningをOFFにするか、非思考モデルを選択してください。"
-                    f"（出力上限{max_tokens} tokens、同じ推論は再試行しません）"
-                )
-            if choice.get("finish_reason") == "length":
-                raise OrchestratorError(f"{label}: " + ("翻訳が" if translating else "回答が") + f"出力上限{max_tokens} tokensに達しました。"
-                                        "LLMの思考設定または出力上限を確認してください")
+        check_final_reply(reply, label, budget)
         try:
             return validator(read_json_reply(reply, label))
         except OrchestratorError as exc:

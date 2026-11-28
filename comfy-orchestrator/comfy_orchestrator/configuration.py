@@ -34,9 +34,10 @@ def load_config(path: Path) -> dict:
     if not isinstance(model, str) or not model.strip():
         raise OrchestratorError(f"{llm_key}.model にローカルで使用可能なモデル名を設定してください")
     if llm_key == "llm" and provider == "lmstudio":
-        length = config["llm"].get("context_length")
-        if length is not None and (isinstance(length, bool) or not isinstance(length, int) or length < 512 or length > 131072):
-            raise OrchestratorError("llm.context_length は512～131072の整数です")
+        # LM Studio owns token settings, including for CLI callers loading an
+        # old file. Do not validate or reuse obsolete host-side limits.
+        config["llm"].pop("context_length", None)
+        config["llm"].pop("max_tokens", None)
         inference_timeout = config["llm"].get("inference_timeout_seconds", 1200)
         if (
             isinstance(inference_timeout, bool)
@@ -47,11 +48,6 @@ def load_config(path: Path) -> dict:
         image_reasoning = config["llm"].get("image_reasoning", "off")
         if image_reasoning not in ("off", "on", "auto"):
             raise OrchestratorError("llm.image_reasoning は off、on、auto のいずれかです")
-        output_tokens = config["llm"].get("max_tokens", 4096)
-        if isinstance(output_tokens, bool) or not isinstance(output_tokens, int) or not 1 <= output_tokens <= 32768:
-            raise OrchestratorError("llm.max_tokens は1～32768の整数です")
-        if length is not None and output_tokens > length:
-            raise OrchestratorError("llm.max_tokens は llm.context_length 以下にしてください")
         unload = config["llm"].get("unload_after_inference", True)
         if not isinstance(unload, bool):
             raise OrchestratorError("llm.unload_after_inference は真偽値です")
