@@ -62,7 +62,8 @@ def record_history(config, history_store, journal, result, images, request_text,
             character_references=character_references,
             character_traits=character_traits,
             character_analysis=character_analysis,
-            comparison_group_id=comparison_group_id, comparison_index=comparison_index,
+            **({"comparison_group_id": comparison_group_id, "comparison_index": comparison_index}
+               if comparison_group_id is not None else {}),
         )
         if result.get("job_id") and journal is not None:
             try:
@@ -145,8 +146,9 @@ class GenerationController:
         context = {"request_text": request, "prompt_profile": prompt_profile,
                    "composition_image": composition_image,
                    "character_references": character_references,
-                   "character_traits": character_traits, "character_analysis": character_analysis,
-                   "comparison_group_id": comparison_group_id, "comparison_index": comparison_index}
+                   "character_traits": character_traits, "character_analysis": character_analysis}
+        if comparison_group_id is not None:
+            context.update(comparison_group_id=comparison_group_id, comparison_index=comparison_index)
         result = core.execute_saved(
             self.config, self.config_path, workflow_id, parameters,
             reference_image=image, mask_image=mask_image, pose_image=pose_image,

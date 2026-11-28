@@ -64,6 +64,8 @@ def history_row(entry: HistoryEntry) -> tuple:
     except (ValueError, OverflowError):
         timestamp = timestamp[:16]
     title = short or "(プロンプトなし)"
+    if getattr(entry, "comparison_group_id", None):
+        title = "比較 · " + title
     if getattr(entry, "favorite", False):
         title = "★ " + title
     kind = "連続" if entry.workflow_id == LONG_VIDEO_ID else "素材" if entry.kind == "frame" else entry.kind.upper()
@@ -103,6 +105,8 @@ def history_summary(entry: HistoryEntry) -> str:
             details.append("Turbo " + turbo)
     if policy_label:
         details.append(policy_label)
+    if getattr(entry, "comparison_group_id", None):
+        details.append("比較 " + entry.comparison_group_id[:8])
     if entry.kind == "frame":
         details = [f"動画フレーム · {p.get('material_frame', '?')}f"]
     elif entry.legacy:
@@ -135,7 +139,8 @@ def history_action_state(selected, workflows, *, working):
                       (single.workflow_id in workflows or single.workflow_id == LONG_VIDEO_ID) and not working)
     comparable = ((len(selected) == 2 and all(e.first_image and e.first_image.is_file()
                                             and not is_video_output(e.first_image) for e in selected))
-                  or bool(still and single.reference_image and single.reference_image.is_file()))
+                  or bool(still and single.reference_image and single.reference_image.is_file())
+                  or bool(single and getattr(single, "comparison_group_id", None) and not working))
     material = bool(single and any(
         path is not None and path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
         for path in (*getattr(single, "images", (single.first_image,)), single.reference_image)

@@ -94,6 +94,8 @@ from .model_profiles import (ANIMA_ID, ANIMA_BASE, T2I_ONLY, WAI_FAMILY, image_m
 from .model_registry import (load_registrations, save_registrations, registered_h3_turbo,
                              parse_h3_key, registration_for_key)
 from .model_manager_ui import ModelManagerWindow
+from .model_comparison import ComparisonStore, prepare_targets, run_comparison
+from .model_comparison_ui import ModelComparisonWindow
 from .preview_geometry import preview_subsample
 
 
@@ -160,6 +162,9 @@ class Application:
         self.stop_event = self.tasks.stop_event
         self.config = bootstrap_config()
         self.history_store = HistoryStore(ROOT)
+        self.comparison_store = ComparisonStore(self.history_store)
+        self.comparison_window = None
+        self._comparison_active = None
         self._registry_path = self.history_store.data / "model_registry.json"
         self._registry_error = None
         try:
@@ -401,6 +406,8 @@ class Application:
                 self.image_reasoning_box = ttk.Combobox(page, textvariable=self.image_reasoning,
                     values=tuple(IMAGE_REASONING_LABELS.values()), state="readonly", width=5)
                 self.image_reasoning_box.pack(side="left")
+                self.model_compare_button = ttk.Button(page, text="モデル比較…", command=self._open_model_comparison)
+                self.model_compare_button.pack(side="left", padx=(8, 0))
         self._sync_workflow_choice()
         self.generation_tabs.bind("<<NotebookTabChanged>>", self._on_generation_tab_changed)
 
@@ -658,6 +665,9 @@ class Application:
                                       self.checkpoint_model.get(), self.anima_model.get(),
                                       registrations, self.qwen_model.get())
         self._image_choices = {item.label: item for item in choices}
+        comparison = getattr(self, "comparison_window", None)
+        if comparison is not None and comparison.winfo_exists() and not comparison.busy:
+            comparison.set_choices(choices)
         box = self._mode_boxes["image"]
         box.configure(values=tuple(self._image_choices), state="readonly" if choices else "disabled")
         if self.generation_mode.get() == "image":
@@ -1353,6 +1363,9 @@ class Application:
 
     def _compare_selected_history(self) -> None:
         entries = self._selected_history()
+        if len(entries) == 1 and getattr(entries[0], "comparison_group_id", None):
+            self._open_model_comparison(group_id=entries[0].comparison_group_id)
+            return
         if any(e.first_image is not None and is_video_output(e.first_image) for e in entries):
             messagebox.showinfo("画像比較", "動画は履歴の「開く」で再生してください")
             return
@@ -1375,6 +1388,90 @@ class Application:
             ComparisonWindow(self.root, left, right, *titles)
         except (ValueError, OSError, tk.TclError) as exc:
             messagebox.showerror("画像比較", str(exc))
+
+    def _open_model_comparison(self, group_id=None):
+        if self.working or self.character_analysis_running or self.single_draft is not None:
+            return
+        existing = self.comparison_window
+        if existing is None or not existing.winfo_exists():
+            choices = tuple(getattr(self, "_image_choices", {}).values())
+            self.comparison_window = ModelComparisonWindow(
+                self.root, self.comparison_store, choices,
+                width=self.width.get(), height=self.height.get(), seed=self.seed.get(),
+                steps=self.steps.get(), cfg=self.cfg.get(),
+                on_start=self._start_model_comparison, on_cancel=self._request_cancel,
+                on_adjust=lambda h, p: self._open_adjust(h, selected=p),
+                on_open=self._open_path, on_close=self._close_model_comparison,
+            )
+        else:
+            existing.lift()
+        if group_id:
+            self.comparison_window.open_group(group_id)
+
+    def _close_model_comparison(self):
+        if self.comparison_window is not None:
+            self.comparison_window.destroy()
+            self.comparison_window = None
+
+    def _start_model_comparison(self, choices, **options):
+        if self.working or self.character_analysis_running or self.single_draft is not None:
+            return
+        if self.generation_mode.get() != "image":
+            raise core.OrchestratorError("画像生成タブで比較を開始してください")
+        if any(v.get().strip() for v in (self.reference_image, self.mask_image, self.pose_image)):
+            raise core.OrchestratorError("モデル比較はT2I専用です。実際の参照画像・マスク・ポーズを解除してください")
+        prompt = self.prompt.get("1.0", "end").strip()
+        if not prompt:
+            raise core.OrchestratorError("メイン画面に生成内容を入力してください")
+        if self.model.get().strip() in ("", "SELECT_IN_GUI"):
+            raise core.OrchestratorError("LM Studioのモデルを選択してください")
+        composition = Path(self.composition_image.get()).expanduser() if self.composition_image.get().strip() else None
+        if composition is not None and not self.vision_composition.get():
+            raise core.OrchestratorError("構図参考を使用するには画像をLLMで構図解析をONにしてください")
+        if not self._save_settings():
+            return
+        cfg = copy.deepcopy(self.config)
+        available = {(c.workflow_id, c.filename) for c in self._image_choices.values()}
+        if any((c.workflow_id, c.filename) not in available for c in choices):
+            raise core.OrchestratorError("モデル一覧が変わりました。比較対象を選び直してください")
+        targets = prepare_targets(cfg["workflows"], choices, self._registered_models, **options)
+        traits = self.character_traits or None
+        refs = tuple(self.character_references) if traits else ()
+        analysis = copy.deepcopy(self.character_analysis) if traits else None
+        if traits:
+            validate_character_selection(refs, analysis, traits)
+        manifest = self.comparison_store.create(prompt, targets, options["policy"])
+        controller = self._controller(cfg, self.prompt_cache if self.use_prompt_cache.get() else None)
+        store, emit = self.comparison_store, self.messages.put
+        self._comparison_active = manifest["id"]
+        self._set_busy("比較生成を準備中")
+        self.comparison_window.show_manifest(manifest, active=True)
+        self._launch_generation(lambda: run_comparison(
+            controller, store, manifest, composition_image=composition,
+            character_references=refs, character_traits=traits, character_analysis=analysis,
+            on_update=lambda value: emit(("model_comparison_progress", value)),
+        ), done_event="model_comparison_done", cancel_as_progress=True,
+            usage={"action": "image_compare", "mode": "image", "workflow": "model_comparison",
+                   "group_id": manifest["id"]})
+
+    def _on_model_comparison_progress(self, manifest):
+        if manifest["id"] != self._comparison_active:
+            return
+        if self.comparison_window is not None:
+            self.comparison_window.show_manifest(manifest, active=True)
+        count = sum(t["status"] == "completed" for t in manifest["targets"])
+        self.status.set(f"比較生成 {count}/{len(manifest['targets'])}件")
+
+    def _on_model_comparison_done(self, manifest):
+        if manifest["id"] != self._comparison_active:
+            return
+        if self.comparison_window is not None:
+            self.comparison_window.show_manifest(manifest, active=False)
+            self.comparison_window.refresh_groups()
+        count = sum(t["status"] == "completed" for t in manifest["targets"])
+        self.status.set(f"比較生成: {count}/{len(manifest['targets'])}件")
+        self._log(f"比較グループ {manifest['id']}: {manifest['status']} / {count}件")
+        self._refresh_history(scan_legacy=False)
 
     def _controller(self, cfg, cache=None):
         return GenerationController(
@@ -1411,6 +1508,9 @@ class Application:
 
     def _set_busy(self, label: str) -> None:
         self.tasks.begin()
+        comparison = getattr(self, "comparison_window", None)
+        if comparison is not None and comparison.winfo_exists():
+            comparison.set_busy(True, own_task=getattr(self, "_comparison_active", None) is not None)
         if hasattr(self, "timing_status"):
             self.timing_status.set("経過 00:00")
         if hasattr(self, "project_workspace"):
@@ -2718,6 +2818,8 @@ class Application:
             "projects_loaded": self._on_event_projects_loaded,
             "long_plan_ready": self._finish_long_prompt_plan,
             "material_frame_ready": self._on_material_frame_ready,
+            "model_comparison_progress": self._on_model_comparison_progress,
+            "model_comparison_done": self._on_model_comparison_done,
             "image_adjust_ready": self._on_adjust_ready,
             "image_adjust_generated": self._on_adjust_generated,
             "image_adjust_changed": self._on_adjust_changed,
@@ -2970,6 +3072,9 @@ class Application:
         recovered, remaining = data
         self.status.set(f"回収 {recovered}件 / 未回収 {remaining}件")
         self._refresh_history(scan_legacy=False)
+        comparison = getattr(self, "comparison_window", None)
+        if comparison is not None and comparison.winfo_exists() and comparison.manifest:
+            comparison.open_group(comparison.manifest["id"])
 
     def _on_event_done(self, data):
         result, images, history_id = data
@@ -3018,6 +3123,10 @@ class Application:
     def _on_event_idle(self, data):
         self._tick_timing(finished=True)
         self.tasks.finish()
+        self._comparison_active = None
+        comparison = getattr(self, "comparison_window", None)
+        if comparison is not None and comparison.winfo_exists():
+            comparison.set_busy(False)
         self.review.finish()
         self._adjust_operation = None
         if getattr(self, "adjust_window", None) is not None:
