@@ -15,6 +15,7 @@ from . import h3_prompt as hp
 from .h3 import h3_ref2va_filename, ensure_h3_reference_prompt
 from .input_snapshot import copy_frozen_asset
 from . import image_prompts
+from .model_profiles import ANIMA_ID
 from .jobs import JobCancellationRequested
 from .lmstudio import LMStudio
 from .model_runtime import release_comfy_before_llm
@@ -197,7 +198,7 @@ class SinglePromptDraft:
             + ("\n" + hp.RETENTION_POLICY if self.reference_only else "")
             if self.official else
             "Use concise comma-separated English visual tags and preserve tag weights."
-            if self.workflow_id in SDXL_WORKFLOW_IDS else
+            if self.workflow_id in SDXL_WORKFLOW_IDS or self.workflow_id == ANIMA_ID else
             "Use natural English suitable for the selected generation model."
         )
 

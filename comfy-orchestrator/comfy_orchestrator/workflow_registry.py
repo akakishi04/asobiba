@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 from .parameters import OrchestratorError, PARAMS, check_param
+from .model_profiles import ANIMA_ID, anima_model_name, anima_models
 from .h3 import H3_MODELS, h3_ref2va_model_key, h3_hybrid_model_key
 
 
@@ -75,6 +76,8 @@ def split_checkpoint_option(parameters: dict, workflow_ids) -> tuple[dict, dict]
     name = inputs.pop("checkpoint_model")
     kind = sdxl_checkpoint_kind(name)
     ids = set(workflow_ids)
+    if ids == {ANIMA_ID} and anima_model_name(name):
+        return inputs, {"checkpoint_model": name}
     if not ids or not ids <= SDXL_WORKFLOW_IDS or kind is None:
         raise OrchestratorError("このワークフローに対応しないSDXLチェックポイントです")
     if kind == "turbo" and ids != {"wai_t2i_basic"}:
@@ -87,6 +90,11 @@ def prepare_checkpoint_workflow(template: dict, options: dict) -> dict:
         return template
     graph = copy.deepcopy(template)
     loader = graph.get("2", {})
+    if loader.get("class_type") == "UNETLoader" and anima_model_name(options["checkpoint_model"]):
+        if "unet_name" not in loader.get("inputs", {}) or not anima_model_name(loader["inputs"]["unet_name"]):
+            raise OrchestratorError("Anima用ローダーが見つかりません")
+        loader["inputs"]["unet_name"] = options["checkpoint_model"]
+        return graph
     if loader.get("class_type") != "CheckpointLoaderSimple" or "ckpt_name" not in loader.get("inputs", {}):
         raise OrchestratorError("標準SDXLチェックポイントノードが見つかりません")
     name = options["checkpoint_model"]
@@ -110,6 +118,7 @@ def installed_model_choices(inventory: dict) -> dict:
                                      if (key := h3_ref2va_model_key(name)) is not None))
                + tuple(dict.fromkeys(key for name in native for reference_only in (False, True)
                                      if (key := h3_hybrid_model_key(name, reference_only=reference_only)) is not None))),
+        "anima": anima_models(inventory),
         "sdxl": tuple(name for name in inventory.get("CheckpointLoaderSimple", ())
                       if sdxl_checkpoint_kind(name) is not None),
     }

@@ -197,7 +197,7 @@ class ComfyUI:
                                 f"ClipProj変換行列がありません: {wanted}。ComfyUI/models/clip_projectionsに配置してください"
                             )
                         raise OrchestratorError(
-                            f"動画生成モデルがありません: {wanted}。READMEのI2V導入手順を確認してください"
+                            f"生成モデルがありません: {wanted}。READMEのモデル導入手順を確認してください"
                         )
 
     def extend_video_timeout(self, settings: dict) -> None:

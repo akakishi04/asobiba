@@ -88,6 +88,8 @@ from .single_prompt import SinglePromptDraft
 from .single_prompt_ui import SinglePromptWindow
 from .image_adjust import ImageAdjustDraft, can_adjust, supported_workflow, image_file
 from .image_adjust_ui import ImageAdjustWindow
+from .model_profiles import (ANIMA_ID, ANIMA_BASE, T2I_ONLY, WAI_FAMILY, image_model_choices,
+                             selected_label, defaults_for)
 from .preview_geometry import preview_subsample
 
 
@@ -259,6 +261,7 @@ class Application:
         self._h3_picker_state = None
         self.generation_inventory = None
         self.checkpoint_model = tk.StringVar(value=options.get("checkpoint_model", core.DEFAULT_SDXL_CHECKPOINT))
+        self.anima_model = tk.StringVar(value=options.get("anima_model", ANIMA_BASE))
         self.qwen_steps = tk.StringVar(value=str(options.get("qwen_steps", 50)))
         self.qwen_cfg = tk.StringVar(value=str(options.get("qwen_cfg", 4)))
         self.qwen_fixed_steps = tk.StringVar(value="4")
@@ -368,7 +371,7 @@ class Application:
             variable = tk.StringVar(value=self.workflow_names.get(chosen, ""))
             self._mode_vars[mode] = variable
             choices = mode_workflow_ids(self.config, mode)
-            ttk.Label(page, text="ワークフロー").pack(side="left", padx=(0, 6))
+            ttk.Label(page, text="モデル" if mode == "image" else "動画方式").pack(side="left", padx=(0, 6))
             box = ttk.Combobox(
                 page, textvariable=variable, width=30,
                 values=tuple(self.workflow_names[key] for key in choices),
@@ -596,6 +599,10 @@ class Application:
                 self.workflow_choice = self._mode_vars[mode]
                 if self.generation_tabs.select() != str(page):
                     self.generation_tabs.select(page)
+            if mode == "image" and hasattr(self, "_mode_boxes") and hasattr(self, "anima_model"):
+                self._refresh_image_picker()
+                self._mode_choices_key = None
+                return
             key = (mode, values)
             if hasattr(self, "workflow_box") and getattr(self, "_mode_choices_key", None) != key:
                 self.workflow_box.configure(values=values, state="readonly" if len(values) > 1 else "disabled")
@@ -620,10 +627,65 @@ class Application:
         self._sync_workflow_choice()
         self._update_generation_controls()
 
+    def _refresh_image_picker(self):
+        if not hasattr(self, "_mode_boxes") or "image" not in self._mode_boxes:
+            return
+        inventory = self.generation_inventory
+        installed = core.installed_model_choices(inventory or {})["sdxl"]
+        choices = image_model_choices(self.config["workflows"], inventory, installed,
+                                      self.checkpoint_model.get(), self.anima_model.get())
+        self._image_choices = {item.label: item for item in choices}
+        box = self._mode_boxes["image"]
+        box.configure(values=tuple(self._image_choices), state="readonly" if choices else "disabled")
+        if self.generation_mode.get() == "image":
+            label = selected_label(choices, self.workflow.get(),
+                                   self.checkpoint_model.get(), self.anima_model.get())
+            self._mode_vars["image"].set(label or self.workflow_names.get(self.workflow.get(), self.workflow.get()))
+
+    def _select_image_model(self):
+        choice = self._image_choices.get(self.workflow_choice.get())
+        if choice is None or self.working:
+            self._refresh_image_picker()
+            return
+        has_input = any(v.get().strip() for v in (self.reference_image, self.mask_image, self.pose_image))
+        turbo = choice.filename is not None and core.sdxl_checkpoint_kind(choice.filename) == "turbo"
+        if has_input and (choice.workflow_id in T2I_ONLY or turbo):
+            messagebox.showwarning("モデル選択", "このモデルはT2I専用です。参照画像・マスク・ポーズを解除してください。")
+            self._refresh_image_picker()
+            return
+        if choice.workflow_id == "wai_t2i_basic":
+            self.checkpoint_model.set(choice.filename)
+        elif choice.workflow_id == ANIMA_ID:
+            self.anima_model.set(choice.filename)
+        selected = resolve_generation_workflow(self.config, choice.workflow_id,
+                    bool(self.reference_image.get().strip()), bool(self.mask_image.get().strip()),
+                    bool(self.pose_image.get().strip()), self.pose_mode.get()) or choice.workflow_id
+        # Start from the target graph defaults, not the previous family's sampler.
+        defaults = defaults_for(self.config["workflows"],
+                               type(choice)(choice.label, selected, choice.filename), turbo=turbo)
+        if selected == core.QWEN_T2I_ID:
+            self.qwen_steps.set(str(defaults["steps"]))
+            self.qwen_cfg.set(str(defaults["cfg"]))
+        else:
+            for name in ("steps", "cfg"):
+                if name in defaults:
+                    getattr(self, name).set(str(defaults[name]))
+        for name in ("width", "height", "denoise", "control_strength"):
+            if name in defaults:
+                getattr(self, name).set(str(defaults[name]))
+        self.workflow.set(selected)
+        self._generation_ui_key = None
+        self._update_generation_controls()
+        self._sync_h3_steps()
+        self._refresh_image_picker()
+
     def _on_workflow_choice(self, _event=None) -> None:
         # Ignore queued events from a hidden selector after changing tabs.
         if (_event is not None and hasattr(self, "_mode_boxes")
                 and _event.widget is not self.workflow_box):
+            return
+        if hasattr(self, "_image_choices") and self.generation_mode.get() == "image":
+            self._select_image_model()
             return
         choices = (mode_workflow_ids(self.config, self.generation_mode.get())
                    if hasattr(self, "generation_mode") else self.workflow_names)
@@ -907,6 +969,8 @@ class Application:
             or (hasattr(self, "resolution_preset") and self.resolution_preset.get() == CUSTOM_RESOLUTION),
             generation_mode=generation_mode,
         )
+        if generation_mode == "image" and hasattr(self, "_image_choices"):
+            state["checkpoint"] = False  # The image-tab model picker owns selection.
         has = lambda name: bool(getattr(self, name, None) and getattr(self, name).get().strip())
         reference = has("reference_image")
         pose = has("pose_image")
@@ -1160,6 +1224,8 @@ class Application:
         video_entry = entry.kind in core.VIDEO_KINDS
         if entry.workflow_id in core.SDXL_WORKFLOW_IDS and hasattr(self, "checkpoint_model"):
             self.checkpoint_model.set(entry.parameters.get("checkpoint_model", core.DEFAULT_SDXL_CHECKPOINT))
+        if entry.workflow_id == ANIMA_ID and hasattr(self, "anima_model"):
+            self.anima_model.set(entry.parameters.get("checkpoint_model", ANIMA_BASE))
         if entry.workflow_id in core.QWEN_IDS and hasattr(self, "qwen_steps"):
             if entry.workflow_id == core.QWEN_T2I_ID:
                 self.qwen_steps.set(str(entry.parameters.get("steps", 50)))
@@ -1242,6 +1308,8 @@ class Application:
         self._update_generation_controls()
         if hasattr(self, "h3_steps"):
             self._sync_h3_steps()
+        if hasattr(self, "_image_choices"):
+            self._refresh_image_picker()
         self.status.set("設定を復元しました")
         self._log(f"履歴の設定を復元: {entry.workflow_id} / Seed={entry.parameters.get('seed', '不明')}")
         self.prompt.focus_set()
@@ -1411,7 +1479,7 @@ class Application:
                     key for key, label in core.H3_PERFORMANCE_LABELS.items() if label == self.h3_performance.get())
         for name in ("video_size", "video_frames", "video_fps", "h3_size", "h3_duration",
                      "hunyuan_size", "hunyuan_frames", "hunyuan_steps",
-                     "checkpoint_model", "qwen_steps", "qwen_cfg"):
+                     "checkpoint_model", "anima_model", "qwen_steps", "qwen_cfg"):
             if hasattr(self, name):
                 config["ui"][name] = getattr(self, name).get()
             elif name in self.config.get("ui", {}):
@@ -1721,8 +1789,8 @@ class Application:
         if self.stop_event.is_set():
             draft.close()
             return
-        models = (core.installed_model_choices(self.generation_inventory)["sdxl"]
-                  if self.generation_inventory is not None else (self.checkpoint_model.get(),))
+        installed = core.installed_model_choices(self.generation_inventory or {})
+        models = (*installed["sdxl"], *installed["anima"]) if self.generation_inventory is not None else (self.checkpoint_model.get(), self.anima_model.get())
         self.adjust_draft = draft
         try:
             self.adjust_window = ImageAdjustWindow(
@@ -1897,6 +1965,8 @@ class Application:
 
     def _apply_generation_model_choices(self) -> None:
         self._sync_h3_model_picker()
+        if hasattr(self, "_mode_boxes") and hasattr(self, "anima_model"):
+            self._refresh_image_picker()
         if self.generation_inventory is None:
             return
         choices = core.installed_model_choices(self.generation_inventory)
@@ -2119,6 +2189,9 @@ class Application:
             messagebox.showerror("生成設定エラー", "画像・マスク・ポーズの指定に対応するワークフローがありません")
             return
         kind = self.config["workflows"][selected]["kind"]
+        if selected in T2I_ONLY and any(value is not None for value in (image, mask, pose)):
+            messagebox.showerror("生成設定エラー", "選択中のモデルはT2I専用です。参照画像・マスク・ポーズを解除してください。")
+            return
         is_video = kind in core.VIDEO_KINDS
         mask, pose, composition = active_aux_inputs(kind, mask, pose, composition)
         continuous = self.generation_mode.get() == "continuous"
@@ -2149,6 +2222,9 @@ class Application:
             )
             if text_only_h3 and not continuous:
                 overrides = core.h3_text_model_options(overrides)
+            if selected == ANIMA_ID:
+                overrides["checkpoint_model"] = self.anima_model.get()
+                core.split_checkpoint_option(overrides, {selected})
             if selected in core.SDXL_WORKFLOW_IDS and hasattr(self, "checkpoint_model"):
                 overrides["checkpoint_model"] = self.checkpoint_model.get()
                 core.split_checkpoint_option(overrides, {selected})
@@ -2175,7 +2251,7 @@ class Application:
         profile = (
             None if not use_prompt_llm else
             cfg["llm"].get("t2i_prompt_profile", DEFAULT_T2I_PROFILE)
-            if kind == "t2i" else
+            if selected in core.SDXL_WORKFLOW_IDS and kind == "t2i" else
             cfg["llm"].get("i2i_prompt_profile", DEFAULT_I2I_PROFILE)
             if kind in ("i2i", "inpaint") else
             cfg["llm"].get("h3_prompt_profile", DEFAULT_H3_PROFILE)

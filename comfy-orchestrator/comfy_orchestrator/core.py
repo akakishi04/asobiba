@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 from .parameters import OrchestratorError, PARAMS, check_param
 from . import image_prompts
+from .model_profiles import ANIMA_ID
 from .jobs import (JobJournal, JobCancellationRequested, JobExecutionFailed,
                    JobSubmissionRejected, run_job)
 from .input_snapshot import freeze_generation_inputs
@@ -173,7 +174,7 @@ def execute(
     if selected_workflow is None:
         # Ordinary image generation must never switch into a costly video job.
         still = {key: entry for key, entry in workflows.items()
-                 if entry.get("kind") not in VIDEO_KINDS and key not in QWEN_IDS}
+                 if entry.get("kind") not in VIDEO_KINDS and key not in QWEN_IDS and key != ANIMA_ID}
         if still:
             workflows = still
     if not workflows:

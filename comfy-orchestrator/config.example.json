@@ -386,6 +386,48 @@
         "steps": 8
       }
     },
+    "anima_t2i_basic": {
+      "kind": "t2i",
+      "description": "Anima / AnimaIka。タグまたは英語自然文によるイラスト生成。28 Steps、CFG 3.5、Shift 3。",
+      "file": "workflows/anima_t2i_basic.api.json",
+      "bindings": {
+        "positive_prompt": {
+          "node": "6",
+          "input": "text"
+        },
+        "negative_prompt": {
+          "node": "7",
+          "input": "text"
+        },
+        "width": {
+          "node": "8",
+          "input": "width"
+        },
+        "height": {
+          "node": "8",
+          "input": "height"
+        },
+        "steps": {
+          "node": "11",
+          "input": "steps"
+        },
+        "cfg": {
+          "node": "11",
+          "input": "cfg"
+        },
+        "seed": {
+          "node": "11",
+          "input": "seed"
+        }
+      },
+      "defaults": {
+        "negative_prompt": "worst quality, low quality, blurry, jpeg artifacts",
+        "width": 1024,
+        "height": 1024,
+        "steps": 28,
+        "cfg": 3.5
+      }
+    },
     "qwen_image_2512_t2i": {
       "kind": "t2i",
       "description": "Qwen-Image-2512 FP8。自然な英文で静止画を生成する。標準50 Steps、CFG 4。",

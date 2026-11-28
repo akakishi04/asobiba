@@ -9,6 +9,7 @@ from tempfile import TemporaryDirectory
 
 from .input_snapshot import copy_frozen_asset
 from . import image_prompts
+from .model_profiles import ANIMA_ID, ANIMA_BASE
 from .output_collection import IMAGE_EXTENSIONS
 from .parameters import PARAMS, OrchestratorError, check_param
 from .prompt_inference import check_cancel
@@ -18,7 +19,7 @@ from .workflow_registry import (
     sdxl_checkpoint_kind, split_checkpoint_option, supplied_inputs, validate_plan,
 )
 
-SUPPORTED = SDXL_WORKFLOW_IDS | QWEN_IDS
+SUPPORTED = SDXL_WORKFLOW_IDS | QWEN_IDS | {ANIMA_ID}
 I2I = "wai_i2i_basic"
 NUMERICAL = ("width", "height", "steps", "cfg", "denoise", "control_strength", "seed")
 
@@ -118,7 +119,7 @@ class ImageAdjustDraft(SinglePromptDraft):
 
     @property
     def checkpoint_selectable(self):
-        return self.workflow_id in SDXL_WORKFLOW_IDS
+        return self.workflow_id in SDXL_WORKFLOW_IDS or self.workflow_id == ANIMA_ID
 
     def fixed_sampler(self, checkpoint=None):
         if checkpoint is None:
@@ -138,7 +139,7 @@ class ImageAdjustDraft(SinglePromptDraft):
         return tuple(key for key in workflows if supported_workflow(key, workflows)
                      and workflows[key]["kind"] == "t2i")
 
-    def switch_t2i(self, target):
+    def switch_t2i(self, target, checkpoint=None):
         """Explicitly reuse the saved prompt format; never reinterpret or reuse a sampler."""
         if self._closed or target not in self.t2i_choices():
             raise OrchestratorError("モデル方式の切り替えは対応するT2I同士に限ります")
@@ -152,6 +153,8 @@ class ImageAdjustDraft(SinglePromptDraft):
         if target_format not in bundle["prompts"]:
             raise OrchestratorError("切り替え先のプロンプトが未取得です。修正指示の反映で両形式を生成してください")
         params = {**workflows[target].get("defaults", {}), **bundle["prompts"][target_format]}
+        if target == ANIMA_ID:
+            params["checkpoint_model"] = checkpoint or ANIMA_BASE
         for key in ("width", "height", "seed"):
             if key in clean and key in workflows[target]["bindings"]:
                 params[key] = clean[key]

@@ -7,6 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .parameters import OrchestratorError
+from .model_profiles import ANIMA_ID
 from .h3_guide import prepare_guide_workflow, validate_guide_inputs, GUIDE_LENGTHS
 from .h3 import prepare_h3_workflow, split_h3_options, prepare_h3_text_workflow
 from .workflow_registry import (H3_I2V_ID, QWEN_IDS, VIDEO_KINDS, validate_video_parameters,
@@ -45,7 +46,7 @@ def preflight(comfy, config, workflow_id, entry, template, checkpoint_options):
     kind = entry.get("kind")
     if kind == "pose":
         comfy.ensure_pose_dependencies(template)
-    if kind in VIDEO_KINDS or workflow_id in QWEN_IDS or checkpoint_options:
+    if kind in VIDEO_KINDS or workflow_id in QWEN_IDS or workflow_id == ANIMA_ID or checkpoint_options:
         comfy.ensure_video_dependencies(template)
     if kind in VIDEO_KINDS:
         comfy.extend_video_timeout(config["comfyui"])

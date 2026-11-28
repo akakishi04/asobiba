@@ -701,6 +701,18 @@ Ref2VAの `retention_analysis` は各定義ラベルにつき1行（例 `<Subjec
 
 対応する生成済み画像の結果・履歴から「調整する」で専用ウィンドウを開きます。元の保存済み生成条件・入力画像を独立したスナップショットに保持し、ポジティブ／ネガティブの英語編集、任意の日本語訳・編集反映・修正指示、モデルやSeed等の対応パラメータを調整できます。英語や数値だけを変更した再生成は解釈LLMを使用せず、全て通常のジョブ・履歴処理を通ります。Seed固定を解除すれば毎回新規Seedを選びます。左右の比較、同じウィンドウ内で調整結果を選択、拡大比較、比較基準に採用が可能です。比較基準の変更だけでは実際の参照画像は変わりません。「参照素材」のI2I切替で明示的に比較基準を参照画像に設定し、旧マスク・ポーズ・構図参考を解除します。SDXL Turbo・Qwen LightningのSteps/CFGは固定、I2Iの解像度は元画像に準拠。現段階は登録済みSDXL・Qwen画像生成履歴に限定し、SDXLの非TurboのみI2I切替に対応。保存設定のない旧履歴・動画・フレーム切出素材は調整開始対象外（従来の素材引き継ぎは可能）です。調整の編集状態・比較基準はウィンドウを閉じるまで保持、生成済み画像は通常履歴へ残ります。独立した素材ライブラリは後続の作業です。
 
+### 画像モデル選択とAnima
+
+画像生成タブ上部の「モデル」で、WAI/Illustrious・SDXL Turbo・Qwen標準/Lightning・Animaを選択します。モデルに対応するワークフローと既定値を自動適用します。SDXLの通常版は画像・マスク・ポーズの有無に応じて従来の編集ワークフローへ移ります。T2I専用モデルは実際の参照画像・マスク・ポーズを指定したまま別系列に切り替えません（LLMのみの構図参考は利用可能）。動画タブの従来のH3入力モードは維持します。
+
+AnimaはComfyUI標準のUNETLoader、CLIPLoader（stable_diffusion）、VAELoader、ModelSamplingAuraFlow（shift 3）、EmptyLatentImage、KSampler（er_sde/simple）を使います。Anima系と判別できるsafetensorsを diffusion_models に配置すれば、モデル更新で個々のファイル名が選択肢に追加されます。未知の名前を自動的にAnimaと断定することはしません。既定値は1024×1024、28 Steps、CFG 3.5。AnimaIkaも同じグラフで使います。
+
+- diffusion_models: AnimaIkaなどのAnima対応モデル、または anima-base-v1.0.safetensors
+- text_encoders: qwen_3_06b_base.safetensors
+- vae: qwen_image_vae.safetensors（Qwen-Image用を流用）
+
+公式: https://docs.comfy.org/tutorials/image/anima/anima 。生成時の事前検証で必要なローダーやファイルが不足していればエラーにします。プロンプト確認のみではモデルをロード・検証しません。Animaは当面タグ形式を実行用に選択し、自然文形式も既存の両形式バンドルに保持します。画像調整・同条件再生成も保存されたモデル名を利用します。Anima I2I・ControlNet、未知系列の手動登録、H3 VAEの独立選択は別工程です。
+
 ### 画像プロンプトの2形式保持
 
 LM Studioによる対応画像の新規解釈では、同じ自然文・参照情報からタグ形式（SDXL系）と自然文形式（Qwen系）のPositive/Negativeを1回の計画応答で生成します。実行には選択ワークフローの形式だけを使い、両形式は履歴・ジョブのparameters_json内のimage_prompt_bundleに保存します。LLMが別形式を返さない場合や不正な場合は実行用だけを保持し、ログに記録します。動画・旧Ollamaは従来どおりです。

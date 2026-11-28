@@ -11,6 +11,7 @@ from .ime_font import install_native_ime_font
 from .parameters import OrchestratorError
 from .single_prompt import LABELS
 from . import image_prompts
+from .model_profiles import ANIMA_ID, ANIMA_BASE, anima_model_name
 from .workflow_registry import sdxl_checkpoint_kind
 
 DEFAULT_MODEL = "ワークフロー既定"
@@ -155,9 +156,13 @@ class ImageAdjustWindow(tk.Toplevel):
             row += 1
         if self.draft.checkpoint_selectable:
             current = self.draft.parameters.get("checkpoint_model", DEFAULT_MODEL)
-            names = tuple(dict.fromkeys((DEFAULT_MODEL, current, *(
-                p for p in self.models if sdxl_checkpoint_kind(p) is not None
-                and (self.draft.workflow_id == "wai_t2i_basic" or sdxl_checkpoint_kind(p) != "turbo")))))
+            if self.draft.workflow_id == ANIMA_ID:
+                names = tuple(dict.fromkeys((DEFAULT_MODEL, current, *(
+                    p for p in self.models if anima_model_name(p)))))
+            else:
+                names = tuple(dict.fromkeys((DEFAULT_MODEL, current, *(
+                    p for p in self.models if sdxl_checkpoint_kind(p) is not None
+                    and (self.draft.workflow_id == "wai_t2i_basic" or sdxl_checkpoint_kind(p) != "turbo")))))
             self.checkpoint.set(current)
             ttk.Label(parent, text="モデル").grid(row=row, column=0, sticky="w", pady=4, padx=(0, 8))
             self.model_box = ttk.Combobox(parent, textvariable=self.checkpoint, values=names, state="readonly")
@@ -188,7 +193,8 @@ class ImageAdjustWindow(tk.Toplevel):
                     "保存済みプロンプトを使用します。幅・高さ・Seedを保持し、Steps・CFG・モデルは切り替え先の既定値に戻します。続けますか？",
                     parent=self):
                 return
-            self.draft.switch_t2i(target)
+            checkpoint = next((p for p in self.models if anima_model_name(p)), ANIMA_BASE) if target == ANIMA_ID else None
+            self.draft.switch_t2i(target, checkpoint=checkpoint)
             self._display_language = "英語"
             self.reload(rebuild=True)
         except (OrchestratorError, ValueError) as exc:

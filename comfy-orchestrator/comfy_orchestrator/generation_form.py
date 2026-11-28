@@ -5,6 +5,7 @@ These functions depend on configuration and values, not the Tk event loop.
 from __future__ import annotations
 
 from .parameters import OrchestratorError, check_param
+from .model_profiles import ANIMA_ID, T2I_ONLY
 from .workflow_registry import (
     compatible_workflows,
     VIDEO_KINDS,
@@ -91,6 +92,9 @@ def resolve_generation_workflow(
 ) -> str | None:
     """Route still images automatically; video requires an explicit selection."""
     registered = config.get("workflows", {})
+    if chosen in T2I_ONLY and chosen in registered:
+        # Do not silently switch a selected T2I-only model to SDXL on image input.
+        return chosen
     if registered.get(chosen, {}).get("kind") == "i2v":
         # Keep I2V selected while the user is still choosing the first frame.
         # _start validates required inputs before contacting the model.
@@ -130,6 +134,7 @@ WORKFLOW_NAMES = {
     LONG_VIDEO_ID: "動画生成 · H3 長尺",
     WAN_I2V_ID: "動画生成 · Wan 2.2",
     HUNYUAN_I2V_ID: "動画生成 · Hunyuan 1.5 (480p)",
+    ANIMA_ID: "画像生成 · Anima",
     QWEN_T2I_ID: "画像生成 · Qwen-Image 2512",
     QWEN_LIGHTNING_ID: "画像生成 · Qwen-Image 2512 (4 Steps)",
 }
@@ -206,7 +211,7 @@ def parameter_visibility(config: dict, workflow_id: str | None, custom_size: boo
         "seed": "seed" in bindings,
         "denoise": "denoise" in bindings,
         "strength": "control_strength" in bindings,
-        "t2i_profile": kind == "t2i" and not qwen,
+        "t2i_profile": kind == "t2i" and not qwen and workflow_id != ANIMA_ID,
         "i2i_profile": kind in ("i2i", "inpaint"),
         "h3_profile": h3,
     }

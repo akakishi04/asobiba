@@ -10,6 +10,7 @@ import json
 
 from .parameters import OrchestratorError, check_param
 from .workflow_registry import SDXL_WORKFLOW_IDS, QWEN_IDS
+from .model_profiles import ANIMA_ID
 from .prompt_inference import request_validated, check_cancel
 
 KEY = "image_prompt_bundle"
@@ -20,7 +21,7 @@ LABELS = {"tags": "タグ形式", "natural": "自然文形式"}
 
 
 def prompt_format(workflow_id):
-    return "tags" if workflow_id in SDXL_WORKFLOW_IDS else "natural" if workflow_id in QWEN_IDS else None
+    return "tags" if workflow_id in SDXL_WORKFLOW_IDS or workflow_id == ANIMA_ID else "natural" if workflow_id in QWEN_IDS else None
 
 
 def other_format(fmt):
